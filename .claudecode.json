@@ -1,0 +1,20 @@
+{
+  "project_rules": {
+    "architecture": {
+      "frontend": "Next.js (App Router, TypeScript, Tailwind CSS)",
+      "backend": "Azure Functions (Node.js / Serverless)",
+      "database": "Azure Cosmos DB (Serverless)",
+      "ai_service": "Azure OpenAI Service"
+    },
+    "constraints": {
+      "region": "Japan East (japaneast) または Japan West (japanwest)",
+      "data_privacy": "すべてのユーザーデータ、プロンプト、ログは日本国内のリージョンに保持すること。海外リージョンへのデータ転送は禁止。",
+      "cost_optimization": "すべて無料枠（Free）または従量課金（Serverless）プランを選択し、待機コストを0円に抑えること。",
+      "security": "APIキーは環境変数またはAzure Key Vaultで管理し、コードへの直書きは厳禁。認証はSWA組み込み認証またはHttpOnlyクッキーを使用すること。"
+    },
+    "naming_convention": {
+      "resource_group": "rg-personal-apps-prod",
+      "static_web_app": "swa-personal-apps-prod"
+    }
+  }
+}

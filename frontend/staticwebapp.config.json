@@ -1,0 +1,42 @@
+{
+  "auth": {
+    "rolesSource": "/api/GetRoles",
+    "identityProviders": {
+      "github": {
+        "registration": {
+          "clientIdSettingName": "GITHUB_CLIENT_ID",
+          "clientSecretSettingName": "GITHUB_CLIENT_SECRET"
+        }
+      }
+    }
+  },
+  "routes": [
+    {
+      "route": "/stocks/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/disney/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/costs/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*", "/.auth/*", "/_next/*", "/favicon.ico", "/*.{css,scss,js,png,gif,ico,jpg,svg}"]
+  },
+  "platform": {
+    "apiRuntime": "node:20"
+  }
+}
