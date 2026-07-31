@@ -10,6 +10,49 @@ function parseClientPrincipal(request) {
   }
 }
 
+const ALLOWED_LOGIN_NAMES = new Set(["aquaiot", "aya_tink", "guest_free77"]);
+
+function normalizeLoginName(value) {
+  return value.trim().toLowerCase();
+}
+
+function collectLoginCandidates(userDetails, email) {
+  const candidates = new Set();
+  const details = normalizeLoginName(userDetails);
+  candidates.add(details);
+  if (details.includes("@")) {
+    candidates.add(details.split("@")[0]);
+  }
+  if (email) {
+    const normalizedEmail = normalizeLoginName(email);
+    candidates.add(normalizedEmail);
+    candidates.add(normalizedEmail.split("@")[0]);
+  }
+  return [...candidates];
+}
+
+function isAllowedLogin(userDetails, email) {
+  return collectLoginCandidates(userDetails, email).some((candidate) =>
+    ALLOWED_LOGIN_NAMES.has(candidate),
+  );
+}
+
+function emailFromPrincipal(principal) {
+  const emailClaim = principal.claims?.find(
+    (c) => c.typ === "emails" || c.typ.includes("email"),
+  );
+  if (emailClaim?.val) return emailClaim.val;
+  if (principal.userDetails.includes("@")) return principal.userDetails;
+  return undefined;
+}
+
+function resolveRoles(principal) {
+  if (!principal) return [];
+  const email = emailFromPrincipal(principal);
+  if (!isAllowedLogin(principal.userDetails, email)) return [];
+  return ["authenticated"];
+}
+
 app.http("GetUserProfile", {
   methods: ["GET"],
   authLevel: "anonymous",
@@ -46,7 +89,7 @@ app.http("GetRoles", {
     }
     return {
       status: 200,
-      jsonBody: { roles: principal.userRoles ?? ["authenticated"] },
+      jsonBody: { roles: resolveRoles(principal) },
     };
   },
 });

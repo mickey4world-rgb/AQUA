@@ -1,4 +1,5 @@
 import type { ClientPrincipal } from "@/lib/types/auth";
+import { isAllowedLogin } from "@/lib/allowed-users";
 
 export function parseClientPrincipal(
   header: string | null,
@@ -35,4 +36,24 @@ export function requireAuth(
     );
   }
   return principal;
+}
+
+export function requireAllowedAuth(
+  header: string | null,
+): ClientPrincipal | Response {
+  const auth = requireAuth(header);
+  if (auth instanceof Response) return auth;
+
+  const email = getEmailFromPrincipal(auth);
+  if (!isAllowedLogin(auth.userDetails, email)) {
+    return Response.json(
+      {
+        error: "Forbidden",
+        message: "このアカウントは AQUA Personal Apps へのアクセスが許可されていません",
+      },
+      { status: 403 },
+    );
+  }
+
+  return auth;
 }
