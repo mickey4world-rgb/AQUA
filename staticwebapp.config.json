@@ -1,12 +1,5 @@
 {
-  "auth": {
-    "rolesSource": "/api/GetRoles"
-  },
   "routes": [
-    {
-      "route": "/api/GetRoles",
-      "allowedRoles": ["anonymous", "authenticated"]
-    },
     {
       "route": "/api/users/*",
       "allowedRoles": ["authenticated"]
