@@ -13,18 +13,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
-      "route": "/api/*",
-      "allowedRoles": ["authenticated"]
-    },
-    {
       "route": "/*",
       "allowedRoles": ["anonymous", "authenticated"]
     }
   ],
-  "navigationFallback": {
-    "rewrite": "/index.html",
-    "exclude": ["/api/*", "/.auth/*", "/_next/*", "/favicon.ico", "/*.{css,scss,js,png,gif,ico,jpg,svg}"]
-  },
   "platform": {
     "apiRuntime": "node:20"
   }
