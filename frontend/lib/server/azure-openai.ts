@@ -11,7 +11,7 @@ export function isAzureOpenAiConfigured(): boolean {
 }
 
 export function getAzureOpenAiDeployment(): string {
-  return process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o-mini";
+  return process.env.AZURE_OPENAI_DEPLOYMENT ?? "stock-advice";
 }
 
 export function getAzureOpenAiClient(): AzureOpenAI {
@@ -39,8 +39,12 @@ export function estimateTokenCostUsd(
   const rates: Record<string, { input: number; output: number }> = {
     "gpt-4o-mini": { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
     "gpt-4o": { input: 2.5 / 1_000_000, output: 10 / 1_000_000 },
+    "gpt-5.4-mini": { input: 0.25 / 1_000_000, output: 2 / 1_000_000 },
   };
 
-  const rate = rates[model] ?? rates["gpt-4o-mini"];
+  const normalized = Object.entries(rates).find(([name]) =>
+    model.includes(name),
+  )?.[1];
+  const rate = normalized ?? rates["gpt-4o"];
   return promptTokens * rate.input + completionTokens * rate.output;
 }
