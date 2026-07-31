@@ -1,25 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Header from "@/components/Header";
 import StockWatchDetail from "@/components/stocks/StockWatchDetail";
 import StockWatchForm from "@/components/stocks/StockWatchForm";
 import StockWatchList from "@/components/stocks/StockWatchList";
+import StocksPageShell from "@/components/stocks/StocksPageShell";
+import { sortStockWatches, type StockSortKey } from "@/lib/stock-utils";
 import type { StockWatchWithAdvice } from "@/lib/types/stock";
 
 export default function StocksPage() {
   const [watches, setWatches] = useState<StockWatchWithAdvice[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<StockSortKey>("registered");
 
-  const activeWatches = useMemo(
-    () => watches.filter((watch) => watch.isActive),
-    [watches],
+  const sortedWatches = useMemo(
+    () => sortStockWatches(watches, sortKey),
+    [watches, sortKey],
   );
 
   const selectedWatch = useMemo(
-    () => activeWatches.find((watch) => watch.id === selectedId) ?? null,
-    [activeWatches, selectedId],
+    () => sortedWatches.find((watch) => watch.id === selectedId) ?? null,
+    [sortedWatches, selectedId],
   );
 
   const loadWatches = useCallback(async () => {
@@ -49,34 +51,45 @@ export default function StocksPage() {
   }
 
   return (
-    <>
-      <Header />
+    <StocksPageShell>
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl font-bold text-zinc-900">保有株</h1>
-        <p className="mt-2 text-zinc-600">
-          米国株・日本株を登録し、一覧から銘柄を選んで売買アドバイスの詳細を確認できます。
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/80">
+              Global Portfolio
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+              保有株ダッシュボード
+            </h1>
+            <p className="mt-2 max-w-2xl text-slate-400">
+              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と売買アドバイスを確認できます。
+            </p>
+          </div>
+          {!loading && sortedWatches.length > 0 && (
+            <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+              <span className="font-semibold text-white">{sortedWatches.length}</span> 銘柄をウォッチ中
+            </div>
+          )}
+        </div>
 
         <div className="mt-8">
           <StockWatchForm onCreated={loadWatches} />
         </div>
 
         <section className="mt-10">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-zinc-900">保有銘柄一覧</h2>
-            {!loading && activeWatches.length > 0 && (
-              <p className="text-sm text-zinc-500">{activeWatches.length} 銘柄</p>
-            )}
-          </div>
-
           {loading ? (
-            <p className="mt-4 text-sm text-zinc-500">読み込み中...</p>
+            <div className="flex items-center gap-3 text-sm text-slate-400">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-300" />
+              マーケットデータを読み込み中...
+            </div>
           ) : (
-            <div className="mt-4 grid gap-6 lg:grid-cols-5">
+            <div className="grid gap-6 lg:grid-cols-5">
               <div className="lg:col-span-2">
                 <StockWatchList
-                  watches={watches}
+                  watches={sortedWatches}
                   selectedId={selectedId}
+                  sortKey={sortKey}
+                  onSortChange={setSortKey}
                   onSelect={setSelectedId}
                 />
               </div>
@@ -84,8 +97,13 @@ export default function StocksPage() {
                 {selectedWatch ? (
                   <StockWatchDetail watch={selectedWatch} onDelete={handleDelete} />
                 ) : (
-                  <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-8 text-center text-sm text-zinc-500">
-                    左の一覧から銘柄を選択すると、詳細情報が表示されます。
+                  <div className="flex min-h-[28rem] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 text-2xl">
+                      🌐
+                    </div>
+                    <p className="text-sm text-slate-400">
+                      左の一覧から銘柄を選択すると、詳細情報が表示されます。
+                    </p>
                   </div>
                 )}
               </div>
@@ -93,6 +111,6 @@ export default function StocksPage() {
           )}
         </section>
       </main>
-    </>
+    </StocksPageShell>
   );
 }

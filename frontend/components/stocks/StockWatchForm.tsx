@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { marketLabel } from "@/lib/stock-utils";
+import {
+  marketLabel,
+  stockInputClass,
+  stockLabelClass,
+  stockPanelClass,
+} from "@/lib/stock-utils";
 import type { StockMarket } from "@/lib/types/stock";
 
 type StockWatchFormProps = {
@@ -76,27 +81,27 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
   const pricePlaceholder = market === "jp" ? "2500" : "395.00";
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-lg border border-zinc-200 bg-white p-5"
-    >
-      <h2 className="text-lg font-semibold text-zinc-900">保有銘柄を追加</h2>
+    <form onSubmit={handleSubmit} className={`${stockPanelClass} p-5`}>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold text-white">保有銘柄を追加</h2>
+        <span className="text-xs uppercase tracking-wider text-slate-500">
+          US / JP Markets
+        </span>
+      </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-zinc-700">市場</label>
+          <label className={stockLabelClass}>市場</label>
           <select
             value={market}
             onChange={(e) => setMarket(e.target.value as StockMarket)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           >
             <option value="us">米国株</option>
             <option value="jp">日本株</option>
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700">
-            銘柄コード
-          </label>
+          <label className={stockLabelClass}>銘柄コード</label>
           <input
             required
             value={ticker}
@@ -109,32 +114,28 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
             }
             onBlur={(e) => lookupName(e.target.value)}
             placeholder={tickerPlaceholder}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-slate-500">
             {market === "jp"
               ? "4桁コード（例: 7203）を入力"
               : "ティッカーシンボル（例: TSLA）を入力"}
           </p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700">
-            銘柄名
-          </label>
+          <label className={stockLabelClass}>銘柄名</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={namePlaceholder}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
           {lookupLoading && (
-            <p className="mt-1 text-xs text-zinc-500">銘柄名を取得中...</p>
+            <p className="mt-1 text-xs text-slate-500">銘柄名を取得中...</p>
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700">
-            購入価格（{currencyLabel}）
-          </label>
+          <label className={stockLabelClass}>購入価格（{currencyLabel}）</label>
           <input
             required
             type="number"
@@ -143,13 +144,11 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
             value={buyPrice}
             onChange={(e) => setBuyPrice(e.target.value)}
             placeholder={pricePlaceholder}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700">
-            保有株数
-          </label>
+          <label className={stockLabelClass}>保有株数</label>
           <input
             type="number"
             step="1"
@@ -157,39 +156,35 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
             value={shares}
             onChange={(e) => setShares(e.target.value)}
             placeholder="100"
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-700">
-            目標倍率
-          </label>
+          <label className={stockLabelClass}>目標倍率</label>
           <input
             type="number"
             step="0.1"
             min="1"
             value={targetMultiplier}
             onChange={(e) => setTargetMultiplier(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
         </div>
         <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-zinc-700">
-            メモ（任意）
-          </label>
+          <label className={stockLabelClass}>メモ（任意）</label>
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder={`${marketLabel(market)} · 長期保有 など`}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className={stockInputClass}
           />
         </div>
       </div>
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
       <button
         type="submit"
         disabled={loading}
-        className="mt-4 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+        className="mt-4 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:from-cyan-400 hover:to-violet-400 disabled:opacity-50"
       >
         {loading ? "登録中..." : "銘柄を登録"}
       </button>

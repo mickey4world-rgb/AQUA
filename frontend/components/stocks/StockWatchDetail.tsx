@@ -1,17 +1,23 @@
 "use client";
 
+import { MarketBadge } from "@/components/stocks/StocksPageShell";
 import {
+  calcCostBasis,
+  calcMarketValue,
+  calcProfitAmount,
   displayTicker,
   formatPrice,
+  formatSignedPrice,
   marketLabel,
+  stockPanelClass,
 } from "@/lib/stock-utils";
 import type { StockWatchWithAdvice } from "@/lib/types/stock";
 
 const actionStyles = {
-  hold: "bg-blue-100 text-blue-800 border-blue-200",
-  buy: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  sell: "bg-red-100 text-red-800 border-red-200",
-  watch: "bg-amber-100 text-amber-800 border-amber-200",
+  hold: "border-sky-400/30 bg-sky-500/15 text-sky-300",
+  buy: "border-emerald-400/30 bg-emerald-500/15 text-emerald-300",
+  sell: "border-rose-400/30 bg-rose-500/15 text-rose-300",
+  watch: "border-amber-400/30 bg-amber-500/15 text-amber-300",
 };
 
 const actionLabels = {
@@ -34,6 +40,14 @@ export default function StockWatchDetail({
   const action = advice?.action ?? "watch";
   const market = watch.market ?? "us";
   const displayName = watch.name || advice?.companyName;
+  const hasShares = watch.shares > 0;
+  const marketValue =
+    advice && hasShares ? calcMarketValue(advice.currentPrice, watch.shares) : null;
+  const costBasis = hasShares ? calcCostBasis(watch.buyPrice, watch.shares) : null;
+  const profitAmount =
+    advice && hasShares
+      ? calcProfitAmount(advice.currentPrice, watch.buyPrice, watch.shares)
+      : null;
 
   function formatDate(iso?: string) {
     if (!iso) return "";
@@ -44,15 +58,20 @@ export default function StockWatchDetail({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5">
+    <div className={`${stockPanelClass} p-5`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium text-zinc-500">{marketLabel(market)}</p>
-          <h3 className="text-xl font-bold text-zinc-900">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              {marketLabel(market)}
+            </p>
+            <MarketBadge market={market} />
+          </div>
+          <h3 className="mt-1 text-2xl font-bold text-white">
             {displayName ? (
               <>
                 {displayName}
-                <span className="ml-2 text-base font-medium text-zinc-500">
+                <span className="ml-2 text-base font-medium text-slate-400">
                   {displayTicker(watch.ticker, market)}
                 </span>
               </>
@@ -61,7 +80,7 @@ export default function StockWatchDetail({
             )}
           </h3>
           {watch.memo && (
-            <p className="mt-1 text-sm text-zinc-500">{watch.memo}</p>
+            <p className="mt-1 text-sm text-slate-400">{watch.memo}</p>
           )}
         </div>
         {advice && (
@@ -73,52 +92,105 @@ export default function StockWatchDetail({
         )}
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-zinc-500">購入価格</dt>
-          <dd className="font-medium">{formatPrice(watch.buyPrice, market)}</dd>
+      {advice && (
+        <div className="mt-5 rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/10 via-slate-900/40 to-violet-500/10 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300/80">
+            Sell Now Estimate
+          </p>
+          {marketValue !== null && costBasis !== null && profitAmount !== null ? (
+            <>
+              <p className="mt-2 text-3xl font-bold tracking-tight text-white">
+                {formatPrice(marketValue, market)}
+              </p>
+              <p className="mt-1 text-sm text-slate-300">
+                今売却した場合の受取額（{watch.shares.toLocaleString("ja-JP")} 株 ×{" "}
+                {formatPrice(advice.currentPrice, market)}）
+              </p>
+              <div className="mt-4 flex flex-wrap gap-4 text-sm">
+                <div>
+                  <p className="text-slate-500">購入コスト</p>
+                  <p className="font-medium text-slate-200">
+                    {formatPrice(costBasis, market)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">含み損益</p>
+                  <p
+                    className={`font-semibold ${
+                      profitAmount >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {formatSignedPrice(profitAmount, market)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">損益率</p>
+                  <p
+                    className={`font-semibold ${
+                      advice.profitPct >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {advice.profitPct >= 0 ? "+" : ""}
+                    {advice.profitPct.toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-slate-400">
+              保有株数を登録すると、今売却した場合の受取額を表示します。
+            </p>
+          )}
         </div>
-        <div>
-          <dt className="text-zinc-500">目標株価</dt>
-          <dd className="font-medium">{formatPrice(watch.targetPrice, market)}</dd>
-        </div>
-        <div>
-          <dt className="text-zinc-500">保有株数</dt>
-          <dd className="font-medium">{watch.shares || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-zinc-500">倍率</dt>
-          <dd className="font-medium">{watch.targetMultiplier}x</dd>
-        </div>
+      )}
+
+      <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        {[
+          ["購入価格", formatPrice(watch.buyPrice, market)],
+          ["目標株価", formatPrice(watch.targetPrice, market)],
+          ["保有株数", watch.shares ? watch.shares.toLocaleString("ja-JP") : "—"],
+          ["倍率", `${watch.targetMultiplier}x`],
+        ].map(([label, value]) => (
+          <div
+            key={label}
+            className="rounded-xl border border-white/5 bg-white/5 px-3 py-2"
+          >
+            <dt className="text-slate-500">{label}</dt>
+            <dd className="mt-1 font-medium text-white">{value}</dd>
+          </div>
+        ))}
       </dl>
 
       {advice ? (
-        <div className="mt-4 rounded-md bg-zinc-50 p-4">
-          <p className="font-medium text-zinc-900">{advice.summary}</p>
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+        <div className="mt-5 rounded-2xl border border-white/5 bg-slate-950/40 p-4">
+          <p className="font-medium text-slate-100">{advice.summary}</p>
+          <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
             <p>現在株価: {formatPrice(advice.currentPrice, market)}</p>
             <p>
-              前日比: {advice.changePct >= 0 ? "+" : ""}
-              {advice.changePct.toFixed(2)}%
+              前日比:{" "}
+              <span
+                className={
+                  advice.changePct >= 0 ? "text-emerald-400" : "text-rose-400"
+                }
+              >
+                {advice.changePct >= 0 ? "+" : ""}
+                {advice.changePct.toFixed(2)}%
+              </span>
             </p>
             <p>MA5: {formatPrice(advice.ma5, market)}</p>
             <p>MA25: {formatPrice(advice.ma25, market)}</p>
             <p>
-              損益: {advice.profitPct >= 0 ? "+" : ""}
-              {advice.profitPct.toFixed(1)}%
+              目標まで: {advice.distanceToTargetPct.toFixed(1)}%
             </p>
-            <p>目標まで: {advice.distanceToTargetPct.toFixed(1)}%</p>
           </div>
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-700">
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
             {advice.reasons.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
           {advice.priceChangeContext.length > 0 && (
-            <div className="mt-4 border-t border-zinc-200 pt-4">
-              <h4 className="text-sm font-semibold text-zinc-900">
-                株価変動の背景
-              </h4>
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <h4 className="text-sm font-semibold text-white">株価変動の背景</h4>
               <ul className="mt-2 space-y-2">
                 {advice.priceChangeContext.map((item) => (
                   <li key={`${item.kind}-${item.title}`} className="text-sm">
@@ -127,14 +199,14 @@ export default function StockWatchDetail({
                         href={item.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-medium text-blue-700 hover:underline"
+                        className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
                       >
                         {item.title}
                       </a>
                     ) : (
-                      <p className="font-medium text-zinc-800">{item.title}</p>
+                      <p className="font-medium text-slate-200">{item.title}</p>
                     )}
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-slate-500">
                       {item.kind === "development" ? "重要イベント" : "ニュース"}
                       {item.source ? ` · ${item.source}` : ""}
                       {item.publishedAt ? ` · ${formatDate(item.publishedAt)}` : ""}
@@ -146,7 +218,7 @@ export default function StockWatchDetail({
           )}
         </div>
       ) : (
-        <p className="mt-4 text-sm text-zinc-500">
+        <p className="mt-5 text-sm text-slate-400">
           株価データを取得できませんでした
         </p>
       )}
@@ -154,9 +226,9 @@ export default function StockWatchDetail({
       <button
         type="button"
         onClick={() => onDelete(watch.id)}
-        className="mt-4 text-sm text-red-600 hover:text-red-800"
+        className="mt-5 text-sm text-rose-400 transition hover:text-rose-300"
       >
-        削除
+        この銘柄を削除
       </button>
     </div>
   );
