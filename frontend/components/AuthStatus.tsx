@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isAllowedLogin } from "@/lib/allowed-users";
 import type { ClientPrincipal } from "@/lib/types/auth";
 import type { User } from "@/lib/types/user";
 import { getClientPrincipal, logoutUrl } from "@/lib/auth";
@@ -10,16 +11,27 @@ type AuthStatusProps = {
   variant?: "light" | "dark";
 };
 
-async function syncUser(): Promise<User | null> {
-  const res = await fetch("/api/users/me", { method: "POST" });
-  if (!res.ok) return null;
-  return res.json();
+function emailFromPrincipal(principal: ClientPrincipal): string | undefined {
+  const emailClaim = principal.claims?.find(
+    (c) => c.typ === "emails" || c.typ.includes("email"),
+  );
+  if (emailClaim?.val) return emailClaim.val;
+  if (principal.userDetails.includes("@")) return principal.userDetails;
+  return undefined;
 }
 
-async function fetchUser(): Promise<User | null> {
+async function syncUser(): Promise<{ user: User | null; forbidden: boolean }> {
+  const res = await fetch("/api/users/me", { method: "POST" });
+  if (res.status === 403) return { user: null, forbidden: true };
+  if (!res.ok) return { user: null, forbidden: false };
+  return { user: await res.json(), forbidden: false };
+}
+
+async function fetchUser(): Promise<{ user: User | null; forbidden: boolean }> {
   const res = await fetch("/api/users/me");
-  if (!res.ok) return null;
-  return res.json();
+  if (res.status === 403) return { user: null, forbidden: true };
+  if (!res.ok) return { user: null, forbidden: false };
+  return { user: await res.json(), forbidden: false };
 }
 
 export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
@@ -27,6 +39,7 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
     undefined,
   );
   const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [forbidden, setForbidden] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,19 +49,33 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
 
       if (!p) {
         setUser(null);
+        setForbidden(false);
         return;
       }
 
-      let profile = await fetchUser();
-      if (!profile) {
-        profile = await syncUser();
+      const email = emailFromPrincipal(p);
+      if (!isAllowedLogin(p.userDetails, email)) {
+        setForbidden(true);
+        setUser(null);
+        return;
       }
 
-      if (!profile) {
+      let result = await fetchUser();
+      if (!result.user && !result.forbidden) {
+        result = await syncUser();
+      }
+
+      if (result.forbidden) {
+        setForbidden(true);
+        setUser(null);
+        return;
+      }
+
+      if (!result.user) {
         setSyncError("ユーザープロファイルの同期に失敗しました");
         setUser(null);
       } else {
-        setUser(profile);
+        setUser(result.user);
       }
     }
     load();
@@ -81,6 +108,35 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
           未ログインです
         </p>
         <LoginButtons redirectTo="/" />
+      </div>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <div
+        className={
+          variant === "dark"
+            ? "rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-4 backdrop-blur-sm"
+            : "rounded-lg border border-rose-200 bg-rose-50 px-4 py-4"
+        }
+      >
+        <p className={`text-sm font-medium ${variant === "dark" ? "text-rose-200" : "text-rose-900"}`}>
+          アクセスが拒否されました
+        </p>
+        <p className={`mt-2 text-sm ${variant === "dark" ? "text-rose-100/90" : "text-rose-800"}`}>
+          ログイン中のアカウント（{principal.userDetails}）は利用が許可されていません。
+        </p>
+        <a
+          href={logoutUrl("/login")}
+          className={`mt-3 inline-flex rounded-md border px-3 py-1.5 text-sm ${
+            variant === "dark"
+              ? "border-rose-400/30 bg-white/5 text-rose-100 hover:bg-white/10"
+              : "border-rose-300 bg-white text-rose-900 hover:bg-rose-100"
+          }`}
+        >
+          ログアウト
+        </a>
       </div>
     );
   }

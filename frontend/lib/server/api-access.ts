@@ -1,5 +1,5 @@
 import type { ClientPrincipal } from "@/lib/types/auth";
-import { requireAuth } from "@/lib/server/auth";
+import { requireAllowedAuth } from "@/lib/server/auth";
 import { logApiAccess } from "@/lib/server/access-log";
 
 export function getRequestStartedAt(): number {
@@ -9,7 +9,7 @@ export function getRequestStartedAt(): number {
 export function requireAuthOrResponse(
   request: Request,
 ): ClientPrincipal | Response {
-  return requireAuth(request.headers.get("x-ms-client-principal"));
+  return requireAllowedAuth(request.headers.get("x-ms-client-principal"));
 }
 
 export function finalizeApiResponse(

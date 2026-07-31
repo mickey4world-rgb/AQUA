@@ -1,3 +1,4 @@
+import { isAllowedLogin } from "@/lib/allowed-users";
 import type { ClientPrincipal } from "@/lib/types/auth";
 import type { UpdateUserRequest, User } from "@/lib/types/user";
 import { DEFAULT_MONTHLY_TOKEN_LIMIT } from "@/lib/types/user";
@@ -68,8 +69,12 @@ async function migrateSeededUser(
 }
 
 export async function syncUser(principal: ClientPrincipal): Promise<User> {
-  const now = new Date().toISOString();
   const email = getEmailFromPrincipal(principal);
+  if (!isAllowedLogin(principal.userDetails, email)) {
+    throw new Error("FORBIDDEN_USER");
+  }
+
+  const now = new Date().toISOString();
   const existing = await getUserById(principal.userId);
 
   if (existing) {

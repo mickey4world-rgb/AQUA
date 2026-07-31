@@ -71,7 +71,20 @@ export async function POST(request: Request) {
   }
 
   return withApiAccessLog(request, async (auth) => {
-    const user = await syncUser(auth);
-    return Response.json(user);
+    try {
+      const user = await syncUser(auth);
+      return Response.json(user);
+    } catch (error) {
+      if (error instanceof Error && error.message === "FORBIDDEN_USER") {
+        return Response.json(
+          {
+            error: "Forbidden",
+            message: "このアカウントは AQUA Personal Apps へのアクセスが許可されていません",
+          },
+          { status: 403 },
+        );
+      }
+      throw error;
+    }
   });
 }

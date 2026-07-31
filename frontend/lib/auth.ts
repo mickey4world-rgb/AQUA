@@ -14,6 +14,6 @@ export function loginUrl(
   return `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(redirectTo)}`;
 }
 
-export function logoutUrl(): string {
-  return `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent("/")}`;
+export function logoutUrl(redirectTo = "/"): string {
+  return `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(redirectTo)}`;
 }
