@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/server/auth";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { analyzeStock } from "@/lib/server/stock-analysis";
+import { enhanceStockAdviceWithAi } from "@/lib/server/stock-ai-advice";
 import {
   deleteStockWatch,
   getStockWatch,
@@ -19,13 +20,19 @@ export async function GET(request: Request, context: RouteContext) {
   if (auth instanceof Response) return auth;
 
   const { id } = await context.params;
+  const { searchParams } = new URL(request.url);
+  const withAi = searchParams.get("ai") === "1";
+
   const watch = await getStockWatch(auth.userId, id);
   if (!watch) {
     return Response.json({ error: "NotFound" }, { status: 404 });
   }
 
   try {
-    const advice = await analyzeStock(watch);
+    let advice = await analyzeStock(watch);
+    if (withAi) {
+      advice = await enhanceStockAdviceWithAi(watch, advice, auth.userId);
+    }
     return Response.json({ ...watch, advice });
   } catch (error) {
     return Response.json({

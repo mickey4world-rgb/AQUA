@@ -7,11 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed:users": "node scripts/seed-users.mjs"
+    "seed:users": "node scripts/seed-users.mjs",
+    "setup:token-usage": "node scripts/setup-token-usage.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",
     "next": "16.2.12",
+    "openai": "^7.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "yahoo-finance2": "^4.0.0"

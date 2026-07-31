@@ -5,6 +5,7 @@ const containers = new Map<string, Container>();
 export const COSMOS_CONTAINERS = {
   users: process.env.COSMOS_USERS_CONTAINER ?? "Users",
   stockWatches: process.env.COSMOS_STOCK_WATCHES_CONTAINER ?? "StockWatches",
+  tokenUsage: process.env.COSMOS_TOKEN_USAGE_CONTAINER ?? "TokenUsage",
 } as const;
 
 export function isCosmosConfigured(): boolean {

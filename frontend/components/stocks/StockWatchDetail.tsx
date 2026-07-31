@@ -27,13 +27,21 @@ const actionLabels = {
   watch: "様子見",
 };
 
+const confidenceLabels = {
+  high: "高",
+  medium: "中",
+  low: "低",
+};
+
 type StockWatchDetailProps = {
   watch: StockWatchWithAdvice;
+  aiLoading?: boolean;
   onDelete: (id: string) => void;
 };
 
 export default function StockWatchDetail({
   watch,
+  aiLoading = false,
   onDelete,
 }: StockWatchDetailProps) {
   const advice = watch.advice;
@@ -221,6 +229,79 @@ export default function StockWatchDetail({
         <p className="mt-5 text-sm text-slate-400">
           株価データを取得できませんでした
         </p>
+      )}
+
+      {advice && (
+        <div className="mt-5 rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-500/10 via-slate-950/40 to-cyan-500/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-violet-200">AI 売買アドバイス</h4>
+            {advice.aiInsight?.available && advice.aiInsight.model && (
+              <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-violet-200">
+                Azure OpenAI · {advice.aiInsight.model}
+              </span>
+            )}
+          </div>
+
+          {aiLoading && !advice.aiInsight ? (
+            <div className="mt-3 flex items-center gap-2 text-sm text-slate-400">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300" />
+              AI がニュースとテクニカルを分析中...
+            </div>
+          ) : advice.aiInsight?.available ? (
+            <div className="mt-3 space-y-4">
+              <div>
+                <p className="text-lg font-semibold text-white">
+                  {advice.aiInsight.headline}
+                </p>
+                {advice.aiInsight.confidence && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    確信度: {confidenceLabels[advice.aiInsight.confidence]}
+                  </p>
+                )}
+              </div>
+              <p className="text-sm leading-relaxed text-slate-200">
+                {advice.aiInsight.commentary}
+              </p>
+              <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  判定の補足
+                </p>
+                <p className="mt-1 text-sm text-slate-200">
+                  {advice.aiInsight.actionRationale}
+                </p>
+              </div>
+              {!!advice.aiInsight.catalysts?.length && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300/80">
+                    注目材料
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-300">
+                    {advice.aiInsight.catalysts.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {!!advice.aiInsight.risks?.length && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-rose-300/80">
+                    リスク
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-300">
+                    {advice.aiInsight.risks.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">
+              {advice.aiInsight?.reason ??
+                "AI 分析は現在利用できません。テクニカル分析のみ表示しています。"}
+            </p>
+          )}
+        </div>
       )}
 
       <button
