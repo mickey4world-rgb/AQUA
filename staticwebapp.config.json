@@ -9,6 +9,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/disney/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/settings",
       "allowedRoles": ["authenticated"]
     },
