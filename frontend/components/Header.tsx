@@ -5,6 +5,7 @@ const navItems = [
   { href: "/stocks", label: "米国株" },
   { href: "/disney", label: "ディズニー" },
   { href: "/costs", label: "コスト" },
+  { href: "/settings", label: "設定" },
 ];
 
 export default function Header() {

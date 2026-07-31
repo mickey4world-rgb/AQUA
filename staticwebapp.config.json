@@ -1,6 +1,14 @@
 {
   "routes": [
     {
+      "route": "/api/users/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/settings",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/stocks/*",
       "allowedRoles": ["authenticated"]
     },
@@ -17,6 +25,12 @@
       "allowedRoles": ["anonymous", "authenticated"]
     }
   ],
+  "responseOverrides": {
+    "401": {
+      "statusCode": 302,
+      "redirect": "/.auth/login/github"
+    }
+  },
   "platform": {
     "apiRuntime": "node:20"
   }
