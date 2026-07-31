@@ -2,10 +2,12 @@ import type { ClientPrincipal } from "@/lib/types/auth";
 import type { UpdateUserRequest, User } from "@/lib/types/user";
 import { DEFAULT_MONTHLY_TOKEN_LIMIT } from "@/lib/types/user";
 import { getEmailFromPrincipal } from "@/lib/server/auth";
-import { getContainer } from "@/lib/server/cosmos";
+import { COSMOS_CONTAINERS, getContainer } from "@/lib/server/cosmos";
 
 export async function getUserById(userId: string): Promise<User | null> {
-  const { resource } = await getContainer().item(userId, userId).read<User>();
+  const { resource } = await getContainer(COSMOS_CONTAINERS.users)
+    .item(userId, userId)
+    .read<User>();
   return resource ?? null;
 }
 
@@ -24,7 +26,7 @@ async function findSeededUserByLoginName(
   email: string,
 ): Promise<User | null> {
   const emailLocal = email.split("@")[0].toLowerCase();
-  const { resources } = await getContainer()
+  const { resources } = await getContainer(COSMOS_CONTAINERS.users)
     .items.query<User>({
       query:
         "SELECT * FROM c WHERE STARTSWITH(c.userId, 'user-') AND (LOWER(c.displayName) = @name OR LOWER(c.email) = @email OR LOWER(@emailLocal) = LOWER(c.displayName))",
@@ -56,8 +58,12 @@ async function migrateSeededUser(
     updatedAt: now,
   };
 
-  await getContainer().item(seeded.userId, seeded.userId).delete();
-  const { resource } = await getContainer().items.create(migrated);
+  await getContainer(COSMOS_CONTAINERS.users)
+    .item(seeded.userId, seeded.userId)
+    .delete();
+  const { resource } = await getContainer(COSMOS_CONTAINERS.users).items.create(
+    migrated,
+  );
   return resource!;
 }
 
@@ -73,7 +79,7 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
       authProvider: principal.identityProvider,
       updatedAt: now,
     };
-    const { resource } = await getContainer()
+    const { resource } = await getContainer(COSMOS_CONTAINERS.users)
       .item(principal.userId, principal.userId)
       .replace(updated);
     return resource!;
@@ -97,7 +103,9 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
     updatedAt: now,
   };
 
-  const { resource } = await getContainer().items.create(newUser);
+  const { resource } = await getContainer(COSMOS_CONTAINERS.users).items.create(
+    newUser,
+  );
   return resource!;
 }
 
@@ -114,7 +122,7 @@ export async function updateUser(
     updatedAt: new Date().toISOString(),
   };
 
-  const { resource } = await getContainer()
+  const { resource } = await getContainer(COSMOS_CONTAINERS.users)
     .item(userId, userId)
     .replace(updated);
   return resource!;
