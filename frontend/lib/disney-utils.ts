@@ -37,5 +37,23 @@ export function formatJstTime(iso?: string): string {
   });
 }
 
+export function formatJstDateLabel(dateStr: string): string {
+  const date = new Date(`${dateStr}T12:00:00+09:00`);
+  return date.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    timeZone: "Asia/Tokyo",
+  });
+}
+
+export const crowdLevelBgColors: Record<CrowdLevel, string> = {
+  low: "bg-emerald-500/20 hover:bg-emerald-500/30",
+  moderate: "bg-amber-500/20 hover:bg-amber-500/30",
+  high: "bg-orange-500/20 hover:bg-orange-500/30",
+  extreme: "bg-rose-500/20 hover:bg-rose-500/30",
+};
+
 export const disneyPanelClass =
   "rounded-2xl border border-white/10 bg-indigo-950/50 shadow-xl shadow-black/20 backdrop-blur-xl";

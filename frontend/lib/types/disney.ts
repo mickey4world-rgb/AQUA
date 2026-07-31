@@ -51,6 +51,8 @@ export interface DisneyAdvice {
   touringPlan: TouringRecommendation[];
   summary: string;
   fetchedAt: string;
+  targetDate?: string;
+  prediction?: DisneyDatePrediction;
   aiInsight?: DisneyAiInsight;
 }
 
@@ -65,4 +67,42 @@ export interface DisneyAiInsight {
   confidence?: "high" | "medium" | "low";
   generatedAt?: string;
   reason?: string;
+}
+
+export interface DisneyDatePrediction {
+  date: string;
+  park: DisneyParkKey;
+  parkName: string;
+  crowdLevel: CrowdLevel;
+  crowdLabel: string;
+  crowdScore: number;
+  estimatedWait: number;
+  factors: string[];
+  description: string;
+  visitTips: string[];
+  isToday: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  mode: "live" | "forecast";
+}
+
+export interface DisneyCalendarDay {
+  date: string;
+  crowdLevel: CrowdLevel;
+  crowdLabel: string;
+  estimatedWait: number;
+  isToday: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  factors: string[];
+}
+
+export interface DisneyCalendarMonth {
+  park: DisneyParkKey;
+  year: number;
+  month: number;
+  monthLabel: string;
+  startWeekday: number;
+  days: DisneyCalendarDay[];
+  today: string;
 }

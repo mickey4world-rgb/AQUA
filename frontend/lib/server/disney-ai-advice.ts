@@ -21,6 +21,7 @@ type AiPayload = {
 };
 
 function buildPrompt(advice: DisneyAdvice): string {
+  const isForecast = advice.prediction?.mode === "forecast";
   const topWaits = advice.touringPlan
     .slice(0, 8)
     .map(
@@ -28,6 +29,18 @@ function buildPrompt(advice: DisneyAdvice): string {
         `- ${item.attraction.nameJa ?? item.attraction.name}: ${item.attraction.waitTime ?? "—"}分 (${item.priority})`,
     )
     .join("\n");
+
+  const forecastContext = isForecast
+    ? [
+        `来園予定日: ${advice.targetDate}`,
+        `予測混雑: ${crowdLevelLabels[advice.crowdLevel]}`,
+        `予測要因: ${advice.prediction?.factors.join("、") ?? "—"}`,
+        `予測平均待ち: 約${advice.prediction?.estimatedWait ?? "—"}分`,
+        "",
+        "来園日アドバイス:",
+        ...(advice.prediction?.visitTips ?? []).map((line) => `- ${line}`),
+      ].join("\n")
+    : "";
 
   return [
     "あなたは東京ディズニーリゾートの来園アドバイザーです。",
@@ -37,14 +50,20 @@ function buildPrompt(advice: DisneyAdvice): string {
     `混雑: ${crowdLevelLabels[advice.crowdLevel]}`,
     advice.summary,
     "",
+    isForecast
+      ? "※未来日の予測モードです。リアルタイム待ち時間はありません。"
+      : "",
+    isForecast ? forecastContext : "",
+    "",
     "時間帯アドバイス:",
     advice.timeAdvice.map((line) => `- ${line}`).join("\n"),
     "",
     "時期アドバイス:",
     advice.seasonalAdvice.map((line) => `- ${line}`).join("\n"),
     "",
-    "主要アトラクション待ち時間:",
-    topWaits,
+    ...(isForecast
+      ? []
+      : ["主要アトラクション待ち時間:", topWaits || "—", ""]),
     "",
     "出力JSON:",
     "{",
