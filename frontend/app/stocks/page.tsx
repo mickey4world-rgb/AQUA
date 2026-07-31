@@ -5,6 +5,7 @@ import StockWatchDetail from "@/components/stocks/StockWatchDetail";
 import StockWatchForm from "@/components/stocks/StockWatchForm";
 import StockWatchList from "@/components/stocks/StockWatchList";
 import StocksPageShell from "@/components/stocks/StocksPageShell";
+import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import { sortStockWatches, type StockSortKey } from "@/lib/stock-utils";
 import type { StockWatchWithAdvice } from "@/lib/types/stock";
 
@@ -17,6 +18,7 @@ export default function StocksPage() {
   );
   const [detailLoading, setDetailLoading] = useState(false);
   const [sortKey, setSortKey] = useState<StockSortKey>("registered");
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
 
   const sortedWatches = useMemo(
     () => sortStockWatches(watches, sortKey),
@@ -82,16 +84,16 @@ export default function StocksPage() {
 
   return (
     <StocksPageShell>
-      <main className="mx-auto max-w-6xl px-6 py-10">
+      <main className={PAGE_MAIN_CLASS}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/80">
               Global Portfolio
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
               保有株ダッシュボード
             </h1>
-            <p className="mt-2 max-w-2xl text-slate-400">
+            <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
               米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と AI
               売買アドバイスを確認できます。
             </p>
@@ -111,16 +113,28 @@ export default function StocksPage() {
             </div>
           ) : (
             <div className="grid gap-6 lg:grid-cols-5">
-              <div className="lg:col-span-2">
+              <div className={`lg:col-span-2 ${mobileView === "detail" ? "hidden lg:block" : ""}`}>
                 <StockWatchList
                   watches={sortedWatches}
                   selectedId={selectedId}
                   sortKey={sortKey}
                   onSortChange={setSortKey}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setMobileView("detail");
+                  }}
                 />
               </div>
-              <div className="lg:col-span-3">
+              <div className={`lg:col-span-3 ${mobileView === "list" ? "hidden lg:block" : ""}`}>
+                {mobileView === "detail" && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileView("list")}
+                    className="mb-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-300 lg:hidden"
+                  >
+                    ← 一覧に戻る
+                  </button>
+                )}
                 {selectedDetail ? (
                   <StockWatchDetail
                     watch={selectedDetail}
@@ -128,12 +142,12 @@ export default function StocksPage() {
                     onDelete={handleDelete}
                   />
                 ) : (
-                  <div className="flex min-h-[28rem] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center">
+                  <div className="flex min-h-[20rem] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center lg:min-h-[28rem]">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 text-2xl">
                       🌐
                     </div>
                     <p className="text-sm text-slate-400">
-                      左の一覧から銘柄を選択すると、詳細情報が表示されます。
+                      一覧から銘柄を選択すると、詳細情報が表示されます。
                     </p>
                   </div>
                 )}

@@ -7,6 +7,11 @@ import DisneyCalendar from "@/components/disney/DisneyCalendar";
 import DisneyPageShell from "@/components/disney/DisneyPageShell";
 import WaitTimeList from "@/components/disney/WaitTimeList";
 import { crowdLevelColors, formatJstDateLabel } from "@/lib/disney-utils";
+import {
+  getAdaptiveRefreshMs,
+  PAGE_MAIN_CLASS,
+  useMobileProfile,
+} from "@/lib/mobile-utils";
 import type {
   AttractionWait,
   DisneyAdvice,
@@ -24,7 +29,7 @@ type WaitResponse = {
   attractions: AttractionWait[];
 };
 
-const REFRESH_MS = 90_000;
+const BASE_REFRESH_MS = 90_000;
 
 function getJstTodayClient(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
@@ -32,6 +37,8 @@ function getJstTodayClient(): string {
 
 export default function DisneyPage() {
   const today = useMemo(() => getJstTodayClient(), []);
+  const mobileProfile = useMobileProfile();
+  const refreshMs = getAdaptiveRefreshMs(BASE_REFRESH_MS, mobileProfile);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
   const [selectedDate, setSelectedDate] = useState(today);
   const [resortStatus, setResortStatus] = useState<DisneyResortStatus | null>(null);
@@ -51,9 +58,10 @@ export default function DisneyPage() {
     async (selectedPark: DisneyParkKey, date: string) => {
       setLoading(true);
       const dateQuery = date !== today ? `&date=${date}` : "";
+      const aiQuery = mobileProfile.saveData ? "" : "&ai=1";
       const [waitsRes, adviceRes] = await Promise.all([
         fetch(`/api/disney/waits?park=${selectedPark}${dateQuery}`),
-        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}&ai=1`),
+        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}${aiQuery}`),
       ]);
 
       if (waitsRes.ok) setWaitData(await waitsRes.json());
@@ -61,7 +69,7 @@ export default function DisneyPage() {
       setLoading(false);
       setAdviceLoading(false);
     },
-    [today],
+    [today, mobileProfile.saveData],
   );
 
   const refreshAll = useCallback(async () => {
@@ -74,9 +82,9 @@ export default function DisneyPage() {
   useEffect(() => {
     refreshAll();
     if (!isLiveDay) return;
-    const timer = setInterval(refreshAll, REFRESH_MS);
+    const timer = setInterval(refreshAll, refreshMs);
     return () => clearInterval(timer);
-  }, [refreshAll, isLiveDay]);
+  }, [refreshAll, isLiveDay, refreshMs]);
 
   useEffect(() => {
     setAdviceLoading(true);
@@ -97,18 +105,21 @@ export default function DisneyPage() {
 
   return (
     <DisneyPageShell>
-      <main className="mx-auto max-w-6xl px-6 py-10">
+      <main className={PAGE_MAIN_CLASS}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-300/80">
               Tokyo Disney Resort
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
               混雑・待ち時間ダッシュボード
             </h1>
-            <p className="mt-2 max-w-2xl text-slate-400">
+            <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
               リアルタイム混雑とカレンダー予測（最大6か月先）で来園計画を立てられます。
-              {isLiveDay ? ` ${REFRESH_MS / 1000}秒ごとに自動更新。` : " 未来日は予測モードです。"}
+              {isLiveDay
+                ? ` ${Math.round(refreshMs / 1000)}秒ごとに自動更新。`
+                : " 未来日は予測モードです。"}
+              {mobileProfile.saveData && isLiveDay && " 節約モード: AI更新なし。"}
             </p>
           </div>
           <button
@@ -147,19 +158,22 @@ export default function DisneyPage() {
           </div>
         )}
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           {(["tdl", "tds"] as const).map((key) => (
             <button
               key={key}
               type="button"
               onClick={() => setPark(key)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              className={`rounded-full px-4 py-2.5 text-sm font-medium transition ${
                 park === key
                   ? "bg-gradient-to-r from-fuchsia-500 to-sky-500 text-white"
                   : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
               }`}
             >
-              {key === "tdl" ? "東京ディズニーランド" : "東京ディズニーシー"}
+              <span className="sm:hidden">{key === "tdl" ? "ランド" : "シー"}</span>
+              <span className="hidden sm:inline">
+                {key === "tdl" ? "東京ディズニーランド" : "東京ディズニーシー"}
+              </span>
             </button>
           ))}
         </div>

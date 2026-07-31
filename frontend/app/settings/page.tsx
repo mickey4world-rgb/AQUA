@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Header from "@/components/Header";
-import type { User } from "@/lib/types/user";
+import AppPageShell from "@/components/layout/AppPageShell";
 import LoginButtons from "@/components/LoginButtons";
+import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
+import type { User } from "@/lib/types/user";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -59,78 +60,54 @@ export default function SettingsPage() {
     setSaving(false);
   }
 
-  if (loading) {
-    return (
-      <>
-        <Header />
-        <main className="mx-auto max-w-lg px-6 py-10">
-          <p className="text-zinc-500">読み込み中...</p>
-        </main>
-      </>
-    );
-  }
-
-  if (!user) {
-    return (
-      <>
-        <Header />
-        <main className="mx-auto max-w-lg px-6 py-10">
-          <h1 className="text-2xl font-bold text-zinc-900">ユーザー設定</h1>
-          <p className="mt-4 text-zinc-600">ログインが必要です。</p>
-          <LoginButtons redirectTo="/settings" className="mt-4" />
-        </main>
-      </>
-    );
-  }
-
   return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-lg px-6 py-10">
-        <h1 className="text-2xl font-bold text-zinc-900">ユーザー設定</h1>
-        <p className="mt-2 text-sm text-zinc-500">
-          全アプリ共通のプロファイル設定
-        </p>
+    <AppPageShell theme="portal">
+      <main className={`${PAGE_MAIN_CLASS} max-w-lg`}>
+        <h1 className="text-2xl font-bold text-white sm:text-3xl">ユーザー設定</h1>
+        <p className="mt-2 text-sm text-slate-400">全アプリ共通のプロファイル設定</p>
 
-        <form onSubmit={handleSave} className="mt-8 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-zinc-700">
-              表示名
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            />
+        {loading ? (
+          <p className="mt-8 text-slate-400">読み込み中...</p>
+        ) : !user ? (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <p className="text-slate-300">ログインが必要です。</p>
+            <LoginButtons redirectTo="/settings" className="mt-4" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-zinc-700">
-              通知先メール
-            </label>
-            <input
-              type="email"
-              value={notifyEmail}
-              onChange={(e) => setNotifyEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-            <p>認証プロバイダ: {user.authProvider}</p>
-            <p>月次トークン上限: {user.monthlyTokenLimit.toLocaleString()}</p>
-          </div>
-          {message && (
-            <p className="text-sm text-emerald-700">{message}</p>
-          )}
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {saving ? "保存中..." : "保存"}
-          </button>
-        </form>
+        ) : (
+          <form onSubmit={handleSave} className="mt-8 space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-300">表示名</label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-base text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300">通知先メール</label>
+              <input
+                type="email"
+                value={notifyEmail}
+                onChange={(e) => setNotifyEmail(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-base text-white"
+              />
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-slate-400">
+              <p>認証プロバイダ: {user.authProvider}</p>
+              <p className="mt-1">月次トークン上限: {user.monthlyTokenLimit.toLocaleString()}</p>
+            </div>
+            {message && <p className="text-sm text-emerald-300">{message}</p>}
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-xl bg-gradient-to-r from-cyan-500 via-teal-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 sm:w-auto"
+            >
+              {saving ? "保存中..." : "保存"}
+            </button>
+          </form>
+        )}
       </main>
-    </>
+    </AppPageShell>
   );
 }

@@ -8,6 +8,7 @@ import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
 import UsageHistory from "@/components/costs/UsageHistory";
 import type { CostDashboard } from "@/lib/types/analytics";
+import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 
 function currentMonthParam(): string {
   const now = new Date();
@@ -45,13 +46,13 @@ export default function CostsPage() {
 
   return (
     <CostsPageShell>
-      <main className="mx-auto max-w-6xl px-6 py-10">
+      <main className={PAGE_MAIN_CLASS}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-300/80">
               Usage Analytics
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
