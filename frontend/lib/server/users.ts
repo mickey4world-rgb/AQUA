@@ -9,14 +9,30 @@ export async function getUserById(userId: string): Promise<User | null> {
   return resource ?? null;
 }
 
+function loginNameFromPrincipal(
+  principal: ClientPrincipal,
+  email: string,
+): string {
+  if (principal.userDetails.includes("@")) {
+    return email.split("@")[0];
+  }
+  return principal.userDetails;
+}
+
 async function findSeededUserByLoginName(
   loginName: string,
+  email: string,
 ): Promise<User | null> {
+  const emailLocal = email.split("@")[0].toLowerCase();
   const { resources } = await getContainer()
     .items.query<User>({
       query:
-        "SELECT * FROM c WHERE STARTSWITH(c.userId, 'user-') AND LOWER(c.displayName) = LOWER(@name)",
-      parameters: [{ name: "@name", value: loginName }],
+        "SELECT * FROM c WHERE STARTSWITH(c.userId, 'user-') AND (LOWER(c.displayName) = @name OR LOWER(c.email) = @email OR LOWER(@emailLocal) = LOWER(c.displayName))",
+      parameters: [
+        { name: "@name", value: loginName.toLowerCase() },
+        { name: "@email", value: email.toLowerCase() },
+        { name: "@emailLocal", value: emailLocal },
+      ],
     })
     .fetchAll();
   return resources[0] ?? null;
@@ -63,7 +79,8 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
     return resource!;
   }
 
-  const seeded = await findSeededUserByLoginName(principal.userDetails);
+  const loginName = loginNameFromPrincipal(principal, email);
+  const seeded = await findSeededUserByLoginName(loginName, email);
   if (seeded) {
     return migrateSeededUser(seeded, principal, email, now);
   }

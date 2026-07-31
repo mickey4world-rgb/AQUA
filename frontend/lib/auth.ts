@@ -7,8 +7,11 @@ export async function getClientPrincipal(): Promise<ClientPrincipal | null> {
   return data.clientPrincipal;
 }
 
-export function loginUrl(provider: "github" | "aad" = "github"): string {
-  return `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent("/")}`;
+export function loginUrl(
+  provider: "github" | "aad" = "github",
+  redirectTo = "/",
+): string {
+  return `/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(redirectTo)}`;
 }
 
 export function logoutUrl(): string {

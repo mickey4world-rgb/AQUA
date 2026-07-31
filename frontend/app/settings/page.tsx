@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import type { User } from "@/lib/types/user";
-import { loginUrl } from "@/lib/auth";
+import LoginButtons from "@/components/LoginButtons";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -77,12 +77,7 @@ export default function SettingsPage() {
         <main className="mx-auto max-w-lg px-6 py-10">
           <h1 className="text-2xl font-bold text-zinc-900">ユーザー設定</h1>
           <p className="mt-4 text-zinc-600">ログインが必要です。</p>
-          <a
-            href={loginUrl("github")}
-            className="mt-4 inline-flex rounded-md bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-700"
-          >
-            GitHub でログイン
-          </a>
+          <LoginButtons redirectTo="/settings" className="mt-4" />
         </main>
       </>
     );

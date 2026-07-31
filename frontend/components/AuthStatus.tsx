@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { ClientPrincipal } from "@/lib/types/auth";
 import type { User } from "@/lib/types/user";
-import { getClientPrincipal, loginUrl, logoutUrl } from "@/lib/auth";
+import { getClientPrincipal, logoutUrl } from "@/lib/auth";
+import LoginButtons from "@/components/LoginButtons";
 
 async function syncUser(): Promise<User | null> {
   const res = await fetch("/api/users/me", { method: "POST" });
@@ -61,12 +62,7 @@ export default function AuthStatus() {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4">
         <p className="mb-3 text-sm text-amber-900">未ログインです</p>
-        <a
-          href={loginUrl("github")}
-          className="inline-flex items-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-        >
-          GitHub でログイン
-        </a>
+        <LoginButtons redirectTo="/" />
       </div>
     );
   }
