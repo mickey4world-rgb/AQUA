@@ -13,6 +13,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/costs/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/settings",
       "allowedRoles": ["authenticated"]
     },

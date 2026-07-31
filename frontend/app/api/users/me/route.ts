@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/server/auth";
+import { withApiAccessLog } from "@/lib/server/api-access";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { getUserById, syncUser, updateUser } from "@/lib/server/users";
 import type { UpdateUserRequest } from "@/lib/types/user";
@@ -11,18 +11,17 @@ export async function GET(request: Request) {
     );
   }
 
-  const auth = requireAuth(request.headers.get("x-ms-client-principal"));
-  if (auth instanceof Response) return auth;
+  return withApiAccessLog(request, async (auth) => {
+    const user = await getUserById(auth.userId);
+    if (!user) {
+      return Response.json(
+        { error: "NotFound", message: "ユーザーが登録されていません" },
+        { status: 404 },
+      );
+    }
 
-  const user = await getUserById(auth.userId);
-  if (!user) {
-    return Response.json(
-      { error: "NotFound", message: "ユーザーが登録されていません" },
-      { status: 404 },
-    );
-  }
-
-  return Response.json(user);
+    return Response.json(user);
+  });
 }
 
 export async function PATCH(request: Request) {
@@ -33,35 +32,34 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const auth = requireAuth(request.headers.get("x-ms-client-principal"));
-  if (auth instanceof Response) return auth;
+  return withApiAccessLog(request, async (auth) => {
+    const body = (await request.json()) as UpdateUserRequest;
+    const updates: UpdateUserRequest = {};
 
-  const body = (await request.json()) as UpdateUserRequest;
-  const updates: UpdateUserRequest = {};
+    if (typeof body.displayName === "string" && body.displayName.trim()) {
+      updates.displayName = body.displayName.trim();
+    }
+    if (typeof body.notifyEmail === "string" && body.notifyEmail.includes("@")) {
+      updates.notifyEmail = body.notifyEmail.trim();
+    }
 
-  if (typeof body.displayName === "string" && body.displayName.trim()) {
-    updates.displayName = body.displayName.trim();
-  }
-  if (typeof body.notifyEmail === "string" && body.notifyEmail.includes("@")) {
-    updates.notifyEmail = body.notifyEmail.trim();
-  }
+    if (Object.keys(updates).length === 0) {
+      return Response.json(
+        { error: "BadRequest", message: "更新項目がありません" },
+        { status: 400 },
+      );
+    }
 
-  if (Object.keys(updates).length === 0) {
-    return Response.json(
-      { error: "BadRequest", message: "更新項目がありません" },
-      { status: 400 },
-    );
-  }
+    const user = await updateUser(auth.userId, updates);
+    if (!user) {
+      return Response.json(
+        { error: "NotFound", message: "ユーザーが見つかりません" },
+        { status: 404 },
+      );
+    }
 
-  const user = await updateUser(auth.userId, updates);
-  if (!user) {
-    return Response.json(
-      { error: "NotFound", message: "ユーザーが見つかりません" },
-      { status: 404 },
-    );
-  }
-
-  return Response.json(user);
+    return Response.json(user);
+  });
 }
 
 export async function POST(request: Request) {
@@ -72,9 +70,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const auth = requireAuth(request.headers.get("x-ms-client-principal"));
-  if (auth instanceof Response) return auth;
-
-  const user = await syncUser(auth);
-  return Response.json(user);
+  return withApiAccessLog(request, async (auth) => {
+    const user = await syncUser(auth);
+    return Response.json(user);
+  });
 }
