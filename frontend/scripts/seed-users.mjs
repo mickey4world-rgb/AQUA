@@ -22,10 +22,10 @@ const SEED_USERS = [
   {
     id: "user-aya",
     userId: "user-aya",
-    email: "aya@personal.apps",
+    email: "aya_tink@outlook.com",
     displayName: "Aya",
-    authProvider: "github",
-    notifyEmail: "aya@personal.apps",
+    authProvider: "aad",
+    notifyEmail: "aya_tink@outlook.com",
     monthlyTokenLimit: 100_000,
   },
   {
