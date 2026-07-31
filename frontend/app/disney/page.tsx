@@ -2,16 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CrowdStatusCard from "@/components/disney/CrowdStatusCard";
-import DisneyAdvicePanel from "@/components/disney/DisneyAdvicePanel";
 import DisneyCalendar from "@/components/disney/DisneyCalendar";
+import DisneyChatPanel from "@/components/disney/DisneyChatPanel";
+import DisneyInfoPanel from "@/components/disney/DisneyInfoPanel";
 import DisneyPageShell from "@/components/disney/DisneyPageShell";
 import WaitTimeList from "@/components/disney/WaitTimeList";
 import { crowdLevelColors, formatJstDateLabel } from "@/lib/disney-utils";
-import {
-  getAdaptiveRefreshMs,
-  PAGE_MAIN_CLASS,
-  useMobileProfile,
-} from "@/lib/mobile-utils";
+import { DISNEY_PARKS } from "@/lib/disney-constants";
+import { getAdaptiveRefreshMs, PAGE_MAIN_CLASS, useMobileProfile } from "@/lib/mobile-utils";
 import type {
   AttractionWait,
   DisneyAdvice,
@@ -45,9 +43,9 @@ export default function DisneyPage() {
   const [waitData, setWaitData] = useState<WaitResponse | null>(null);
   const [advice, setAdvice] = useState<DisneyAdvice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [adviceLoading, setAdviceLoading] = useState(true);
 
   const isLiveDay = selectedDate === today;
+  const parkName = DISNEY_PARKS[park].nameJa;
 
   const loadResortStatus = useCallback(async () => {
     const res = await fetch("/api/disney/status");
@@ -58,25 +56,20 @@ export default function DisneyPage() {
     async (selectedPark: DisneyParkKey, date: string) => {
       setLoading(true);
       const dateQuery = date !== today ? `&date=${date}` : "";
-      const aiQuery = mobileProfile.saveData ? "" : "&ai=1";
       const [waitsRes, adviceRes] = await Promise.all([
         fetch(`/api/disney/waits?park=${selectedPark}${dateQuery}`),
-        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}${aiQuery}`),
+        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}`),
       ]);
 
       if (waitsRes.ok) setWaitData(await waitsRes.json());
       if (adviceRes.ok) setAdvice(await adviceRes.json());
       setLoading(false);
-      setAdviceLoading(false);
     },
-    [today, mobileProfile.saveData],
+    [today],
   );
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([
-      loadResortStatus(),
-      loadParkData(park, selectedDate),
-    ]);
+    await Promise.all([loadResortStatus(), loadParkData(park, selectedDate)]);
   }, [loadResortStatus, loadParkData, park, selectedDate]);
 
   useEffect(() => {
@@ -87,7 +80,6 @@ export default function DisneyPage() {
   }, [refreshAll, isLiveDay, refreshMs]);
 
   useEffect(() => {
-    setAdviceLoading(true);
     loadParkData(park, selectedDate);
   }, [park, selectedDate, loadParkData]);
 
@@ -119,7 +111,7 @@ export default function DisneyPage() {
               {isLiveDay
                 ? ` ${Math.round(refreshMs / 1000)}秒ごとに自動更新。`
                 : " 未来日は予測モードです。"}
-              {mobileProfile.saveData && isLiveDay && " 節約モード: AI更新なし。"}
+              {" AI 回り方アドバイスはチャットで質問したときだけ利用します。"}
             </p>
           </div>
           <button
@@ -203,12 +195,13 @@ export default function DisneyPage() {
               mode={waitData?.mode ?? "live"}
               targetDate={selectedDate}
             />
+            <DisneyInfoPanel advice={advice} loading={loading} />
           </div>
           <div className="lg:col-span-3">
-            <DisneyAdvicePanel
-              advice={advice}
-              loading={loading}
-              aiLoading={adviceLoading}
+            <DisneyChatPanel
+              park={park}
+              targetDate={selectedDate}
+              parkName={parkName}
             />
           </div>
         </div>

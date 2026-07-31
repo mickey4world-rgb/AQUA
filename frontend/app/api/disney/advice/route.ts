@@ -1,16 +1,14 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { buildDisneyAdvice } from "@/lib/server/disney-analysis";
-import { enhanceDisneyAdviceWithAi } from "@/lib/server/disney-ai-advice";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request) {
-  return withApiAccessLog(request, async (auth) => {
+  return withApiAccessLog(request, async () => {
     const { searchParams } = new URL(request.url);
     const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;
     const date = searchParams.get("date");
-    const withAi = searchParams.get("ai") === "1";
 
     if (park !== "tdl" && park !== "tds") {
       return Response.json({ error: "Invalid park" }, { status: 400 });
@@ -21,10 +19,7 @@ export async function GET(request: Request) {
     }
 
     try {
-      let advice = await buildDisneyAdvice(park, date ?? undefined);
-      if (withAi) {
-        advice = await enhanceDisneyAdviceWithAi(advice, auth.userId);
-      }
+      const advice = await buildDisneyAdvice(park, date ?? undefined);
       return Response.json(advice);
     } catch (error) {
       return Response.json(

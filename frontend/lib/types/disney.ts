@@ -106,3 +106,8 @@ export interface DisneyCalendarMonth {
   days: DisneyCalendarDay[];
   today: string;
 }
+
+export type DisneyChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};

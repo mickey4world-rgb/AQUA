@@ -24,6 +24,7 @@ function inferFeatureFromPath(path: string, method: string): string {
   }
   if (path.endsWith("/stocks/watches")) return "watches";
   if (path.endsWith("/stocks/lookup")) return "lookup";
+  if (path.endsWith("/disney/chat")) return "chat";
   if (path.endsWith("/disney/advice")) return "advice";
   if (path.endsWith("/disney/waits")) return "waits";
   if (path.endsWith("/disney/status")) return "status";
