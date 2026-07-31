@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const navItems = [
   { href: "/", label: "ダッシュボード" },
-  { href: "/stocks", label: "米国株" },
+  { href: "/stocks", label: "保有株" },
   { href: "/disney", label: "ディズニー" },
   { href: "/costs", label: "コスト" },
   { href: "/settings", label: "設定" },

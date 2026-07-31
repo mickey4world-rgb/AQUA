@@ -1,7 +1,11 @@
+export type StockMarket = "us" | "jp";
+
 export interface StockWatch {
   id: string;
   userId: string;
   ticker: string;
+  market: StockMarket;
+  name?: string;
   buyPrice: number;
   shares: number;
   targetMultiplier: number;
@@ -14,6 +18,8 @@ export interface StockWatch {
 
 export interface CreateStockWatchRequest {
   ticker: string;
+  market?: StockMarket;
+  name?: string;
   buyPrice: number;
   shares?: number;
   targetMultiplier?: number;
@@ -21,6 +27,8 @@ export interface CreateStockWatchRequest {
 }
 
 export interface UpdateStockWatchRequest {
+  name?: string;
+  market?: StockMarket;
   buyPrice?: number;
   shares?: number;
   targetMultiplier?: number;
@@ -30,8 +38,19 @@ export interface UpdateStockWatchRequest {
 
 export type AdviceAction = "hold" | "buy" | "sell" | "watch";
 
+export interface PriceChangeContext {
+  title: string;
+  source?: string;
+  publishedAt?: string;
+  link?: string;
+  kind: "news" | "development";
+}
+
 export interface StockAdvice {
   ticker: string;
+  market: StockMarket;
+  currency: "USD" | "JPY";
+  companyName?: string;
   currentPrice: number;
   previousClose: number;
   changePct: number;
@@ -45,6 +64,7 @@ export interface StockAdvice {
   action: AdviceAction;
   summary: string;
   reasons: string[];
+  priceChangeContext: PriceChangeContext[];
   fetchedAt: string;
 }
 

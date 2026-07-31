@@ -1,7 +1,10 @@
 import { randomUUID } from "crypto";
 import { COSMOS_CONTAINERS, getContainer } from "@/lib/server/cosmos";
+import { resolveStockName } from "@/lib/server/stock-market";
+import { normalizeTicker } from "@/lib/stock-utils";
 import type {
   CreateStockWatchRequest,
+  StockMarket,
   StockWatch,
   UpdateStockWatchRequest,
 } from "@/lib/types/stock";
@@ -38,12 +41,20 @@ export async function createStockWatch(
 ): Promise<StockWatch> {
   const now = new Date().toISOString();
   const targetMultiplier = input.targetMultiplier ?? 1.3;
-  const ticker = input.ticker.trim().toUpperCase();
+  const market: StockMarket = input.market ?? "us";
+  const ticker = normalizeTicker(input.ticker, market);
+  const manualName = input.name?.trim();
+  const name =
+    manualName ||
+    (await resolveStockName(ticker, market).catch(() => null)) ||
+    undefined;
 
   const watch: StockWatch = {
     id: randomUUID(),
     userId,
     ticker,
+    market,
+    name,
     buyPrice: input.buyPrice,
     shares: input.shares ?? 0,
     targetMultiplier,
@@ -69,10 +80,17 @@ export async function updateStockWatch(
   const buyPrice = updates.buyPrice ?? existing.buyPrice;
   const targetMultiplier =
     updates.targetMultiplier ?? existing.targetMultiplier;
+  const market = updates.market ?? existing.market ?? "us";
+  const ticker =
+    updates.market && existing.ticker
+      ? normalizeTicker(existing.ticker, market)
+      : existing.ticker;
 
   const updated: StockWatch = {
     ...existing,
     ...updates,
+    ticker,
+    market,
     buyPrice,
     targetMultiplier,
     targetPrice: buyPrice * targetMultiplier,
