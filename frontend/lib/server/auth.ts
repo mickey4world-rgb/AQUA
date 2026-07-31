@@ -1,29 +1,11 @@
 import type { ClientPrincipal } from "@/lib/types/auth";
+import {
+  getEmailFromPrincipal,
+  parseClientPrincipal,
+} from "@/lib/client-principal";
 import { isAllowedLogin } from "@/lib/allowed-users";
 
-export function parseClientPrincipal(
-  header: string | null,
-): ClientPrincipal | null {
-  if (!header) return null;
-  try {
-    return JSON.parse(Buffer.from(header, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-
-export function getEmailFromPrincipal(principal: ClientPrincipal): string {
-  const emailClaim = principal.claims?.find(
-    (c) => c.typ === "emails" || c.typ.includes("email"),
-  );
-  if (emailClaim?.val) return emailClaim.val;
-
-  if (principal.userDetails.includes("@")) {
-    return principal.userDetails;
-  }
-
-  return `${principal.userDetails}@users.local`;
-}
+export { getEmailFromPrincipal, parseClientPrincipal };
 
 export function requireAuth(
   header: string | null,

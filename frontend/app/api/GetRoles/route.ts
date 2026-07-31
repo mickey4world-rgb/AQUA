@@ -2,7 +2,7 @@ import { isAllowedLogin } from "@/lib/allowed-users";
 import {
   getEmailFromPrincipal,
   parseClientPrincipal,
-} from "@/lib/server/auth";
+} from "@/lib/client-principal";
 
 function resolveRoles(request: Request): string[] {
   const principal = parseClientPrincipal(
