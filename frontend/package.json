@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:users": "node scripts/seed-users.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",

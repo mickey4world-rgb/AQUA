@@ -9,6 +9,42 @@ export async function getUserById(userId: string): Promise<User | null> {
   return resource ?? null;
 }
 
+async function findSeededUserByLoginName(
+  loginName: string,
+): Promise<User | null> {
+  const { resources } = await getContainer()
+    .items.query<User>({
+      query:
+        "SELECT * FROM c WHERE STARTSWITH(c.userId, 'user-') AND LOWER(c.displayName) = LOWER(@name)",
+      parameters: [{ name: "@name", value: loginName }],
+    })
+    .fetchAll();
+  return resources[0] ?? null;
+}
+
+async function migrateSeededUser(
+  seeded: User,
+  principal: ClientPrincipal,
+  email: string,
+  now: string,
+): Promise<User> {
+  const migrated: User = {
+    id: principal.userId,
+    userId: principal.userId,
+    email,
+    displayName: seeded.displayName,
+    authProvider: principal.identityProvider,
+    notifyEmail: seeded.notifyEmail || email,
+    monthlyTokenLimit: seeded.monthlyTokenLimit,
+    createdAt: seeded.createdAt,
+    updatedAt: now,
+  };
+
+  await getContainer().item(seeded.userId, seeded.userId).delete();
+  const { resource } = await getContainer().items.create(migrated);
+  return resource!;
+}
+
 export async function syncUser(principal: ClientPrincipal): Promise<User> {
   const now = new Date().toISOString();
   const email = getEmailFromPrincipal(principal);
@@ -18,7 +54,6 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
     const updated: User = {
       ...existing,
       email,
-      displayName: principal.userDetails,
       authProvider: principal.identityProvider,
       updatedAt: now,
     };
@@ -26,6 +61,11 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
       .item(principal.userId, principal.userId)
       .replace(updated);
     return resource!;
+  }
+
+  const seeded = await findSeededUserByLoginName(principal.userDetails);
+  if (seeded) {
+    return migrateSeededUser(seeded, principal, email, now);
   }
 
   const newUser: User = {
