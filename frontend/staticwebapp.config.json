@@ -5,6 +5,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/stocks/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/settings",
       "allowedRoles": ["authenticated"]
     },
