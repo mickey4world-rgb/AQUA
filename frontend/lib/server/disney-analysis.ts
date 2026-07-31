@@ -1,5 +1,7 @@
 import { crowdLevelLabels } from "@/lib/disney-utils";
+import { getJstToday } from "@/lib/disney-holidays";
 import { DISNEY_PARKS } from "@/lib/disney-constants";
+import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
 import { fetchParkLiveData, fetchParkSchedule } from "@/lib/server/themeparks-api";
 import type {
   AttractionWait,
@@ -102,23 +104,31 @@ export async function buildResortStatus(): Promise<DisneyResortStatus> {
   };
 }
 
-function getJstContext() {
-  const now = new Date();
-  const jst = new Date(
-    now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
-  );
-  const hour = jst.getHours();
+function getJstContext(forDate?: string) {
+  const base = forDate
+    ? new Date(`${forDate}T12:00:00+09:00`)
+    : new Date();
+  const jst = new Date(base.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+  const hour = forDate ? 9 : jst.getHours();
   const day = jst.getDay();
   const month = jst.getMonth() + 1;
   const date = jst.getDate();
   return { hour, day, month, date, jst };
 }
 
-export function buildTimeAdvice(park: DisneyParkKey, crowdLevel: CrowdLevel): string[] {
-  const { hour } = getJstContext();
+export function buildTimeAdvice(
+  park: DisneyParkKey,
+  crowdLevel: CrowdLevel,
+  forDate?: string,
+): string[] {
+  const { hour } = getJstContext(forDate);
   const tips: string[] = [];
 
-  if (hour < 10) {
+  if (forDate && forDate !== getJstToday()) {
+    tips.push("来園日は開園直後〜11時が人気アトラクションの優先時間帯になりやすいです。");
+    tips.push("昼食時間（11:30〜13:30）は待ち時間が伸びやすいため、食事かアトラクションのどちらかに集中しましょう。");
+    tips.push("夕方〜閉園前は再び混雑する日もあるため、必須アトラクションは午前中に済ませるのが安心です。");
+  } else if (hour < 10) {
     tips.push("開園直後は人気アトラクション（美女と野獣、ベイマックス等）を最優先に。");
   } else if (hour < 13) {
     tips.push("午前中はショー・パレード時間帯を避け、アトラクションを効率よく回れます。");
@@ -141,8 +151,8 @@ export function buildTimeAdvice(park: DisneyParkKey, crowdLevel: CrowdLevel): st
   return tips;
 }
 
-export function buildSeasonalAdvice(): string[] {
-  const { day, month } = getJstContext();
+export function buildSeasonalAdvice(forDate?: string): string[] {
+  const { day, month } = getJstContext(forDate);
   const tips: string[] = [];
 
   if (day === 0 || day === 6) {
@@ -210,7 +220,29 @@ export function buildTouringPlan(
     .slice(0, 12);
 }
 
-export async function buildDisneyAdvice(park: DisneyParkKey): Promise<DisneyAdvice> {
+export async function buildDisneyAdvice(
+  park: DisneyParkKey,
+  targetDate?: string,
+): Promise<DisneyAdvice> {
+  const today = getJstToday();
+  const date = targetDate ?? today;
+
+  if (date !== today) {
+    const prediction = predictCrowdForDate(park, date);
+    return {
+      park,
+      parkName: prediction.parkName,
+      crowdLevel: prediction.crowdLevel,
+      timeAdvice: buildTimeAdvice(park, prediction.crowdLevel, date),
+      seasonalAdvice: [...prediction.factors.map((f) => `${f}の傾向`), ...buildSeasonalAdvice(date)],
+      touringPlan: [],
+      summary: prediction.description,
+      fetchedAt: new Date().toISOString(),
+      targetDate: date,
+      prediction,
+    };
+  }
+
   const [attractions, status] = await Promise.all([
     fetchParkLiveData(park),
     buildParkCrowdStatus(park),
@@ -228,6 +260,7 @@ export async function buildDisneyAdvice(park: DisneyParkKey): Promise<DisneyAdvi
     touringPlan,
     summary: `${DISNEY_PARKS[park].nameJa}は現在${status.crowdLabel}（平均待ち ${status.averageWait}分）。今すぐ向かう候補は ${nowCount} 件です。`,
     fetchedAt: new Date().toISOString(),
+    targetDate: today,
   };
 }
 
@@ -237,10 +270,39 @@ function bumpCrowdLevel(level: CrowdLevel): CrowdLevel {
   return order[Math.min(index + 1, order.length - 1)];
 }
 
+export function buildForecastStatus(
+  park: DisneyParkKey,
+  prediction: ReturnType<typeof predictCrowdForDate>,
+): ParkCrowdStatus {
+  return {
+    park,
+    parkName: prediction.parkName,
+    crowdLevel: prediction.crowdLevel,
+    crowdLabel: prediction.crowdLabel,
+    averageWait: prediction.estimatedWait,
+    medianWait: prediction.estimatedWait,
+    operatingCount: 0,
+    highWaitCount: 0,
+    extremeWaitCount: 0,
+    fetchedAt: new Date().toISOString(),
+    isOpen: false,
+  };
+}
+
 export function predictDailyCrowd(
   park: DisneyParkKey,
   status: ParkCrowdStatus,
+  forDate?: string,
 ): { label: string; description: string } {
+  const date = forDate ?? getJstToday();
+  if (date !== getJstToday()) {
+    const prediction = predictCrowdForDate(park, date);
+    return {
+      label: prediction.crowdLabel,
+      description: prediction.description,
+    };
+  }
+
   const { day, month } = getJstContext();
   let predicted = status.crowdLevel;
 

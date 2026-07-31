@@ -3,20 +3,27 @@ import { buildDisneyAdvice } from "@/lib/server/disney-analysis";
 import { enhanceDisneyAdviceWithAi } from "@/lib/server/disney-ai-advice";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function GET(request: Request) {
   const auth = requireAuth(request.headers.get("x-ms-client-principal"));
   if (auth instanceof Response) return auth;
 
   const { searchParams } = new URL(request.url);
   const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;
+  const date = searchParams.get("date");
   const withAi = searchParams.get("ai") === "1";
 
   if (park !== "tdl" && park !== "tds") {
     return Response.json({ error: "Invalid park" }, { status: 400 });
   }
 
+  if (date && !DATE_RE.test(date)) {
+    return Response.json({ error: "Invalid date format (YYYY-MM-DD)" }, { status: 400 });
+  }
+
   try {
-    let advice = await buildDisneyAdvice(park);
+    let advice = await buildDisneyAdvice(park, date ?? undefined);
     if (withAi) {
       advice = await enhanceDisneyAdviceWithAi(advice, auth.userId);
     }

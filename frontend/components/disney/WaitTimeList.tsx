@@ -11,9 +11,32 @@ import type { AttractionWait } from "@/lib/types/disney";
 type WaitTimeListProps = {
   attractions: AttractionWait[];
   loading?: boolean;
+  mode?: "live" | "forecast";
+  targetDate?: string;
 };
 
-export default function WaitTimeList({ attractions, loading }: WaitTimeListProps) {
+export default function WaitTimeList({
+  attractions,
+  loading,
+  mode = "live",
+  targetDate,
+}: WaitTimeListProps) {
+  if (mode === "forecast") {
+    return (
+      <div className={`${disneyPanelClass} p-5`}>
+        <h2 className="text-sm font-semibold text-white">リアルタイム待ち時間</h2>
+        <p className="mt-3 text-sm text-slate-400">
+          {targetDate
+            ? `${targetDate} は未来日のため、リアルタイム待ち時間は表示されません。`
+            : "予測モードのため、リアルタイム待ち時間は表示されません。"}
+        </p>
+        <p className="mt-2 text-sm text-slate-500">
+          カレンダー予測と AI ガイドを参考に来園計画を立ててください。当日は自動的にライブデータに切り替わります。
+        </p>
+      </div>
+    );
+  }
+
   const operating = attractions.filter((item) => item.status === "OPERATING");
 
   return (

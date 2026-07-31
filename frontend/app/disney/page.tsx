@@ -1,67 +1,99 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import CrowdStatusCard from "@/components/disney/CrowdStatusCard";
 import DisneyAdvicePanel from "@/components/disney/DisneyAdvicePanel";
+import DisneyCalendar from "@/components/disney/DisneyCalendar";
 import DisneyPageShell from "@/components/disney/DisneyPageShell";
 import WaitTimeList from "@/components/disney/WaitTimeList";
-import { crowdLevelColors } from "@/lib/disney-utils";
+import { crowdLevelColors, formatJstDateLabel } from "@/lib/disney-utils";
 import type {
   AttractionWait,
   DisneyAdvice,
+  DisneyDatePrediction,
   DisneyParkKey,
   DisneyResortStatus,
   ParkCrowdStatus,
 } from "@/lib/types/disney";
 
 type WaitResponse = {
+  mode: "live" | "forecast";
+  date: string;
   status: ParkCrowdStatus;
-  prediction: { label: string; description: string };
+  prediction: { label: string; description: string } | DisneyDatePrediction;
   attractions: AttractionWait[];
 };
 
 const REFRESH_MS = 90_000;
 
+function getJstTodayClient(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+}
+
 export default function DisneyPage() {
+  const today = useMemo(() => getJstTodayClient(), []);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
+  const [selectedDate, setSelectedDate] = useState(today);
   const [resortStatus, setResortStatus] = useState<DisneyResortStatus | null>(null);
   const [waitData, setWaitData] = useState<WaitResponse | null>(null);
   const [advice, setAdvice] = useState<DisneyAdvice | null>(null);
   const [loading, setLoading] = useState(true);
   const [adviceLoading, setAdviceLoading] = useState(true);
 
+  const isLiveDay = selectedDate === today;
+
   const loadResortStatus = useCallback(async () => {
     const res = await fetch("/api/disney/status");
     if (res.ok) setResortStatus(await res.json());
   }, []);
 
-  const loadParkData = useCallback(async (selectedPark: DisneyParkKey) => {
-    setLoading(true);
-    const [waitsRes, adviceRes] = await Promise.all([
-      fetch(`/api/disney/waits?park=${selectedPark}`),
-      fetch(`/api/disney/advice?park=${selectedPark}&ai=1`),
-    ]);
+  const loadParkData = useCallback(
+    async (selectedPark: DisneyParkKey, date: string) => {
+      setLoading(true);
+      const dateQuery = date !== today ? `&date=${date}` : "";
+      const [waitsRes, adviceRes] = await Promise.all([
+        fetch(`/api/disney/waits?park=${selectedPark}${dateQuery}`),
+        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}&ai=1`),
+      ]);
 
-    if (waitsRes.ok) setWaitData(await waitsRes.json());
-    if (adviceRes.ok) setAdvice(await adviceRes.json());
-    setLoading(false);
-    setAdviceLoading(false);
-  }, []);
+      if (waitsRes.ok) setWaitData(await waitsRes.json());
+      if (adviceRes.ok) setAdvice(await adviceRes.json());
+      setLoading(false);
+      setAdviceLoading(false);
+    },
+    [today],
+  );
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadResortStatus(), loadParkData(park)]);
-  }, [loadResortStatus, loadParkData, park]);
+    await Promise.all([
+      loadResortStatus(),
+      loadParkData(park, selectedDate),
+    ]);
+  }, [loadResortStatus, loadParkData, park, selectedDate]);
 
   useEffect(() => {
     refreshAll();
+    if (!isLiveDay) return;
     const timer = setInterval(refreshAll, REFRESH_MS);
     return () => clearInterval(timer);
-  }, [refreshAll]);
+  }, [refreshAll, isLiveDay]);
 
   useEffect(() => {
     setAdviceLoading(true);
-    loadParkData(park);
-  }, [park, loadParkData]);
+    loadParkData(park, selectedDate);
+  }, [park, selectedDate, loadParkData]);
+
+  const predictionLabel =
+    waitData?.prediction && "label" in waitData.prediction
+      ? waitData.prediction.label
+      : waitData?.prediction && "crowdLabel" in waitData.prediction
+        ? waitData.prediction.crowdLabel
+        : undefined;
+
+  const predictionDescription =
+    waitData?.prediction && "description" in waitData.prediction
+      ? waitData.prediction.description
+      : undefined;
 
   return (
     <DisneyPageShell>
@@ -75,8 +107,8 @@ export default function DisneyPage() {
               混雑・待ち時間ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              ランド・シーのリアルタイム混雑状況、待ち時間、回り方アドバイスを確認できます。
-              {REFRESH_MS / 1000}秒ごとに自動更新。
+              リアルタイム混雑とカレンダー予測（最大6か月先）で来園計画を立てられます。
+              {isLiveDay ? ` ${REFRESH_MS / 1000}秒ごとに自動更新。` : " 未来日は予測モードです。"}
             </p>
           </div>
           <button
@@ -88,7 +120,15 @@ export default function DisneyPage() {
           </button>
         </div>
 
-        {resortStatus && (
+        {!isLiveDay && (
+          <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            選択中: <span className="font-semibold">{formatJstDateLabel(selectedDate)}</span>
+            {" — "}
+            祝日・曜日・季節要因に基づく混雑予測を表示しています。
+          </div>
+        )}
+
+        {isLiveDay && resortStatus && (
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             <div className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.overallCrowdLevel]}`}>
               <p className="text-xs uppercase tracking-wider opacity-80">Resort Overall</p>
@@ -124,18 +164,30 @@ export default function DisneyPage() {
           ))}
         </div>
 
+        <div className="mt-6">
+          <DisneyCalendar
+            park={park}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
+        </div>
+
         <div className="mt-6 grid gap-6 lg:grid-cols-5">
           <div className="space-y-6 lg:col-span-2">
             {waitData && (
               <CrowdStatusCard
                 status={waitData.status}
-                predictionLabel={waitData.prediction.label}
-                predictionDescription={waitData.prediction.description}
+                mode={waitData.mode}
+                targetDate={selectedDate}
+                predictionLabel={predictionLabel}
+                predictionDescription={predictionDescription}
               />
             )}
             <WaitTimeList
               attractions={waitData?.attractions ?? []}
               loading={loading}
+              mode={waitData?.mode ?? "live"}
+              targetDate={selectedDate}
             />
           </div>
           <div className="lg:col-span-3">

@@ -66,27 +66,39 @@ export default function DisneyAdvicePanel({
       </div>
 
       <div className={`${disneyPanelClass} p-5`}>
-        <h2 className="text-sm font-semibold text-white">おすすめ回り方</h2>
-        <ul className="mt-3 space-y-3">
-          {advice.touringPlan.map((item) => (
-            <li
-              key={item.attraction.id}
-              className="rounded-xl border border-white/5 bg-white/5 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium text-white">
-                  {item.attraction.nameJa ?? item.attraction.name}
-                </p>
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${priorityStyles[item.priority]}`}
-                >
-                  {priorityLabels[item.priority]}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-slate-400">{item.reason}</p>
-            </li>
-          ))}
-        </ul>
+        <h2 className="text-sm font-semibold text-white">
+          {advice.prediction?.mode === "forecast" ? "来園日のおすすめ" : "おすすめ回り方"}
+        </h2>
+        {advice.prediction?.mode === "forecast" ? (
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-300">
+            {(advice.prediction.visitTips ?? []).map((tip) => (
+              <li key={tip}>{tip}</li>
+            ))}
+          </ul>
+        ) : advice.touringPlan.length > 0 ? (
+          <ul className="mt-3 space-y-3">
+            {advice.touringPlan.map((item) => (
+              <li
+                key={item.attraction.id}
+                className="rounded-xl border border-white/5 bg-white/5 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium text-white">
+                    {item.attraction.nameJa ?? item.attraction.name}
+                  </p>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${priorityStyles[item.priority]}`}
+                  >
+                    {priorityLabels[item.priority]}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">{item.reason}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-slate-400">リアルタイムデータがありません。</p>
+        )}
       </div>
 
       <div className={`${disneyPanelClass} p-5`}>

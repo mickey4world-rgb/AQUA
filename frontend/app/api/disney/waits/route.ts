@@ -1,7 +1,15 @@
+import { getJstToday } from "@/lib/disney-holidays";
 import { requireAuth } from "@/lib/server/auth";
-import { buildParkCrowdStatus, predictDailyCrowd } from "@/lib/server/disney-analysis";
+import {
+  buildForecastStatus,
+  buildParkCrowdStatus,
+  predictDailyCrowd,
+} from "@/lib/server/disney-analysis";
+import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
 import { fetchParkLiveData } from "@/lib/server/themeparks-api";
 import type { DisneyParkKey } from "@/lib/types/disney";
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: Request) {
   const auth = requireAuth(request.headers.get("x-ms-client-principal"));
@@ -9,12 +17,33 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;
+  const date = searchParams.get("date");
 
   if (park !== "tdl" && park !== "tds") {
     return Response.json({ error: "Invalid park" }, { status: 400 });
   }
 
+  if (date && !DATE_RE.test(date)) {
+    return Response.json({ error: "Invalid date format (YYYY-MM-DD)" }, { status: 400 });
+  }
+
+  const today = getJstToday();
+  const targetDate = date ?? today;
+
   try {
+    if (targetDate !== today) {
+      const prediction = predictCrowdForDate(park, targetDate);
+      const status = buildForecastStatus(park, prediction);
+      return Response.json({
+        park,
+        date: targetDate,
+        mode: "forecast" as const,
+        status,
+        prediction,
+        attractions: [],
+      });
+    }
+
     const [attractions, status] = await Promise.all([
       fetchParkLiveData(park),
       buildParkCrowdStatus(park),
@@ -22,8 +51,10 @@ export async function GET(request: Request) {
 
     return Response.json({
       park,
+      date: today,
+      mode: "live" as const,
       status,
-      prediction: predictDailyCrowd(park, status),
+      prediction: predictDailyCrowd(park, status, today),
       attractions,
     });
   } catch (error) {
