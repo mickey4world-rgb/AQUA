@@ -11,6 +11,7 @@ export const APP_LABELS: Record<AppKey, string> = {
 export const FEATURE_LABELS: Record<string, string> = {
   "stock-analysis": "保有株 AI アドバイス",
   "disney-suggest": "ディズニー AI ガイド",
+  "disney-chat": "ディズニー ミッキーチャット",
   watches: "保有株一覧",
   "watch-detail": "保有株詳細",
   lookup: "銘柄検索",
@@ -25,6 +26,7 @@ export const FEATURE_LABELS: Record<string, string> = {
 export const FEATURE_APP_MAP: Record<string, AppKey> = {
   "stock-analysis": "stocks",
   "disney-suggest": "disney",
+  "disney-chat": "disney",
   watches: "stocks",
   "watch-detail": "stocks",
   lookup: "stocks",
