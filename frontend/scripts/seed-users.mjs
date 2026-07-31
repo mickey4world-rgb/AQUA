@@ -20,6 +20,15 @@ if (!endpoint || !key) {
 
 const SEED_USERS = [
   {
+    id: "user-mickey",
+    userId: "user-mickey",
+    email: "owner@example.invalid",
+    displayName: "Mickey",
+    authProvider: "aad",
+    notifyEmail: "owner@example.invalid",
+    monthlyTokenLimit: 100_000,
+  },
+  {
     id: "user-aya",
     userId: "user-aya",
     email: "member@example.invalid",
