@@ -1,0 +1,41 @@
+import type { CrowdLevel } from "@/lib/types/disney";
+
+export const crowdLevelLabels: Record<CrowdLevel, string> = {
+  low: "空いている",
+  moderate: "やや混雑",
+  high: "混雑",
+  extreme: "大混雑",
+};
+
+export const crowdLevelColors: Record<CrowdLevel, string> = {
+  low: "text-emerald-300 border-emerald-400/30 bg-emerald-500/15",
+  moderate: "text-amber-300 border-amber-400/30 bg-amber-500/15",
+  high: "text-orange-300 border-orange-400/30 bg-orange-500/15",
+  extreme: "text-rose-300 border-rose-400/30 bg-rose-500/15",
+};
+
+export function waitTimeColor(minutes: number | null): string {
+  if (minutes === null) return "text-slate-500";
+  if (minutes <= 20) return "text-emerald-400";
+  if (minutes <= 45) return "text-amber-400";
+  if (minutes <= 75) return "text-orange-400";
+  return "text-rose-400";
+}
+
+export function formatWaitTime(minutes: number | null): string {
+  if (minutes === null) return "—";
+  if (minutes <= 0) return "待ちなし";
+  return `${minutes}分`;
+}
+
+export function formatJstTime(iso?: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Tokyo",
+  });
+}
+
+export const disneyPanelClass =
+  "rounded-2xl border border-white/10 bg-indigo-950/50 shadow-xl shadow-black/20 backdrop-blur-xl";

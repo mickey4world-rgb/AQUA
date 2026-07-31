@@ -21,7 +21,7 @@ export default function Home() {
         <section className="mt-10 grid gap-4 sm:grid-cols-3">
           {[
             { title: "保有株", desc: "米国株・日本株のウォッチと売買アドバイス", href: "/stocks" },
-            { title: "ディズニー", desc: "パーク予定・チケット管理", href: "/disney" },
+            { title: "ディズニー", desc: "混雑状況・待ち時間・回り方アドバイス", href: "/disney" },
             { title: "コスト", desc: "AI トークン使用量レポート", href: "/costs" },
           ].map((card) => (
             <a
