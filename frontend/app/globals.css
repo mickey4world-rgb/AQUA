@@ -24,3 +24,160 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes home-aurora-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(3%, -2%) scale(1.05);
+  }
+}
+
+@keyframes home-grid-scroll {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 64px;
+  }
+}
+
+@keyframes home-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes home-scan {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes home-particle-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateY(-18px) scale(1.4);
+    opacity: 0.8;
+  }
+}
+
+@keyframes home-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.5);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 6px rgba(103, 232, 249, 0);
+  }
+}
+
+.home-aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  animation: home-aurora-drift 14s ease-in-out infinite;
+}
+
+.home-aurora-a {
+  top: -8rem;
+  left: -6rem;
+  width: 28rem;
+  height: 28rem;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.home-aurora-b {
+  top: 20%;
+  right: -8rem;
+  width: 32rem;
+  height: 32rem;
+  background: rgba(56, 189, 248, 0.1);
+  animation-delay: -4s;
+}
+
+.home-aurora-c {
+  bottom: -10rem;
+  left: 30%;
+  width: 26rem;
+  height: 26rem;
+  background: rgba(139, 92, 246, 0.12);
+  animation-delay: -8s;
+}
+
+.home-grid {
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: home-grid-scroll 8s linear infinite;
+  mask-image: linear-gradient(to bottom, black 20%, transparent 85%);
+}
+
+.home-orbit {
+  position: absolute;
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  border-radius: 9999px;
+  animation: home-orbit-spin 40s linear infinite;
+}
+
+.home-orbit-1 {
+  top: 12%;
+  right: 8%;
+  width: 12rem;
+  height: 12rem;
+}
+
+.home-orbit-2 {
+  bottom: 18%;
+  left: 6%;
+  width: 16rem;
+  height: 16rem;
+  animation-duration: 55s;
+  animation-direction: reverse;
+}
+
+.home-orbit-3 {
+  top: 45%;
+  left: 45%;
+  width: 22rem;
+  height: 22rem;
+  animation-duration: 70s;
+  opacity: 0.4;
+}
+
+.home-scanline {
+  animation: home-scan 6s ease-in-out infinite;
+}
+
+.home-particle {
+  width: 3px;
+  height: 3px;
+  animation: home-particle-float ease-in-out infinite;
+}
+
+.home-pulse-dot {
+  animation: home-pulse 2s ease-in-out infinite;
+}

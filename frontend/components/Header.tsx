@@ -9,13 +9,14 @@ const navItems = [
 ];
 
 type HeaderProps = {
-  variant?: "default" | "global" | "disney";
+  variant?: "default" | "global" | "disney" | "portal";
 };
 
 export default function Header({ variant = "default" }: HeaderProps) {
   const isGlobal = variant === "global";
   const isDisney = variant === "disney";
-  const isThemed = isGlobal || isDisney;
+  const isPortal = variant === "portal";
+  const isThemed = isGlobal || isDisney || isPortal;
 
   return (
     <header
@@ -37,7 +38,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
               ? "bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-transparent"
               : isDisney
                 ? "bg-gradient-to-r from-fuchsia-300 to-sky-300 bg-clip-text text-transparent"
-                : "text-zinc-900"
+                : isPortal
+                  ? "bg-gradient-to-r from-emerald-300 via-cyan-300 to-violet-300 bg-clip-text text-transparent"
+                  : "text-zinc-900"
           }`}
         >
           Personal Apps
@@ -49,10 +52,13 @@ export default function Header({ variant = "default" }: HeaderProps) {
               href={item.href}
               className={
                 isThemed
-                  ? item.href === (isDisney ? "/disney" : "/stocks")
+                  ? item.href ===
+                      (isDisney ? "/disney" : isPortal ? "/" : "/stocks")
                     ? isDisney
                       ? "font-medium text-fuchsia-300"
-                      : "font-medium text-cyan-300"
+                      : isPortal
+                        ? "font-medium text-emerald-300"
+                        : "font-medium text-cyan-300"
                     : "text-slate-400 transition hover:text-slate-100"
                   : "text-zinc-600 hover:text-zinc-900"
               }
