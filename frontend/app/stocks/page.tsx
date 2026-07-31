@@ -103,11 +103,7 @@ export default function StocksPage() {
           )}
         </div>
 
-        <div className="mt-8">
-          <StockWatchForm onCreated={loadWatches} />
-        </div>
-
-        <section className="mt-10">
+        <section className="mt-8">
           {loading ? (
             <div className="flex items-center gap-3 text-sm text-slate-400">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-300" />
@@ -144,6 +140,19 @@ export default function StocksPage() {
               </div>
             </div>
           )}
+        </section>
+
+        <section className="mt-12 border-t border-white/10 pt-10">
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/70">
+              Register
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-white">銘柄を追加</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              新しいウォッチ銘柄を登録します。日常の確認は上の一覧・詳細から行えます。
+            </p>
+          </div>
+          <StockWatchForm onCreated={loadWatches} />
         </section>
       </main>
     </StocksPageShell>
