@@ -8,7 +8,7 @@ export default function Home() {
       <main className="mx-auto max-w-5xl px-6 py-10">
         <h1 className="text-2xl font-bold text-zinc-900">ダッシュボード</h1>
         <p className="mt-2 text-zinc-600">
-          個人向け統合アプリ — 認証・米国株・ディズニー・コストレポート
+          個人向け統合アプリ — 認証・保有株・ディズニー・コストレポート
         </p>
 
         <section className="mt-8 max-w-lg">
@@ -20,7 +20,7 @@ export default function Home() {
 
         <section className="mt-10 grid gap-4 sm:grid-cols-3">
           {[
-            { title: "米国株", desc: "株価ウォッチ・目標株価アラート", href: "/stocks" },
+            { title: "保有株", desc: "米国株・日本株のウォッチと売買アドバイス", href: "/stocks" },
             { title: "ディズニー", desc: "パーク予定・チケット管理", href: "/disney" },
             { title: "コスト", desc: "AI トークン使用量レポート", href: "/costs" },
           ].map((card) => (

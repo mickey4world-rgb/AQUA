@@ -1,7 +1,14 @@
 import YahooFinance from "yahoo-finance2";
+import {
+  fetchPriceChangeContext,
+  resolveStockName,
+} from "@/lib/server/stock-market";
+import { formatPrice, marketCurrency } from "@/lib/stock-utils";
 import type { StockAdvice, StockWatch } from "@/lib/types/stock";
 
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({
+  suppressNotices: ["yahooSurvey", "ripHistorical"],
+});
 
 function average(values: number[]): number {
   if (values.length === 0) return 0;
@@ -9,14 +16,22 @@ function average(values: number[]): number {
 }
 
 export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
+  const market = watch.market ?? "us";
+  const currency = marketCurrency(market);
   const end = new Date();
   const start = new Date();
   start.setMonth(start.getMonth() - 3);
 
-  const history = await yahooFinance.historical(watch.ticker, {
-    period1: start,
-    period2: end,
-  });
+  const [history, priceChangeContext, companyName] = await Promise.all([
+    yahooFinance.historical(watch.ticker, {
+      period1: start,
+      period2: end,
+    }),
+    fetchPriceChangeContext(watch.ticker, market).catch(() => []),
+    watch.name
+      ? Promise.resolve(watch.name)
+      : resolveStockName(watch.ticker, market).catch(() => null),
+  ]);
 
   if (!history || history.length < 2) {
     throw new Error(`${watch.ticker} の株価データを取得できませんでした`);
@@ -47,10 +62,12 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     reasons.push("5日移動平均が25日移動平均を下回っており、短期下降トレンドです。");
   }
 
+  const targetLabel = formatPrice(watch.targetPrice, market);
+
   if (currentPrice >= watch.targetPrice) {
     action = "sell";
     reasons.push(
-      `目標株価 ${watch.targetPrice.toFixed(2)} USD に到達しました。利確（売り）を検討してください。`,
+      `目標株価 ${targetLabel} に到達しました。利確（売り）を検討してください。`,
     );
   } else if (distanceToTargetPct <= 5) {
     action = "sell";
@@ -84,10 +101,15 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     watch: "様子見",
   }[action];
 
-  const summary = `${watch.ticker}: ${actionLabel}（${currentPrice.toFixed(2)} USD / 損益 ${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(1)}%）`;
+  const displayName = companyName ?? watch.ticker;
+  const priceLabel = formatPrice(currentPrice, market);
+  const summary = `${displayName} (${watch.ticker}): ${actionLabel}（${priceLabel} / 損益 ${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(1)}%）`;
 
   return {
     ticker: watch.ticker,
+    market,
+    currency,
+    companyName: companyName ?? undefined,
     currentPrice,
     previousClose,
     changePct,
@@ -101,6 +123,7 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     action,
     summary,
     reasons,
+    priceChangeContext,
     fetchedAt: new Date().toISOString(),
   };
 }
