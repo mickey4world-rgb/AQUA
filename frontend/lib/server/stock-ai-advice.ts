@@ -124,8 +124,7 @@ export async function enhanceStockAdviceWithAi(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      temperature: 0.4,
-      max_tokens: 700,
+      max_completion_tokens: 1200,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -147,12 +146,13 @@ export async function enhanceStockAdviceWithAi(
 
     const payload = parseAiResponse(content);
     const usage = completion.usage;
+    const modelUsed = completion.model ?? model;
 
     if (usage) {
       await recordTokenUsage({
         userId,
         feature: "stock-analysis",
-        model,
+        model: modelUsed,
         promptTokens: usage.prompt_tokens ?? 0,
         completionTokens: usage.completion_tokens ?? 0,
         requestId: completion.id,
@@ -163,7 +163,7 @@ export async function enhanceStockAdviceWithAi(
       ...advice,
       aiInsight: {
         available: true,
-        model,
+        model: modelUsed,
         headline: payload.headline,
         commentary: payload.commentary,
         actionRationale: payload.actionRationale,
