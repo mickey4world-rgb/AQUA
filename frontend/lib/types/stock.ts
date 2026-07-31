@@ -46,6 +46,19 @@ export interface PriceChangeContext {
   kind: "news" | "development";
 }
 
+export interface AiStockInsight {
+  available: boolean;
+  model?: string;
+  headline?: string;
+  commentary?: string;
+  actionRationale?: string;
+  risks?: string[];
+  catalysts?: string[];
+  confidence?: "high" | "medium" | "low";
+  generatedAt?: string;
+  reason?: string;
+}
+
 export interface StockAdvice {
   ticker: string;
   market: StockMarket;
@@ -65,6 +78,7 @@ export interface StockAdvice {
   summary: string;
   reasons: string[];
   priceChangeContext: PriceChangeContext[];
+  aiInsight?: AiStockInsight;
   fetchedAt: string;
 }
 

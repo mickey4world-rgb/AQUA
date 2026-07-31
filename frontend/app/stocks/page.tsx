@@ -12,16 +12,15 @@ export default function StocksPage() {
   const [watches, setWatches] = useState<StockWatchWithAdvice[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<StockWatchWithAdvice | null>(
+    null,
+  );
+  const [detailLoading, setDetailLoading] = useState(false);
   const [sortKey, setSortKey] = useState<StockSortKey>("registered");
 
   const sortedWatches = useMemo(
     () => sortStockWatches(watches, sortKey),
     [watches, sortKey],
-  );
-
-  const selectedWatch = useMemo(
-    () => sortedWatches.find((watch) => watch.id === selectedId) ?? null,
-    [sortedWatches, selectedId],
   );
 
   const loadWatches = useCallback(async () => {
@@ -44,6 +43,37 @@ export default function StocksPage() {
     loadWatches();
   }, [loadWatches]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedDetail(null);
+      return;
+    }
+    setSelectedDetail(sortedWatches.find((watch) => watch.id === selectedId) ?? null);
+  }, [selectedId, sortedWatches]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+
+    let cancelled = false;
+    setDetailLoading(true);
+
+    fetch(`/api/stocks/watches/${selectedId}?ai=1`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as StockWatchWithAdvice;
+      })
+      .then((detail) => {
+        if (!cancelled && detail) setSelectedDetail(detail);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   async function handleDelete(id: string) {
     if (!confirm("この銘柄を削除しますか？")) return;
     await fetch(`/api/stocks/watches/${id}`, { method: "DELETE" });
@@ -62,7 +92,8 @@ export default function StocksPage() {
               保有株ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と売買アドバイスを確認できます。
+              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と AI
+              売買アドバイスを確認できます。
             </p>
           </div>
           {!loading && sortedWatches.length > 0 && (
@@ -94,8 +125,12 @@ export default function StocksPage() {
                 />
               </div>
               <div className="lg:col-span-3">
-                {selectedWatch ? (
-                  <StockWatchDetail watch={selectedWatch} onDelete={handleDelete} />
+                {selectedDetail ? (
+                  <StockWatchDetail
+                    watch={selectedDetail}
+                    aiLoading={detailLoading}
+                    onDelete={handleDelete}
+                  />
                 ) : (
                   <div className="flex min-h-[28rem] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 text-2xl">
