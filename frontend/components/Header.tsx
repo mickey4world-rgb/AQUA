@@ -9,14 +9,33 @@ const navItems = [
 ];
 
 type HeaderProps = {
-  variant?: "default" | "global" | "disney" | "portal";
+  variant?: "default" | "global" | "disney" | "portal" | "costs";
 };
 
 export default function Header({ variant = "default" }: HeaderProps) {
   const isGlobal = variant === "global";
   const isDisney = variant === "disney";
   const isPortal = variant === "portal";
-  const isThemed = isGlobal || isDisney || isPortal;
+  const isCosts = variant === "costs";
+  const isThemed = isGlobal || isDisney || isPortal || isCosts;
+
+  const activeHref = isDisney
+    ? "/disney"
+    : isPortal
+      ? "/"
+      : isCosts
+        ? "/costs"
+        : isGlobal
+          ? "/stocks"
+          : null;
+
+  const activeClass = isDisney
+    ? "font-medium text-fuchsia-300"
+    : isPortal
+      ? "font-medium text-emerald-300"
+      : isCosts
+        ? "font-medium text-amber-300"
+        : "font-medium text-cyan-300";
 
   return (
     <header
@@ -40,7 +59,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
                 ? "bg-gradient-to-r from-fuchsia-300 to-sky-300 bg-clip-text text-transparent"
                 : isPortal
                   ? "bg-gradient-to-r from-emerald-300 via-cyan-300 to-violet-300 bg-clip-text text-transparent"
-                  : "text-zinc-900"
+                  : isCosts
+                    ? "bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent"
+                    : "text-zinc-900"
           }`}
         >
           Personal Apps
@@ -52,13 +73,8 @@ export default function Header({ variant = "default" }: HeaderProps) {
               href={item.href}
               className={
                 isThemed
-                  ? item.href ===
-                      (isDisney ? "/disney" : isPortal ? "/" : "/stocks")
-                    ? isDisney
-                      ? "font-medium text-fuchsia-300"
-                      : isPortal
-                        ? "font-medium text-emerald-300"
-                        : "font-medium text-cyan-300"
+                  ? item.href === activeHref
+                    ? activeClass
                     : "text-slate-400 transition hover:text-slate-100"
                   : "text-zinc-600 hover:text-zinc-900"
               }

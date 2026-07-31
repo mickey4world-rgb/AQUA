@@ -6,6 +6,7 @@ export const COSMOS_CONTAINERS = {
   users: process.env.COSMOS_USERS_CONTAINER ?? "Users",
   stockWatches: process.env.COSMOS_STOCK_WATCHES_CONTAINER ?? "StockWatches",
   tokenUsage: process.env.COSMOS_TOKEN_USAGE_CONTAINER ?? "TokenUsage",
+  accessLogs: process.env.COSMOS_ACCESS_LOGS_CONTAINER ?? "AccessLogs",
 } as const;
 
 export function isCosmosConfigured(): boolean {

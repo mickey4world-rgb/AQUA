@@ -21,7 +21,7 @@ const modules = [
   },
   {
     title: "コスト",
-    desc: "Azure OpenAI トークン使用量レポート",
+    desc: "トークン・API・コスト分析ダッシュボード",
     href: "/costs",
     icon: "⚡",
     accent: "amber" as const,

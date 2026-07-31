@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:users": "node scripts/seed-users.mjs",
-    "setup:token-usage": "node scripts/setup-token-usage.mjs"
+    "setup:token-usage": "node scripts/setup-token-usage.mjs",
+    "setup:access-logs": "node scripts/setup-access-logs.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",
