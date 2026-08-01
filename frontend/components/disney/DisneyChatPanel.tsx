@@ -7,8 +7,8 @@ import type { DisneyParkKey } from "@/lib/types/disney";
 
 const STARTER_PROMPTS = [
   "今から効率よく回る順番を教えて！",
-  "子連れ向けのおすすめは？",
-  "混雑を避けるコツは？",
+  "このパークの隠れミッキー、どこにある？",
+  "子連れ向けのおすすめと豆知識を教えて！",
 ];
 
 type DisneyChatPanelProps = {
@@ -89,7 +89,7 @@ export default function DisneyChatPanel({
         <div>
           <h2 className="text-sm font-semibold text-white">ミッキーに聞く</h2>
           <p className="mt-1 text-xs text-slate-400">
-            {parkName} · {targetDate} — 聞きたいときだけ AI が答えます（トークン節約）
+            {parkName} · {targetDate} — 回り方の相談に加え、歴史・トリビア・隠れミッキーもミッキー口調で答えるよ！
           </p>
         </div>
         <span className="rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-200">
@@ -100,7 +100,7 @@ export default function DisneyChatPanel({
       <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 && (
           <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
-            <p>回り方・待ち時間・混雑対策など、気になったことをチャットでどうぞ。</p>
+            <p>回り方・待ち時間・混雑対策はもちろん、パークの歴史や隠れミッキーの話も聞いてみてね！</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {STARTER_PROMPTS.map((prompt) => (
                 <button
@@ -140,7 +140,7 @@ export default function DisneyChatPanel({
         ))}
 
         {sending && (
-          <p className="text-xs text-slate-500">ミッキーが考え中...</p>
+          <p className="text-xs text-slate-500">ヤッホー！ ミッキーが考え中...</p>
         )}
         <div ref={bottomRef} />
       </div>
