@@ -5,6 +5,7 @@ import DebateTimeline from "@/components/council/DebateTimeline";
 import type {
   CouncilConfigResponse,
   CouncilDebateResult,
+  CouncilDepth,
   CouncilMode,
 } from "@/lib/types/council";
 
@@ -17,6 +18,7 @@ const STARTER_TOPICS = [
 export default function CouncilPanel() {
   const [config, setConfig] = useState<CouncilConfigResponse | null>(null);
   const [mode, setMode] = useState<CouncilMode>("domestic");
+  const [depth, setDepth] = useState<CouncilDepth>("compact");
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export default function CouncilPanel() {
       const res = await fetch("/api/council/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: trimmed, mode }),
+        body: JSON.stringify({ topic: trimmed, mode, depth }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -58,6 +60,8 @@ export default function CouncilPanel() {
   }
 
   const modeConfig = mode === "domestic" ? config?.domestic : config?.global;
+  const depthLabel =
+    depth === "compact" ? "簡潔（3回・節約）" : "標準（7回・詳細）";
 
   return (
     <div className="space-y-6">
@@ -85,6 +89,32 @@ export default function CouncilPanel() {
           ))}
         </div>
 
+        <div className="mt-4">
+          <p className="text-xs font-medium text-slate-300">合議の深さ</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(["compact", "standard"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                disabled={loading}
+                onClick={() => setDepth(key)}
+                className={`rounded-full px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${
+                  depth === key
+                    ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                    : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"
+                }`}
+              >
+                {key === "compact" ? "簡潔（推奨）" : "標準（詳細）"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            {depth === "compact"
+              ? "2 AI + 議長の計3回。短い回答でトークン節約。"
+              : "3 AI が初見→議論→まとめの計7回。"}
+          </p>
+        </div>
+
         {modeConfig && (
           <div className="mt-4 rounded-xl border border-white/5 bg-black/20 p-3 text-xs text-slate-400">
             <p>{modeConfig.description}</p>
@@ -109,7 +139,7 @@ export default function CouncilPanel() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談テーマ</h2>
         <p className="mt-1 text-xs text-slate-400">
-          3 つの AI が初見 → 議論 → 議長がまとめ、計 7 回の AI 呼び出しが走ります（トークン多め）。
+          {depthLabel} — AI 呼び出し {depth === "compact" ? "3" : "7"} 回。
         </p>
 
         {!result && !loading && (
@@ -153,9 +183,9 @@ export default function CouncilPanel() {
 
         {loading && (
           <div className="mt-4 space-y-2 text-xs text-slate-500">
-            <p>① 各 AI が初見を述べています...</p>
-            <p>② AI 同士が議論しています...</p>
-            <p>③ 議長がまとめを作成しています...</p>
+            <p>① 各 AI が要点を述べています...</p>
+            {depth === "standard" && <p>② AI 同士が議論しています...</p>}
+            <p>{depth === "standard" ? "③" : "②"} 議長がまとめを作成しています...</p>
           </div>
         )}
 
@@ -166,7 +196,9 @@ export default function CouncilPanel() {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-white">合議結果</h2>
-            <span className="text-[10px] text-slate-500">{result.dataRegionNote}</span>
+            <span className="text-[10px] text-slate-500">
+              {result.dataRegionNote} · {result.apiCalls} API calls
+            </span>
           </div>
           <p className="mt-2 rounded-xl border border-white/5 bg-black/20 p-3 text-sm text-slate-300">
             {result.topic}

@@ -1,5 +1,7 @@
 export type CouncilMode = "domestic" | "global";
 
+export type CouncilDepth = "compact" | "standard";
+
 export type CouncilPhase = "initial" | "rebuttal" | "synthesis";
 
 export interface CouncilModelMeta {
@@ -19,12 +21,14 @@ export interface CouncilModelOpinion {
 
 export interface CouncilDebateResult {
   mode: CouncilMode;
+  depth: CouncilDepth;
   topic: string;
   models: CouncilModelMeta[];
   initial: CouncilModelOpinion[];
   rebuttal: CouncilModelOpinion[];
   synthesis: CouncilModelOpinion;
   dataRegionNote: string;
+  apiCalls: number;
 }
 
 export interface CouncilConfigResponse {

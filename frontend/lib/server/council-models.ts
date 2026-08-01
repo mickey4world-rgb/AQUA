@@ -1,5 +1,6 @@
 import { getAzureOpenAiDeployment } from "@/lib/server/azure-openai";
-import type { CouncilMode, CouncilModelMeta } from "@/lib/types/council";
+import { councilDepthConfig } from "@/lib/server/council-config";
+import type { CouncilDepth, CouncilMode, CouncilModelMeta } from "@/lib/types/council";
 
 export type CouncilModelConfig = CouncilModelMeta & {
   persona: string;
@@ -8,14 +9,10 @@ export type CouncilModelConfig = CouncilModelMeta & {
 };
 
 const PERSONAS = {
-  logic: `あなたは論理派のアナリスト。事実・因果・リスクを重視し、構造的に回答する。
-短く明快に。断定は根拠とセットで。`,
-  creative: `あなたは発想派のプランナー。新しい視点・代替案・創造的解を提案する。
-楽観的すぎず、実行可能性も示す。`,
-  skeptic: `あなたは懐疑派のレビュアー。盲点・反論・失敗パターンを指摘する。
-批判的だが建設的に。`,
-  judge: `あなたは合議の司会者（議長）。複数 AI の意見を読み、対立点と合意点を整理し、
-実用的な最終回答を日本語でまとめる。`,
+  logic: "論理派。事実とリスクを短く整理。",
+  creative: "発想派。代替案を1つ提案。",
+  skeptic: "懐疑派。弱点と反論を1点指摘。",
+  judge: "議長。意見を統合し実用的な結論を出す。",
 } as const;
 
 export function isOpenAiGlobalConfigured(): boolean {
@@ -45,7 +42,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_A", fallback),
       persona: PERSONAS.logic,
-      maxTokens: 650,
+      maxTokens: 420,
       featureSuffix: "logic",
     },
     {
@@ -54,7 +51,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", fallback),
       persona: PERSONAS.creative,
-      maxTokens: 650,
+      maxTokens: 420,
       featureSuffix: "creative",
     },
     {
@@ -63,7 +60,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", fallback),
       persona: PERSONAS.skeptic,
-      maxTokens: 650,
+      maxTokens: 420,
       featureSuffix: "skeptic",
     },
   ];
@@ -80,7 +77,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
         provider: "openai",
         model: process.env.OPENAI_MODEL_A ?? "gpt-4o",
         persona: PERSONAS.logic,
-        maxTokens: 700,
+        maxTokens: 480,
         featureSuffix: "openai-a",
       },
       {
@@ -89,7 +86,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
         provider: "openai",
         model: process.env.OPENAI_MODEL_B ?? "gpt-4o-mini",
         persona: PERSONAS.creative,
-        maxTokens: 700,
+        maxTokens: 480,
         featureSuffix: "openai-b",
       },
       {
@@ -98,7 +95,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
         provider: "openai",
         model: process.env.OPENAI_MODEL_C ?? "gpt-4o-mini",
         persona: PERSONAS.skeptic,
-        maxTokens: 700,
+        maxTokens: 480,
         featureSuffix: "openai-c",
       },
     );
@@ -115,7 +112,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: globalDepA,
       persona: PERSONAS.logic,
-      maxTokens: 700,
+      maxTokens: 480,
       featureSuffix: "azure-global-a",
     });
   }
@@ -126,7 +123,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: globalDepB,
       persona: PERSONAS.creative,
-      maxTokens: 700,
+      maxTokens: 480,
       featureSuffix: "azure-global-b",
     });
   }
@@ -137,7 +134,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: globalDepC,
       persona: PERSONAS.skeptic,
-      maxTokens: 700,
+      maxTokens: 480,
       featureSuffix: "azure-global-c",
     });
   }
@@ -155,7 +152,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: latestDep,
       persona: PERSONAS.logic,
-      maxTokens: 750,
+      maxTokens: 480,
       featureSuffix: "latest-a",
     },
     {
@@ -164,7 +161,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", latestDep),
       persona: PERSONAS.creative,
-      maxTokens: 750,
+      maxTokens: 480,
       featureSuffix: "latest-b",
     },
     {
@@ -173,14 +170,21 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", latestDep),
       persona: PERSONAS.skeptic,
-      maxTokens: 750,
+      maxTokens: 480,
       featureSuffix: "skeptic",
     },
   ];
 }
 
-export function getCouncilDebaters(mode: CouncilMode): CouncilModelConfig[] {
-  return mode === "domestic" ? getDomesticDebaters() : getGlobalDebaters();
+export function getCouncilDebaters(
+  mode: CouncilMode,
+  depth: CouncilDepth = "compact",
+): CouncilModelConfig[] {
+  const all = mode === "domestic" ? getDomesticDebaters() : getGlobalDebaters();
+  const { debaterIds } = councilDepthConfig(depth);
+  const idSet = new Set<string>(debaterIds);
+  const filtered = all.filter((m) => idSet.has(m.id));
+  return filtered.length > 0 ? filtered : all.slice(0, debaterIds.length);
 }
 
 export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
@@ -191,7 +195,7 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
       provider: "openai",
       model: process.env.OPENAI_MODEL_JUDGE ?? process.env.OPENAI_MODEL_A ?? "gpt-4o",
       persona: PERSONAS.judge,
-      maxTokens: 900,
+      maxTokens: 550,
       featureSuffix: "judge",
     };
   }
@@ -213,7 +217,7 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
     provider: "azure",
     deployment: judgeDep,
     persona: PERSONAS.judge,
-    maxTokens: 900,
+    maxTokens: 550,
     featureSuffix: "judge",
   };
 }

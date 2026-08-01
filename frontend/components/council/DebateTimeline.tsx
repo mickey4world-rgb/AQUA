@@ -53,7 +53,7 @@ export default function DebateTimeline({
     <div className="space-y-6">
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300/80">
-          第1ラウンド — 各 AI の初見
+          各 AI の要点
         </h3>
         <div className="mt-3 space-y-3">
           {initial.map((opinion) => (
@@ -62,16 +62,18 @@ export default function DebateTimeline({
         </div>
       </section>
 
-      <section>
-        <h3 className="text-xs font-semibold uppercase tracking-[0.25em] text-sky-300/80">
-          第2ラウンド — AI 同士の議論
-        </h3>
-        <div className="mt-3 space-y-3">
-          {rebuttal.map((opinion) => (
-            <OpinionCard key={`${opinion.modelId}-rebuttal`} opinion={opinion} />
-          ))}
-        </div>
-      </section>
+      {rebuttal.length > 0 && (
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.25em] text-sky-300/80">
+            第2ラウンド — AI 同士の議論
+          </h3>
+          <div className="mt-3 space-y-3">
+            {rebuttal.map((opinion) => (
+              <OpinionCard key={`${opinion.modelId}-rebuttal`} opinion={opinion} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-[0.25em] text-violet-300/80">
