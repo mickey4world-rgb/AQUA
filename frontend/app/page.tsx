@@ -14,11 +14,19 @@ const modules = [
   },
   {
     title: "ディズニー",
-    desc: "TDR 混雑状況・待ち時間・回り方アドバイス",
+    desc: "TDR 混雑状況・待ち時間・ミッキーチャット",
     href: "/disney",
     icon: "✨",
     accent: "fuchsia" as const,
     tag: "Experience",
+  },
+  {
+    title: "AI 合議",
+    desc: "複数 AI が議論し、合意した回答をまとめて返す",
+    href: "/council",
+    icon: "🤝",
+    accent: "violet" as const,
+    tag: "Multi-AI",
   },
   {
     title: "コスト",
@@ -54,12 +62,12 @@ export default function Home() {
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-400">
               個人向け統合情報ポータル。保有株の監視、ディズニーの混雑分析、
-              AI 利用コストを AQUA からひとつの画面でアクセスできます。
+              複数 AI 合議、AI 利用コストを AQUA からひとつの画面でアクセスできます。
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {[
-                { label: "Modules", value: "3" },
+                { label: "Modules", value: "4" },
                 { label: "Auth", value: "Azure SWA" },
                 { label: "AI Engine", value: "GPT-4o" },
               ].map((stat) => (
@@ -101,7 +109,7 @@ export default function Home() {
               各モジュールは独立したテーマと機能を持ち、日常利用に最適化されています。
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {modules.map((card) => (
               <DashboardCard key={card.href} {...card} />
             ))}

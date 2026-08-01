@@ -24,6 +24,7 @@ body {
 .app-shell-global { background: #020617; }
 .app-shell-disney { background: #0a0e1f; }
 .app-shell-costs { background: #0a0a0f; }
+.app-shell-council { background: #080612; }
 
 .bg-mesh-portal {
   background:
@@ -49,6 +50,13 @@ body {
     radial-gradient(ellipse at 30% 0%, rgba(251, 191, 36, 0.12) 0%, transparent 45%),
     radial-gradient(ellipse at 70% 80%, rgba(244, 63, 94, 0.08) 0%, transparent 50%),
     radial-gradient(ellipse at 30% 0%, #78350f22 0%, #0a0a0f 55%);
+}
+.bg-mesh-council {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.14) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(99, 102, 241, 0.08) 0%, transparent 52%),
+    radial-gradient(ellipse at 20% 0%, #312e8122 0%, #080612 55%);
 }
 
 /* ── Shared animation keyframes ── */
@@ -168,6 +176,19 @@ body {
 [data-theme="costs"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.45), transparent); }
 [data-theme="costs"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(252, 211, 77, 0.9), transparent); }
 [data-theme="costs"] .bg-particle { background: rgba(251, 191, 36, 0.65); }
+
+[data-theme="council"] .bg-aurora-a { background: rgba(139, 92, 246, 0.14); }
+[data-theme="council"] .bg-aurora-b { background: rgba(16, 185, 129, 0.12); }
+[data-theme="council"] .bg-aurora-c { background: rgba(99, 102, 241, 0.12); }
+[data-theme="council"] .bg-grid {
+  background-image:
+    linear-gradient(rgba(167, 139, 250, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 211, 153, 0.07) 1px, transparent 1px);
+}
+[data-theme="council"] .bg-orbit { border-color: rgba(167, 139, 250, 0.15); }
+[data-theme="council"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.45), rgba(52, 211, 153, 0.35), transparent); }
+[data-theme="council"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(196, 181, 253, 0.9), rgba(110, 231, 183, 0.6), transparent); }
+[data-theme="council"] .bg-particle { background: rgba(196, 181, 253, 0.7); }
 
 /* ── Orbits ── */
 .bg-orbit {

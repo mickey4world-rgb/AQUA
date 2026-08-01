@@ -17,6 +17,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/council/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/settings",
       "allowedRoles": ["authenticated"]
     },
@@ -30,6 +34,10 @@
     },
     {
       "route": "/costs/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/council/*",
       "allowedRoles": ["authenticated"]
     },
     {

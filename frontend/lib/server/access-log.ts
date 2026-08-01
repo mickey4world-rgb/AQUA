@@ -13,6 +13,7 @@ function accessLogContainer() {
 function inferAppFromPath(path: string): AppKey {
   if (path.startsWith("/api/stocks")) return "stocks";
   if (path.startsWith("/api/disney")) return "disney";
+  if (path.startsWith("/api/council")) return "council";
   if (path.startsWith("/api/costs")) return "costs";
   if (path.startsWith("/api/users")) return "users";
   return "system";
@@ -29,6 +30,8 @@ function inferFeatureFromPath(path: string, method: string): string {
   if (path.endsWith("/disney/waits")) return "waits";
   if (path.endsWith("/disney/status")) return "status";
   if (path.endsWith("/disney/calendar")) return "calendar";
+  if (path.endsWith("/council/ask")) return "ask";
+  if (path.endsWith("/council/config")) return "config";
   if (path.endsWith("/costs/dashboard")) return "dashboard";
   if (path.endsWith("/users/me")) return "profile";
   return `${method.toLowerCase()}-${path.split("/").pop() ?? "unknown"}`;

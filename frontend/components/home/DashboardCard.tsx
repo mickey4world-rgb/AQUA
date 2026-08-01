@@ -5,7 +5,7 @@ type DashboardCardProps = {
   desc: string;
   href: string;
   icon: string;
-  accent: "cyan" | "fuchsia" | "amber";
+  accent: "cyan" | "fuchsia" | "amber" | "violet";
   tag: string;
 };
 
@@ -30,6 +30,13 @@ const accentStyles = {
     icon: "border-amber-400/30 bg-amber-500/10 text-amber-300",
     tag: "text-amber-300/80",
     arrow: "text-amber-300",
+  },
+  violet: {
+    border: "border-violet-400/20 hover:border-violet-400/50",
+    glow: "from-violet-500/20 via-emerald-500/5 to-transparent",
+    icon: "border-violet-400/30 bg-violet-500/10 text-violet-300",
+    tag: "text-violet-300/80",
+    arrow: "text-violet-300",
   },
 };
 
