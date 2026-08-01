@@ -8,12 +8,13 @@ const navItems = [
   { href: "/", label: "ダッシュボード" },
   { href: "/stocks", label: "保有株" },
   { href: "/disney", label: "ディズニー" },
+  { href: "/council", label: "AI合議" },
   { href: "/costs", label: "コスト" },
   { href: "/settings", label: "設定" },
 ];
 
 type HeaderProps = {
-  variant?: "default" | "global" | "disney" | "portal" | "costs";
+  variant?: "default" | "global" | "disney" | "portal" | "costs" | "council";
 };
 
 export default function Header({ variant = "default" }: HeaderProps) {
@@ -23,33 +24,40 @@ export default function Header({ variant = "default" }: HeaderProps) {
   const isDisney = variant === "disney";
   const isPortal = variant === "portal";
   const isCosts = variant === "costs";
-  const isThemed = isGlobal || isDisney || isPortal || isCosts;
+  const isCouncil = variant === "council";
+  const isThemed = isGlobal || isDisney || isPortal || isCosts || isCouncil;
 
   const activeHref = isDisney
     ? "/disney"
-    : isPortal
-      ? "/"
-      : isCosts
-        ? "/costs"
-        : isGlobal
-          ? "/stocks"
-          : pathname;
+    : isCouncil
+      ? "/council"
+      : isPortal
+        ? "/"
+        : isCosts
+          ? "/costs"
+          : isGlobal
+            ? "/stocks"
+            : pathname;
 
   const activeClass = isDisney
     ? "font-medium text-fuchsia-300"
-    : isPortal
-      ? "font-medium text-cyan-300"
-      : isCosts
-        ? "font-medium text-amber-300"
-        : "font-medium text-cyan-300";
+    : isCouncil
+      ? "font-medium text-violet-300"
+      : isPortal
+        ? "font-medium text-cyan-300"
+        : isCosts
+          ? "font-medium text-amber-300"
+          : "font-medium text-cyan-300";
 
   const logoClass = isGlobal
     ? "bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-transparent"
     : isDisney
       ? "bg-gradient-to-r from-fuchsia-300 to-sky-300 bg-clip-text text-transparent"
-      : isCosts
-        ? "bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent"
-        : "";
+      : isCouncil
+        ? "bg-gradient-to-r from-violet-300 to-emerald-300 bg-clip-text text-transparent"
+        : isCosts
+          ? "bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent"
+          : "";
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";

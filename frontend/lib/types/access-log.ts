@@ -1,4 +1,4 @@
-export type AppKey = "stocks" | "disney" | "costs" | "users" | "system";
+export type AppKey = "stocks" | "disney" | "costs" | "council" | "users" | "system";
 
 export interface AccessLog {
   id: string;

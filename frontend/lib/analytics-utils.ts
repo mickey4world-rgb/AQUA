@@ -35,6 +35,11 @@ export const appAccentStyles = {
     bg: "bg-amber-500/10",
     text: "text-amber-300",
   },
+  council: {
+    border: "border-violet-400/20",
+    bg: "bg-violet-500/10",
+    text: "text-violet-300",
+  },
   users: {
     border: "border-emerald-400/20",
     bg: "bg-emerald-500/10",

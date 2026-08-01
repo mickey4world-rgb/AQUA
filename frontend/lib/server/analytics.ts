@@ -85,7 +85,7 @@ export async function buildCostDashboard(
     };
   });
 
-  const appKeys: AppKey[] = ["stocks", "disney", "costs", "users"];
+  const appKeys: AppKey[] = ["stocks", "disney", "costs", "council", "users"];
   const byApp = appKeys.map((app) => {
     const tokenRows = byFeature.filter((row) => row.app === app);
     const accessRow = byAppAccess.find((row) => row.app === app);

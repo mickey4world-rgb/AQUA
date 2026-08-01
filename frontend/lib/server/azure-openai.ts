@@ -1,6 +1,6 @@
 import { AzureOpenAI } from "openai";
 
-let client: AzureOpenAI | null = null;
+const clientCache = new Map<string, AzureOpenAI>();
 
 export function isAzureOpenAiConfigured(): boolean {
   return Boolean(
@@ -14,21 +14,24 @@ export function getAzureOpenAiDeployment(): string {
   return process.env.AZURE_OPENAI_DEPLOYMENT ?? "stock-advice";
 }
 
-export function getAzureOpenAiClient(): AzureOpenAI {
+export function getAzureOpenAiClient(deployment?: string): AzureOpenAI {
   if (!isAzureOpenAiConfigured()) {
     throw new Error("Azure OpenAI is not configured");
   }
 
-  if (!client) {
-    client = new AzureOpenAI({
+  const dep = deployment ?? getAzureOpenAiDeployment();
+  let cached = clientCache.get(dep);
+  if (!cached) {
+    cached = new AzureOpenAI({
       endpoint: process.env.AZURE_OPENAI_ENDPOINT,
       apiKey: process.env.AZURE_OPENAI_API_KEY,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2024-10-21",
-      deployment: getAzureOpenAiDeployment(),
+      deployment: dep,
     });
+    clientCache.set(dep, cached);
   }
 
-  return client;
+  return cached;
 }
 
 export function estimateTokenCostUsd(
