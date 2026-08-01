@@ -3,6 +3,7 @@ import {
   getAzureOpenAiClient,
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
+import { councilDepthConfig } from "@/lib/server/council-config";
 import {
   getCouncilConfigMeta,
   getCouncilDebaters,
@@ -12,6 +13,7 @@ import {
 import { canUseAiTokens, recordTokenUsage } from "@/lib/server/token-usage";
 import type {
   CouncilDebateResult,
+  CouncilDepth,
   CouncilMode,
   CouncilModelOpinion,
 } from "@/lib/types/council";
@@ -24,16 +26,25 @@ type ChatCompletionResult = {
   requestId?: string;
 };
 
-function formatOpinions(opinions: CouncilModelOpinion[]): string {
+function truncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}…`;
+}
+
+function formatOpinionsForJudge(
+  opinions: CouncilModelOpinion[],
+  maxCharsPerOpinion: number,
+): string {
   return opinions
-    .map((o) => `【${o.modelLabel}】\n${o.content}`)
-    .join("\n\n---\n\n");
+    .map((o) => `- ${o.modelLabel}: ${truncate(o.content, maxCharsPerOpinion)}`)
+    .join("\n");
 }
 
 async function callCouncilModel(
   model: CouncilModelConfig,
   systemPrompt: string,
   userPrompt: string,
+  maxTokens: number,
 ): Promise<ChatCompletionResult> {
   if (model.provider === "openai") {
     if (!process.env.OPENAI_API_KEY) {
@@ -42,7 +53,7 @@ async function callCouncilModel(
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await client.chat.completions.create({
       model: model.model ?? "gpt-4o",
-      max_tokens: model.maxTokens,
+      max_tokens: maxTokens,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -63,7 +74,7 @@ async function callCouncilModel(
   const client = getAzureOpenAiClient(deployment);
   const completion = await client.chat.completions.create({
     model: deployment,
-    max_completion_tokens: model.maxTokens,
+    max_completion_tokens: maxTokens,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -85,21 +96,26 @@ async function runModelPhase(
   models: CouncilModelConfig[],
   phase: "initial" | "rebuttal",
   topic: string,
+  depth: CouncilDepth,
   prior?: CouncilModelOpinion[],
 ): Promise<CouncilModelOpinion[]> {
-  const priorText = prior?.length ? formatOpinions(prior) : "";
+  const depthConfig = councilDepthConfig(depth);
+  const priorText = prior?.length
+    ? formatOpinionsForJudge(prior, depthConfig.judgeInputMaxChars)
+    : "";
 
   const results = await Promise.all(
     models.map(async (model) => {
       const userPrompt =
         phase === "initial"
-          ? `相談テーマ:\n${topic}\n\n最初の意見を述べてください。`
-          : `相談テーマ:\n${topic}\n\n他の AI の意見:\n${priorText}\n\n上記を踏まえ、同意・反論・補足を述べてください。`;
+          ? `テーマ: ${topic}\n要点だけ述べて。`
+          : `テーマ: ${topic}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
 
       const result = await callCouncilModel(
         model,
-        `${model.persona}\n\n回答は日本語。300〜500文字程度。`,
+        `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
         userPrompt,
+        depthConfig.debaterMaxTokens,
       );
 
       await recordTokenUsage({
@@ -131,13 +147,19 @@ export async function runCouncilDebate(
   userId: string,
   topic: string,
   mode: CouncilMode,
+  depth: CouncilDepth = "compact",
 ): Promise<CouncilDebateRunResult> {
   const trimmed = topic.trim();
+  const depthConfig = councilDepthConfig(depth);
+
   if (!trimmed) {
     return { ok: false, reason: "相談内容を入力してください。" };
   }
-  if (trimmed.length > 1200) {
-    return { ok: false, reason: "相談内容が長すぎます（1200文字以内）。" };
+  if (trimmed.length > depthConfig.topicMaxLength) {
+    return {
+      ok: false,
+      reason: `相談内容が長すぎます（${depthConfig.topicMaxLength}文字以内）。`,
+    };
   }
 
   if (!isAzureOpenAiConfigured()) {
@@ -155,26 +177,37 @@ export async function runCouncilDebate(
     };
   }
 
-  const debaters = getCouncilDebaters(mode);
+  const debaters = getCouncilDebaters(mode, depth);
   const judge = getCouncilJudge(mode);
   const configMeta = getCouncilConfigMeta();
 
   try {
-    const initial = await runModelPhase(userId, debaters, "initial", trimmed);
-    const rebuttal = await runModelPhase(userId, debaters, "rebuttal", trimmed, initial);
+    const initial = await runModelPhase(
+      userId,
+      debaters,
+      "initial",
+      trimmed,
+      depth,
+    );
 
-    const debateLog = [
-      "=== 第1ラウンド（初見） ===",
-      formatOpinions(initial),
-      "",
-      "=== 第2ラウンド（議論） ===",
-      formatOpinions(rebuttal),
-    ].join("\n");
+    const rebuttal = depthConfig.includeRebuttal
+      ? await runModelPhase(userId, debaters, "rebuttal", trimmed, depth, initial)
+      : [];
+
+    const opinionLines = [
+      formatOpinionsForJudge(initial, depthConfig.judgeInputMaxChars),
+      rebuttal.length
+        ? formatOpinionsForJudge(rebuttal, depthConfig.judgeInputMaxChars)
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const judgeResult = await callCouncilModel(
       judge,
-      `${judge.persona}\n\n回答は日本語。400〜700文字。箇条書き可。`,
-      `相談テーマ:\n${trimmed}\n\n以下は AI 合議の記録です。対立点・合意点を整理し、最終回答をまとめてください。\n\n${debateLog}`,
+      `${judge.persona}\n日本語。${depthConfig.judgeLengthHint}。`,
+      `テーマ: ${trimmed}\n\n意見:\n${opinionLines}\n\n結論をまとめて。`,
+      depthConfig.judgeMaxTokens,
     );
 
     await recordTokenUsage({
@@ -193,10 +226,14 @@ export async function runCouncilDebate(
       content: judgeResult.content,
     };
 
+    const apiCalls =
+      debaters.length + (depthConfig.includeRebuttal ? debaters.length : 0) + 1;
+
     return {
       ok: true,
       result: {
         mode,
+        depth,
         topic: trimmed,
         models: debaters.map((m) => ({
           id: m.id,
@@ -212,6 +249,7 @@ export async function runCouncilDebate(
           mode === "domestic"
             ? configMeta.domestic.dataRegion
             : configMeta.global.dataRegion,
+        apiCalls,
       },
     };
   } catch (error) {
