@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import CouncilFollowUpChat from "@/components/council/CouncilFollowUpChat";
+import CouncilModelRoster from "@/components/council/CouncilModelRoster";
 import DebateTimeline from "@/components/council/DebateTimeline";
+import {
+  COUNCIL_ATTACHMENT_ACCEPT,
+  COUNCIL_ATTACHMENT_MAX_BYTES,
+  COUNCIL_ATTACHMENT_MAX_FILES,
+} from "@/lib/council-utils";
 import type {
+  CouncilAttachment,
   CouncilConfigResponse,
   CouncilDebateResult,
   CouncilDepth,
@@ -15,11 +23,19 @@ const STARTER_TOPICS = [
   "Azure と AWS、個人プロジェクトならどちら？",
 ];
 
+type PendingAttachment = {
+  name: string;
+  content: string;
+  size: number;
+};
+
 export default function CouncilPanel() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [config, setConfig] = useState<CouncilConfigResponse | null>(null);
   const [mode, setMode] = useState<CouncilMode>("domestic");
   const [depth, setDepth] = useState<CouncilDepth>("compact");
   const [topic, setTopic] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CouncilDebateResult | null>(null);
@@ -31,19 +47,56 @@ export default function CouncilPanel() {
       .catch(() => setError("設定の読み込みに失敗しました"));
   }, []);
 
+  async function handleFiles(fileList: FileList | null) {
+    if (!fileList?.length) return;
+    setError(null);
+
+    const next: PendingAttachment[] = [...attachments];
+    for (const file of Array.from(fileList)) {
+      if (next.length >= COUNCIL_ATTACHMENT_MAX_FILES) {
+        setError(`添付は最大 ${COUNCIL_ATTACHMENT_MAX_FILES} 件までです。`);
+        break;
+      }
+      if (file.size > COUNCIL_ATTACHMENT_MAX_BYTES) {
+        setError(`${file.name} が大きすぎます（${Math.round(COUNCIL_ATTACHMENT_MAX_BYTES / 1024)}KB 以内）。`);
+        continue;
+      }
+      const content = await file.text();
+      next.push({ name: file.name, content, size: file.size });
+    }
+    setAttachments(next);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   async function submitTopic(text: string) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
+
+    if (mode === "global" && !config?.openaiConfigured) {
+      setError("国内問わずモードには OPENAI_API_KEY の設定が必要です。");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     setResult(null);
 
+    const payloadAttachments: CouncilAttachment[] = attachments.map((a) => ({
+      name: a.name,
+      content: a.content,
+      charCount: a.content.length,
+    }));
+
     try {
       const res = await fetch("/api/council/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: trimmed, mode, depth }),
+        body: JSON.stringify({
+          topic: trimmed,
+          mode,
+          depth,
+          attachments: payloadAttachments,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -52,6 +105,7 @@ export default function CouncilPanel() {
       }
       setResult(data as CouncilDebateResult);
       setTopic("");
+      setAttachments([]);
     } catch {
       setError("通信エラーが発生しました");
     } finally {
@@ -62,31 +116,42 @@ export default function CouncilPanel() {
   const modeConfig = mode === "domestic" ? config?.domestic : config?.global;
   const depthLabel =
     depth === "compact" ? "簡潔（3回・節約）" : "標準（7回・詳細）";
+  const globalBlocked = Boolean(mode === "global" && config && !config.openaiConfigured);
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談モード</h2>
         <p className="mt-1 text-xs text-slate-400">
-          国内限定は日本リージョンのみ。国内問わずは最新モデル構成（海外 API 含む場合あり）。
+          国内限定は Azure OpenAI（日本）。国内問わずは OpenAI API（GPT-5.6 系）。
         </p>
 
+        {config && !config.openaiConfigured && (
+          <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <p className="font-medium">OPENAI_API_KEY 未設定</p>
+            <p className="mt-1 opacity-90">{config.setupHint}</p>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap gap-2">
-          {(["domestic", "global"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              disabled={loading}
-              onClick={() => setMode(key)}
-              className={`rounded-full px-4 py-2.5 text-sm font-medium transition disabled:opacity-50 ${
-                mode === key
-                  ? "bg-gradient-to-r from-violet-500 to-emerald-500 text-white"
-                  : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-              }`}
-            >
-              {key === "domestic" ? "🇯🇵 国内限定" : "🌐 国内問わず（最新）"}
-            </button>
-          ))}
+          {(["domestic", "global"] as const).map((key) => {
+            const unavailable = Boolean(key === "global" && config && !config.global.available);
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={loading || unavailable}
+                onClick={() => setMode(key)}
+                className={`rounded-full px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 ${
+                  mode === key
+                    ? "bg-gradient-to-r from-violet-500 to-emerald-500 text-white"
+                    : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                }`}
+              >
+                {key === "domestic" ? "🇯🇵 国内限定" : "🌐 国内問わず（OpenAI）"}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-4">
@@ -108,11 +173,6 @@ export default function CouncilPanel() {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">
-            {depth === "compact"
-              ? "2 AI + 議長の計3回。短い回答でトークン節約。"
-              : "3 AI が初見→議論→まとめの計7回。"}
-          </p>
         </div>
 
         {modeConfig && (
@@ -122,15 +182,12 @@ export default function CouncilPanel() {
             {mode === "global" && config?.global.warning && (
               <p className="mt-2 text-amber-200/90">{config.global.warning}</p>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {modeConfig.models.map((m) => (
-                <span
-                  key={m.id}
-                  className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300"
-                >
-                  {m.label}
-                </span>
-              ))}
+            <div className="mt-4">
+              <CouncilModelRoster
+                title="使用モデル（設定値）"
+                models={modeConfig.models}
+                judge={modeConfig.judge}
+              />
             </div>
           </div>
         )}
@@ -139,7 +196,7 @@ export default function CouncilPanel() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談テーマ</h2>
         <p className="mt-1 text-xs text-slate-400">
-          {depthLabel} — AI 呼び出し {depth === "compact" ? "3" : "7"} 回。
+          {depthLabel} — AI 呼び出し {depth === "compact" ? "3" : "7"} 回。テキストファイル添付可。
         </p>
 
         {!result && !loading && (
@@ -157,6 +214,48 @@ export default function CouncilPanel() {
           </div>
         )}
 
+        <div className="mt-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={COUNCIL_ATTACHMENT_ACCEPT}
+            multiple
+            className="hidden"
+            onChange={(e) => handleFiles(e.target.files)}
+          />
+          <button
+            type="button"
+            disabled={loading || attachments.length >= COUNCIL_ATTACHMENT_MAX_FILES}
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-50"
+          >
+            📎 ファイルを添付（txt / md / json 等）
+          </button>
+          {attachments.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {attachments.map((file) => (
+                <li
+                  key={file.name}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-black/20 px-2 py-1 text-xs text-slate-400"
+                >
+                  <span>
+                    {file.name} ({Math.round(file.size / 1024)}KB)
+                  </span>
+                  <button
+                    type="button"
+                    className="text-rose-300"
+                    onClick={() =>
+                      setAttachments((prev) => prev.filter((f) => f.name !== file.name))
+                    }
+                  >
+                    削除
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <form
           className="mt-4 flex flex-col gap-3 sm:flex-row"
           onSubmit={(e) => {
@@ -167,14 +266,14 @@ export default function CouncilPanel() {
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="例: 来週の TDR、混雑を避けつつ効率よく回るには？"
-            disabled={loading}
+            placeholder="例: 添付の企画書を踏まえて優先順位をつけて"
+            disabled={loading || globalBlocked}
             rows={3}
             className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={loading || !topic.trim()}
+            disabled={loading || globalBlocked || !topic.trim()}
             className="rounded-xl bg-gradient-to-r from-violet-500 to-emerald-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:self-end"
           >
             {loading ? "合議中..." : "AI 合議を開始"}
@@ -203,6 +302,18 @@ export default function CouncilPanel() {
           <p className="mt-2 rounded-xl border border-white/5 bg-black/20 p-3 text-sm text-slate-300">
             {result.topic}
           </p>
+          {result.attachments.length > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              添付: {result.attachments.map((a) => a.name).join(", ")}
+            </p>
+          )}
+          <div className="mt-4">
+            <CouncilModelRoster
+              title="実行時モデル"
+              models={result.models}
+              judge={result.judge}
+            />
+          </div>
           <div className="mt-5">
             <DebateTimeline
               initial={result.initial}
@@ -210,6 +321,7 @@ export default function CouncilPanel() {
               synthesis={result.synthesis}
             />
           </div>
+          <CouncilFollowUpChat debate={result} />
         </div>
       )}
     </div>

@@ -6,6 +6,7 @@ type AskBody = {
   topic?: string;
   mode?: CouncilMode;
   depth?: CouncilDepth;
+  attachments?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
       body.topic ?? "",
       mode,
       depth,
+      body.attachments ?? null,
     );
     if (!result.ok) {
       return Response.json({ error: result.reason }, { status: 422 });
