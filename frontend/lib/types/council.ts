@@ -58,6 +58,7 @@ export interface CouncilConfigResponse {
     models: CouncilModelMeta[];
     judge: CouncilModelMeta;
     dataRegion: string;
+    warning?: string;
   };
   global: {
     available: boolean;
