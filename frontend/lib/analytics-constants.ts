@@ -5,6 +5,7 @@ export const APP_LABELS: Record<AppKey, string> = {
   disney: "ディズニー",
   costs: "コスト分析",
   council: "AI 合議",
+  docs: "資料生成",
   users: "ユーザー",
   system: "システム",
 };
@@ -21,6 +22,7 @@ export const FEATURE_LABELS: Record<string, string> = {
   "council-rebuttal-skeptic": "合議 議論（懐疑）",
   "council-synthesis-judge": "合議 まとめ（議長）",
   "council-followup": "合議 フォローアップ",
+  "docs-generate": "資料生成 pptx",
   watches: "保有株一覧",
   "watch-detail": "保有株詳細",
   lookup: "銘柄検索",
@@ -44,6 +46,7 @@ export const FEATURE_APP_MAP: Record<string, AppKey> = {
   "council-rebuttal-skeptic": "council",
   "council-synthesis-judge": "council",
   "council-followup": "council",
+  "docs-generate": "docs",
   watches: "stocks",
   "watch-detail": "stocks",
   lookup: "stocks",

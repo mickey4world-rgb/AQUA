@@ -9,12 +9,13 @@ const navItems = [
   { href: "/stocks", label: "保有株" },
   { href: "/disney", label: "ディズニー" },
   { href: "/council", label: "AI合議" },
+  { href: "/docs", label: "資料生成" },
   { href: "/costs", label: "コスト" },
   { href: "/settings", label: "設定" },
 ];
 
 type HeaderProps = {
-  variant?: "default" | "global" | "disney" | "portal" | "costs" | "council";
+  variant?: "default" | "global" | "disney" | "portal" | "costs" | "council" | "docs";
 };
 
 export default function Header({ variant = "default" }: HeaderProps) {
@@ -25,13 +26,16 @@ export default function Header({ variant = "default" }: HeaderProps) {
   const isPortal = variant === "portal";
   const isCosts = variant === "costs";
   const isCouncil = variant === "council";
-  const isThemed = isGlobal || isDisney || isPortal || isCosts || isCouncil;
+  const isDocs = variant === "docs";
+  const isThemed = isGlobal || isDisney || isPortal || isCosts || isCouncil || isDocs;
 
   const activeHref = isDisney
     ? "/disney"
     : isCouncil
       ? "/council"
-      : isPortal
+      : isDocs
+        ? "/docs"
+        : isPortal
         ? "/"
         : isCosts
           ? "/costs"
@@ -43,7 +47,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
     ? "font-medium text-fuchsia-300"
     : isCouncil
       ? "font-medium text-violet-300"
-      : isPortal
+      : isDocs
+        ? "font-medium text-blue-300"
+        : isPortal
         ? "font-medium text-cyan-300"
         : isCosts
           ? "font-medium text-amber-300"
@@ -55,7 +61,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
       ? "bg-gradient-to-r from-fuchsia-300 to-sky-300 bg-clip-text text-transparent"
       : isCouncil
         ? "bg-gradient-to-r from-violet-300 to-emerald-300 bg-clip-text text-transparent"
-        : isCosts
+        : isDocs
+          ? "bg-gradient-to-r from-blue-300 to-sky-300 bg-clip-text text-transparent"
+          : isCosts
           ? "bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent"
           : "";
 
