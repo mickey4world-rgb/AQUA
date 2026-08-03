@@ -1,4 +1,5 @@
 import { fetchJplJson } from "@/lib/server/nasa-client";
+import { parseCloseApproachDate } from "@/lib/space-utils";
 import { auToKm, auToLunarDistances } from "@/lib/space-utils";
 import type { CloseApproach } from "@/lib/types/space";
 
@@ -52,12 +53,17 @@ export type NeoFeedResult =
 
 export async function fetchCloseApproaches(limit = 25): Promise<NeoFeedResult> {
   try {
-    const url = `https://ssd-api.jpl.nasa.gov/cad.api?date-min=now&date-max=%2B730&dist-max=0.2&sort=dist&limit=${limit}`;
+    const url = `https://ssd-api.jpl.nasa.gov/cad.api?date-min=now&date-max=%2B730&dist-max=0.2&sort=date&limit=${limit}`;
     const data = await fetchJplJson<CadResponse>(url);
 
     const approaches = data.data
       .map((row) => parseRow(data.fields, row))
-      .filter((a): a is CloseApproach => Boolean(a));
+      .filter((a): a is CloseApproach => Boolean(a))
+      .sort((a, b) => {
+        const da = parseCloseApproachDate(a.closeApproachDate);
+        const db = parseCloseApproachDate(b.closeApproachDate);
+        return da - db;
+      });
 
     return { ok: true, approaches, total: data.total };
   } catch (error) {

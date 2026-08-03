@@ -17,6 +17,18 @@ export function formatDistanceKm(km: number): string {
   return `${km.toFixed(0)} km`;
 }
 
+export function parseCloseApproachDate(cd: string): number {
+  const normalized = cd.replace(/(\d{4})-(\w{3})-(\d{1,2})/, (_, y, mon, d) => {
+    const months: Record<string, string> = {
+      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+    };
+    return `${y}-${months[mon] ?? "01"}-${String(d).padStart(2, "0")}`;
+  });
+  const ts = Date.parse(normalized);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
 const BASE_BANDS: Omit<WavelengthBand, "detected" | "note">[] = [
   { id: "radio", label: "電波", range: "> 1 mm", color: "#7c3aed" },
   { id: "microwave", label: "マイクロ波", range: "1 mm – 1 cm", color: "#6366f1" },

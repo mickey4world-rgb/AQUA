@@ -59,7 +59,7 @@ export default function AsteroidSimulatorTab() {
         <div className={spacePanelClass}>
           <h2 className="text-sm font-semibold text-white">地球接近小惑星</h2>
           <p className="mt-1 text-xs text-slate-400">
-            NASA/JPL SBDB — 今後2年・0.2 AU 以内（接近距離順）
+            NASA/JPL SBDB — 今後2年・0.2 AU 以内（接近日が近い順）
           </p>
 
           {loading && <p className="mt-4 text-sm text-slate-500">読み込み中...</p>}
@@ -136,6 +136,7 @@ export default function AsteroidSimulatorTab() {
             </div>
 
             <AsteroidScene
+              key={`${selected.designation}-${selected.closeApproachDate}`}
               approach={selected}
               progress={progress}
               playing={playing}
@@ -162,7 +163,7 @@ export default function AsteroidSimulatorTab() {
                   リセット
                 </button>
                 <span className="text-xs text-slate-500">
-                  {Math.round(progress * 100)}% — 太陽（黄）・地球（青）・小惑星（灰）の簡易3D軌道
+                  {Math.round(progress * 100)}% — 選択した小惑星の軌道で接近をシミュレーション
                 </span>
               </div>
               <input
@@ -177,7 +178,7 @@ export default function AsteroidSimulatorTab() {
                 className="mt-4 w-full accent-orange-500"
               />
               <p className="mt-2 text-[10px] text-slate-500">
-                データ: JPL Small-Body Database (CAD API)。軌道は接近距離を強調した簡易モデルです。
+                データ: JPL SBDB。軌道は接近距離・速度・サイズに基づく簡易モデル（小惑星ごとに軌道が変わります）。
               </p>
             </div>
           </>
