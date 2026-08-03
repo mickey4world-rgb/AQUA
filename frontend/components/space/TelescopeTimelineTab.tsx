@@ -25,6 +25,10 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const [summaryJa, setSummaryJa] = useState<{ titleJa: string; explanationJa: string } | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const summaryCache = useRef<Map<string, { titleJa: string; explanationJa: string }>>(new Map());
 
   useEffect(() => {
     fetch("/api/space/apod?days=21")
@@ -47,7 +51,37 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
     setAnalysis(inferApodAnalysis(entry.title, entry.explanation));
     setChatMessages([]);
     setChatError(null);
+    setSummaryError(null);
     onSelect?.(entry);
+
+    const cached = summaryCache.current.get(entry.date);
+    if (cached) {
+      setSummaryJa(cached);
+      return;
+    }
+
+    setSummaryJa(null);
+    setSummaryLoading(true);
+    fetch("/api/space/apod/summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apod: entry }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          setSummaryError(data.error);
+          return;
+        }
+        const summary = {
+          titleJa: data.titleJa as string,
+          explanationJa: data.explanationJa as string,
+        };
+        summaryCache.current.set(entry.date, summary);
+        setSummaryJa(summary);
+      })
+      .catch(() => setSummaryError("日本語解説の取得に失敗しました"))
+      .finally(() => setSummaryLoading(false));
   }
 
   async function sendChat(text: string) {
@@ -134,7 +168,9 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
           <>
             <div className={spacePanelClass}>
               <p className="text-xs text-indigo-300/80">{selected.date}</p>
-              <h2 className="mt-1 text-lg font-bold text-white">{selected.title}</h2>
+              <h2 className="mt-1 text-lg font-bold text-white">
+                {summaryJa?.titleJa ?? selected.title}
+              </h2>
               {selected.copyright && (
                 <p className="mt-1 text-[10px] text-slate-500">© {selected.copyright}</p>
               )}
@@ -148,10 +184,33 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
                 />
               </div>
 
-              <p className="mt-4 text-sm leading-relaxed text-slate-300">
-                {selected.explanation.slice(0, 480)}
-                {selected.explanation.length > 480 ? "…" : ""}
-              </p>
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-white">日本語解説</h3>
+                {summaryLoading && (
+                  <p className="mt-2 text-sm text-slate-500">AI が日本語解説を生成中...</p>
+                )}
+                {summaryError && (
+                  <p className="mt-2 text-xs text-rose-300">{summaryError}</p>
+                )}
+                {summaryJa && (
+                  <p className="mt-2 text-sm leading-relaxed text-slate-200">
+                    {summaryJa.explanationJa}
+                  </p>
+                )}
+                {!summaryLoading && !summaryJa && !summaryError && (
+                  <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                    {selected.explanation.slice(0, 480)}
+                    {selected.explanation.length > 480 ? "…" : ""}
+                  </p>
+                )}
+              </div>
+
+              <details className="mt-4 rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                <summary className="cursor-pointer text-xs text-slate-500">
+                  英語原文（NASA APOD）
+                </summary>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">{selected.explanation}</p>
+              </details>
             </div>
 
             <div className={spacePanelClass}>

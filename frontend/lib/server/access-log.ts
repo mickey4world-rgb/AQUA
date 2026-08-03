@@ -36,6 +36,7 @@ function inferFeatureFromPath(path: string, method: string): string {
   if (path.endsWith("/council/ask")) return "ask";
   if (path.endsWith("/council/config")) return "config";
   if (path.endsWith("/docs/generate")) return "generate";
+  if (path.endsWith("/space/apod/summary")) return "apod-summary";
   if (path.endsWith("/space/apod")) return "apod";
   if (path.endsWith("/space/neo")) return "neo";
   if (path.endsWith("/space/chat")) return "chat";
