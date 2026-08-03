@@ -14,6 +14,7 @@ function inferAppFromPath(path: string): AppKey {
   if (path.startsWith("/api/stocks")) return "stocks";
   if (path.startsWith("/api/disney")) return "disney";
   if (path.startsWith("/api/council")) return "council";
+  if (path.startsWith("/api/docs")) return "docs";
   if (path.startsWith("/api/costs")) return "costs";
   if (path.startsWith("/api/users")) return "users";
   return "system";
@@ -33,6 +34,7 @@ function inferFeatureFromPath(path: string, method: string): string {
   if (path.endsWith("/council/followup")) return "followup";
   if (path.endsWith("/council/ask")) return "ask";
   if (path.endsWith("/council/config")) return "config";
+  if (path.endsWith("/docs/generate")) return "generate";
   if (path.endsWith("/costs/dashboard")) return "dashboard";
   if (path.endsWith("/users/me")) return "profile";
   return `${method.toLowerCase()}-${path.split("/").pop() ?? "unknown"}`;

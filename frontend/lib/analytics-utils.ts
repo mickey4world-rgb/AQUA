@@ -40,6 +40,11 @@ export const appAccentStyles = {
     bg: "bg-violet-500/10",
     text: "text-violet-300",
   },
+  docs: {
+    border: "border-blue-400/20",
+    bg: "bg-blue-500/10",
+    text: "text-blue-300",
+  },
   users: {
     border: "border-emerald-400/20",
     bg: "bg-emerald-500/10",

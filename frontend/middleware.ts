@@ -5,7 +5,7 @@ import {
   parseClientPrincipal,
 } from "@/lib/client-principal";
 
-const PROTECTED_PREFIXES = ["/stocks", "/disney", "/costs", "/council", "/settings"];
+const PROTECTED_PREFIXES = ["/stocks", "/disney", "/costs", "/council", "/docs", "/settings"];
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(
@@ -35,5 +35,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/stocks/:path*", "/disney/:path*", "/costs/:path*", "/council/:path*", "/settings"],
+  matcher: ["/stocks/:path*", "/disney/:path*", "/costs/:path*", "/council/:path*", "/docs/:path*", "/settings"],
 };

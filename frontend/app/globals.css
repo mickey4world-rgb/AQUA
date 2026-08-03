@@ -25,6 +25,7 @@ body {
 .app-shell-disney { background: #0a0e1f; }
 .app-shell-costs { background: #0a0a0f; }
 .app-shell-council { background: #080612; }
+.app-shell-docs { background: #061018; }
 
 .bg-mesh-portal {
   background:
@@ -57,6 +58,13 @@ body {
     radial-gradient(ellipse at 80% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(99, 102, 241, 0.08) 0%, transparent 52%),
     radial-gradient(ellipse at 20% 0%, #312e8122 0%, #080612 55%);
+}
+.bg-mesh-docs {
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(37, 99, 235, 0.16) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 30%, rgba(59, 130, 246, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(27, 42, 74, 0.2) 0%, transparent 52%),
+    radial-gradient(ellipse at 15% 0%, #1e3a8a22 0%, #061018 55%);
 }
 
 /* ── Shared animation keyframes ── */

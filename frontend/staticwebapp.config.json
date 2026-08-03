@@ -21,6 +21,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/docs/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/settings",
       "allowedRoles": ["authenticated"]
     },
@@ -38,6 +42,10 @@
     },
     {
       "route": "/council/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/docs/*",
       "allowedRoles": ["authenticated"]
     },
     {
