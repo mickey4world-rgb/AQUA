@@ -1,6 +1,8 @@
 import {
   getAzureOpenAiDeployment,
+  getDomesticDataRegionLabel,
   isAzureOpenAiConfigured,
+  isDomesticJapanResidencyConfigured,
 } from "@/lib/server/azure-openai";
 import { councilDepthConfig } from "@/lib/server/council-config";
 import type { CouncilDepth, CouncilMode, CouncilModelMeta } from "@/lib/types/council";
@@ -21,6 +23,15 @@ const PERSONAS = {
 
 function deploymentOrDefault(envKey: string, fallback?: string): string {
   return process.env[envKey] ?? fallback ?? getAzureOpenAiDeployment();
+}
+
+/** 国内限定 — GLOBAL 系へのフォールバック禁止。日本リージョン専用デプロイのみ */
+function domesticDeployment(envKey: string): string {
+  return (
+    process.env[envKey] ??
+    process.env.AZURE_OPENAI_DEPLOYMENT_DOMESTIC ??
+    getAzureOpenAiDeployment()
+  );
 }
 
 export function formatModelDisplay(
@@ -46,14 +57,13 @@ function withDisplay(model: CouncilModelConfig): CouncilModelMeta {
 
 /** 国内限定 — 日本リージョン Azure OpenAI、議論者 A/B/C を個別デプロイ */
 export function getDomesticDebaters(): CouncilModelConfig[] {
-  const fallback = getAzureOpenAiDeployment();
   return [
     {
       id: "logic",
       role: "logic",
       label: "論理派アナリスト",
       provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_A", fallback),
+      deployment: domesticDeployment("AZURE_OPENAI_DEPLOYMENT_DEBATE_A"),
       persona: PERSONAS.logic,
       maxTokens: 420,
       featureSuffix: "logic",
@@ -63,7 +73,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
       role: "creative",
       label: "発想派プランナー",
       provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", fallback),
+      deployment: domesticDeployment("AZURE_OPENAI_DEPLOYMENT_DEBATE_B"),
       persona: PERSONAS.creative,
       maxTokens: 420,
       featureSuffix: "creative",
@@ -73,7 +83,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
       role: "skeptic",
       label: "懐疑派レビュアー",
       provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", fallback),
+      deployment: domesticDeployment("AZURE_OPENAI_DEPLOYMENT_DEBATE_C"),
       persona: PERSONAS.skeptic,
       maxTokens: 420,
       featureSuffix: "skeptic",
@@ -155,10 +165,7 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
     };
   }
 
-  const judgeDep = deploymentOrDefault(
-    "AZURE_OPENAI_DEPLOYMENT_DEBATE_JUDGE",
-    getAzureOpenAiDeployment(),
-  );
+  const judgeDep = domesticDeployment("AZURE_OPENAI_DEPLOYMENT_DEBATE_JUDGE");
 
   return {
     id: "judge",
@@ -174,6 +181,7 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
 
 export function getCouncilConfigMeta() {
   const azureConfigured = isAzureOpenAiConfigured();
+  const domesticResidencyOk = isDomesticJapanResidencyConfigured();
   const domesticDebaters = getDomesticDebaters().map(withDisplay);
   const domesticJudge = withDisplay(getCouncilJudge("domestic"));
   const globalDebaters = getGlobalDebaters().map(withDisplay);
@@ -185,13 +193,16 @@ export function getCouncilConfigMeta() {
       ? undefined
       : "Azure OpenAI（AZURE_OPENAI_ENDPOINT 等）が未設定です。SWA の環境変数を確認してください。",
     domestic: {
-      available: azureConfigured,
+      available: azureConfigured && domesticResidencyOk,
       label: "国内限定",
       description:
-        "日本リージョンの Azure OpenAI。論理・発想・懐疑の複数 AI が別デプロイで議論します（標準モードは3 AI）。",
+        "プロンプト・添付データは日本リージョン（Japan East / West）の Azure OpenAI のみで処理します。OpenAI 直 API や海外リージョンは使用しません。",
       models: domesticDebaters,
       judge: domesticJudge,
-      dataRegion: "Japan — Azure OpenAI",
+      dataRegion: getDomesticDataRegionLabel(),
+      warning: azureConfigured && !domesticResidencyOk
+        ? "AZURE_OPENAI_REGION が日本以外に設定されています。国内限定を使うには japaneast または japanwest を指定してください。"
+        : undefined,
     },
     global: {
       available: azureConfigured,

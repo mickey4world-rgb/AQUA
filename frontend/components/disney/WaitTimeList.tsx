@@ -40,8 +40,8 @@ export default function WaitTimeList({
   const operating = attractions.filter((item) => item.status === "OPERATING");
 
   return (
-    <div className={`${disneyPanelClass} overflow-hidden`}>
-      <div className="border-b border-white/10 px-4 py-3">
+    <div className={disneyPanelClass}>
+      <div className="border-b border-white/10 px-3 py-3 sm:px-4">
         <h2 className="text-sm font-semibold text-white">リアルタイム待ち時間</h2>
         <p className="mt-1 text-xs text-slate-400">
           運営中 {operating.length} アトラクション
@@ -49,29 +49,35 @@ export default function WaitTimeList({
       </div>
 
       {loading ? (
-        <p className="px-4 py-6 text-sm text-slate-400">更新中...</p>
+        <p className="px-3 py-6 text-sm text-slate-400 sm:px-4">更新中...</p>
       ) : (
-        <ul className="max-h-[32rem] divide-y divide-white/5 overflow-y-auto">
+        <ul className="max-h-[min(28rem,55dvh)] divide-y divide-white/5 overflow-y-auto overscroll-contain sm:max-h-[32rem]">
           {operating.map((item) => (
             <li
               key={item.id}
-              className="flex items-center justify-between gap-3 px-4 py-3"
+              className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-white">
                   {item.nameJa ?? item.name}
                 </p>
-                <p className="text-xs text-slate-500">
-                  {item.nameJa ? item.name : null}
-                  {item.isPopular && (
-                    <span className="ml-2 rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-fuchsia-300">
-                      人気
-                    </span>
-                  )}
-                </p>
+                {(item.nameJa && item.name !== item.nameJa) || item.isPopular ? (
+                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                    {item.nameJa && item.name !== item.nameJa ? (
+                      <p className="truncate text-xs text-slate-500">{item.name}</p>
+                    ) : null}
+                    {item.isPopular && (
+                      <span className="shrink-0 rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] text-fuchsia-300 sm:text-xs">
+                        人気
+                      </span>
+                    )}
+                  </div>
+                ) : null}
               </div>
-              <div className="text-right">
-                <p className={`text-lg font-bold ${waitTimeColor(item.waitTime)}`}>
+              <div className="shrink-0 text-right whitespace-nowrap">
+                <p
+                  className={`text-base font-bold tabular-nums sm:text-lg ${waitTimeColor(item.waitTime)}`}
+                >
                   {formatWaitTime(item.waitTime)}
                 </p>
                 <p className="text-[10px] text-slate-500">

@@ -1,5 +1,10 @@
 import { AzureOpenAI } from "openai";
 
+/** domestic = 日本リージョンにデータを留める用途（AI 合議・国内限定） */
+export type AzureOpenAiResidency = "domestic" | "global";
+
+const JAPAN_AZURE_REGIONS = new Set(["japaneast", "japanwest"]);
+
 const clientCache = new Map<string, AzureOpenAI>();
 
 export function isAzureOpenAiConfigured(): boolean {
@@ -14,21 +19,80 @@ export function getAzureOpenAiDeployment(): string {
   return process.env.AZURE_OPENAI_DEPLOYMENT ?? "stock-advice";
 }
 
-export function getAzureOpenAiClient(deployment?: string): AzureOpenAI {
+export function getAzureOpenAiRegion(): string | undefined {
+  return process.env.AZURE_OPENAI_REGION?.trim().toLowerCase();
+}
+
+export function getDomesticAzureEndpoint(): string {
+  const endpoint =
+    process.env.AZURE_OPENAI_ENDPOINT_DOMESTIC ?? process.env.AZURE_OPENAI_ENDPOINT;
+  if (!endpoint) {
+    throw new Error("Azure OpenAI endpoint is not configured");
+  }
+  return endpoint;
+}
+
+export function getGlobalAzureEndpoint(): string {
+  const endpoint =
+    process.env.AZURE_OPENAI_ENDPOINT_GLOBAL ?? process.env.AZURE_OPENAI_ENDPOINT;
+  if (!endpoint) {
+    throw new Error("Azure OpenAI endpoint is not configured");
+  }
+  return endpoint;
+}
+
+export function assertJapanResidency(residency: AzureOpenAiResidency): void {
+  if (residency !== "domestic") return;
+
+  const region = getAzureOpenAiRegion();
+  if (region && !JAPAN_AZURE_REGIONS.has(region)) {
+    throw new Error(
+      `国内限定モードは日本リージョン（Japan East / Japan West）の Azure OpenAI のみ使用できます。` +
+        ` AZURE_OPENAI_REGION=${region} は許可されていません。`,
+    );
+  }
+}
+
+export function isDomesticJapanResidencyConfigured(): boolean {
+  if (!isAzureOpenAiConfigured()) return false;
+  try {
+    assertJapanResidency("domestic");
+    return Boolean(getDomesticAzureEndpoint());
+  } catch {
+    return false;
+  }
+}
+
+export function getDomesticDataRegionLabel(): string {
+  const region = getAzureOpenAiRegion();
+  if (region === "japaneast") return "Japan East — Azure OpenAI（データ国内保持）";
+  if (region === "japanwest") return "Japan West — Azure OpenAI（データ国内保持）";
+  return "Japan — Azure OpenAI（データ国内保持）";
+}
+
+export function getAzureOpenAiClient(
+  deployment?: string,
+  residency: AzureOpenAiResidency = "global",
+): AzureOpenAI {
   if (!isAzureOpenAiConfigured()) {
     throw new Error("Azure OpenAI is not configured");
   }
 
+  assertJapanResidency(residency);
+
   const dep = deployment ?? getAzureOpenAiDeployment();
-  let cached = clientCache.get(dep);
+  const endpoint =
+    residency === "domestic" ? getDomesticAzureEndpoint() : getGlobalAzureEndpoint();
+  const cacheKey = `${residency}:${endpoint}:${dep}`;
+  let cached = clientCache.get(cacheKey);
   if (!cached) {
     cached = new AzureOpenAI({
-      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+      endpoint,
       apiKey: process.env.AZURE_OPENAI_API_KEY,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2024-10-21",
       deployment: dep,
     });
-    clientCache.set(dep, cached);
+    clientCache.set(cacheKey, cached);
   }
 
   return cached;

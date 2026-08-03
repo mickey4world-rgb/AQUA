@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import {
   getAzureOpenAiClient,
   isAzureOpenAiConfigured,
+  type AzureOpenAiResidency,
 } from "@/lib/server/azure-openai";
 import {
   formatAttachmentsForPrompt,
@@ -53,10 +54,15 @@ function buildTopicWithAttachments(topic: string, attachments: CouncilAttachment
 
 async function callCouncilModel(
   model: CouncilModelConfig,
+  mode: CouncilMode,
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number,
 ): Promise<ChatCompletionResult> {
+  if (mode === "domestic" && model.provider === "openai") {
+    throw new Error("国内限定モードでは OpenAI 直 API は使用できません");
+  }
+
   if (model.provider === "openai") {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key is not configured");
@@ -82,7 +88,8 @@ async function callCouncilModel(
   }
 
   const deployment = model.deployment!;
-  const client = getAzureOpenAiClient(deployment);
+  const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
+  const client = getAzureOpenAiClient(deployment, residency);
   const completion = await client.chat.completions.create({
     model: deployment,
     max_completion_tokens: maxTokens,
@@ -104,6 +111,7 @@ async function callCouncilModel(
 
 async function runModelPhase(
   userId: string,
+  mode: CouncilMode,
   models: CouncilModelConfig[],
   phase: "initial" | "rebuttal",
   topicWithAttachments: string,
@@ -124,6 +132,7 @@ async function runModelPhase(
 
       const result = await callCouncilModel(
         model,
+        mode,
         `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
         userPrompt,
         depthConfig.debaterMaxTokens,
@@ -204,11 +213,21 @@ export async function runCouncilDebate(
 
   const judge = getCouncilJudge(mode);
   const configMeta = getCouncilConfigMeta();
+  if (mode === "domestic" && !configMeta.domestic.available) {
+    return {
+      ok: false,
+      reason:
+        configMeta.domestic.warning ??
+        "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
+    };
+  }
+
   const topicWithAttachments = buildTopicWithAttachments(trimmed, attachments);
 
   try {
     const initial = await runModelPhase(
       userId,
+      mode,
       debaters,
       "initial",
       topicWithAttachments,
@@ -218,6 +237,7 @@ export async function runCouncilDebate(
     const rebuttal = depthConfig.includeRebuttal
       ? await runModelPhase(
           userId,
+          mode,
           debaters,
           "rebuttal",
           topicWithAttachments,
@@ -237,6 +257,7 @@ export async function runCouncilDebate(
 
     const judgeResult = await callCouncilModel(
       judge,
+      mode,
       `${judge.persona}\n日本語。${depthConfig.judgeLengthHint}。`,
       `テーマ:\n${topicWithAttachments}\n\n意見:\n${opinionLines}\n\n結論をまとめて。`,
       depthConfig.judgeMaxTokens,

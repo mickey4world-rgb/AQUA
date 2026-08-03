@@ -2,9 +2,10 @@ import OpenAI from "openai";
 import {
   getAzureOpenAiClient,
   isAzureOpenAiConfigured,
+  type AzureOpenAiResidency,
 } from "@/lib/server/azure-openai";
 import { formatAttachmentsForPrompt } from "@/lib/server/council-attachments";
-import { getCouncilJudge } from "@/lib/server/council-models";
+import { getCouncilConfigMeta, getCouncilJudge } from "@/lib/server/council-models";
 import { canUseAiTokens, recordTokenUsage } from "@/lib/server/token-usage";
 import type {
   CouncilAttachment,
@@ -30,6 +31,10 @@ async function callFollowUpModel(
   messages: { role: "user" | "assistant"; content: string }[],
 ): Promise<{ content: string; model: string; usage: { prompt: number; completion: number }; requestId?: string }> {
   const judge = getCouncilJudge(mode);
+
+  if (mode === "domestic" && judge.provider === "openai") {
+    throw new Error("国内限定モードでは OpenAI 直 API は使用できません");
+  }
 
   if (judge.provider === "openai") {
     if (!process.env.OPENAI_API_KEY) {
@@ -58,7 +63,8 @@ async function callFollowUpModel(
   }
 
   const deployment = judge.deployment!;
-  const client = getAzureOpenAiClient(deployment);
+  const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
+  const client = getAzureOpenAiClient(deployment, residency);
   const completion = await client.chat.completions.create({
     model: deployment,
     max_completion_tokens: 400,
@@ -97,6 +103,18 @@ export async function sendCouncilFollowUp(
 
   if (!isAzureOpenAiConfigured()) {
     return { ok: false, reason: "Azure OpenAI が未設定のため、チャットは利用できません。" };
+  }
+
+  if (debate.mode === "domestic") {
+    const configMeta = getCouncilConfigMeta();
+    if (!configMeta.domestic.available) {
+      return {
+        ok: false,
+        reason:
+          configMeta.domestic.warning ??
+          "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
+      };
+    }
   }
 
   const quota = await canUseAiTokens(userId);

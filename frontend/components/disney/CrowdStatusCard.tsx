@@ -22,12 +22,14 @@ export default function CrowdStatusCard({
 
   return (
     <div className={`${disneyPanelClass} p-5`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-[0.2em] text-fuchsia-300/80">
             {isForecast ? "Forecast" : "Live Crowd"}
           </p>
-          <h3 className="mt-1 text-xl font-bold text-white">{status.parkName}</h3>
+          <h3 className="mt-1 truncate text-lg font-bold text-white sm:text-xl">
+            {status.parkName}
+          </h3>
           {targetDate && (
             <p className="mt-1 text-xs text-slate-400">
               {isForecast ? "予測日" : "表示日"}: {targetDate}
@@ -35,7 +37,7 @@ export default function CrowdStatusCard({
           )}
         </div>
         <span
-          className={`rounded-full border px-3 py-1 text-sm font-semibold ${crowdLevelColors[status.crowdLevel]}`}
+          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold sm:px-3 sm:text-sm ${crowdLevelColors[status.crowdLevel]}`}
         >
           {status.crowdLabel}
         </span>

@@ -30,7 +30,8 @@ export default function DisneyInfoPanel({ advice, loading }: DisneyInfoPanelProp
       )}
 
       <p className="mt-4 text-xs text-slate-500">
-        回り方の詳細は右の「ミッキーに聞く」チャットで質問してください。
+        <span className="lg:hidden">回り方の詳細は下の「ミッキーに聞く」チャットで質問してください。</span>
+        <span className="hidden lg:inline">回り方の詳細は右の「ミッキーに聞く」チャットで質問してください。</span>
       </p>
     </div>
   );

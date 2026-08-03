@@ -77,6 +77,14 @@ export default function CouncilPanel() {
       return;
     }
 
+    if (mode === "domestic" && !config.domestic.available) {
+      setError(
+        config.domestic.warning ??
+          "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -123,7 +131,7 @@ export default function CouncilPanel() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談モード</h2>
         <p className="mt-1 text-xs text-slate-400">
-          国内限定は日本リージョン Azure の複数 AI。国内問わずは Azure 最新系デプロイ（OpenAI 直契約不要）。
+          国内限定はプロンプト・添付データを日本リージョン Azure のみで処理。国内問わずは Azure 最新系デプロイ（GPT-5 等）。
         </p>
 
         {config && !config.azureConfigured && config.setupHint && (
@@ -180,6 +188,9 @@ export default function CouncilPanel() {
           <div className="mt-4 rounded-xl border border-white/5 bg-black/20 p-3 text-xs text-slate-400">
             <p>{modeConfig.description}</p>
             <p className="mt-2 text-slate-500">データ領域: {modeConfig.dataRegion}</p>
+            {mode === "domestic" && config?.domestic.warning && (
+              <p className="mt-2 text-amber-200/90">{config.domestic.warning}</p>
+            )}
             {mode === "global" && config?.global.warning && (
               <p className="mt-2 text-amber-200/90">{config.global.warning}</p>
             )}
