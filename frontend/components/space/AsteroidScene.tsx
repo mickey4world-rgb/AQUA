@@ -7,10 +7,18 @@ import * as THREE from "three";
 import type { CloseApproach } from "@/lib/types/space";
 import {
   EARTH_ORBIT,
+  JUPITER_ORBIT,
+  MARS_ORBIT,
+  MERCURY_ORBIT,
+  MOON_ORBIT,
+  PLANET_ORBIT_SPEED,
+  SATURN_ORBIT,
   SUN_RADIUS,
+  VENUS_ORBIT,
   buildAsteroidOrbit,
   earthPosition,
   orbitPhaseLabel,
+  planetPosition,
 } from "@/lib/space-orbit";
 
 const EARTH_RADIUS = 0.22;
@@ -29,37 +37,83 @@ type SceneProps = {
 };
 
 function SunMesh() {
+  const coreRef = useRef<THREE.Mesh>(null);
+  const coronaRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const flicker = 1 + Math.sin(t * 4.2) * 0.05 + Math.sin(t * 9.1) * 0.025;
+    if (coreRef.current) coreRef.current.scale.setScalar(flicker);
+    if (coronaRef.current) {
+      coronaRef.current.scale.setScalar(1.05 + Math.sin(t * 2.8) * 0.08);
+    }
+  });
+
   return (
     <group>
-      <mesh>
+      <mesh ref={coreRef}>
         <sphereGeometry args={[SUN_RADIUS, 64, 64]} />
-        <meshBasicMaterial color="#ffe066" />
+        <meshBasicMaterial color="#fffef5" />
       </mesh>
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS * 1.18, 48, 48]} />
-        <meshBasicMaterial color="#ff9933" transparent opacity={0.22} />
+        <sphereGeometry args={[SUN_RADIUS * 1.12, 48, 48]} />
+        <meshBasicMaterial color="#fff4a8" transparent opacity={0.55} />
+      </mesh>
+      <mesh ref={coronaRef}>
+        <sphereGeometry args={[SUN_RADIUS * 1.35, 48, 48]} />
+        <meshBasicMaterial color="#ff9933" transparent opacity={0.32} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[SUN_RADIUS * 1.55, 32, 32]} />
-        <meshBasicMaterial color="#ff6600" transparent opacity={0.07} />
+        <sphereGeometry args={[SUN_RADIUS * 1.85, 32, 32]} />
+        <meshBasicMaterial color="#ff5500" transparent opacity={0.14} />
       </mesh>
-      <pointLight intensity={5} color="#fff8e7" distance={120} decay={2} />
-      <pointLight intensity={1.5} color="#ffaa44" distance={60} decay={2} />
+      <mesh>
+        <sphereGeometry args={[SUN_RADIUS * 2.4, 24, 24]} />
+        <meshBasicMaterial color="#ff2200" transparent opacity={0.06} />
+      </mesh>
+      <pointLight intensity={14} color="#fffef0" distance={140} decay={1.8} />
+      <pointLight intensity={5} color="#ffd080" distance={70} decay={2} />
+      <pointLight intensity={2.5} color="#ff7722" distance={35} decay={2} />
     </group>
   );
 }
 
-function EarthOrbitRing() {
+function OrbitRing({ radius, color = "#475569", opacity = 0.35 }: { radius: number; color?: string; opacity?: number }) {
   const points = useMemo(() => {
     const pts: [number, number, number][] = [];
     for (let i = 0; i <= 96; i += 1) {
       const a = (i / 96) * Math.PI * 2;
-      pts.push([Math.cos(a) * EARTH_ORBIT, 0, Math.sin(a) * EARTH_ORBIT]);
+      pts.push([Math.cos(a) * radius, 0, Math.sin(a) * radius]);
     }
     return pts;
-  }, []);
+  }, [radius]);
 
-  return <Line points={points} color="#475569" transparent opacity={0.45} lineWidth={1} />;
+  return <Line points={points} color={color} transparent opacity={opacity} lineWidth={1} />;
+}
+
+function MoonMesh() {
+  const moonRef = useRef<THREE.Group>(null);
+  const angleRef = useRef(Math.random() * Math.PI * 2);
+
+  useFrame((_, delta) => {
+    angleRef.current += delta * 0.9;
+    if (moonRef.current) {
+      moonRef.current.position.set(
+        Math.cos(angleRef.current) * MOON_ORBIT,
+        0,
+        Math.sin(angleRef.current) * MOON_ORBIT,
+      );
+    }
+  });
+
+  return (
+    <group ref={moonRef}>
+      <mesh>
+        <sphereGeometry args={[0.06, 24, 24]} />
+        <meshStandardMaterial color="#d4d4d8" emissive="#888888" emissiveIntensity={0.25} roughness={0.95} />
+      </mesh>
+    </group>
+  );
 }
 
 function EarthMesh({ initialAngle }: { initialAngle: number }) {
@@ -73,8 +127,7 @@ function EarthMesh({ initialAngle }: { initialAngle: number }) {
   useFrame((_, delta) => {
     angleRef.current += delta * 0.05;
     if (groupRef.current) {
-      const pos = earthPosition(angleRef.current);
-      groupRef.current.position.copy(pos);
+      groupRef.current.position.copy(earthPosition(angleRef.current));
     }
     if (earthRef.current) earthRef.current.rotation.y += delta * 0.35;
     if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.42;
@@ -87,23 +140,79 @@ function EarthMesh({ initialAngle }: { initialAngle: number }) {
         <meshPhongMaterial
           map={map}
           specularMap={specular}
-          specular={new THREE.Color("#333333")}
-          shininess={18}
+          specular={new THREE.Color("#666666")}
+          shininess={28}
+          emissive="#1e40af"
+          emissiveIntensity={0.22}
         />
       </mesh>
       <mesh ref={cloudsRef}>
         <sphereGeometry args={[EARTH_RADIUS * 1.015, 64, 64]} />
-        <meshPhongMaterial
-          map={clouds}
-          transparent
-          opacity={0.38}
-          depthWrite={false}
-        />
+        <meshPhongMaterial map={clouds} transparent opacity={0.48} depthWrite={false} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[EARTH_RADIUS * 1.08, 32, 32]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.08} />
+        <sphereGeometry args={[EARTH_RADIUS * 1.1, 32, 32]} />
+        <meshBasicMaterial color="#93c5fd" transparent opacity={0.22} />
       </mesh>
+      <MoonMesh />
+    </group>
+  );
+}
+
+type PlanetSpec = {
+  id: string;
+  label: string;
+  orbit: number;
+  radius: number;
+  color: string;
+  emissive: string;
+  speedKey: keyof typeof PLANET_ORBIT_SPEED;
+  ring?: boolean;
+  initialAngle: number;
+};
+
+const PLANETS: PlanetSpec[] = [
+  { id: "mercury", label: "水星", orbit: MERCURY_ORBIT, radius: 0.07, color: "#a8a29e", emissive: "#57534e", speedKey: "mercury", initialAngle: 0.4 },
+  { id: "venus", label: "金星", orbit: VENUS_ORBIT, radius: 0.1, color: "#fde68a", emissive: "#ca8a04", speedKey: "venus", initialAngle: 2.1 },
+  { id: "mars", label: "火星", orbit: MARS_ORBIT, radius: 0.11, color: "#f87171", emissive: "#b91c1c", speedKey: "mars", initialAngle: 4.2 },
+  { id: "jupiter", label: "木星", orbit: JUPITER_ORBIT, radius: 0.28, color: "#d97706", emissive: "#92400e", speedKey: "jupiter", initialAngle: 1.3 },
+  { id: "saturn", label: "土星", orbit: SATURN_ORBIT, radius: 0.24, color: "#fcd34d", emissive: "#a16207", speedKey: "saturn", ring: true, initialAngle: 5.5 },
+];
+
+function PlanetMesh({ planet }: { planet: PlanetSpec }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const angleRef = useRef(planet.initialAngle);
+
+  useFrame((_, delta) => {
+    angleRef.current += delta * PLANET_ORBIT_SPEED[planet.speedKey];
+    if (groupRef.current) {
+      groupRef.current.position.copy(planetPosition(angleRef.current, planet.orbit));
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh>
+        <sphereGeometry args={[planet.radius, 32, 32]} />
+        <meshStandardMaterial
+          color={planet.color}
+          emissive={planet.emissive}
+          emissiveIntensity={0.28}
+          roughness={0.85}
+          metalness={0.05}
+        />
+      </mesh>
+      {planet.ring && (
+        <mesh rotation-x={Math.PI / 2}>
+          <ringGeometry args={[planet.radius * 1.45, planet.radius * 2.05, 48]} />
+          <meshBasicMaterial color="#fde68a" transparent opacity={0.5} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      <Html distanceFactor={14} position={[0, planet.radius + 0.2, 0]} center>
+        <span className="whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-slate-200">
+          {planet.label}
+        </span>
+      </Html>
     </group>
   );
 }
@@ -213,11 +322,16 @@ function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
 
   return (
     <>
-      <ambientLight intensity={0.12} />
-      <directionalLight position={[8, 6, 4]} intensity={0.35} color="#dbeafe" />
+      <ambientLight intensity={0.22} color="#1e293b" />
+      <directionalLight position={[-6, 3, -4]} intensity={0.9} color="#fff4e0" />
       <SunMesh />
-      <EarthOrbitRing />
+      <OrbitRing radius={EARTH_ORBIT} />
+      <OrbitRing radius={MARS_ORBIT} color="#334155" opacity={0.22} />
+      <OrbitRing radius={JUPITER_ORBIT} color="#334155" opacity={0.18} />
       <EarthMesh initialAngle={orbit.earthAngle} />
+      {PLANETS.map((planet) => (
+        <PlanetMesh key={planet.id} planet={planet} />
+      ))}
       <AsteroidPath points={pathPoints} color="#fb923c" />
       <ClosestMarker position={orbit.closestPoint} />
       <AsteroidMesh
@@ -230,7 +344,7 @@ function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
         phase={phase}
       />
       <Stars radius={90} depth={45} count={4000} factor={3.5} fade speed={0.35} />
-      <OrbitControls enablePan={false} minDistance={5} maxDistance={24} />
+      <OrbitControls enablePan={false} minDistance={5} maxDistance={28} />
     </>
   );
 }

@@ -1,8 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { inferApodAnalysis, spacePanelClass } from "@/lib/space-utils";
 import type { ApodEntry, ApodAnalysis, SpaceChatMessage } from "@/lib/types/space";
+
+const CosmicLocationScene = dynamic(() => import("@/components/space/CosmicLocationScene"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] items-center justify-center rounded-xl border border-white/10 bg-black/40 text-sm text-slate-500 sm:h-[360px]">
+      宇宙位置マップ読み込み中...
+    </div>
+  ),
+});
 
 const STARTER_QUESTIONS = [
   "この星雲の構成成分は何ですか？",
@@ -212,6 +222,48 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">{selected.explanation}</p>
               </details>
             </div>
+
+            {analysis.cosmic && (
+              <div className={spacePanelClass}>
+                <h3 className="text-sm font-semibold text-white">宇宙の位置（3D）</h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  天の川銀河・太陽系・深宇宙のどこを見ているかを3Dで表示
+                </p>
+
+                <div className="mt-4">
+                  <CosmicLocationScene location={analysis.cosmic} />
+                </div>
+
+                <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                    <dt className="text-slate-500">スケール</dt>
+                    <dd className="mt-0.5 font-medium text-indigo-200">{analysis.cosmic.regionLabel}</dd>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                    <dt className="text-slate-500">観測位置</dt>
+                    <dd className="mt-0.5 font-medium text-sky-200">{analysis.cosmic.positionLabel}</dd>
+                  </div>
+                  {analysis.cosmic.constellation && (
+                    <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                      <dt className="text-slate-500">星座</dt>
+                      <dd className="mt-0.5 font-medium text-slate-200">{analysis.cosmic.constellation}</dd>
+                    </div>
+                  )}
+                  {analysis.cosmic.distanceLy !== undefined && (
+                    <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                      <dt className="text-slate-500">距離（推定）</dt>
+                      <dd className="mt-0.5 font-medium text-amber-200">
+                        {analysis.cosmic.distanceLy >= 1_000_000
+                          ? `${(analysis.cosmic.distanceLy / 1_000_000).toFixed(1)} 百万光年`
+                          : analysis.cosmic.distanceLy >= 1_000
+                            ? `${(analysis.cosmic.distanceLy / 1_000).toFixed(1)} 千光年`
+                            : `${analysis.cosmic.distanceLy.toFixed(0)} 光年`}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
 
             <div className={spacePanelClass}>
               <h3 className="text-sm font-semibold text-white">光・波長分析</h3>
