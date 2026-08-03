@@ -1,12 +1,13 @@
 "use client";
 
-import type { CouncilModelOpinion } from "@/lib/types/council";
+import type { CouncilModelOpinion, CouncilPhase } from "@/lib/types/council";
 
-const phaseLabels = {
+const phaseLabels: Record<CouncilPhase, string> = {
   initial: "第1ラウンド",
   rebuttal: "第2ラウンド（議論）",
   synthesis: "合議まとめ",
-} as const;
+  followup: "追加質問",
+};
 
 const modelColors: Record<string, string> = {
   logic: "border-emerald-400/30 bg-emerald-500/10",
@@ -25,12 +26,17 @@ function OpinionCard({ opinion, highlight }: { opinion: CouncilModelOpinion; hig
 
   return (
     <div className={`rounded-2xl border p-4 ${color}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-white">{opinion.modelLabel}</p>
         <span className="text-[10px] uppercase tracking-wider text-slate-400">
           {phaseLabels[opinion.phase]}
         </span>
       </div>
+      {opinion.modelUsed && (
+        <p className="mt-1 font-mono text-[10px] text-slate-500">
+          {opinion.provider === "openai" ? "OpenAI" : "Azure"} · {opinion.modelUsed}
+        </p>
+      )}
       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
         {opinion.content}
       </p>

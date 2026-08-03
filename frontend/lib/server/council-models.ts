@@ -1,8 +1,9 @@
-import { getAzureOpenAiDeployment } from "@/lib/server/azure-openai";
+import { getAzureOpenAiDeployment, isAzureOpenAiConfigured } from "@/lib/server/azure-openai";
 import { councilDepthConfig } from "@/lib/server/council-config";
 import type { CouncilDepth, CouncilMode, CouncilModelMeta } from "@/lib/types/council";
 
 export type CouncilModelConfig = CouncilModelMeta & {
+  role: "logic" | "creative" | "skeptic";
   persona: string;
   maxTokens: number;
   featureSuffix: string;
@@ -15,6 +16,8 @@ const PERSONAS = {
   judge: "議長。意見を統合し実用的な結論を出す。",
 } as const;
 
+const ROLE_INDEX = { logic: 0, creative: 1, skeptic: 2 } as const;
+
 export function isOpenAiGlobalConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
@@ -23,13 +26,22 @@ function deploymentOrDefault(envKey: string, fallback?: string): string {
   return process.env[envKey] ?? fallback ?? getAzureOpenAiDeployment();
 }
 
-function toMeta(model: CouncilModelConfig): CouncilModelMeta {
+export function formatModelDisplay(meta: Pick<CouncilModelMeta, "provider" | "model" | "deployment">): string {
+  if (meta.provider === "openai") {
+    return `OpenAI · ${meta.model ?? "—"}`;
+  }
+  return `Azure · ${meta.deployment ?? meta.model ?? "—"}`;
+}
+
+function withDisplay(model: CouncilModelConfig): CouncilModelMeta {
+  const displayName = formatModelDisplay(model);
   return {
     id: model.id,
     label: model.label,
     provider: model.provider,
     deployment: model.deployment,
     model: model.model,
+    displayName,
   };
 }
 
@@ -38,6 +50,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
   return [
     {
       id: "logic",
+      role: "logic",
       label: "論理派アナリスト",
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_A", fallback),
@@ -47,6 +60,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
     },
     {
       id: "creative",
+      role: "creative",
       label: "発想派プランナー",
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", fallback),
@@ -56,6 +70,7 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
     },
     {
       id: "skeptic",
+      role: "skeptic",
       label: "懐疑派レビュアー",
       provider: "azure",
       deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", fallback),
@@ -67,111 +82,40 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
 }
 
 export function getGlobalDebaters(): CouncilModelConfig[] {
-  const models: CouncilModelConfig[] = [];
-
-  if (isOpenAiGlobalConfigured()) {
-    models.push(
-      {
-        id: "global-openai-a",
-        label: "GPT Analyst (Global)",
-        provider: "openai",
-        model: process.env.OPENAI_MODEL_A ?? "gpt-4o",
-        persona: PERSONAS.logic,
-        maxTokens: 480,
-        featureSuffix: "openai-a",
-      },
-      {
-        id: "global-openai-b",
-        label: "GPT Creative (Global)",
-        provider: "openai",
-        model: process.env.OPENAI_MODEL_B ?? "gpt-4o-mini",
-        persona: PERSONAS.creative,
-        maxTokens: 480,
-        featureSuffix: "openai-b",
-      },
-      {
-        id: "global-openai-c",
-        label: "GPT Skeptic (Global)",
-        provider: "openai",
-        model: process.env.OPENAI_MODEL_C ?? "gpt-4o-mini",
-        persona: PERSONAS.skeptic,
-        maxTokens: 480,
-        featureSuffix: "openai-c",
-      },
-    );
+  if (!isOpenAiGlobalConfigured()) {
+    return [];
   }
 
-  const globalDepA = process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL_A;
-  const globalDepB = process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL_B;
-  const globalDepC = process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL_C;
-
-  if (globalDepA) {
-    models.push({
-      id: "global-azure-a",
-      label: "Azure Global A",
-      provider: "azure",
-      deployment: globalDepA,
-      persona: PERSONAS.logic,
-      maxTokens: 480,
-      featureSuffix: "azure-global-a",
-    });
-  }
-  if (globalDepB) {
-    models.push({
-      id: "global-azure-b",
-      label: "Azure Global B",
-      provider: "azure",
-      deployment: globalDepB,
-      persona: PERSONAS.creative,
-      maxTokens: 480,
-      featureSuffix: "azure-global-b",
-    });
-  }
-  if (globalDepC) {
-    models.push({
-      id: "global-azure-c",
-      label: "Azure Global C",
-      provider: "azure",
-      deployment: globalDepC,
-      persona: PERSONAS.skeptic,
-      maxTokens: 480,
-      featureSuffix: "azure-global-c",
-    });
-  }
-
-  if (models.length >= 3) {
-    return models.slice(0, 3);
-  }
-
-  const latestDep =
-    process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL ?? getAzureOpenAiDeployment();
   return [
     {
-      id: "global-latest-a",
-      label: "Latest Analyst",
-      provider: "azure",
-      deployment: latestDep,
+      id: "global-openai-a",
+      role: "logic",
+      label: "GPT Analyst",
+      provider: "openai",
+      model: process.env.OPENAI_MODEL_A ?? "gpt-5.6-sol",
       persona: PERSONAS.logic,
       maxTokens: 480,
-      featureSuffix: "latest-a",
+      featureSuffix: "openai-a",
     },
     {
-      id: "global-latest-b",
-      label: "Latest Planner",
-      provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", latestDep),
+      id: "global-openai-b",
+      role: "creative",
+      label: "GPT Planner",
+      provider: "openai",
+      model: process.env.OPENAI_MODEL_B ?? "gpt-5.6-terra",
       persona: PERSONAS.creative,
       maxTokens: 480,
-      featureSuffix: "latest-b",
+      featureSuffix: "openai-b",
     },
     {
-      id: "global-latest-c",
-      label: "Latest Reviewer",
-      provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", latestDep),
+      id: "global-openai-c",
+      role: "skeptic",
+      label: "GPT Reviewer",
+      provider: "openai",
+      model: process.env.OPENAI_MODEL_C ?? "gpt-5.6-luna",
       persona: PERSONAS.skeptic,
       maxTokens: 480,
-      featureSuffix: "skeptic",
+      featureSuffix: "openai-c",
     },
   ];
 }
@@ -182,38 +126,41 @@ export function getCouncilDebaters(
 ): CouncilModelConfig[] {
   const all = mode === "domestic" ? getDomesticDebaters() : getGlobalDebaters();
   const { debaterIds } = councilDepthConfig(depth);
-  const idSet = new Set<string>(debaterIds);
-  const filtered = all.filter((m) => idSet.has(m.id));
-  return filtered.length > 0 ? filtered : all.slice(0, debaterIds.length);
+
+  if (mode === "domestic") {
+    return debaterIds
+      .map((role) => all.find((m) => m.role === role))
+      .filter((m): m is CouncilModelConfig => Boolean(m));
+  }
+
+  return debaterIds
+    .map((role) => all[ROLE_INDEX[role]])
+    .filter((m): m is CouncilModelConfig => Boolean(m));
 }
 
 export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
-  if (mode === "global" && isOpenAiGlobalConfigured()) {
+  if (mode === "global") {
     return {
       id: "judge-global",
-      label: "GPT Judge (Global)",
+      role: "logic",
+      label: "GPT Judge",
       provider: "openai",
-      model: process.env.OPENAI_MODEL_JUDGE ?? process.env.OPENAI_MODEL_A ?? "gpt-4o",
+      model: process.env.OPENAI_MODEL_JUDGE ?? process.env.OPENAI_MODEL_A ?? "gpt-5.6-sol",
       persona: PERSONAS.judge,
       maxTokens: 550,
       featureSuffix: "judge",
     };
   }
 
-  const judgeDep =
-    mode === "global"
-      ? deploymentOrDefault(
-          "AZURE_OPENAI_DEPLOYMENT_GLOBAL_JUDGE",
-          deploymentOrDefault(
-            "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
-            deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_JUDGE", getAzureOpenAiDeployment()),
-          ),
-        )
-      : deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_JUDGE", getAzureOpenAiDeployment());
+  const judgeDep = deploymentOrDefault(
+    "AZURE_OPENAI_DEPLOYMENT_DEBATE_JUDGE",
+    getAzureOpenAiDeployment(),
+  );
 
   return {
     id: "judge",
-    label: mode === "domestic" ? "合議議長（国内）" : "合議議長（最新）",
+    role: "logic",
+    label: "合議議長（国内）",
     provider: "azure",
     deployment: judgeDep,
     persona: PERSONAS.judge,
@@ -223,29 +170,38 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
 }
 
 export function getCouncilConfigMeta() {
-  const domesticModels = getDomesticDebaters().map(toMeta);
-  const globalModels = getGlobalDebaters().map(toMeta);
-  const globalUsesExternal = isOpenAiGlobalConfigured();
+  const domesticDebaters = getDomesticDebaters().map(withDisplay);
+  const domesticJudge = withDisplay(getCouncilJudge("domestic"));
+  const globalDebaters = getGlobalDebaters().map(withDisplay);
+  const globalJudge = withDisplay(getCouncilJudge("global"));
+  const openaiConfigured = isOpenAiGlobalConfigured();
 
   return {
+    openaiConfigured,
+    azureConfigured: isAzureOpenAiConfigured(),
+    setupHint: openaiConfigured
+      ? undefined
+      : "Azure Portal → Static Web App (swa-personal-apps-prod) → Configuration → Application settings に OPENAI_API_KEY を追加してください。",
     domestic: {
       available: true,
       label: "国内限定",
       description: "Azure OpenAI（日本リージョン）のみ。データは国内に留まります。",
-      models: domesticModels,
+      models: domesticDebaters,
+      judge: domesticJudge,
       dataRegion: "Japan — Azure OpenAI",
     },
     global: {
-      available: true,
-      label: "国内問わず（最新）",
-      description: globalUsesExternal
-        ? "OpenAI API 等の最新モデルを含む。プロンプトが海外に送信される場合があります。"
-        : "最新デプロイメント構成を使用。OPENAI_API_KEY 未設定時は Azure の最新系モデルで合議します。",
-      models: globalModels,
-      dataRegion: globalUsesExternal ? "Global (OpenAI API + Azure)" : "Azure OpenAI (latest tier)",
-      warning: globalUsesExternal
-        ? "このモードでは質問内容が日本国外の API に送信される可能性があります。"
-        : "OPENAI_API_KEY を設定すると、より新しい海外モデルも参加できます。",
+      available: openaiConfigured,
+      label: "国内問わず（OpenAI）",
+      description: openaiConfigured
+        ? "OpenAI API の最新モデル（GPT-5.6 系）で合議します。データは海外に送信されます。"
+        : "OPENAI_API_KEY 未設定のため利用できません。",
+      models: globalDebaters,
+      judge: globalJudge,
+      dataRegion: "Global — OpenAI API",
+      warning: openaiConfigured
+        ? "質問・添付ファイルは OpenAI（海外）に送信されます。"
+        : "Configuration に OPENAI_API_KEY を設定後、再読み込みしてください。",
     },
   };
 }
