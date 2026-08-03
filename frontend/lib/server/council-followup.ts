@@ -4,7 +4,7 @@ import {
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
 import { formatAttachmentsForPrompt } from "@/lib/server/council-attachments";
-import { getCouncilJudge, isOpenAiGlobalConfigured } from "@/lib/server/council-models";
+import { getCouncilJudge } from "@/lib/server/council-models";
 import { canUseAiTokens, recordTokenUsage } from "@/lib/server/token-usage";
 import type {
   CouncilAttachment,
@@ -97,14 +97,6 @@ export async function sendCouncilFollowUp(
 
   if (!isAzureOpenAiConfigured()) {
     return { ok: false, reason: "Azure OpenAI が未設定のため、チャットは利用できません。" };
-  }
-
-  if (debate.mode === "global" && !isOpenAiGlobalConfigured()) {
-    return {
-      ok: false,
-      reason:
-        "国内問わずモードのフォローアップには OPENAI_API_KEY が必要です。",
-    };
   }
 
   const quota = await canUseAiTokens(userId);

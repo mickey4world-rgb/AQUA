@@ -12,7 +12,6 @@ import {
   getCouncilConfigMeta,
   getCouncilDebaters,
   getCouncilJudge,
-  isOpenAiGlobalConfigured,
   type CouncilModelConfig,
 } from "@/lib/server/council-models";
 import { canUseAiTokens, recordTokenUsage } from "@/lib/server/token-usage";
@@ -187,14 +186,6 @@ export async function runCouncilDebate(
     return {
       ok: false,
       reason: "Azure OpenAI が未設定のため、AI 合議は利用できません。",
-    };
-  }
-
-  if (mode === "global" && !isOpenAiGlobalConfigured()) {
-    return {
-      ok: false,
-      reason:
-        "国内問わずモードには OPENAI_API_KEY の設定が必要です。Azure Portal → SWA → Configuration で追加してください。",
     };
   }
 

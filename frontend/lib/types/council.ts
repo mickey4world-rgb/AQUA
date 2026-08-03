@@ -49,7 +49,6 @@ export interface CouncilDebateResult {
 }
 
 export interface CouncilConfigResponse {
-  openaiConfigured: boolean;
   azureConfigured: boolean;
   setupHint?: string;
   domestic: {
