@@ -3,6 +3,21 @@ import type { CloseApproach } from "@/lib/types/space";
 
 export const EARTH_ORBIT = 4;
 export const SUN_RADIUS = 0.65;
+export const MOON_ORBIT = 0.55;
+
+export const MERCURY_ORBIT = 2.4;
+export const VENUS_ORBIT = 3.0;
+export const MARS_ORBIT = 6.2;
+export const JUPITER_ORBIT = 8.5;
+export const SATURN_ORBIT = 10.5;
+
+export const PLANET_ORBIT_SPEED: Record<string, number> = {
+  mercury: 0.12,
+  venus: 0.08,
+  mars: 0.045,
+  jupiter: 0.025,
+  saturn: 0.018,
+};
 
 function hashString(value: string): number {
   let hash = 0;
@@ -29,6 +44,10 @@ export function earthPosition(angle: number): THREE.Vector3 {
     0,
     Math.sin(angle) * EARTH_ORBIT,
   );
+}
+
+export function planetPosition(angle: number, radius: number): THREE.Vector3 {
+  return new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
 }
 
 export function buildAsteroidOrbit(approach: CloseApproach): AsteroidOrbitModel {

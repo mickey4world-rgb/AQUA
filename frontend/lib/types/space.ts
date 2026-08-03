@@ -24,6 +24,22 @@ export interface ApodAnalysis {
   telescope?: string;
   objectType?: string;
   bands: WavelengthBand[];
+  cosmic?: CosmicLocation;
+}
+
+export type CosmicScale = "solar-system" | "milky-way" | "local-group" | "deep-universe";
+
+export interface CosmicLocation {
+  scale: CosmicScale;
+  regionLabel: string;
+  positionLabel: string;
+  distanceLy?: number;
+  constellation?: string;
+  localBody?: string;
+  /** 銀河スケールでのマーカー座標 */
+  markerPosition: [number, number, number];
+  sunGalacticPosition: [number, number, number];
+  showLocalSystem: boolean;
 }
 
 export interface CloseApproach {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppSummaryGrid from "@/components/costs/AppSummaryGrid";
+import AzureInfraCostPanel from "@/components/costs/AzureInfraCostPanel";
 import CostsPageShell from "@/components/costs/CostsPageShell";
 import DailyUsageChart from "@/components/costs/DailyUsageChart";
 import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
@@ -56,7 +57,7 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              各アプリの AI トークン使用量、推定コスト、API アクセスログを月単位で分析します。
+              各アプリの AI トークン使用量・推定コストに加え、Azure サブスクリプションの実績請求額も確認できます。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -98,6 +99,11 @@ export default function CostsPage() {
         ) : (
           <div className="mt-8 space-y-6">
             <QuotaCard quota={dashboard.quota} monthLabel={dashboard.monthLabel} />
+            <AzureInfraCostPanel
+              azure={dashboard.azureInfra}
+              quota={dashboard.quota}
+              monthLabel={dashboard.monthLabel}
+            />
             <AppSummaryGrid apps={dashboard.byApp} />
             <DailyUsageChart points={dashboard.dailyUsage} />
             <FeatureBreakdownTable features={dashboard.byFeature} />

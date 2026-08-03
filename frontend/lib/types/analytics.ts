@@ -47,4 +47,28 @@ export interface CostDashboard {
   dailyUsage: DailyUsagePoint[];
   recentTokens: TokenUsage[];
   recentAccess: AccessLog[];
+  azureInfra: AzureInfraCostSummary | null;
+}
+
+export interface AzureServiceCost {
+  service: string;
+  label: string;
+  costAmount: number;
+}
+
+export interface AzureDailyCostPoint {
+  date: string;
+  costAmount: number;
+}
+
+export interface AzureInfraCostSummary {
+  configured: boolean;
+  month: string;
+  currency: string;
+  totalCost: number;
+  byService: AzureServiceCost[];
+  daily: AzureDailyCostPoint[];
+  scopeLabel: string;
+  note?: string;
+  error?: string;
 }

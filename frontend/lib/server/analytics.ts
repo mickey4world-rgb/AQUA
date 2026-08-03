@@ -4,6 +4,10 @@ import {
   featureLabel,
 } from "@/lib/analytics-constants";
 import {
+  fetchAzureInfraCosts,
+  isAzureCostManagementConfigured,
+} from "@/lib/server/azure-cost-management";
+import {
   getAccessStatsByApp,
   getDailyAccessCounts,
   listRecentAccessLogs,
@@ -57,6 +61,7 @@ export async function buildCostDashboard(
     dailyAccess,
     recentTokens,
     recentAccess,
+    azureInfra,
   ] = await Promise.all([
     getMonthlyTokenUsage(userId, monthDate),
     getMonthlyTokenCostUsd(userId, monthDate),
@@ -66,6 +71,9 @@ export async function buildCostDashboard(
     getDailyAccessCounts(userId, start, end),
     listRecentTokenUsage(userId, start, end, 30),
     listRecentAccessLogs(userId, start, end, 30),
+    isAzureCostManagementConfigured()
+      ? fetchAzureInfraCosts(monthParam(monthDate))
+      : Promise.resolve(null),
   ]);
 
   const remaining = Math.max(0, limit - used);
@@ -139,5 +147,6 @@ export async function buildCostDashboard(
     dailyUsage,
     recentTokens,
     recentAccess,
+    azureInfra,
   };
 }

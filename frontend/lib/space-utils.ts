@@ -1,4 +1,5 @@
 import type { ApodAnalysis, WavelengthBand } from "@/lib/types/space";
+import { inferCosmicLocation } from "@/lib/space-celestial";
 
 const AU_KM = 149_597_870.7;
 const LD_KM = 384_400;
@@ -139,7 +140,7 @@ export function inferApodAnalysis(title: string, explanation: string): ApodAnaly
     }
   }
 
-  return { telescope, objectType, bands };
+  return { telescope, objectType, bands, cosmic: inferCosmicLocation(title, explanation) };
 }
 
 export const spacePanelClass =

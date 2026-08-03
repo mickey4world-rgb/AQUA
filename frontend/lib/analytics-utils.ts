@@ -3,6 +3,14 @@ export function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+export function formatCurrency(amount: number, currency = "JPY"): string {
+  if (currency === "JPY") {
+    return `¥${Math.round(amount).toLocaleString("ja-JP")}`;
+  }
+  if (amount < 0.01) return `${currency} ${amount.toFixed(4)}`;
+  return `${currency} ${amount.toFixed(2)}`;
+}
+
 export function formatTokens(count: number): string {
   return count.toLocaleString("ja-JP");
 }
