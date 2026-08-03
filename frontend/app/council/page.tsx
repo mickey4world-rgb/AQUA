@@ -17,7 +17,7 @@ export default function CouncilPage() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
             複数の AI モデルに同時相談し、互いの意見を読んだうえで議論。議長 AI が最終回答をまとめます。
-            国内限定モードと、最新モデルを使う国内問わずモードを切り替えられます。
+            国内限定は日本リージョン Azure の複数 AI が議論。国内問わずは Azure 最新系デプロイ（OpenAI 直契約不要）です。
           </p>
         </div>
 

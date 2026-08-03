@@ -72,8 +72,8 @@ export default function CouncilPanel() {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
-    if (mode === "global" && !config?.openaiConfigured) {
-      setError("国内問わずモードには OPENAI_API_KEY の設定が必要です。");
+    if (!config?.azureConfigured) {
+      setError("Azure OpenAI が未設定のため、AI 合議は利用できません。");
       return;
     }
 
@@ -116,26 +116,27 @@ export default function CouncilPanel() {
   const modeConfig = mode === "domestic" ? config?.domestic : config?.global;
   const depthLabel =
     depth === "compact" ? "簡潔（3回・節約）" : "標準（7回・詳細）";
-  const globalBlocked = Boolean(mode === "global" && config && !config.openaiConfigured);
+  const azureBlocked = Boolean(config && !config.azureConfigured);
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談モード</h2>
         <p className="mt-1 text-xs text-slate-400">
-          国内限定は Azure OpenAI（日本）。国内問わずは OpenAI API（GPT-5.6 系）。
+          国内限定は日本リージョン Azure の複数 AI。国内問わずは Azure 最新系デプロイ（OpenAI 直契約不要）。
         </p>
 
-        {config && !config.openaiConfigured && (
+        {config && !config.azureConfigured && config.setupHint && (
           <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-            <p className="font-medium">OPENAI_API_KEY 未設定</p>
+            <p className="font-medium">Azure OpenAI 未設定</p>
             <p className="mt-1 opacity-90">{config.setupHint}</p>
           </div>
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
           {(["domestic", "global"] as const).map((key) => {
-            const unavailable = Boolean(key === "global" && config && !config.global.available);
+            const modeConfig = key === "domestic" ? config?.domestic : config?.global;
+            const unavailable = Boolean(config && !modeConfig?.available);
             return (
               <button
                 key={key}
@@ -148,7 +149,7 @@ export default function CouncilPanel() {
                     : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
                 }`}
               >
-                {key === "domestic" ? "🇯🇵 国内限定" : "🌐 国内問わず（OpenAI）"}
+                {key === "domestic" ? "🇯🇵 国内限定" : "🌐 国内問わず（最新）"}
               </button>
             );
           })}
@@ -267,13 +268,13 @@ export default function CouncilPanel() {
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="例: 添付の企画書を踏まえて優先順位をつけて"
-            disabled={loading || globalBlocked}
+            disabled={loading || azureBlocked}
             rows={3}
             className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={loading || globalBlocked || !topic.trim()}
+            disabled={loading || azureBlocked || !topic.trim()}
             className="rounded-xl bg-gradient-to-r from-violet-500 to-emerald-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:self-end"
           >
             {loading ? "合議中..." : "AI 合議を開始"}
