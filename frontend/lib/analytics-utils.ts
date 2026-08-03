@@ -45,6 +45,11 @@ export const appAccentStyles = {
     bg: "bg-blue-500/10",
     text: "text-blue-300",
   },
+  space: {
+    border: "border-indigo-400/20",
+    bg: "bg-indigo-500/10",
+    text: "text-indigo-300",
+  },
   users: {
     border: "border-emerald-400/20",
     bg: "bg-emerald-500/10",

@@ -10,12 +10,13 @@ const navItems = [
   { href: "/disney", label: "ディズニー" },
   { href: "/council", label: "AI合議" },
   { href: "/docs", label: "資料生成" },
+  { href: "/space", label: "宇宙" },
   { href: "/costs", label: "コスト" },
   { href: "/settings", label: "設定" },
 ];
 
 type HeaderProps = {
-  variant?: "default" | "global" | "disney" | "portal" | "costs" | "council" | "docs";
+  variant?: "default" | "global" | "disney" | "portal" | "costs" | "council" | "docs" | "space";
 };
 
 export default function Header({ variant = "default" }: HeaderProps) {
@@ -27,7 +28,8 @@ export default function Header({ variant = "default" }: HeaderProps) {
   const isCosts = variant === "costs";
   const isCouncil = variant === "council";
   const isDocs = variant === "docs";
-  const isThemed = isGlobal || isDisney || isPortal || isCosts || isCouncil || isDocs;
+  const isSpace = variant === "space";
+  const isThemed = isGlobal || isDisney || isPortal || isCosts || isCouncil || isDocs || isSpace;
 
   const activeHref = isDisney
     ? "/disney"
@@ -35,7 +37,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
       ? "/council"
       : isDocs
         ? "/docs"
-        : isPortal
+        : isSpace
+          ? "/space"
+          : isPortal
         ? "/"
         : isCosts
           ? "/costs"
@@ -49,7 +53,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
       ? "font-medium text-violet-300"
       : isDocs
         ? "font-medium text-blue-300"
-        : isPortal
+        : isSpace
+          ? "font-medium text-indigo-300"
+          : isPortal
         ? "font-medium text-cyan-300"
         : isCosts
           ? "font-medium text-amber-300"
@@ -63,7 +69,9 @@ export default function Header({ variant = "default" }: HeaderProps) {
         ? "bg-gradient-to-r from-violet-300 to-emerald-300 bg-clip-text text-transparent"
         : isDocs
           ? "bg-gradient-to-r from-blue-300 to-sky-300 bg-clip-text text-transparent"
-          : isCosts
+          : isSpace
+            ? "bg-gradient-to-r from-indigo-300 to-violet-300 bg-clip-text text-transparent"
+            : isCosts
           ? "bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent"
           : "";
 

@@ -37,6 +37,14 @@ const modules = [
     tag: "Documents",
   },
   {
+    title: "宇宙分析",
+    desc: "望遠鏡画像タイムライン・波長分析・小惑星3Dシミュレーター",
+    href: "/space",
+    icon: "🌌",
+    accent: "indigo" as const,
+    tag: "Cosmos",
+  },
+  {
     title: "コスト",
     desc: "トークン・API・コスト分析ダッシュボード",
     href: "/costs",
@@ -70,12 +78,12 @@ export default function Home() {
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-400">
               個人向け統合情報ポータル。保有株の監視、ディズニーの混雑分析、
-              複数 AI 合議、資料生成、AI 利用コストを AQUA からひとつの画面でアクセスできます。
+              複数 AI 合議、資料生成、宇宙分析、AI 利用コストを AQUA からひとつの画面でアクセスできます。
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {[
-                { label: "Modules", value: "5" },
+                { label: "Modules", value: "6" },
                 { label: "Auth", value: "Azure SWA" },
                 { label: "AI Engine", value: "GPT-4o" },
               ].map((stat) => (
