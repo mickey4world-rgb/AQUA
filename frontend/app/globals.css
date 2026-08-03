@@ -26,6 +26,7 @@ body {
 .app-shell-costs { background: #0a0a0f; }
 .app-shell-council { background: #080612; }
 .app-shell-docs { background: #061018; }
+.app-shell-space { background: #050510; }
 
 .bg-mesh-portal {
   background:
@@ -65,6 +66,13 @@ body {
     radial-gradient(ellipse at 85% 30%, rgba(59, 130, 246, 0.12) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(27, 42, 74, 0.2) 0%, transparent 52%),
     radial-gradient(ellipse at 15% 0%, #1e3a8a22 0%, #061018 55%);
+}
+.bg-mesh-space {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.18) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(30, 58, 138, 0.15) 0%, transparent 52%),
+    radial-gradient(ellipse at 30% 0%, #1e1b4b22 0%, #050510 55%);
 }
 
 /* ── Shared animation keyframes ── */
