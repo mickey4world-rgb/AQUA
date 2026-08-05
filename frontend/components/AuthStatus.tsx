@@ -126,17 +126,11 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
         </p>
         <p className={`mt-2 text-sm ${variant === "dark" ? "text-rose-100/90" : "text-rose-800"}`}>
           ログイン中のアカウント（{principal.userDetails}）は利用が許可されていません。
+          別のアカウントでログインしてください。
         </p>
-        <a
-          href={logoutUrl("/login")}
-          className={`mt-3 inline-flex rounded-md border px-3 py-1.5 text-sm ${
-            variant === "dark"
-              ? "border-rose-400/30 bg-white/5 text-rose-100 hover:bg-white/10"
-              : "border-rose-300 bg-white text-rose-900 hover:bg-rose-100"
-          }`}
-        >
-          ログアウト
-        </a>
+        <div className="mt-4">
+          <LoginButtons redirectTo="/" switchAccount />
+        </div>
       </div>
     );
   }
