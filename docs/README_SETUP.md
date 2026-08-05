@@ -1,0 +1,470 @@
+# 環境構築マニュアル（AQUA / ClaudeCodeWork）
+
+> **目的**: 別の端末でも本プロジェクトを再現できるように、開発に必要なツールのインストールと初期設定手順をまとめた備忘録です。  
+> **対象リポジトリ**: [mickey4world-rgb/AQUA](https://github.com/mickey4world-rgb/AQUA)  
+> **本番 URL**: https://www.aquacore.net
+
+---
+
+## 目次
+
+1. [全体の流れ](#全体の流れ)
+2. [必須ツールのインストール](#必須ツールのインストール)
+3. [Git の初期設定](#git-の初期設定)
+4. [GitHub の準備](#github-の準備)
+5. [Azure の準備](#azure-の準備)
+6. [プロジェクトの取得と起動（参考）](#プロジェクトの取得と起動参考)
+7. [よくあるトラブル](#よくあるトラブル)
+
+---
+
+## 全体の流れ
+
+新しい PC で開発を始める場合、おおむね次の順番で進めます。
+
+```
+① 必須ツールをインストール（Cursor / Node.js / Git / Azure CLI）
+    ↓
+② Git のユーザー名・メールアドレスを設定
+    ↓
+③ GitHub アカウントを用意し、ローカル PC と接続
+    ↓
+④ Azure CLI で az login し、Azure にログイン
+    ↓
+⑤ リポジトリを clone して npm install → 開発開始
+```
+
+---
+
+## 必須ツールのインストール
+
+### 1. Cursor（エディタ + AI 開発環境）
+
+**Cursor** は VS Code ベースの AI 統合エディタです。本プロジェクトではコード編集・AI アシスタント（Claude 等）の利用に使用します。
+
+#### インストール方法
+
+1. 公式サイトにアクセス: https://cursor.com/
+2. **Download** から OS に合ったインストーラーをダウンロード
+   - **Windows**: `.exe` インストーラー
+   - **macOS**: `.dmg` または Homebrew（`brew install --cask cursor`）
+3. インストーラーの指示に従ってインストール
+4. 初回起動時に Cursor アカウントを作成（または GitHub / Google でサインイン）
+
+#### 確認方法
+
+Cursor は GUI アプリのため、コマンドでのバージョン確認は必須ではありません。  
+インストール後、アプリが起動できれば OK です。
+
+ターミナルから CLI を使う場合（任意）:
+
+```powershell
+cursor --version
+```
+
+---
+
+### 2. Claude Code（Cursor 内の AI エージェント）
+
+**Claude Code** は Cursor 上で動作する AI コーディングエージェントです。  
+チャットで指示を出し、コードの生成・修正・デバッグを支援します。
+
+#### セットアップ方法
+
+1. Cursor を起動
+2. 左サイドバーの **Chat（チャット）** または **Agent** パネルを開く
+3. モデル選択で **Claude** 系モデルを選択（利用プランに応じて表示されます）
+4. プロジェクトフォルダ（clone した `ClaudeCodeWork` など）を **File → Open Folder** で開く
+
+#### 使い方の例
+
+- 「このエラーを直して」
+- 「`/space` に新しいタブを追加して」
+- 「ビルドが通るか確認して」
+
+> **補足**: Cursor の Agent 機能が、本マニュアルで言う「Claude Code」に相当します。  
+> 別途ターミナル用 CLI ツールを使う場合は、Cursor 公式ドキュメントを参照してください。
+
+---
+
+### 3. Node.js（LTS 推奨）
+
+本プロジェクトのフロントエンド（Next.js）は **Node.js** が必要です。  
+**LTS（Long Term Support）版** を推奨します。
+
+#### インストール方法
+
+**Windows**
+
+1. https://nodejs.org/ にアクセス
+2. **LTS** 版（例: 22.x LTS）をダウンロード
+3. インストーラーを実行（「Add to PATH」にチェックが入っていることを確認）
+
+**macOS（Homebrew 利用時）**
+
+```bash
+brew install node@22
+```
+
+#### 確認方法
+
+ターミナル（Windows: PowerShell / macOS: Terminal）で実行:
+
+```powershell
+node -v
+```
+
+期待する出力例:
+
+```
+v22.x.x
+```
+
+```powershell
+npm -v
+```
+
+期待する出力例:
+
+```
+10.x.x
+```
+
+> **注意**: `node` も `npm` もバージョン番号が表示されればインストール成功です。
+
+---
+
+### 4. Git
+
+ソースコードのバージョン管理に **Git** を使用します。
+
+#### インストール方法
+
+**Windows**
+
+1. https://git-scm.com/download/win にアクセス
+2. インストーラーをダウンロードして実行
+3. 基本的にはデフォルト設定のままで OK（PATH に Git を追加するオプションを有効に）
+
+**macOS**
+
+```bash
+# Xcode Command Line Tools に含まれる場合もあります
+xcode-select --install
+
+# または Homebrew
+brew install git
+```
+
+#### 確認方法
+
+```powershell
+git --version
+```
+
+期待する出力例:
+
+```
+git version 2.x.x.windows.x
+```
+
+---
+
+### 5. Azure CLI（az CLI）
+
+Azure リソースの確認・デプロイ・ログインに **Azure CLI** を使用します。
+
+#### インストール方法
+
+**Windows**
+
+1. https://learn.microsoft.com/ja-jp/cli/azure/install-azure-cli-windows にアクセス
+2. **MSI インストーラー** または `winget` でインストール
+
+```powershell
+winget install -e --id Microsoft.AzureCLI
+```
+
+**macOS**
+
+```bash
+brew install azure-cli
+```
+
+#### 確認方法
+
+```powershell
+az --version
+```
+
+期待する出力例（先頭数行）:
+
+```
+azure-cli                         2.x.x
+...
+```
+
+> バージョン情報が表示されればインストール成功です。
+
+---
+
+## Git の初期設定
+
+Git を初めて使う PC では、**コミット時に記録される名前とメールアドレス** を設定します。  
+GitHub に登録したメールアドレスと揃えると管理しやすくなります。
+
+### ユーザー名の設定
+
+```powershell
+git config --global user.name "あなたの名前"
+```
+
+例:
+
+```powershell
+git config --global user.name "Mickey Yamada"
+```
+
+### メールアドレスの設定
+
+```powershell
+git config --global user.email "your-email@example.com"
+```
+
+例:
+
+```powershell
+git config --global user.email "mickey@example.com"
+```
+
+### 設定の確認
+
+```powershell
+git config --global --list
+```
+
+`user.name` と `user.email` が表示されれば OK です。
+
+### （任意）デフォルトブランチ名を main にする
+
+```powershell
+git config --global init.defaultBranch main
+```
+
+---
+
+## GitHub の準備
+
+### 1. GitHub アカウントの作成
+
+1. https://github.com/ にアクセス
+2. **Sign up** からアカウントを作成
+3. メールアドレスの確認を完了
+
+### 2. ローカル PC から GitHub へ接続する
+
+GitHub へ `git push` / `git pull` するには、**認証方式** の設定が必要です。  
+初心者には **HTTPS + Personal Access Token（PAT）** または **SSH 鍵** のどちらかが一般的です。
+
+---
+
+#### 方法 A: HTTPS + Personal Access Token（手軽）
+
+**① PAT（トークン）を作成**
+
+1. GitHub にログイン
+2. 右上アイコン → **Settings**
+3. 左メニュー最下部 **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+4. **Generate new token (classic)** をクリック
+5. スコープで最低限 **repo** にチェック
+6. 生成されたトークンを**安全な場所にコピー**（再表示不可）
+
+**② リポジトリを clone**
+
+```powershell
+cd C:\Projects
+git clone https://github.com/mickey4world-rgb/AQUA.git ClaudeCodeWork
+cd ClaudeCodeWork
+```
+
+**③ push 時の認証**
+
+- ユーザー名: GitHub のユーザー名
+- パスワード: 上記で作成した **PAT**（GitHub のログインパスワードではない）
+
+---
+
+#### 方法 B: SSH 鍵（推奨・一度設定すれば楽）
+
+**① SSH 鍵を生成**
+
+```powershell
+ssh-keygen -t ed25519 -C "your-email@example.com"
+```
+
+Enter を数回押してデフォルトのまま進めて OK です。
+
+**② 公開鍵を GitHub に登録**
+
+```powershell
+# Windows（PowerShell）
+Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
+```
+
+表示された文字列（`ssh-ed25519 AAAA...`）をコピーし、GitHub → **Settings** → **SSH and GPG keys** → **New SSH key** に貼り付けます。
+
+**③ 接続テスト**
+
+```powershell
+ssh -T git@github.com
+```
+
+成功例:
+
+```
+Hi mickey4world-rgb! You've successfully authenticated...
+```
+
+**④ SSH で clone**
+
+```powershell
+git clone git@github.com:mickey4world-rgb/AQUA.git ClaudeCodeWork
+```
+
+---
+
+## Azure の準備
+
+本プロジェクトは **Azure Static Web Apps**、**Azure OpenAI**、**Cosmos DB** などを利用しています。  
+Azure リソースの確認や CLI 操作には `az login` による認証が必要です。
+
+### 1. Azure CLI でログイン
+
+ターミナルで実行:
+
+```powershell
+az login
+```
+
+- ブラウザが自動で開き、Microsoft アカウント（Azure サブスクリプションに紐づくアカウント）でサインインします
+- 複数サブスクリプションがある場合は、表示された一覧から使う ID を選びます
+
+### 2. ログイン状態の確認
+
+```powershell
+az account show
+```
+
+アカウント名・サブスクリプション ID などが JSON で表示されればログイン成功です。
+
+### 3. （任意）使用するサブスクリプションを切り替え
+
+```powershell
+az account list --output table
+az account set --subscription "サブスクリプション名またはID"
+```
+
+### 4. 本プロジェクトで使う主な Azure リソース（参考）
+
+| リソース | 名前 |
+|---|---|
+| リソースグループ | `rg-personal-apps-prod` |
+| Static Web App | `swa-personal-apps-prod` |
+| Azure OpenAI | `openai-personal-apps-prod` |
+
+> 詳細なアーキテクチャは [`docs/DESIGN.md`](./DESIGN.md) を参照してください。
+
+---
+
+## プロジェクトの取得と起動（参考）
+
+環境構築が完了したら、次の手順でローカル開発を開始できます。
+
+### 1. リポジトリの clone
+
+```powershell
+git clone https://github.com/mickey4world-rgb/AQUA.git ClaudeCodeWork
+cd ClaudeCodeWork
+```
+
+### 2. 依存パッケージのインストール
+
+```powershell
+cd frontend
+npm install
+```
+
+### 3. 開発サーバーの起動
+
+```powershell
+npm run dev
+```
+
+ブラウザで http://localhost:3000 を開きます。
+
+### 4. ビルド確認（任意）
+
+```powershell
+npm run build
+```
+
+エラーなく完了すれば、本番デプロイ前のビルドも問題ありません。
+
+### 5. Cursor でプロジェクトを開く
+
+1. Cursor を起動
+2. **File → Open Folder**
+3. clone した `ClaudeCodeWork` フォルダを選択
+
+---
+
+## よくあるトラブル
+
+### `node` / `npm` が認識されない
+
+- ターミナルを**一度閉じて開き直す**
+- Node.js インストール時に PATH へ追加されているか確認
+- Windows: 「システム環境変数」→ Path に Node.js のパスがあるか確認
+
+### `git push` で認証エラー
+
+- HTTPS の場合: パスワード欄には **PAT** を入力（GitHub ログインパスワードではない）
+- SSH の場合: `ssh -T git@github.com` で接続テスト
+
+### `az login` 後もリソースが見えない
+
+- 正しいサブスクリプションが選ばれているか `az account show` で確認
+- `az account set --subscription "..."` で切り替え
+
+### `npm install` が失敗する
+
+- Node.js が **LTS** 版か確認（`node -v`）
+- プロジェクトルートではなく **`frontend/` ディレクトリ** で実行しているか確認
+
+---
+
+## チェックリスト（コピー用）
+
+新 PC のセットアップが終わったら、以下を確認してください。
+
+- [ ] Cursor が起動できる
+- [ ] `node -v` / `npm -v` が表示される
+- [ ] `git --version` が表示される
+- [ ] `az --version` が表示される
+- [ ] `git config --global user.name` / `user.email` を設定した
+- [ ] GitHub に clone / push できる（PAT または SSH）
+- [ ] `az login` が成功する
+- [ ] `frontend/` で `npm install` と `npm run dev` が動く
+
+---
+
+## 関連ドキュメント
+
+| ファイル | 内容 |
+|---|---|
+| [`docs/DESIGN.md`](./DESIGN.md) | システム設計・アーキテクチャ |
+| [`frontend/README.md`](../frontend/README.md) | Next.js フロントエンドの概要 |
+
+---
+
+*最終更新: 2026-08-05*
