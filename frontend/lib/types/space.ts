@@ -1,4 +1,4 @@
-export type SpaceTab = "telescope" | "asteroid";
+export type SpaceTab = "telescope" | "asteroid" | "eagle-eye";
 
 export interface ApodEntry {
   date: string;

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cesium assets (loaded via CDN at runtime)
+/public/cesium/

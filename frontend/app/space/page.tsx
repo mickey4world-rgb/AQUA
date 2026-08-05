@@ -1,11 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import SpacePageShell from "@/components/space/SpacePageShell";
 import TelescopeTimelineTab from "@/components/space/TelescopeTimelineTab";
 import AsteroidSimulatorTab from "@/components/space/AsteroidSimulatorTab";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import type { SpaceTab } from "@/lib/types/space";
+
+const EagleEyeTab = dynamic(() => import("@/components/space/EagleEyeTab"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-40 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
+      <p className="text-sm text-slate-400">鷹の目タブを読み込み中...</p>
+    </div>
+  ),
+});
 
 const TABS: { key: SpaceTab; label: string; desc: string }[] = [
   {
@@ -17,6 +27,11 @@ const TABS: { key: SpaceTab; label: string; desc: string }[] = [
     key: "asteroid",
     label: "☄️ 小惑星 3D シミュレーター",
     desc: "JPL 接近データ · 3D アニメーション",
+  },
+  {
+    key: "eagle-eye",
+    label: "🦅 鷹の目",
+    desc: "衛星俯瞰 · 地上カメラ クローズアップ",
   },
 ];
 
@@ -36,6 +51,7 @@ export default function SpacePage() {
           <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
             宇宙望遠鏡の最新画像をタイムラインで表示し、波長分析と AI 解説ができます。
             小惑星接近データを 3D でシミュレーションし、地球への最接近距離を確認できます。
+            「鷹の目」では衛星軌道を俯瞰し、地上カメラへ SF 映画のようなクローズアップ体験ができます。
           </p>
         </div>
 
@@ -64,7 +80,9 @@ export default function SpacePage() {
         </div>
 
         <div className="mt-8">
-          {tab === "telescope" ? <TelescopeTimelineTab /> : <AsteroidSimulatorTab />}
+          {tab === "telescope" && <TelescopeTimelineTab />}
+          {tab === "asteroid" && <AsteroidSimulatorTab />}
+          {tab === "eagle-eye" && <EagleEyeTab />}
         </div>
       </main>
     </SpacePageShell>
