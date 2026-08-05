@@ -48,6 +48,27 @@ export function formatJstDateLabel(dateStr: string): string {
   });
 }
 
+export const crowdLevelCellStyles: Record<CrowdLevel, string> = {
+  low: "border-emerald-400/60 bg-emerald-500/30",
+  moderate: "border-amber-400/60 bg-amber-500/30",
+  high: "border-orange-400/60 bg-orange-500/35",
+  extreme: "border-rose-400/70 bg-rose-500/40",
+};
+
+export const crowdLevelDotColors: Record<CrowdLevel, string> = {
+  low: "bg-emerald-400",
+  moderate: "bg-amber-400",
+  high: "bg-orange-500",
+  extreme: "bg-rose-500",
+};
+
+export const crowdLevelShortLabels: Record<CrowdLevel, string> = {
+  low: "空",
+  moderate: "中",
+  high: "混",
+  extreme: "大",
+};
+
 export const crowdLevelBgColors: Record<CrowdLevel, string> = {
   low: "bg-emerald-500/20 hover:bg-emerald-500/30",
   moderate: "bg-amber-500/20 hover:bg-amber-500/30",

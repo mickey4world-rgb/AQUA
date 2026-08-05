@@ -140,7 +140,7 @@ export default function DisneyChatPanel({
         ))}
 
         {sending && (
-          <p className="text-xs text-slate-500">ヤッホー！ ミッキーが考え中...</p>
+          <p className="text-xs text-slate-500">ハハッ！ ミッキーが考え中...</p>
         )}
         <div ref={bottomRef} />
       </div>
