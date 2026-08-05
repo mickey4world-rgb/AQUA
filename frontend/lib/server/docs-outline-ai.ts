@@ -17,6 +17,8 @@ import type {
   DocOutline,
   DocSlideLayout,
   DocSlideOutline,
+  DocSlideVisual,
+  DocVisualType,
   DocsChatMessage,
 } from "@/lib/types/docs";
 
@@ -28,6 +30,14 @@ const SYSTEM_PROMPT = `あなたは官公庁向け内部提案資料の構成を
 - スライドは ${DOCS_DEFAULT_SLIDES} 枚前後（最大 ${DOCS_MAX_SLIDES} 枚）
 - 日本語。です・ます調。簡潔で分かりやすく
 - 1スライドの箇条書きは最大4点、各40文字以内を目安
+- **本文スライド（content / closing）には可能な限り visual を付ける** — 文字だけのスライドは避け、図解で伝える
+- visual.type:
+  - "flow": 手順・プロセス（左→右のフロー）
+  - "comparison": 現状 vs 提案、Before/After など2列比較
+  - "timeline": スケジュール・フェーズ（時系列）
+  - "pyramid": 優先度・階層（上ほど重要）
+  - "icons": キーワードを色付きオブジェクトで表現
+- visual.labels は2〜5個、各12文字以内
 
 ## JSON スキーマ
 {
@@ -44,22 +54,26 @@ const SYSTEM_PROMPT = `あなたは官公庁向け内部提案資料の構成を
     {
       "layout": "content",
       "title": "背景と課題",
-      "bullets": ["...", "..."]
+      "bullets": ["...", "..."],
+      "visual": { "type": "comparison", "labels": ["現状", "課題"] }
     },
     {
       "layout": "content",
       "title": "提案概要",
-      "bullets": ["...", "..."]
+      "bullets": ["...", "..."],
+      "visual": { "type": "flow", "labels": ["調査", "設計", "導入", "評価"] }
     },
     {
       "layout": "content",
       "title": "具体施策",
-      "bullets": ["...", "..."]
+      "bullets": ["...", "..."],
+      "visual": { "type": "timeline", "labels": ["Phase1", "Phase2", "Phase3"] }
     },
     {
       "layout": "closing",
       "title": "期待効果と次のアクション",
-      "bullets": ["...", "..."]
+      "bullets": ["...", "..."],
+      "visual": { "type": "pyramid", "labels": ["効果", "施策", "基盤"] }
     }
   ]
 }
@@ -82,6 +96,27 @@ function isLayout(value: unknown): value is DocSlideLayout {
   return value === "title" || value === "content" || value === "closing";
 }
 
+function isVisualType(value: unknown): value is DocVisualType {
+  return (
+    value === "flow" ||
+    value === "comparison" ||
+    value === "timeline" ||
+    value === "pyramid" ||
+    value === "icons"
+  );
+}
+
+function parseVisual(raw: unknown): DocSlideVisual | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (!isVisualType(obj.type)) return undefined;
+  const labels = Array.isArray(obj.labels)
+    ? obj.labels.map((l) => String(l).trim()).filter(Boolean).slice(0, 5)
+    : [];
+  if (labels.length < 2) return undefined;
+  return { type: obj.type, labels };
+}
+
 function parseSlide(raw: unknown): DocSlideOutline | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
@@ -93,11 +128,14 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
     ? obj.bullets.map((b) => String(b).trim()).filter(Boolean).slice(0, 5)
     : [];
 
+  const visual = parseVisual(obj.visual);
+
   return {
     layout,
     title,
     subtitle: obj.subtitle ? String(obj.subtitle).trim() : undefined,
     bullets,
+    visual,
   };
 }
 
