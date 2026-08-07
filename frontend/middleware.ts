@@ -15,7 +15,7 @@ function isProtectedPath(pathname: string): boolean {
 
 export function middleware(request: NextRequest) {
   if (!isProtectedPath(request.nextUrl.pathname)) {
-    return NextResponse.next();
+    return applySecurityHeaders(NextResponse.next());
   }
 
   const principal = parseClientPrincipal(
@@ -23,15 +23,35 @@ export function middleware(request: NextRequest) {
   );
 
   if (!principal) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   const email = getEmailFromPrincipal(principal);
   if (!isAllowedLogin(principal.userDetails, email)) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
-  return NextResponse.next();
+  return applySecurityHeaders(NextResponse.next());
+}
+
+function applySecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https:",
+      "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+      "font-src 'self' data: https://cdn.jsdelivr.net",
+    ].join("; "),
+  );
+  return response;
 }
 
 export const config = {

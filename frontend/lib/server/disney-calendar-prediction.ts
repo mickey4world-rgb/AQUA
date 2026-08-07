@@ -52,7 +52,73 @@ function collectDayFactors(dateStr: string): string[] {
   return [...new Set(factors)];
 }
 
-function calcCrowdScore(dateStr: string, park: DisneyParkKey): number {
+function getHistoricalPatternModifier(dateStr: string): { delta: number; label?: string } {
+  const { month, dayOfWeek } = parseJstDate(dateStr);
+  let delta = 0;
+  let label: string | undefined;
+
+  // 昨年同時期の TDR 混雑傾向（曜日×シーズンの経験則）
+  if (month === 3 && dayOfWeek >= 5) {
+    delta += 8;
+    label = "昨年同時期（春休み前）の混雑傾向";
+  }
+  if (month === 4 && dayOfWeek >= 5) {
+    delta += 10;
+    label = "昨年同時期（春休み後半）の混雑傾向";
+  }
+  if (month === 11 && dayOfWeek >= 1 && dayOfWeek <= 4) {
+    delta -= 8;
+    label = "昨年同時期（11月平日）の落ち着き傾向";
+  }
+  if (month === 12 && dayOfWeek === 6) {
+    delta += 12;
+    label = "昨年同時期（12月土曜）の混雑傾向";
+  }
+  if (month === 8 && dayOfWeek === 0) {
+    delta += 10;
+    label = "昨年同時期（夏休み日曜）の混雑傾向";
+  }
+
+  return { delta, label };
+}
+
+function crowdLevelToScoreDelta(level: CrowdLevel): number {
+  const map: Record<CrowdLevel, number> = {
+    low: -12,
+    moderate: 0,
+    high: 10,
+    extreme: 18,
+  };
+  return map[level];
+}
+
+function getRecentFlowModifier(
+  dateStr: string,
+  today: string,
+  liveBias: number,
+): { delta: number; label?: string } {
+  if (liveBias === 0) return { delta: 0 };
+  const todayParsed = parseJstDate(today);
+  const targetParsed = parseJstDate(dateStr);
+  if (targetParsed.year !== todayParsed.year || targetParsed.month !== todayParsed.month) {
+    return { delta: 0 };
+  }
+  if (compareDateStr(dateStr, today) <= 0) return { delta: 0 };
+
+  // 同月の未来日は、直近の実測混雑で微調整
+  const sameDow = targetParsed.dayOfWeek === todayParsed.dayOfWeek;
+  const delta = sameDow ? liveBias : Math.round(liveBias * 0.5);
+  return {
+    delta,
+    label: delta > 0 ? "直近の来園者・待ち時間の高止まり" : "直近の来園者・待ち時間の低調",
+  };
+}
+
+function calcCrowdScore(
+  dateStr: string,
+  park: DisneyParkKey,
+  liveBias = 0,
+): number {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
   let score = 28;
 
@@ -79,6 +145,9 @@ function calcCrowdScore(dateStr: string, park: DisneyParkKey): number {
   }
 
   if (park === "tdl") score += 3;
+
+  score += getHistoricalPatternModifier(dateStr).delta;
+  score += getRecentFlowModifier(dateStr, getJstToday(), liveBias).delta;
 
   return Math.max(0, Math.min(100, score));
 }
@@ -141,11 +210,16 @@ function buildVisitTips(level: CrowdLevel, factors: string[]): string[] {
 export function predictCrowdForDate(
   park: DisneyParkKey,
   dateStr: string,
+  liveBias = 0,
 ): DisneyDatePrediction {
   const today = getJstToday();
-  const score = calcCrowdScore(dateStr, park);
+  const score = calcCrowdScore(dateStr, park, liveBias);
   const crowdLevel = scoreToCrowdLevel(score);
   const factors = collectDayFactors(dateStr);
+  const hist = getHistoricalPatternModifier(dateStr);
+  const recent = getRecentFlowModifier(dateStr, today, liveBias);
+  if (hist.label) factors.push(hist.label);
+  if (recent.label) factors.push(recent.label);
   const estimatedWait = estimateAverageWait(crowdLevel, park);
   const isToday = dateStr === today;
   const isPast = compareDateStr(dateStr, today) < 0;
@@ -169,14 +243,24 @@ export function predictCrowdForDate(
   };
 }
 
-export function predictCalendarMonth(
+export async function predictCalendarMonth(
   park: DisneyParkKey,
   year: number,
   month: number,
-): DisneyCalendarMonth {
+): Promise<DisneyCalendarMonth> {
   const today = getJstToday();
+  let liveBias = 0;
+
+  try {
+    const { buildParkCrowdStatus } = await import("@/lib/server/disney-analysis");
+    const status = await buildParkCrowdStatus(park);
+    liveBias = crowdLevelToScoreDelta(status.crowdLevel);
+  } catch {
+    liveBias = 0;
+  }
+
   const days = getMonthDays(year, month).map((dateStr): DisneyCalendarDay => {
-    const prediction = predictCrowdForDate(park, dateStr);
+    const prediction = predictCrowdForDate(park, dateStr, liveBias);
     return {
       date: dateStr,
       crowdLevel: prediction.crowdLevel,

@@ -235,7 +235,7 @@ export async function generateDocOutline(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 2500,
+      max_completion_tokens: 1500,
       messages,
       response_format: { type: "json_object" },
     });

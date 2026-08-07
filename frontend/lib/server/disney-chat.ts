@@ -1,10 +1,15 @@
 import {
+  resolveDisneyCharacter,
+  type DisneyCharacterId,
+} from "@/lib/disney-characters";
+import {
   getAzureOpenAiClient,
   getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
 import { crowdLevelLabels } from "@/lib/disney-utils";
 import { buildDisneyAdvice } from "@/lib/server/disney-analysis";
+import { clampHistory, sanitizeText } from "@/lib/server/security";
 import {
   canUseAiTokens,
   defaultStockAiModel,
@@ -14,50 +19,8 @@ import type { DisneyParkKey, DisneyChatMessage } from "@/lib/types/disney";
 
 export type { DisneyChatMessage };
 
-const MICKEY_SYSTEM_PROMPT = `あなたは「ミッキーマウス」本人。Mickey さんの TDR（東京ディズニーリゾート）専属ガイドとして、チャットで答える。
-
-## ミッキー口調（必須・最重要）
-- 一人称は必ず「ぼく」。相手は「〇〇さん」または「みんな」
-- 語尾はミッキーらしく: 「〜だよ」「〜なんだ」「〜かな？」「〜してみてね！」「〜だよね！」「〜なのさ！」
-- **毎回の回答に、下記フレーズから1〜2回は必ず自然に混ぜる**:
-  - 笑い声: 「ハハッ！」
-  - 同意・喜び: 「やったね！」「最高だね、ハハッ！」
-  - 驚き・困惑: 「おやまあ！」「どうしたんだい？」
-  - 挨拶: 「やあ、みんな！」「元気かい？」
-- 補助的に使ってよい: 「オーケー、オーケー！」「そうそう！」「任せて！」「わかったよ！」
-- 元気で明るく、親しみやすい。友だちに話しかけるように
-- です・ます調は使わない。ただし失礼にならない程度に
-- 絵文字は 0〜2 個（✨ 🎢 🐭 程度）。多用しない
-
-## 口調の例（このトーンを真似して）
-- 「やあ、みんな！ それなら、ぼく的には朝イチがいいかな？ ハハッ！」
-- 「やったね！ 待ち時間を見るなら、この順番がおすすめだよ！」
-- 「おやまあ！ 混んでるね。どうしたんだい？ 任せて、回り方を考えるよ！」
-- 「元気かい？ オーケー、オーケー！ まずはここから行ってみてね！」
-
-## 回答の構成
-1. 挨拶か口癖＋質問への実用的な答え（最優先）
-2. 余裕があれば、関連するディズニー豆知識を 1 つ自然に添える
-   - TDR / ランド / シーの歴史・開園秘話
-   - アトラクションやショーの背景・デザインのこだわり
-   - 隠れミッキー（Hidden Mickey）の場所や探し方のヒント
-   - キャラクター・パークデザインのトリビア
-   - 季節イベントやパーク文化の一般知識
-3. 最後は「最高だね、ハハッ！」「楽しい1日にしてね！」などで締める
-
-## 知識のルール
-- 添付の待ち時間・混雑データは最優先。数字は捏造しない
-- 「最新情報」（本日のイベント、新アトラクション、運休、価格改定など）は、確実でない限り断言しない
-  → 不確かなら「公式サイトやアプリで確認してね」と案内する
-- 歴史・トリビア・隠れミッキーは、一般的に知られている事実ベースで。怪しければ「噂話レベルだよ」と前置き
-- 質問と無関係な長文トriviaは避ける。必ず実用アドバイスとセットで
-
-## 分量
-- 1回答 350〜550 文字程度
-- 箇条書きは 3〜5 点まで`;
-
 function trimHistory(history: DisneyChatMessage[]): DisneyChatMessage[] {
-  return history.slice(-8);
+  return clampHistory(history, 4);
 }
 
 async function buildParkContext(
@@ -71,27 +34,23 @@ async function buildParkContext(
     `パーク: ${advice.parkName}`,
     `対象日: ${advice.targetDate ?? "本日"}`,
     `混雑: ${crowdLevelLabels[advice.crowdLevel]}`,
-    `概要: ${advice.summary}`,
+    `概要: ${advice.summary.slice(0, 200)}`,
   ];
 
   if (isForecast && advice.prediction) {
     lines.push(
-      `予測平均待ち: 約${advice.prediction.estimatedWait}分`,
-      `予測要因: ${advice.prediction.factors.join("、")}`,
+      `予測待ち: 約${advice.prediction.estimatedWait}分`,
+      `要因: ${advice.prediction.factors.slice(0, 3).join("、")}`,
     );
   }
 
-  if (advice.timeAdvice.length) {
-    lines.push("時間帯の傾向:", ...advice.timeAdvice.map((t) => `- ${t}`));
-  }
-
   if (!isForecast && advice.touringPlan.length) {
-    const top = advice.touringPlan.slice(0, 8);
+    const top = advice.touringPlan.slice(0, 5);
     lines.push(
-      "主要アトラクション（参考）:",
+      "主要アトラクション:",
       ...top.map(
         (item) =>
-          `- ${item.attraction.nameJa ?? item.attraction.name}: ${item.attraction.waitTime ?? "—"}分 (${item.priority})`,
+          `- ${item.attraction.nameJa ?? item.attraction.name}: ${item.attraction.waitTime ?? "—"}分`,
       ),
     );
   }
@@ -100,7 +59,7 @@ async function buildParkContext(
 }
 
 export type DisneyChatResult =
-  | { ok: true; reply: string; model: string }
+  | { ok: true; reply: string; model: string; character: DisneyCharacterId }
   | { ok: false; reason: string };
 
 export async function sendDisneyChat(
@@ -109,13 +68,11 @@ export async function sendDisneyChat(
   message: string,
   history: DisneyChatMessage[] = [],
   date?: string,
+  characterId?: string,
 ): Promise<DisneyChatResult> {
-  const trimmed = message.trim();
+  const trimmed = sanitizeText(message, 600);
   if (!trimmed) {
     return { ok: false, reason: "メッセージを入力してください。" };
-  }
-  if (trimmed.length > 800) {
-    return { ok: false, reason: "メッセージが長すぎます（800文字以内）。" };
   }
 
   if (!isAzureOpenAiConfigured()) {
@@ -133,19 +90,20 @@ export async function sendDisneyChat(
     };
   }
 
+  const character = resolveDisneyCharacter(characterId);
   const context = await buildParkContext(park, date);
   const model = defaultStockAiModel();
   const client = getAzureOpenAiClient();
 
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    { role: "system", content: MICKEY_SYSTEM_PROMPT },
+    { role: "system", content: character.systemPrompt },
     {
       role: "system",
-      content: `【現在のパーク状況（参考データ）】\n${context}`,
+      content: `【参考データ】\n${context}`,
     },
     ...trimHistory(history).map((m) => ({
       role: m.role as "user" | "assistant",
-      content: m.content,
+      content: sanitizeText(m.content, 800),
     })),
     { role: "user", content: trimmed },
   ];
@@ -153,7 +111,7 @@ export async function sendDisneyChat(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 900,
+      max_completion_tokens: 450,
       messages,
     });
 
@@ -174,7 +132,7 @@ export async function sendDisneyChat(
       });
     }
 
-    return { ok: true, reply, model: modelUsed };
+    return { ok: true, reply, model: modelUsed, character: character.id };
   } catch (error) {
     return {
       ok: false,

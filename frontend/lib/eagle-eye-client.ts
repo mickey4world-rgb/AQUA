@@ -1,4 +1,8 @@
-import type { EagleEyeSatelliteDef } from "@/lib/eagle-eye-data";
+import {
+  IMAGING_ROI,
+  type EagleEyeFootprint,
+  type EagleEyeSatelliteDef,
+} from "@/lib/eagle-eye-data";
 
 export interface SatellitePositionDto {
   time: string;
@@ -16,6 +20,7 @@ export interface SatelliteTrackDto {
 
 export interface EagleEyeTracksResponse {
   referenceTime: string;
+  satellites: EagleEyeSatelliteDef[];
   tracks: SatelliteTrackDto[];
 }
 
@@ -25,13 +30,12 @@ export interface SatelliteLiveInfo {
   altKm: number;
   lat: number;
   lon: number;
-  /** フットプリント中心からの距離 km（小さいほど撮影可能） */
+  /** 関心地域（東京）からの距離 km（小さいほど撮影可能） */
   footprintDistKm: number;
 }
 
 export type EagleEyePhase = "orbit" | "map" | "live";
 
-/** ハーバーサイン距離（km）— クライアント側 */
 export function haversineKm(
   lat1: number,
   lon1: number,
@@ -56,69 +60,50 @@ export interface GroundCameraLike {
   lon: number;
 }
 
-export function findNearestCamera<T extends GroundCameraLike>(
+/** 衛星位置から動的フットプリントを生成 */
+export function buildDynamicFootprint(
   lat: number,
   lon: number,
-  cameras: T[],
-): { camera: T; distanceKm: number } | null {
-  if (!cameras.length) return null;
+  altKm: number,
+  sat: EagleEyeSatelliteDef,
+): EagleEyeFootprint {
+  const span = Math.max(0.25, Math.min(2.5, altKm / 350));
+  const imageUrl =
+    sat.footprint?.imageUrl ??
+    sat.mediaUrl ??
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/The_Earth_seen_from_Apollo_17.jpg/640px-The_Earth_seen_from_Apollo_17.jpg";
 
-  let best = cameras[0];
-  let bestDist = haversineKm(lat, lon, best.lat, best.lon);
-
-  for (let i = 1; i < cameras.length; i++) {
-    const d = haversineKm(lat, lon, cameras[i].lat, cameras[i].lon);
-    if (d < bestDist) {
-      best = cameras[i];
-      bestDist = d;
-    }
-  }
-
-  return { camera: best, distanceKm: bestDist };
+  return {
+    west: lon - span,
+    east: lon + span,
+    south: lat - span * 0.65,
+    north: lat + span * 0.65,
+    label: `${sat.name} — ${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E スキャン`,
+    imageUrl,
+  };
 }
 
-export function formatAltitude(altKm: number): string {
-  if (altKm >= 1000) return `${(altKm / 1000).toFixed(1)} 千 km`;
-  return `${Math.round(altKm)} km`;
+export function resolveFootprintForSatellite(
+  sat: EagleEyeSatelliteDef,
+  lat: number,
+  lon: number,
+  altKm: number,
+): EagleEyeFootprint {
+  if (sat.footprint) return sat.footprint;
+  return buildDynamicFootprint(lat, lon, altKm, sat);
 }
 
-/** トラックから現在位置の高度を取得 */
-export function getAltitudeFromTrack(
-  track: SatelliteTrackDto,
-  clockDate: Date,
-): string {
-  const positions = track.positions;
-  if (!positions.length) return "—";
-
-  const targetMs = clockDate.getTime();
-  let closest = positions[0];
-  let minDiff = Math.abs(new Date(closest.time).getTime() - targetMs);
-
-  for (const p of positions) {
-    const diff = Math.abs(new Date(p.time).getTime() - targetMs);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = p;
-    }
-  }
-
-  return formatAltitude(closest.altKm);
-}
-
-export function getFootprintCenter(sat: EagleEyeSatelliteDef): { lat: number; lon: number } {
-  const fp = sat.footprint;
+export function getFootprintCenter(fp: EagleEyeFootprint): { lat: number; lon: number } {
   return {
     lat: (fp.south + fp.north) / 2,
     lon: (fp.west + fp.east) / 2,
   };
 }
 
-/** スキャン画像フットプリント（③の画像エリア）に合わせたズーム範囲 */
 export function getFootprintZoomBounds(
-  sat: EagleEyeSatelliteDef,
+  fp: EagleEyeFootprint,
   paddingRatio = 0.06,
 ): { west: number; south: number; east: number; north: number } {
-  const fp = sat.footprint;
   const latSpan = fp.north - fp.south;
   const lonSpan = fp.east - fp.west;
   return {
@@ -129,14 +114,12 @@ export function getFootprintZoomBounds(
   };
 }
 
-/** 座標がフットプリント（スキャン画像エリア）内または近傍か */
 export function isNearFootprintArea(
   lat: number,
   lon: number,
-  sat: EagleEyeSatelliteDef,
+  fp: EagleEyeFootprint,
   paddingDeg = 0.06,
 ): boolean {
-  const fp = sat.footprint;
   return (
     lat >= fp.south - paddingDeg &&
     lat <= fp.north + paddingDeg &&
@@ -145,7 +128,6 @@ export function isNearFootprintArea(
   );
 }
 
-/** トラック上の指定時刻に最も近いサンプル位置 */
 export function getPositionFromTrack(
   track: SatelliteTrackDto,
   clockDate: Date,
@@ -175,7 +157,19 @@ export function getPositionFromTrack(
   return closest;
 }
 
-/** 軌道速度 km/s（前後サンプルから算出） */
+export function getAltitudeFromTrack(
+  track: SatelliteTrackDto,
+  clockDate: Date,
+): string {
+  const pos = getPositionFromTrack(track, clockDate);
+  return formatAltitude(pos.altKm);
+}
+
+export function formatAltitude(altKm: number): string {
+  if (altKm >= 1000) return `${(altKm / 1000).toFixed(1)} 千 km`;
+  return `${Math.round(altKm)} km`;
+}
+
 export function getOrbitalSpeedKmS(
   track: SatelliteTrackDto,
   clockDate: Date,
@@ -204,37 +198,38 @@ export function getOrbitalSpeedKmS(
   return dist / dtSec;
 }
 
-/** 各衛星のライブ情報を算出 */
+function imagingScore(info: SatelliteLiveInfo): number {
+  const altPenalty = info.altKm > 1500 ? info.altKm / 5 : 0;
+  return info.footprintDistKm + altPenalty;
+}
+
 export function computeSatelliteLiveInfo(
   tracks: SatelliteTrackDto[],
   clockDate: Date,
 ): SatelliteLiveInfo[] {
   return tracks.map((track) => {
     const pos = getPositionFromTrack(track, clockDate);
-    const center = getFootprintCenter(track.satellite);
     return {
       id: track.satellite.id,
       speedKmS: getOrbitalSpeedKmS(track, clockDate),
       altKm: pos.altKm,
       lat: pos.lat,
       lon: pos.lon,
-      footprintDistKm: haversineKm(pos.lat, pos.lon, center.lat, center.lon),
+      footprintDistKm: haversineKm(pos.lat, pos.lon, IMAGING_ROI.lat, IMAGING_ROI.lon),
     };
   });
 }
 
-/** 現在フットプリント上空に最も近い（撮影可能な）衛星 ID */
 export function findNearestImagingSatelliteId(
   tracks: SatelliteTrackDto[],
   clockDate: Date,
 ): string | null {
   const infos = computeSatelliteLiveInfo(tracks, clockDate);
   if (!infos.length) return null;
-  infos.sort((a, b) => a.footprintDistKm - b.footprintDistKm);
+  infos.sort((a, b) => imagingScore(a) - imagingScore(b));
   return infos[0].id;
 }
 
-/** 撮影可能順に衛星をソート（nearest 優先） */
 export function sortSatellitesByImaging(
   satellites: EagleEyeSatelliteDef[],
   nearestId: string | null,
@@ -246,15 +241,14 @@ export function sortSatellitesByImaging(
   });
 }
 
-/** スキャン画像エリア（③フットプリント）近傍の地上カメラ */
 export function findCamerasNearFootprint<T extends GroundCameraLike>(
-  sat: EagleEyeSatelliteDef,
+  fp: EagleEyeFootprint,
   cameras: T[],
-  paddingDeg = 0.06,
+  paddingDeg = 0.08,
 ): T[] {
-  const center = getFootprintCenter(sat);
+  const center = getFootprintCenter(fp);
   return cameras
-    .filter((cam) => isNearFootprintArea(cam.lat, cam.lon, sat, paddingDeg))
+    .filter((cam) => isNearFootprintArea(cam.lat, cam.lon, fp, paddingDeg))
     .map((cam) => ({
       cam,
       dist: haversineKm(center.lat, center.lon, cam.lat, cam.lon),
@@ -266,4 +260,26 @@ export function findCamerasNearFootprint<T extends GroundCameraLike>(
 export function formatSpeedKmS(kmS: number): string {
   if (kmS >= 1) return `${kmS.toFixed(2)} km/s`;
   return `${(kmS * 1000).toFixed(0)} m/s`;
+}
+
+/** カメラ視野の扇形頂点（地図用） */
+export function buildCameraFovPolygon(
+  lat: number,
+  lon: number,
+  headingDeg: number,
+  fovDeg: number,
+  rangeM: number,
+): { lat: number; lon: number }[] {
+  const rangeKm = rangeM / 1000;
+  const half = fovDeg / 2;
+  const points: { lat: number; lon: number }[] = [{ lat, lon }];
+
+  for (let angle = headingDeg - half; angle <= headingDeg + half; angle += Math.max(5, fovDeg / 8)) {
+    const rad = (angle * Math.PI) / 180;
+    const dLat = (rangeKm / 111) * Math.cos(rad);
+    const dLon = (rangeKm / (111 * Math.cos((lat * Math.PI) / 180))) * Math.sin(rad);
+    points.push({ lat: lat + dLat, lon: lon + dLon });
+  }
+  points.push({ lat, lon });
+  return points;
 }

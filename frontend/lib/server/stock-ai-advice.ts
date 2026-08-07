@@ -124,7 +124,7 @@ export async function enhanceStockAdviceWithAi(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 1200,
+      max_completion_tokens: 700,
       response_format: { type: "json_object" },
       messages: [
         {

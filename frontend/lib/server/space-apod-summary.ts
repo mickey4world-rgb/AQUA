@@ -54,7 +54,7 @@ export async function summarizeApodInJapanese(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 1200,
+      max_completion_tokens: 600,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

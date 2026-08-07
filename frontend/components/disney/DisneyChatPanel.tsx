@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  DISNEY_CHARACTER_LIST,
+  resolveDisneyCharacter,
+  type DisneyCharacterId,
+} from "@/lib/disney-characters";
 import { disneyPanelClass } from "@/lib/disney-utils";
 import type { DisneyChatMessage } from "@/lib/types/disney";
 import type { DisneyParkKey } from "@/lib/types/disney";
@@ -8,7 +13,7 @@ import type { DisneyParkKey } from "@/lib/types/disney";
 const STARTER_PROMPTS = [
   "今から効率よく回る順番を教えて！",
   "このパークの隠れミッキー、どこにある？",
-  "子連れ向けのおすすめと豆知識を教えて！",
+  "子連れ向けのおすすめを教えて！",
 ];
 
 type DisneyChatPanelProps = {
@@ -22,16 +27,19 @@ export default function DisneyChatPanel({
   targetDate,
   parkName,
 }: DisneyChatPanelProps) {
+  const [characterId, setCharacterId] = useState<DisneyCharacterId>("mickey");
   const [messages, setMessages] = useState<DisneyChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const character = resolveDisneyCharacter(characterId);
+
   useEffect(() => {
     setMessages([]);
     setError(null);
-  }, [park, targetDate]);
+  }, [park, targetDate, characterId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -61,6 +69,7 @@ export default function DisneyChatPanel({
           date: targetDate,
           message: trimmed,
           history: priorMessages,
+          character: characterId,
         }),
       });
 
@@ -87,20 +96,39 @@ export default function DisneyChatPanel({
     <div className={`${disneyPanelClass} flex min-h-[24rem] flex-col p-5 lg:min-h-[32rem]`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">ミッキーに聞く</h2>
+          <h2 className="text-sm font-semibold text-white">{character.nameJa}に聞く</h2>
           <p className="mt-1 text-xs text-slate-400">
-            {parkName} · {targetDate} — 回り方の相談に加え、歴史・トリビア・隠れミッキーもミッキー口調で答えるよ！
+            {parkName} · {targetDate} — キャラクターごとの口調で回り方・豆知識に答えます
           </p>
         </div>
         <span className="rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-200">
-          Mickey AI
+          {character.badge}
         </span>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <label htmlFor="disney-character" className="text-xs text-slate-500">
+          キャラクター
+        </label>
+        <select
+          id="disney-character"
+          value={characterId}
+          onChange={(e) => setCharacterId(e.target.value as DisneyCharacterId)}
+          disabled={sending}
+          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white disabled:opacity-50"
+        >
+          {DISNEY_CHARACTER_LIST.map((c) => (
+            <option key={c.id} value={c.id} className="bg-slate-900">
+              {c.nameJa}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 && (
           <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
-            <p>回り方・待ち時間・混雑対策はもちろん、パークの歴史や隠れミッキーの話も聞いてみてね！</p>
+            <p>{character.nameJa}に回り方・待ち時間・混雑対策を相談してみてね！</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {STARTER_PROMPTS.map((prompt) => (
                 <button
@@ -131,7 +159,7 @@ export default function DisneyChatPanel({
             >
               {msg.role === "assistant" && (
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fuchsia-300/80">
-                  ミッキー
+                  {character.nameJa}
                 </p>
               )}
               {msg.content}
@@ -140,7 +168,7 @@ export default function DisneyChatPanel({
         ))}
 
         {sending && (
-          <p className="text-xs text-slate-500">ハハッ！ ミッキーが考え中...</p>
+          <p className="text-xs text-slate-500">{character.greeting}</p>
         )}
         <div ref={bottomRef} />
       </div>
@@ -158,7 +186,8 @@ export default function DisneyChatPanel({
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="例: 今から3時間で回るなら？"
+          placeholder={`${character.nameJa}に質問...`}
+          maxLength={600}
           disabled={sending}
           className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
         />
