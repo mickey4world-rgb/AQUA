@@ -66,6 +66,8 @@ export interface AzureInfraCostSummary {
   month: string;
   currency: string;
   totalCost: number;
+  /** RG フィルタ設定時の RG 内合計（参考） */
+  resourceGroupCost?: number;
   byService: AzureServiceCost[];
   daily: AzureDailyCostPoint[];
   scopeLabel: string;

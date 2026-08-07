@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     }
 
     try {
-      return Response.json(predictCalendarMonth(park, year, month));
+      return Response.json(await predictCalendarMonth(park, year, month));
     } catch (error) {
       return Response.json(
         {

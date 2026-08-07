@@ -90,7 +90,7 @@ export async function sendSpaceChat(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 900,
+      max_completion_tokens: 500,
       messages,
     });
 

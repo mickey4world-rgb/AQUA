@@ -56,10 +56,15 @@ export default function AzureInfraCostPanel({ azure, quota, monthLabel }: AzureI
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 p-4">
-          <p className="text-xs text-slate-400">Azure 実績（税抜）</p>
+          <p className="text-xs text-slate-400">Azure 合計（サブスクリプション全体・税抜）</p>
           <p className="mt-1 text-2xl font-bold text-sky-200">
             {formatCurrency(azure.totalCost, azure.currency)}
           </p>
+          {azure.resourceGroupCost != null && (
+            <p className="mt-1 text-[10px] text-slate-500">
+              RG 内参考: {formatCurrency(azure.resourceGroupCost, azure.currency)}
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-4">
           <p className="text-xs text-slate-400">AI 推定（OpenAI トークン）</p>

@@ -108,10 +108,17 @@ async function getManagementAccessToken(): Promise<string | null> {
   return null;
 }
 
+function parseCostValue(row: unknown[], index: Record<string, number>): number {
+  const preTax = index.PreTaxCost ?? index.Cost;
+  const raw = preTax != null ? row[preTax] : undefined;
+  const value = Number(raw ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
 function parseRows(result: CostQueryResult): CostQueryRow[] {
   const index = Object.fromEntries(result.columns.map((col, i) => [col.name, i]));
   return result.rows.map((row) => ({
-    cost: Number(row[index.PreTaxCost] ?? 0),
+    cost: parseCostValue(row, index),
     serviceName: row[index.ServiceName] as string | undefined,
     usageDate: row[index.UsageDate] as number | undefined,
     currency: String(row[index.Currency] ?? "JPY"),
@@ -169,9 +176,9 @@ export async function fetchAzureInfraCosts(
 
   const monthDate = parseMonthParam(month);
   const period = monthPeriod(monthDate);
-  const filter = resourceGroupFilter();
+  const rgFilter = resourceGroupFilter();
 
-  const baseQuery = {
+  const subscriptionQuery = {
     type: "ActualCost",
     timeframe: "Custom",
     timePeriod: period,
@@ -179,31 +186,45 @@ export async function fetchAzureInfraCosts(
       aggregation: {
         totalCost: { name: "PreTaxCost", function: "Sum" },
       },
-      ...(filter ? { filter } : {}),
     },
   };
 
+  const scopedDataset = {
+    aggregation: {
+      totalCost: { name: "PreTaxCost", function: "Sum" },
+    },
+    ...(rgFilter ? { filter: rgFilter } : {}),
+  };
+
   try {
-    const [byService, dailyRows] = await Promise.all([
+    const [totalRows, byService, dailyRows] = await Promise.all([
       runCostQuery(token, subscriptionId, {
-        ...baseQuery,
+        ...subscriptionQuery,
+        dataset: { ...subscriptionQuery.dataset, granularity: "None" },
+      }),
+      runCostQuery(token, subscriptionId, {
+        type: "ActualCost",
+        timeframe: "Custom",
+        timePeriod: period,
         dataset: {
-          ...baseQuery.dataset,
+          ...scopedDataset,
           granularity: "None",
           grouping: [{ type: "Dimension", name: "ServiceName" }],
         },
       }),
       runCostQuery(token, subscriptionId, {
-        ...baseQuery,
+        type: "ActualCost",
+        timeframe: "Custom",
+        timePeriod: period,
         dataset: {
-          ...baseQuery.dataset,
+          ...subscriptionQuery.dataset,
           granularity: "Daily",
-          grouping: [{ type: "Dimension", name: "ServiceName" }],
         },
       }),
     ]);
 
-    const currency = byService[0]?.currency ?? dailyRows[0]?.currency ?? "JPY";
+    const currency =
+      totalRows[0]?.currency ?? byService[0]?.currency ?? dailyRows[0]?.currency ?? "JPY";
     const byServiceMap = new Map<string, number>();
 
     for (const row of byService) {
@@ -230,19 +251,23 @@ export async function fetchAzureInfraCosts(
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, costAmount]) => ({ date, costAmount }));
 
-    const totalCost = byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0);
+    const totalCost = totalRows.reduce((sum, row) => sum + row.cost, 0);
+    const rgTotal = rgFilter
+      ? byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0)
+      : undefined;
 
     return {
       configured: true,
       month: `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`,
       currency,
       totalCost,
+      resourceGroupCost: rgTotal,
       byService: byServiceSorted,
       daily,
-      scopeLabel: filter
-        ? `リソースグループ: ${process.env.AZURE_COST_RESOURCE_GROUP}`
-        : `サブスクリプション全体`,
-      note: "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
+      scopeLabel: "サブスクリプション全体",
+      note: rgFilter
+        ? `合計はサブスクリプション全体の実績（税抜）。内訳は RG「${process.env.AZURE_COST_RESOURCE_GROUP}」。反映に 24〜48 時間かかることがあります。`
+        : "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
     };
   } catch (error) {
     return {
