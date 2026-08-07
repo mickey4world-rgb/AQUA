@@ -4,6 +4,12 @@ import {
   type EagleEyeSatelliteDef,
 } from "@/lib/eagle-eye-data";
 
+export interface SortRoi {
+  lat: number;
+  lon: number;
+  label?: string;
+}
+
 export interface SatellitePositionDto {
   time: string;
   lat: number;
@@ -30,7 +36,7 @@ export interface SatelliteLiveInfo {
   altKm: number;
   lat: number;
   lon: number;
-  /** 関心地域（東京）からの距離 km（小さいほど撮影可能） */
+  /** ソート基準地点からの距離 km */
   footprintDistKm: number;
 }
 
@@ -206,6 +212,7 @@ function imagingScore(info: SatelliteLiveInfo): number {
 export function computeSatelliteLiveInfo(
   tracks: SatelliteTrackDto[],
   clockDate: Date,
+  roi: SortRoi = IMAGING_ROI,
 ): SatelliteLiveInfo[] {
   return tracks.map((track) => {
     const pos = getPositionFromTrack(track, clockDate);
@@ -215,7 +222,7 @@ export function computeSatelliteLiveInfo(
       altKm: pos.altKm,
       lat: pos.lat,
       lon: pos.lon,
-      footprintDistKm: haversineKm(pos.lat, pos.lon, IMAGING_ROI.lat, IMAGING_ROI.lon),
+      footprintDistKm: haversineKm(pos.lat, pos.lon, roi.lat, roi.lon),
     };
   });
 }
@@ -223,8 +230,9 @@ export function computeSatelliteLiveInfo(
 export function findNearestImagingSatelliteId(
   tracks: SatelliteTrackDto[],
   clockDate: Date,
+  roi: SortRoi = IMAGING_ROI,
 ): string | null {
-  const infos = computeSatelliteLiveInfo(tracks, clockDate);
+  const infos = computeSatelliteLiveInfo(tracks, clockDate, roi);
   if (!infos.length) return null;
   infos.sort((a, b) => imagingScore(a) - imagingScore(b));
   return infos[0].id;
@@ -232,9 +240,15 @@ export function findNearestImagingSatelliteId(
 
 export function sortSatellitesByImaging(
   satellites: EagleEyeSatelliteDef[],
+  liveInfos: SatelliteLiveInfo[],
   nearestId: string | null,
 ): EagleEyeSatelliteDef[] {
+  const distMap = new Map(liveInfos.map((i) => [i.id, i.footprintDistKm]));
+
   return [...satellites].sort((a, b) => {
+    const da = distMap.get(a.id) ?? Infinity;
+    const db = distMap.get(b.id) ?? Infinity;
+    if (da !== db) return da - db;
     if (a.id === nearestId) return -1;
     if (b.id === nearestId) return 1;
     return a.name.localeCompare(b.name);

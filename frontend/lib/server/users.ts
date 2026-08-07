@@ -82,6 +82,7 @@ export async function syncUser(principal: ClientPrincipal): Promise<User> {
       ...existing,
       email,
       authProvider: principal.identityProvider,
+      monthlyTokenLimit: Math.max(existing.monthlyTokenLimit, DEFAULT_MONTHLY_TOKEN_LIMIT),
       updatedAt: now,
     };
     const { resource } = await getContainer(COSMOS_CONTAINERS.users)

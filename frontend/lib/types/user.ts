@@ -15,4 +15,4 @@ export interface UpdateUserRequest {
   notifyEmail?: string;
 }
 
-export const DEFAULT_MONTHLY_TOKEN_LIMIT = 100_000;
+export const DEFAULT_MONTHLY_TOKEN_LIMIT = 1_000_000;
