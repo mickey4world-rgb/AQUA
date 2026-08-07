@@ -12,7 +12,7 @@ import {
   getDailyAccessCounts,
   listRecentAccessLogs,
 } from "@/lib/server/access-log";
-import { getUserById } from "@/lib/server/users";
+import { ensureUserTokenLimit, effectiveTokenLimit } from "@/lib/server/users";
 import {
   getDailyTokenUsage,
   getMonthlyTokenCostUsd,
@@ -49,8 +49,8 @@ export async function buildCostDashboard(
   const start = monthStartIso(monthDate);
   const end = monthEndIso(monthDate);
 
-  const user = await getUserById(userId);
-  const limit = user?.monthlyTokenLimit ?? DEFAULT_MONTHLY_TOKEN_LIMIT;
+  const user = await ensureUserTokenLimit(userId);
+  const limit = effectiveTokenLimit(user);
 
   const [
     used,
