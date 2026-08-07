@@ -16,3 +16,11 @@ export interface UpdateUserRequest {
 }
 
 export const DEFAULT_MONTHLY_TOKEN_LIMIT = 1_000_000;
+
+/** DB 保存値が旧上限のままでも、常に現行デフォルト以上を適用 */
+export function getEffectiveMonthlyTokenLimit(
+  user: Pick<User, "monthlyTokenLimit"> | null | undefined,
+): number {
+  const stored = user?.monthlyTokenLimit ?? DEFAULT_MONTHLY_TOKEN_LIMIT;
+  return Math.max(stored, DEFAULT_MONTHLY_TOKEN_LIMIT);
+}

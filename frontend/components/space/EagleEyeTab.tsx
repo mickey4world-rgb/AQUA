@@ -41,6 +41,7 @@ export default function EagleEyeTab() {
     orbitalSpeedKmS: null,
     activeCamera: null,
     footprintImageUrl: null,
+    liveStreamUrl: null,
     liveInfos: [],
     satelliteCount: 0,
     satellites: [],
@@ -132,7 +133,7 @@ export default function EagleEyeTab() {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             衛星スキャン画像
           </p>
-          {displaySat && state.footprintImageUrl ? (
+          {displaySat ? (
             <div className="mt-3">
               <p className="text-sm font-semibold text-white">{displaySat.name}</p>
               {displaySat.category && (
@@ -141,34 +142,55 @@ export default function EagleEyeTab() {
               {displaySat.info && (
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{displaySat.info}</p>
               )}
-              <p className="mt-1 text-[10px] text-slate-500">
-                {state.selectedFootprint?.label ?? "スキャンエリア"}
-              </p>
-              <div className="mt-2 overflow-hidden rounded-lg border border-amber-400/30">
-                {displaySat.mediaType === "video" ? (
+              {state.selectedFootprint && (
+                <p className="mt-1 text-[10px] text-slate-500">{state.selectedFootprint.label}</p>
+              )}
+              {state.liveStreamUrl && (
+                <div className="mt-2 overflow-hidden rounded-lg border border-red-400/40 bg-black">
+                  <p className="bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-200">
+                    ● LIVE 公開映像
+                  </p>
                   <iframe
-                    title={displaySat.name}
-                    src={state.footprintImageUrl}
+                    title={`${displaySat.name} ライブ`}
+                    src={state.liveStreamUrl}
                     className="aspect-video w-full"
                     allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   />
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={state.footprintImageUrl}
-                    alt={displaySat.name}
-                    className="aspect-video w-full object-cover"
-                  />
-                )}
-              </div>
+                </div>
+              )}
+              {state.footprintImageUrl && (
+                <div className={`overflow-hidden rounded-lg border border-amber-400/30 ${state.liveStreamUrl ? "mt-2" : "mt-2"}`}>
+                  {!state.liveStreamUrl && (
+                    <p className="bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200">
+                      共有画像
+                    </p>
+                  )}
+                  {displaySat.mediaType === "video" && !state.liveStreamUrl ? (
+                    <iframe
+                      title={displaySat.name}
+                      src={state.footprintImageUrl}
+                      className="aspect-video w-full"
+                      allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={state.footprintImageUrl}
+                      alt={displaySat.name}
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                </div>
+              )}
               {state.satelliteAltitude && (
                 <p className="mt-1 text-xs text-slate-400">高度: {state.satelliteAltitude}</p>
               )}
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              衛星一覧から選択すると、情報と共有画像がここに表示されます
+              衛星一覧から選択すると、情報とライブ映像がここに表示されます
             </p>
           )}
         </div>
@@ -181,22 +203,32 @@ export default function EagleEyeTab() {
             <div className="mt-3">
               <p className="text-sm font-semibold text-white">{state.activeCamera.name}</p>
               <p className="text-xs text-orange-300">
-                {state.activeCamera.type} · 向き {state.activeCamera.headingDeg}° · 視野{" "}
-                {state.activeCamera.fovDeg}°
+                {state.activeCamera.type} ·{" "}
+                {state.activeCamera.mediaType === "video" ? "🎥 ライブ映像" : "🖼 静止画"} · 向き{" "}
+                {state.activeCamera.headingDeg}°
               </p>
               <div className="mt-2 overflow-hidden rounded-lg border border-orange-400/30 bg-black">
-                <iframe
-                  title={state.activeCamera.name}
-                  src={state.activeCamera.embedUrl}
-                  className="aspect-video w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                {state.activeCamera.mediaType === "video" ? (
+                  <iframe
+                    title={state.activeCamera.name}
+                    src={state.activeCamera.mediaUrl}
+                    className="aspect-video w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={state.activeCamera.mediaUrl}
+                    alt={state.activeCamera.name}
+                    className="aspect-video w-full object-cover"
+                  />
+                )}
               </div>
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              2D地図の📷ピンをクリックするとカメラ映像が表示されます
+              🎥オレンジ=映像 · 🖼水色=画像 · ピンをクリックで地上に降下
             </p>
           )}
         </div>

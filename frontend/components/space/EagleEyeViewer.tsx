@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   GROUND_CAMERAS,
+  GROUND_PIN_COLORS,
   type EagleEyeFootprint,
   type EagleEyeSatelliteDef,
   type GroundCamera,
@@ -29,6 +30,8 @@ const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
 const ESRI_IMAGERY =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const ESRI_LABELS =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
 export type EagleEyeViewerState = {
   phase: EagleEyePhase;
@@ -39,6 +42,7 @@ export type EagleEyeViewerState = {
   orbitalSpeedKmS: number | null;
   activeCamera: GroundCamera | null;
   footprintImageUrl: string | null;
+  liveStreamUrl: string | null;
   liveInfos: SatelliteLiveInfo[];
   satelliteCount: number;
   satellites: EagleEyeSatelliteDef[];
@@ -100,14 +104,23 @@ function satColor(idx: number): string {
   return palette[idx % palette.length];
 }
 
-function addEsriImagery(viewer: import("cesium").Viewer, Cesium: CesiumModule) {
+function addMapImagery(viewer: import("cesium").Viewer, Cesium: CesiumModule, withLabels: boolean) {
   viewer.imageryLayers.removeAll();
   viewer.imageryLayers.addImageryProvider(
     new Cesium.UrlTemplateImageryProvider({
       url: ESRI_IMAGERY,
-      credit: "Esri, Maxar, Earthstar Geographics",
+      credit: "Esri, Maxar",
     }),
   );
+  if (withLabels) {
+    const labels = viewer.imageryLayers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({
+        url: ESRI_LABELS,
+        credit: "Esri Labels",
+      }),
+    );
+    labels.alpha = 0.92;
+  }
 }
 
 export default function EagleEyeViewer({
@@ -167,6 +180,7 @@ export default function EagleEyeViewer({
         : liveInfos.find((i) => i.id === nearestSatelliteId)?.speedKmS ?? null,
       activeCamera: null,
       footprintImageUrl: fp?.imageUrl ?? selected?.mediaUrl ?? null,
+      liveStreamUrl: selected?.liveStreamUrl ?? null,
       liveInfos,
       satelliteCount: satellitesRef.current.length,
       satellites: satellitesRef.current,
@@ -229,6 +243,26 @@ export default function EagleEyeViewer({
     [],
   );
 
+  const flyToGroundCamera = useCallback(
+    (cam: GroundCamera) => {
+      const viewer = viewerRef.current;
+      const Cesium = cesiumRef.current;
+      if (!viewer || !Cesium) return;
+
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, 650),
+        orientation: {
+          heading: Cesium.Math.toRadians(cam.headingDeg),
+          pitch: Cesium.Math.toRadians(-50),
+          roll: 0,
+        },
+        duration: 2.8,
+        easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+      });
+    },
+    [],
+  );
+
   const enterMapMode = useCallback(
     (sat: EagleEyeSatelliteDef) => {
       const viewer = viewerRef.current;
@@ -250,39 +284,68 @@ export default function EagleEyeViewer({
 
       if (footprintRef.current) viewer.entities.remove(footprintRef.current);
 
-      addEsriImagery(viewer, Cesium);
+      const zoomBounds = getFootprintZoomBounds(fp);
 
-      footprintRef.current = viewer.entities.add({
-        id: `${sat.id}-footprint`,
-        name: fp.label,
-        rectangle: {
-          coordinates: Cesium.Rectangle.fromDegrees(fp.west, fp.south, fp.east, fp.north),
-          material: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.15),
-          height: 0,
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.95),
-          outlineWidth: 3,
+      // ① 宇宙から衛星付近へ（3D）
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          pos.lon,
+          pos.lat,
+          Math.max(pos.altKm * 1000 + 800_000, 600_000),
+        ),
+        orientation: {
+          heading: 0,
+          pitch: Cesium.Math.toRadians(-65),
+          roll: 0,
+        },
+        duration: 1.8,
+        easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+        complete: () => {
+          if (!viewer || viewer.isDestroyed()) return;
+          // ② 2D 地図へモーフ + 地名レイヤー
+          addMapImagery(viewer, Cesium, true);
+          viewer.scene.morphTo2D(1.6);
+
+          setTimeout(() => {
+            if (!viewer || viewer.isDestroyed()) return;
+
+            footprintRef.current = viewer.entities.add({
+              id: `${sat.id}-footprint`,
+              name: fp.label,
+              rectangle: {
+                coordinates: Cesium.Rectangle.fromDegrees(fp.west, fp.south, fp.east, fp.north),
+                material: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.12),
+                height: 0,
+                outline: true,
+                outlineColor: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.9),
+                outlineWidth: 2,
+              },
+            });
+
+            showMapCameras(true);
+
+            // ③ 地上スキャンエリアへ降下
+            viewer.camera.flyTo({
+              destination: Cesium.Rectangle.fromDegrees(
+                zoomBounds.west,
+                zoomBounds.south,
+                zoomBounds.east,
+                zoomBounds.north,
+              ),
+              duration: 2.4,
+              easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+            });
+          }, 700);
         },
       });
 
-      showMapCameras(true);
-      const zoomBounds = getFootprintZoomBounds(fp);
-
-      viewer.scene.morphTo2D(1.8);
-      setTimeout(() => {
-        viewer!.camera.flyTo({
-          destination: Cesium.Rectangle.fromDegrees(
-            zoomBounds.west,
-            zoomBounds.south,
-            zoomBounds.east,
-            zoomBounds.north,
-          ),
-          duration: 2.2,
-        });
-      }, 400);
-
       updateSatelliteStyles(nearestIdRef.current, sat.id);
-      emitState({ phase: "map", footprintImageUrl: fp.imageUrl, activeCamera: null });
+      emitState({
+        phase: "map",
+        footprintImageUrl: fp.imageUrl,
+        liveStreamUrl: sat.liveStreamUrl ?? null,
+        activeCamera: null,
+      });
     },
     [emitState, showMapCameras, updateSatelliteStyles],
   );
@@ -303,7 +366,7 @@ export default function EagleEyeViewer({
       footprintRef.current = null;
     }
 
-    addEsriImagery(viewer, Cesium);
+    addMapImagery(viewer, Cesium, false);
     showMapCameras(false);
     viewer.scene.morphTo3D(1.5);
     setTimeout(() => {
@@ -316,6 +379,7 @@ export default function EagleEyeViewer({
       selectedSatellite: null,
       selectedFootprint: null,
       footprintImageUrl: null,
+      liveStreamUrl: null,
       activeCamera: null,
     });
   }, [emitState, showMapCameras, updateSatelliteStyles]);
@@ -362,7 +426,7 @@ export default function EagleEyeViewer({
           selectionIndicator: true,
         });
 
-        addEsriImagery(viewer, Cesium);
+        addMapImagery(viewer, Cesium, false);
 
         viewer.clock.startTime = Cesium.JulianDate.fromDate(start);
         viewer.clock.stopTime = Cesium.JulianDate.fromDate(stop);
@@ -452,6 +516,8 @@ export default function EagleEyeViewer({
         });
 
         GROUND_CAMERAS.forEach((cam) => {
+          const pinColor = GROUND_PIN_COLORS[cam.mediaType];
+          const icon = cam.mediaType === "video" ? "🎥" : "🖼";
           const fovPoints = buildCameraFovPolygon(
             cam.lat,
             cam.lon,
@@ -467,9 +533,9 @@ export default function EagleEyeViewer({
               hierarchy: Cesium.Cartesian3.fromDegreesArray(
                 fovPoints.flatMap((p) => [p.lon, p.lat]),
               ),
-              material: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.25),
+              material: Cesium.Color.fromCssColorString(pinColor).withAlpha(0.22),
               outline: true,
-              outlineColor: Cesium.Color.fromCssColorString("#fb923c").withAlpha(0.7),
+              outlineColor: Cesium.Color.fromCssColorString(pinColor).withAlpha(0.75),
               height: 0,
             },
           });
@@ -480,15 +546,15 @@ export default function EagleEyeViewer({
             position: Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, 50),
             show: false,
             point: {
-              pixelSize: 10,
-              color: Cesium.Color.fromCssColorString("#fb923c"),
+              pixelSize: 12,
+              color: Cesium.Color.fromCssColorString(pinColor),
               outlineColor: Cesium.Color.WHITE,
               outlineWidth: 2,
             },
             label: {
-              text: `📷 ${cam.name}`,
+              text: `${icon} ${cam.name}`,
               font: "10px sans-serif",
-              fillColor: Cesium.Color.fromCssColorString("#fb923c"),
+              fillColor: Cesium.Color.fromCssColorString(pinColor),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
@@ -531,7 +597,10 @@ export default function EagleEyeViewer({
           if (entity.id.startsWith("cam-")) {
             const camId = entity.id.slice("cam-".length);
             const cam = GROUND_CAMERAS.find((c) => c.id === camId);
-            if (cam) emitState({ phase: "live", activeCamera: cam });
+            if (cam) {
+              flyToGroundCamera(cam);
+              emitState({ phase: "live", activeCamera: cam });
+            }
             return;
           }
 
@@ -555,7 +624,7 @@ export default function EagleEyeViewer({
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
-  }, [emitState, enterMapMode, updateSatelliteStyles]);
+  }, [emitState, enterMapMode, flyToGroundCamera, updateSatelliteStyles]);
 
   return (
     <div className="relative h-full w-full">
@@ -595,7 +664,7 @@ export default function EagleEyeViewer({
         <div className="pointer-events-none absolute bottom-3 left-3 max-w-xs rounded-lg bg-black/70 px-3 py-2 text-xs text-slate-300">
           <p className="text-amber-200/90">スキャン画像エリア</p>
           <p className="mt-0.5">{activeFootprintRef.current?.label ?? mapSatellite.name}</p>
-          <p className="mt-1 text-[10px] text-slate-400">📷=カメラ視野 · クリックで映像</p>
+          <p className="mt-1 text-[10px] text-slate-400">🎥=映像ピン · 🖼=画像ピン · クリックで地上へ降下</p>
         </div>
       )}
     </div>

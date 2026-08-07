@@ -1,7 +1,7 @@
 import { isAllowedLogin } from "@/lib/allowed-users";
 import type { ClientPrincipal } from "@/lib/types/auth";
 import type { UpdateUserRequest, User } from "@/lib/types/user";
-import { DEFAULT_MONTHLY_TOKEN_LIMIT } from "@/lib/types/user";
+import { DEFAULT_MONTHLY_TOKEN_LIMIT, getEffectiveMonthlyTokenLimit } from "@/lib/types/user";
 import { getEmailFromPrincipal } from "@/lib/server/auth";
 import { COSMOS_CONTAINERS, getContainer } from "@/lib/server/cosmos";
 
@@ -10,6 +10,27 @@ export async function getUserById(userId: string): Promise<User | null> {
     .item(userId, userId)
     .read<User>();
   return resource ?? null;
+}
+
+/** 旧上限（100k）のユーザーを DB 上も 1M に引き上げ */
+export async function ensureUserTokenLimit(userId: string): Promise<User | null> {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  if (user.monthlyTokenLimit >= DEFAULT_MONTHLY_TOKEN_LIMIT) return user;
+
+  const updated: User = {
+    ...user,
+    monthlyTokenLimit: DEFAULT_MONTHLY_TOKEN_LIMIT,
+    updatedAt: new Date().toISOString(),
+  };
+  const { resource } = await getContainer(COSMOS_CONTAINERS.users)
+    .item(userId, userId)
+    .replace(updated);
+  return resource ?? updated;
+}
+
+export function effectiveTokenLimit(user: User | null | undefined): number {
+  return getEffectiveMonthlyTokenLimit(user);
 }
 
 function loginNameFromPrincipal(

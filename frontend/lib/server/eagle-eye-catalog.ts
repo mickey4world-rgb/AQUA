@@ -29,13 +29,14 @@ const CATEGORY_IMAGES: Record<string, string> = {
 
 const NORAD_ENRICH: Record<
   number,
-  Partial<Pick<EagleEyeSatelliteDef, "info" | "mediaUrl" | "mediaType" | "footprint">>
+  Partial<Pick<EagleEyeSatelliteDef, "info" | "mediaUrl" | "mediaType" | "footprint" | "liveStreamUrl">>
 > = {
   25544: {
-    info: "国際宇宙ステーション。約90分周期で地球を周回し、宇宙からの地球観測映像を公開しています。",
+    info: "国際宇宙ステーション。約90分周期で地球を周回。NASA 公開の地球ライブ映像をリアルタイム配信中。",
     mediaUrl:
       "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Tokyo_from_space.jpg/640px-Tokyo_from_space.jpg",
-    mediaType: "image",
+    mediaType: "video",
+    liveStreamUrl: "https://www.youtube.com/embed/iYmvCUonukw?autoplay=1&mute=1&rel=0",
   },
   33591: {
     info: "NOAA-19 気象衛星。極軌道で全球の気象・雲画像を取得します。",
@@ -116,6 +117,7 @@ function buildSatellite(parsed: ParsedTle): EagleEyeSatelliteDef {
       `${parsed.name}（${parsed.category}）。TLE軌道データからリアルタイム位置を表示しています。`,
     mediaUrl: imageUrl,
     mediaType: enrich?.mediaType ?? "image",
+    liveStreamUrl: enrich?.liveStreamUrl,
     footprint: enrich?.footprint,
   };
 }

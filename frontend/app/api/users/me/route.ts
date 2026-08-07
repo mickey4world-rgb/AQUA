@@ -1,6 +1,6 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
-import { getUserById, syncUser, updateUser } from "@/lib/server/users";
+import { getUserById, syncUser, updateUser, ensureUserTokenLimit } from "@/lib/server/users";
 import type { UpdateUserRequest } from "@/lib/types/user";
 
 export async function GET(request: Request) {
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   }
 
   return withApiAccessLog(request, async (auth) => {
-    const user = await getUserById(auth.userId);
+    const user = await ensureUserTokenLimit(auth.userId);
     if (!user) {
       return Response.json(
         { error: "NotFound", message: "ユーザーが登録されていません" },

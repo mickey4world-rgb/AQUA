@@ -4,8 +4,7 @@ import {
   getAzureOpenAiDeployment,
 } from "@/lib/server/azure-openai";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
-import { getUserById } from "@/lib/server/users";
-import { DEFAULT_MONTHLY_TOKEN_LIMIT } from "@/lib/types/user";
+import { ensureUserTokenLimit, effectiveTokenLimit } from "@/lib/server/users";
 import type { RecordTokenUsageInput, TokenUsage } from "@/lib/types/token-usage";
 
 function tokenUsageContainer() {
@@ -88,8 +87,8 @@ export async function canUseAiTokens(userId: string): Promise<{
   used: number;
   limit: number;
 }> {
-  const user = await getUserById(userId);
-  const limit = user?.monthlyTokenLimit ?? DEFAULT_MONTHLY_TOKEN_LIMIT;
+  const user = await ensureUserTokenLimit(userId);
+  const limit = effectiveTokenLimit(user);
   const used = await getMonthlyTokenUsage(userId);
 
   return {
