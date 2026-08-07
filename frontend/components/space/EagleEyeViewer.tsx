@@ -10,7 +10,6 @@ import {
 import {
   buildCameraFovPolygon,
   computeSatelliteLiveInfo,
-  findCamerasNearFootprint,
   findNearestImagingSatelliteId,
   formatAltitude,
   formatSpeedKmS,
@@ -22,7 +21,9 @@ import {
   type EagleEyeTracksResponse,
   type SatelliteTrackDto,
   type SatelliteLiveInfo,
+  type SortRoi,
 } from "@/lib/eagle-eye-client";
+import { IMAGING_ROI } from "@/lib/eagle-eye-data";
 
 const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
@@ -41,11 +42,13 @@ export type EagleEyeViewerState = {
   liveInfos: SatelliteLiveInfo[];
   satelliteCount: number;
   satellites: EagleEyeSatelliteDef[];
+  sortPlaceLabel: string | null;
 };
 
 type EagleEyeViewerProps = {
   selectedSatelliteId?: string | null;
   selectNonce?: number;
+  sortPlace?: SortRoi | null;
   onStateChange?: (state: EagleEyeViewerState) => void;
 };
 
@@ -110,6 +113,7 @@ function addEsriImagery(viewer: import("cesium").Viewer, Cesium: CesiumModule) {
 export default function EagleEyeViewer({
   selectedSatelliteId = null,
   selectNonce = 0,
+  sortPlace = null,
   onStateChange,
 }: EagleEyeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -122,13 +126,19 @@ export default function EagleEyeViewer({
   const nearestIdRef = useRef<string | null>(null);
   const selectedSatRef = useRef<EagleEyeSatelliteDef | null>(null);
   const mapModeRef = useRef(false);
+  const sortPlaceRef = useRef<SortRoi>(IMAGING_ROI);
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  sortPlaceRef.current = sortPlace ?? IMAGING_ROI;
+
+  useEffect(() => {
+    sortPlaceRef.current = sortPlace ?? IMAGING_ROI;
+  }, [sortPlace]);
 
   const [ready, setReady] = useState(false);
   const [isMapMode, setIsMapMode] = useState(false);
   const [mapSatellite, setMapSatellite] = useState<EagleEyeSatelliteDef | null>(null);
-  const [hud, setHud] = useState({ speed: "—", nearest: "", count: 0 });
+  const [hud, setHud] = useState({ speed: "—", nearest: "", count: 0, place: "東京" });
 
   const emitState = useCallback((patch: Partial<EagleEyeViewerState>) => {
     const viewer = viewerRef.current;
@@ -137,8 +147,9 @@ export default function EagleEyeViewer({
         ? cesiumRef.current.JulianDate.toDate(viewer.clock.currentTime)
         : new Date();
     const tracks = tracksRef.current;
-    const liveInfos = computeSatelliteLiveInfo(tracks, clockDate);
-    const nearestSatelliteId = findNearestImagingSatelliteId(tracks, clockDate);
+    const roi = sortPlaceRef.current;
+    const liveInfos = computeSatelliteLiveInfo(tracks, clockDate, roi);
+    const nearestSatelliteId = findNearestImagingSatelliteId(tracks, clockDate, roi);
     nearestIdRef.current = nearestSatelliteId;
 
     const selected = selectedSatRef.current;
@@ -159,6 +170,7 @@ export default function EagleEyeViewer({
       liveInfos,
       satelliteCount: satellitesRef.current.length,
       satellites: satellitesRef.current,
+      sortPlaceLabel: roi.label ?? null,
     };
 
     const next = { ...base, ...patch };
@@ -194,8 +206,7 @@ export default function EagleEyeViewer({
     [],
   );
 
-  const showCameraFov = useCallback(
-    (show: boolean, fp?: EagleEyeFootprint) => {
+  const showMapCameras = useCallback((show: boolean) => {
       const viewer = viewerRef.current;
       const Cesium = cesiumRef.current;
       if (!viewer || !Cesium) return;
@@ -205,11 +216,13 @@ export default function EagleEyeViewer({
         const pinEntity = viewer.entities.getById(`cam-${cam.id}`);
         if (!pinEntity) return;
 
-        const near = fp ? findCamerasNearFootprint(fp, GROUND_CAMERAS).some((c) => c.id === cam.id) : false;
-        pinEntity.show = show && near;
-        if (fovEntity) fovEntity.show = show && near;
+        pinEntity.show = show;
+        if (fovEntity) fovEntity.show = show;
         if (pinEntity.label) {
-          pinEntity.label.show = new Cesium.ConstantProperty(show && near);
+          pinEntity.label.show = new Cesium.ConstantProperty(show);
+        }
+        if (pinEntity.point) {
+          pinEntity.point.pixelSize = new Cesium.ConstantProperty(show ? 14 : 8);
         }
       });
     },
@@ -244,15 +257,15 @@ export default function EagleEyeViewer({
         name: fp.label,
         rectangle: {
           coordinates: Cesium.Rectangle.fromDegrees(fp.west, fp.south, fp.east, fp.north),
-          material: new Cesium.ImageMaterialProperty({ image: fp.imageUrl, transparent: true }),
+          material: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.15),
           height: 0,
           outline: true,
           outlineColor: Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.95),
-          outlineWidth: 4,
+          outlineWidth: 3,
         },
       });
 
-      showCameraFov(true, fp);
+      showMapCameras(true);
       const zoomBounds = getFootprintZoomBounds(fp);
 
       viewer.scene.morphTo2D(1.8);
@@ -271,7 +284,7 @@ export default function EagleEyeViewer({
       updateSatelliteStyles(nearestIdRef.current, sat.id);
       emitState({ phase: "map", footprintImageUrl: fp.imageUrl, activeCamera: null });
     },
-    [emitState, showCameraFov, updateSatelliteStyles],
+    [emitState, showMapCameras, updateSatelliteStyles],
   );
 
   const exitMapMode = useCallback(() => {
@@ -291,7 +304,7 @@ export default function EagleEyeViewer({
     }
 
     addEsriImagery(viewer, Cesium);
-    showCameraFov(false);
+    showMapCameras(false);
     viewer.scene.morphTo3D(1.5);
     setTimeout(() => {
       viewer!.camera.flyHome(2);
@@ -305,7 +318,7 @@ export default function EagleEyeViewer({
       footprintImageUrl: null,
       activeCamera: null,
     });
-  }, [emitState, showCameraFov, updateSatelliteStyles]);
+  }, [emitState, showMapCameras, updateSatelliteStyles]);
 
   useEffect(() => {
     if (!selectedSatelliteId || !ready) return;
@@ -363,46 +376,41 @@ export default function EagleEyeViewer({
           Cesium.JulianDate.fromDate(stop),
         );
 
-        const initialNearest = findNearestImagingSatelliteId(tracksRef.current, now);
-
         tracksData.tracks.forEach((track, idx) => {
           const color = satColor(idx);
           const sat = track.satellite;
           const nowIdx = track.nowIndex;
-          const drawPath = sat.id === initialNearest;
 
-          if (drawPath) {
-            const pastPositions = track.positions.slice(0, nowIdx + 1);
-            const futurePositions = track.positions.slice(nowIdx);
+          const pastPositions = track.positions.slice(0, nowIdx + 1);
+          const futurePositions = track.positions.slice(nowIdx);
 
-            if (pastPositions.length >= 2) {
-              viewer!.entities.add({
-                id: `${sat.id}-path-past`,
-                polyline: {
-                  positions: pastPositions.map((p) =>
-                    Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.altKm * 1000),
-                  ),
-                  width: 2,
-                  material: Cesium.Color.fromCssColorString(PAST_COLOR).withAlpha(0.6),
-                },
-              });
-            }
+          if (pastPositions.length >= 2) {
+            viewer!.entities.add({
+              id: `${sat.id}-path-past`,
+              polyline: {
+                positions: pastPositions.map((p) =>
+                  Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.altKm * 1000),
+                ),
+                width: 1.5,
+                material: Cesium.Color.fromCssColorString(PAST_COLOR).withAlpha(0.45),
+              },
+            });
+          }
 
-            if (futurePositions.length >= 2) {
-              viewer!.entities.add({
-                id: `${sat.id}-path-future`,
-                polyline: {
-                  positions: futurePositions.map((p) =>
-                    Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.altKm * 1000),
-                  ),
-                  width: 2.5,
-                  material: new Cesium.PolylineGlowMaterialProperty({
-                    glowPower: 0.12,
-                    color: Cesium.Color.fromCssColorString(FUTURE_COLOR).withAlpha(0.85),
-                  }),
-                },
-              });
-            }
+          if (futurePositions.length >= 2) {
+            viewer!.entities.add({
+              id: `${sat.id}-path-future`,
+              polyline: {
+                positions: futurePositions.map((p) =>
+                  Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.altKm * 1000),
+                ),
+                width: 2,
+                material: new Cesium.PolylineGlowMaterialProperty({
+                  glowPower: 0.08,
+                  color: Cesium.Color.fromCssColorString(FUTURE_COLOR).withAlpha(0.65),
+                }),
+              },
+            });
           }
 
           const positionProperty = new Cesium.SampledPositionProperty();
@@ -478,7 +486,7 @@ export default function EagleEyeViewer({
               outlineWidth: 2,
             },
             label: {
-              text: `📷 ${cam.type} (${cam.headingDeg}°)`,
+              text: `📷 ${cam.name}`,
               font: "10px sans-serif",
               fillColor: Cesium.Color.fromCssColorString("#fb923c"),
               outlineColor: Cesium.Color.BLACK,
@@ -487,6 +495,7 @@ export default function EagleEyeViewer({
               verticalOrigin: Cesium.VerticalOrigin.TOP,
               pixelOffset: new Cesium.Cartesian2(0, 12),
               show: false,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 500_000),
             },
           });
         });
@@ -494,10 +503,11 @@ export default function EagleEyeViewer({
         tickHandler = () => {
           if (!viewer || viewer.isDestroyed()) return;
           const clockDate = Cesium.JulianDate.toDate(viewer.clock.currentTime);
-          const nearestId = findNearestImagingSatelliteId(tracksRef.current, clockDate);
+          const roi = sortPlaceRef.current;
+          const nearestId = findNearestImagingSatelliteId(tracksRef.current, clockDate, roi);
           nearestIdRef.current = nearestId;
 
-          const liveInfos = computeSatelliteLiveInfo(tracksRef.current, clockDate);
+          const liveInfos = computeSatelliteLiveInfo(tracksRef.current, clockDate, roi);
           const nearestInfo = liveInfos.find((i) => i.id === nearestId);
           const nearestSat = satellitesRef.current.find((s) => s.id === nearestId);
 
@@ -505,6 +515,7 @@ export default function EagleEyeViewer({
             speed: nearestInfo ? formatSpeedKmS(nearestInfo.speedKmS) : "—",
             nearest: nearestSat?.name ?? "—",
             count: satellitesRef.current.length,
+            place: roi.label ?? "—",
           });
 
           updateSatelliteStyles(nearestId, selectedSatRef.current?.id ?? null);
@@ -515,9 +526,10 @@ export default function EagleEyeViewer({
 
         viewer.selectedEntityChanged.addEventListener((entity) => {
           if (!entity?.id || typeof entity.id !== "string") return;
+          if (entity.id.startsWith("cam-fov-")) return;
 
           if (entity.id.startsWith("cam-")) {
-            const camId = entity.id.replace("cam-", "");
+            const camId = entity.id.slice("cam-".length);
             const cam = GROUND_CAMERAS.find((c) => c.id === camId);
             if (cam) emitState({ phase: "live", activeCamera: cam });
             return;
@@ -560,7 +572,8 @@ export default function EagleEyeViewer({
             <p className="mt-0.5 font-mono text-sm text-white">{hud.speed}</p>
           </div>
           <div className="rounded-lg border border-cyan-400/20 bg-black/60 px-3 py-1.5 text-[10px] text-slate-300">
-            撮影可能: <span className="text-amber-300">{hud.nearest}</span>
+            最接近（{hud.place}）:{" "}
+            <span className="text-amber-300">{hud.nearest}</span>
           </div>
         </div>
       )}

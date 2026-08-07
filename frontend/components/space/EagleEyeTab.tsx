@@ -3,7 +3,12 @@
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { spacePanelClass } from "@/lib/space-utils";
-import { sortSatellitesByImaging, type EagleEyePhase } from "@/lib/eagle-eye-client";
+import { resolvePlaceQuery, DEFAULT_SORT_PLACE } from "@/lib/eagle-eye-places";
+import {
+  sortSatellitesByImaging,
+  type EagleEyePhase,
+  type SortRoi,
+} from "@/lib/eagle-eye-client";
 import type { EagleEyeViewerState } from "@/components/space/EagleEyeViewer";
 
 const EagleEyeViewer = dynamic(() => import("@/components/space/EagleEyeViewer"), {
@@ -24,6 +29,9 @@ const phaseLabels: Record<EagleEyePhase, string> = {
 export default function EagleEyeTab() {
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
   const [selectNonce, setSelectNonce] = useState(0);
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeError, setPlaceError] = useState<string | null>(null);
+  const [sortPlace, setSortPlace] = useState<SortRoi>(DEFAULT_SORT_PLACE);
   const [state, setState] = useState<EagleEyeViewerState>({
     phase: "orbit",
     selectedSatellite: null,
@@ -36,11 +44,22 @@ export default function EagleEyeTab() {
     liveInfos: [],
     satelliteCount: 0,
     satellites: [],
+    sortPlaceLabel: DEFAULT_SORT_PLACE.label,
   });
 
   const handleStateChange = useCallback((next: EagleEyeViewerState) => {
     setState(next);
   }, []);
+
+  function applyPlaceSearch() {
+    const resolved = resolvePlaceQuery(placeQuery);
+    if (!resolved) {
+      setPlaceError("地名が見つかりません（例: 東京、大阪、35.68,139.76）");
+      return;
+    }
+    setPlaceError(null);
+    setSortPlace(resolved);
+  }
 
   const displaySat = state.selectedSatellite;
 
@@ -55,19 +74,48 @@ export default function EagleEyeTab() {
             衛星俯瞰 → 上空写真 → 地上カメラ
           </h2>
           <p className="mt-1 text-xs text-slate-400">
-            {state.satelliteCount || "—"}機の衛星 · リアルタイム軌道 · Esri 衛星画像
+            {state.satelliteCount || "—"}機 · 全衛星軌道線 · Esri 衛星画像
           </p>
         </div>
         <div className="h-[560px] w-full">
           <EagleEyeViewer
             selectedSatelliteId={selectedSatelliteId}
             selectNonce={selectNonce}
+            sortPlace={sortPlace}
             onStateChange={handleStateChange}
           />
         </div>
       </div>
 
       <aside className="flex flex-col gap-4">
+        <div className={spacePanelClass}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            地名で衛星ソート
+          </p>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={placeQuery}
+              onChange={(e) => setPlaceQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyPlaceSearch()}
+              placeholder="例: 東京、大阪、渋谷"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500"
+            />
+            <button
+              type="button"
+              onClick={applyPlaceSearch}
+              className="shrink-0 rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/25"
+            >
+              検索
+            </button>
+          </div>
+          {placeError && <p className="mt-1 text-[10px] text-rose-300">{placeError}</p>}
+          <p className="mt-1 text-[10px] text-slate-500">
+            基準: <span className="text-cyan-300">{state.sortPlaceLabel ?? sortPlace.label}</span>
+            {" · "}近い順に一覧表示
+          </p>
+        </div>
+
         <div className={spacePanelClass}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             ステータス
@@ -148,7 +196,7 @@ export default function EagleEyeTab() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              スキャンエリア内の📷（オレンジ扇形=視野）をクリックすると映像が表示されます
+              2D地図の📷ピンをクリックするとカメラ映像が表示されます
             </p>
           )}
         </div>
@@ -159,8 +207,11 @@ export default function EagleEyeTab() {
           </p>
           <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
             {state.satellites.length > 0
-              ? sortSatellitesByImaging(state.satellites, state.nearestSatelliteId).map(
-                  (sat) => {
+              ? sortSatellitesByImaging(
+                  state.satellites,
+                  state.liveInfos,
+                  state.nearestSatelliteId,
+                ).map((sat) => {
                   const live = state.liveInfos.find((i) => i.id === sat.id);
                   const isNearest = sat.id === state.nearestSatelliteId;
                   const isSelected = sat.id === state.selectedSatellite?.id;
@@ -190,18 +241,19 @@ export default function EagleEyeTab() {
                           <span className="truncate font-medium text-white">{sat.name}</span>
                           {isNearest && (
                             <span className="ml-auto shrink-0 rounded bg-amber-500/20 px-1 py-0.5 text-[9px] text-amber-200">
-                              近接
+                              最接近
                             </span>
                           )}
                         </div>
                         <span className="mt-0.5 block pl-[18px] font-mono text-[9px] text-slate-600">
-                          {live ? `${live.speedKmS.toFixed(2)} km/s · ${Math.round(live.altKm)} km` : "—"}
+                          {live
+                            ? `${live.speedKmS.toFixed(2)} km/s · ${Math.round(live.altKm)} km · ${Math.round(live.footprintDistKm)} km`
+                            : "—"}
                         </span>
                       </button>
                     </li>
                   );
-                  },
-                )
+                })
               : (
                 <li className="text-xs text-slate-500">軌道データ読み込み中…</li>
               )}

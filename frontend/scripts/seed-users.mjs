@@ -26,7 +26,7 @@ const SEED_USERS = [
     displayName: "Mickey",
     authProvider: "aad",
     notifyEmail: "aquaiot@outlook.com",
-    monthlyTokenLimit: 100_000,
+    monthlyTokenLimit: 1_000_000,
   },
   {
     id: "user-aya",
@@ -35,7 +35,7 @@ const SEED_USERS = [
     displayName: "Aya",
     authProvider: "aad",
     notifyEmail: "aya_tink@outlook.com",
-    monthlyTokenLimit: 100_000,
+    monthlyTokenLimit: 1_000_000,
   },
   {
     id: "user-gest",
@@ -44,7 +44,7 @@ const SEED_USERS = [
     displayName: "Gest",
     authProvider: "github",
     notifyEmail: "gest@personal.apps",
-    monthlyTokenLimit: 100_000,
+    monthlyTokenLimit: 1_000_000,
   },
 ];
 
