@@ -2,7 +2,15 @@
 
 import { useMobileProfile } from "@/lib/mobile-utils";
 
-export type BackgroundTheme = "portal" | "global" | "disney" | "costs" | "council" | "docs" | "space";
+export type BackgroundTheme =
+  | "portal"
+  | "global"
+  | "disney"
+  | "costs"
+  | "council"
+  | "docs"
+  | "space"
+  | "works";
 
 type AnimatedBackgroundProps = {
   theme: BackgroundTheme;

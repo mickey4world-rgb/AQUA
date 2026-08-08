@@ -5,7 +5,16 @@ import {
   parseClientPrincipal,
 } from "@/lib/client-principal";
 
-const PROTECTED_PREFIXES = ["/stocks", "/disney", "/costs", "/council", "/docs", "/space", "/settings"];
+const PROTECTED_PREFIXES = [
+  "/stocks",
+  "/disney",
+  "/costs",
+  "/council",
+  "/docs",
+  "/works",
+  "/space",
+  "/settings",
+];
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(
@@ -55,5 +64,14 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
 }
 
 export const config = {
-  matcher: ["/stocks/:path*", "/disney/:path*", "/costs/:path*", "/council/:path*", "/docs/:path*", "/space/:path*", "/settings"],
+  matcher: [
+    "/stocks/:path*",
+    "/disney/:path*",
+    "/costs/:path*",
+    "/council/:path*",
+    "/docs/:path*",
+    "/works/:path*",
+    "/space/:path*",
+    "/settings",
+  ],
 };

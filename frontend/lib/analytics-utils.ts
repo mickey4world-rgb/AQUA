@@ -53,6 +53,11 @@ export const appAccentStyles = {
     bg: "bg-blue-500/10",
     text: "text-blue-300",
   },
+  works: {
+    border: "border-teal-400/20",
+    bg: "bg-teal-500/10",
+    text: "text-teal-300",
+  },
   space: {
     border: "border-indigo-400/20",
     bg: "bg-indigo-500/10",

@@ -23,7 +23,6 @@ import {
   monthStartIso,
   parseMonthParam,
 } from "@/lib/server/token-usage";
-import { DEFAULT_MONTHLY_TOKEN_LIMIT } from "@/lib/types/user";
 import type { AppKey } from "@/lib/types/access-log";
 import type { CostDashboard } from "@/lib/types/analytics";
 
@@ -93,7 +92,16 @@ export async function buildCostDashboard(
     };
   });
 
-  const appKeys: AppKey[] = ["stocks", "disney", "costs", "council", "users"];
+  const appKeys: AppKey[] = [
+    "works",
+    "stocks",
+    "disney",
+    "council",
+    "docs",
+    "space",
+    "costs",
+    "users",
+  ];
   const byApp = appKeys.map((app) => {
     const tokenRows = byFeature.filter((row) => row.app === app);
     const accessRow = byAppAccess.find((row) => row.app === app);

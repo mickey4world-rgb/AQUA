@@ -25,6 +25,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/works/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/space/*",
       "allowedRoles": ["authenticated"]
     },
@@ -50,6 +54,10 @@
     },
     {
       "route": "/docs/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/works/*",
       "allowedRoles": ["authenticated"]
     },
     {
