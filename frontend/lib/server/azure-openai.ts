@@ -103,6 +103,9 @@ export function estimateTokenCostUsd(
   promptTokens: number,
   completionTokens: number,
 ): number {
+  // Gemini は Google AI Studio の無料枠のみ利用するため課金なし
+  if (model.toLowerCase().includes("gemini")) return 0;
+
   const rates: Record<string, { input: number; output: number }> = {
     "gpt-4o-mini": { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
     "gpt-4o": { input: 2.5 / 1_000_000, output: 10 / 1_000_000 },

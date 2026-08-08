@@ -9,7 +9,8 @@
     "lint": "eslint",
     "seed:users": "node scripts/seed-users.mjs",
     "setup:token-usage": "node scripts/setup-token-usage.mjs",
-    "setup:access-logs": "node scripts/setup-access-logs.mjs"
+    "setup:access-logs": "node scripts/setup-access-logs.mjs",
+    "setup:work-notes": "node scripts/setup-work-notes.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",

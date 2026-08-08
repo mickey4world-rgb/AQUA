@@ -1,135 +1,236 @@
+import Link from "next/link";
 import AuthStatus from "@/components/AuthStatus";
-import DashboardCard from "@/components/home/DashboardCard";
 import HomePageShell from "@/components/home/HomePageShell";
-import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
+import Marquee from "@/components/home/Marquee";
+import ModuleIndexRow, {
+  type ModuleIndexEntry,
+} from "@/components/home/ModuleIndexRow";
+import Reveal from "@/components/layout/Reveal";
 
-const modules = [
+const modules: ModuleIndexEntry[] = [
   {
-    title: "保有株",
-    desc: "米国株・日本株のウォッチ、売却見込み、AI 売買アドバイス",
+    index: "01",
+    title: "Works",
+    titleJa: "ワークス",
+    desc: "Gemini 相談ボード & 資料生成スタジオ",
+    href: "/works",
+    tag: "Studio",
+    accent: "#34d399",
+  },
+  {
+    index: "02",
+    title: "Stocks",
+    titleJa: "保有株",
+    desc: "米国株・日本株のウォッチと AI 売買アドバイス",
     href: "/stocks",
-    icon: "📈",
-    accent: "cyan" as const,
     tag: "Finance",
+    accent: "#22d3ee",
   },
   {
-    title: "ディズニー",
-    desc: "TDR 混雑状況・待ち時間・ミッキーチャット",
+    index: "03",
+    title: "Disney",
+    titleJa: "ディズニー",
+    desc: "TDR 混雑予測・待ち時間・キャラクターチャット",
     href: "/disney",
-    icon: "✨",
-    accent: "fuchsia" as const,
     tag: "Experience",
+    accent: "#e879f9",
   },
   {
-    title: "AI 合議",
-    desc: "複数 AI が議論し、合意した回答をまとめて返す",
+    index: "04",
+    title: "Council",
+    titleJa: "AI 合議",
+    desc: "複数 AI が議論し、合意した結論を返す",
     href: "/council",
-    icon: "🤝",
-    accent: "violet" as const,
     tag: "Multi-AI",
+    accent: "#a78bfa",
   },
   {
-    title: "資料生成",
-    desc: "チャットで内部提案 PowerPoint（pptx）を自動生成",
-    href: "/docs",
-    icon: "📄",
-    accent: "blue" as const,
-    tag: "Documents",
-  },
-  {
-    title: "宇宙分析",
-    desc: "望遠鏡画像タイムライン・波長分析・小惑星3Dシミュレーター",
+    index: "05",
+    title: "Space",
+    titleJa: "宇宙分析",
+    desc: "望遠鏡タイムライン・小惑星シミュレータ・鷹の目",
     href: "/space",
-    icon: "🌌",
-    accent: "indigo" as const,
     tag: "Cosmos",
+    accent: "#818cf8",
   },
   {
-    title: "コスト",
-    desc: "トークン・API・コスト分析ダッシュボード",
+    index: "06",
+    title: "Costs",
+    titleJa: "コスト",
+    desc: "トークン・API・Azure 実績コストの可視化",
     href: "/costs",
-    icon: "⚡",
-    accent: "amber" as const,
     tag: "Analytics",
+    accent: "#fbbf24",
   },
+];
+
+const marqueeItems = [
+  "Next.js 16",
+  "Azure Static Web Apps",
+  "Cosmos DB",
+  "Azure OpenAI",
+  "Gemini",
+  "CesiumJS",
+  "Three.js",
+  "TypeScript",
+];
+
+const capabilities = [
+  {
+    label: "Realtime",
+    title: "リアルタイム観測",
+    body: "衛星軌道・株価・パーク待ち時間を実データで取得し、鮮度の高い状態で提示します。",
+  },
+  {
+    label: "Multi-model",
+    title: "複数 AI の使い分け",
+    body: "Azure OpenAI と Gemini を用途で切り替え、合議・要約・相談をそれぞれ最適なモデルで実行。",
+  },
+  {
+    label: "Cost aware",
+    title: "コストの可視化",
+    body: "トークン消費と Azure 実績請求を同じダッシュボードに集約し、使いすぎを未然に防ぎます。",
+  },
+];
+
+const stats = [
+  { label: "Modules", value: "06" },
+  { label: "Auth", value: "Azure SWA" },
+  { label: "Engines", value: "GPT-4o / Gemini" },
+  { label: "Region", value: "Japan East" },
 ];
 
 export default function Home() {
   return (
     <HomePageShell>
-      <main className={PAGE_MAIN_CLASS}>
-        <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md sm:rounded-3xl sm:p-10">
-          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-cyan-400/12 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-8 left-1/3 h-32 w-32 rounded-full bg-indigo-500/12 blur-3xl" />
-          <div className="pointer-events-none absolute right-1/4 top-1/2 h-24 w-24 rounded-full bg-violet-400/10 blur-2xl" />
-
-          <div className="relative">
-            <p className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-200">
+      <main>
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-24">
+          <Reveal>
+            <p className="eyebrow flex items-center gap-3">
               <span className="home-pulse-dot h-1.5 w-1.5 rounded-full bg-cyan-300" />
-              AQUA Information
+              AQUA — Personal Software Studio
             </p>
-            <h1 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-5xl">
-              <span className="bg-gradient-to-r from-cyan-200 via-teal-200 to-indigo-200 bg-clip-text text-transparent">
-                AQUA{" "}
-              </span>
-              <span className="bg-gradient-to-r from-sky-200 via-violet-200 to-fuchsia-200 bg-clip-text text-transparent">
-                Information
-              </span>
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-400">
-              個人向け統合情報ポータル。保有株の監視、ディズニーの混雑分析、
-              複数 AI 合議、資料生成、宇宙分析、AI 利用コストを AQUA からひとつの画面でアクセスできます。
-            </p>
+          </Reveal>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {[
-                { label: "Modules", value: "6" },
-                { label: "Auth", value: "Azure SWA" },
-                { label: "AI Engine", value: "GPT-4o" },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="rounded-xl border border-white/10 bg-black/20 px-4 py-3"
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    {stat.label}
-                  </p>
-                  <p className="mt-1 font-mono text-sm text-cyan-100">{stat.value}</p>
-                </div>
+          <h1 className="display-hero mt-7">
+            <Reveal delayMs={60}>
+              <span className="block ink-gradient">Building</span>
+            </Reveal>
+            <Reveal delayMs={150}>
+              <span className="block ink-outline">Personal</span>
+            </Reveal>
+            <Reveal delayMs={240}>
+              <span className="block ink-gradient">Interfaces.</span>
+            </Reveal>
+          </h1>
+
+          <Reveal delayMs={330}>
+            <p className="mt-9 max-w-xl text-base leading-relaxed text-slate-400">
+              保有株の監視、ディズニーの混雑分析、複数 AI 合議、宇宙観測、そして
+              WORKS。日々の意思決定に必要な情報とツールを、ひとつの静かな画面にまとめました。
+            </p>
+          </Reveal>
+
+          <Reveal delayMs={400}>
+            <div className="mt-10 flex flex-wrap items-center gap-3">
+              <Link
+                href="/works"
+                className="group inline-flex items-center gap-2.5 rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 px-6 py-3 text-sm font-semibold text-emerald-950 transition hover:from-emerald-300 hover:to-teal-200"
+              >
+                WORKS を見る
+                <span className="transition group-hover:translate-x-1">→</span>
+              </Link>
+              <a
+                href="#index"
+                className="inline-flex items-center gap-2.5 rounded-full border border-white/15 px-6 py-3 text-sm font-medium text-slate-200 transition hover:border-white/35 hover:bg-white/5"
+              >
+                全モジュール
+              </a>
+            </div>
+          </Reveal>
+
+          <Reveal delayMs={470}>
+            <div className="mt-16 flex items-center gap-5">
+              <span className="scroll-cue" aria-hidden />
+              <span className="eyebrow">Scroll</span>
+            </div>
+          </Reveal>
+        </section>
+
+        <Reveal>
+          <Marquee items={marqueeItems} />
+        </Reveal>
+
+        <section id="index" className="mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 sm:py-24">
+          <Reveal>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow">Index — 06 Modules</p>
+                <h2 className="display-section mt-3 text-white">Selected Works</h2>
+              </div>
+              <p className="max-w-sm text-sm leading-relaxed text-slate-500">
+                各モジュールは独立したテーマカラーと動作を持ちます。行を選ぶとそのまま起動します。
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delayMs={80}>
+            <div className="index-list mt-10">
+              {modules.map((entry) => (
+                <ModuleIndexRow key={entry.href} {...entry} />
               ))}
             </div>
-          </div>
+          </Reveal>
         </section>
 
-        <section className="mt-10">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/70">
-                Access Control
-              </p>
-              <h2 className="mt-1 text-xl font-semibold text-white">認証ステータス</h2>
-            </div>
-          </div>
-          <div className="max-w-xl">
-            <AuthStatus variant="dark" />
-          </div>
-        </section>
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6 sm:pb-24">
+          <Reveal>
+            <p className="eyebrow">Approach</p>
+          </Reveal>
 
-        <section className="mt-12">
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300/70">
-              Application Modules
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-white">アプリケーションモジュール</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              各モジュールは独立したテーマと機能を持ち、日常利用に最適化されています。
-            </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {modules.map((card) => (
-              <DashboardCard key={card.href} {...card} />
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {capabilities.map((item, i) => (
+              <Reveal key={item.label} delayMs={i * 90}>
+                <article className="glass-panel hover-lift h-full rounded-2xl p-6">
+                  <p className="font-display text-[10px] font-semibold uppercase tracking-[0.3em] text-cyan-300/70">
+                    {item.label}
+                  </p>
+                  <h3 className="mt-4 text-lg font-semibold text-white">{item.title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-400">{item.body}</p>
+                </article>
+              </Reveal>
             ))}
           </div>
+
+          <Reveal delayMs={120}>
+            <dl className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {stats.map((stat) => (
+                <div key={stat.label} className="glass-panel rounded-2xl px-5 py-4">
+                  <dt className="font-display text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500">
+                    {stat.label}
+                  </dt>
+                  <dd className="mt-2 font-mono text-sm text-cyan-100">{stat.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </Reveal>
+        </section>
+
+        <section className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6 sm:pb-28">
+          <Reveal>
+            <div className="grid gap-8 border-t border-white/10 pt-10 lg:grid-cols-[1fr_auto]">
+              <div>
+                <p className="eyebrow">Access Control</p>
+                <h2 className="mt-3 text-xl font-semibold text-white">認証ステータス</h2>
+                <p className="mt-2 max-w-md text-sm text-slate-500">
+                  Azure Static Web Apps の認証を使用。許可されたアカウントのみが各モジュールへアクセスできます。
+                </p>
+              </div>
+              <div className="w-full lg:w-96">
+                <AuthStatus variant="dark" />
+              </div>
+            </div>
+          </Reveal>
         </section>
       </main>
     </HomePageShell>
