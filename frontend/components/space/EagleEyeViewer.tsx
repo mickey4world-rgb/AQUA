@@ -28,10 +28,14 @@ import { IMAGING_ROI } from "@/lib/eagle-eye-data";
 
 const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
+/** Esri 衛星画像（失敗時は OSM / Carto にフォールバック） */
 const ESRI_IMAGERY =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+  "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const CARTO_VOYAGER =
+  "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ESRI_LABELS =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
+  "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
 export type EagleEyeViewerState = {
   phase: EagleEyePhase;
@@ -53,6 +57,8 @@ type EagleEyeViewerProps = {
   selectedSatelliteId?: string | null;
   selectNonce?: number;
   sortPlace?: SortRoi | null;
+  /** 親からフェーズ切替を要求 */
+  phaseRequest?: { phase: EagleEyePhase; nonce: number } | null;
   onStateChange?: (state: EagleEyeViewerState) => void;
 };
 
@@ -118,22 +124,47 @@ function addMapImagery(
   viewer: import("cesium").Viewer,
   Cesium: CesiumModule,
   withLabels: boolean,
+  preferSatellite = true,
 ) {
   viewer.imageryLayers.removeAll();
-  viewer.imageryLayers.addImageryProvider(
-    new Cesium.UrlTemplateImageryProvider({
-      url: ESRI_IMAGERY,
-      credit: "Esri, Maxar",
-    }),
-  );
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b3d91");
+
+  const urls = preferSatellite
+    ? [ESRI_IMAGERY, CARTO_VOYAGER, OSM_TILES]
+    : [CARTO_VOYAGER, OSM_TILES, ESRI_IMAGERY];
+
+  for (const url of urls) {
+    try {
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url,
+          maximumLevel: 19,
+          credit: url.includes("arcgisonline")
+            ? "Esri"
+            : url.includes("cartocdn")
+              ? "Carto"
+              : "OSM",
+        }),
+      );
+      break;
+    } catch {
+      // try next provider
+    }
+  }
+
   if (withLabels) {
-    const labels = viewer.imageryLayers.addImageryProvider(
-      new Cesium.UrlTemplateImageryProvider({
-        url: ESRI_LABELS,
-        credit: "Esri Labels",
-      }),
-    );
-    labels.alpha = 0.92;
+    try {
+      const labels = viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: ESRI_LABELS,
+          maximumLevel: 18,
+          credit: "Esri Labels",
+        }),
+      );
+      labels.alpha = 0.9;
+    } catch {
+      // labels optional
+    }
   }
 }
 
@@ -141,6 +172,7 @@ export default function EagleEyeViewer({
   selectedSatelliteId = null,
   selectNonce = 0,
   sortPlace = null,
+  phaseRequest = null,
   onStateChange,
 }: EagleEyeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -257,23 +289,24 @@ export default function EagleEyeViewer({
     [],
   );
 
-  const showMapCameras = useCallback((show: boolean) => {
+  const showMapCameras = useCallback((_show?: boolean) => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
     if (!viewer || !Cesium) return;
 
+    // 地上カメラは常時ピン表示（河川・道路・個人公開などを拾う）
     GROUND_CAMERAS.forEach((cam) => {
       const fovEntity = viewer.entities.getById(`cam-fov-${cam.id}`);
       const pinEntity = viewer.entities.getById(`cam-${cam.id}`);
       if (!pinEntity) return;
 
-      pinEntity.show = show;
-      if (fovEntity) fovEntity.show = show;
+      pinEntity.show = true;
+      if (fovEntity) fovEntity.show = true;
       if (pinEntity.label) {
-        pinEntity.label.show = new Cesium.ConstantProperty(show);
+        pinEntity.label.show = new Cesium.ConstantProperty(true);
       }
       if (pinEntity.point) {
-        pinEntity.point.pixelSize = new Cesium.ConstantProperty(show ? 14 : 8);
+        pinEntity.point.pixelSize = new Cesium.ConstantProperty(12);
       }
     });
   }, []);
@@ -409,8 +442,8 @@ export default function EagleEyeViewer({
       footprintRef.current = null;
     }
 
-    addMapImagery(viewer, Cesium, false);
-    showMapCameras(false);
+    addMapImagery(viewer, Cesium, false, true);
+    showMapCameras(true);
     viewer.scene.morphTo3D(1.5);
     setTimeout(() => {
       viewer!.camera.flyHome(2);
@@ -432,6 +465,70 @@ export default function EagleEyeViewer({
     const sat = satellitesRef.current.find((s) => s.id === selectedSatelliteId);
     if (sat) enterMapMode(sat);
   }, [selectedSatelliteId, selectNonce, ready, enterMapMode]);
+
+  useEffect(() => {
+    if (!ready || !sortPlace) return;
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium) return;
+
+    const clockDate = Cesium.JulianDate.toDate(viewer.clock.currentTime);
+    const nearestId = findNearestImagingSatelliteId(
+      tracksRef.current,
+      clockDate,
+      sortPlace,
+    );
+    nearestIdRef.current = nearestId;
+    updateSatelliteStyles(nearestId, selectedSatRef.current?.id ?? null);
+
+    const nearestSat =
+      satellitesRef.current.find((s) => s.id === nearestId) ?? null;
+    const liveInfos = computeSatelliteLiveInfo(
+      tracksRef.current,
+      clockDate,
+      sortPlace,
+    );
+    emitState({
+      nearestSatelliteId: nearestId,
+      sortPlaceLabel: sortPlace.label ?? null,
+      liveInfos,
+    });
+  }, [sortPlace, ready, emitState, updateSatelliteStyles]);
+
+  useEffect(() => {
+    if (!ready || !phaseRequest) return;
+    if (phaseRequest.phase === "orbit") {
+      exitMapMode();
+      return;
+    }
+    if (phaseRequest.phase === "map") {
+      const sat =
+        selectedSatRef.current ||
+        satellitesRef.current.find((s) => s.id === nearestIdRef.current) ||
+        satellitesRef.current[0];
+      if (sat) enterMapMode(sat);
+      return;
+    }
+    if (phaseRequest.phase === "live") {
+      showMapCameras(true);
+      const cam =
+        GROUND_CAMERAS.find((c) =>
+          Math.abs(c.lat - (sortPlaceRef.current.lat ?? 35.68)) < 1.5,
+        ) ?? GROUND_CAMERAS[0];
+      if (cam) {
+        flyToGroundCamera(cam);
+        emitState({ phase: "live", activeCamera: cam });
+      }
+    }
+  }, [
+    phaseRequest,
+    ready,
+    exitMapMode,
+    enterMapMode,
+    showMapCameras,
+    flyToGroundCamera,
+    emitState,
+  ]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -468,9 +565,13 @@ export default function EagleEyeViewer({
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
           infoBox: false,
           selectionIndicator: true,
-        });
+          // Ion 無しでも地球が見えるよう、初期レイヤを付けない
+          baseLayer: false,
+        } as ConstructorParameters<typeof Cesium.Viewer>[1]);
 
-        addMapImagery(viewer, Cesium, false);
+        addMapImagery(viewer, Cesium, false, true);
+        viewer.scene.globe.show = true;
+        viewer.scene.globe.enableLighting = false;
 
         viewer.clock.startTime = Cesium.JulianDate.fromDate(start);
         viewer.clock.stopTime = Cesium.JulianDate.fromDate(stop);
@@ -579,16 +680,16 @@ export default function EagleEyeViewer({
 
           viewer!.entities.add({
             id: `cam-fov-${cam.id}`,
-            show: false,
+            show: true,
             polygon: {
               hierarchy: Cesium.Cartesian3.fromDegreesArray(
                 fovPoints.flatMap((p) => [p.lon, p.lat]),
               ),
               material:
-                Cesium.Color.fromCssColorString(pinColor).withAlpha(0.22),
+                Cesium.Color.fromCssColorString(pinColor).withAlpha(0.18),
               outline: true,
               outlineColor:
-                Cesium.Color.fromCssColorString(pinColor).withAlpha(0.75),
+                Cesium.Color.fromCssColorString(pinColor).withAlpha(0.7),
               height: 0,
             },
           });
@@ -597,12 +698,13 @@ export default function EagleEyeViewer({
             id: `cam-${cam.id}`,
             name: cam.name,
             position: Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, 50),
-            show: false,
+            show: true,
             point: {
-              pixelSize: 12,
+              pixelSize: 11,
               color: Cesium.Color.fromCssColorString(pinColor),
               outlineColor: Cesium.Color.WHITE,
               outlineWidth: 2,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
             label: {
               text: `${icon} ${cam.name}`,
@@ -613,10 +715,11 @@ export default function EagleEyeViewer({
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               verticalOrigin: Cesium.VerticalOrigin.TOP,
               pixelOffset: new Cesium.Cartesian2(0, 12),
-              show: false,
+              show: true,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
                 0,
-                500_000,
+                2_500_000,
               ),
             },
           });

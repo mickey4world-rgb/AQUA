@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { spacePanelClass } from "@/lib/space-utils";
 import { resolvePlaceQuery, DEFAULT_SORT_PLACE } from "@/lib/eagle-eye-places";
 import {
@@ -20,11 +20,15 @@ const EagleEyeViewer = dynamic(() => import("@/components/space/EagleEyeViewer")
   ),
 });
 
-const phaseLabels: Record<EagleEyePhase, string> = {
-  orbit: "軌道監視（リアルタイム）",
-  map: "スキャン画像エリアへクローズアップ",
-  live: "地上カメラ接続",
-};
+const PHASE_STEPS: {
+  id: EagleEyePhase;
+  label: string;
+  hint: string;
+}[] = [
+  { id: "orbit", label: "衛星俯瞰", hint: "軌道監視" },
+  { id: "map", label: "上空写真", hint: "衛星スキャン画像" },
+  { id: "live", label: "地上カメラ", hint: "河川・道路・公開映像" },
+];
 
 export default function EagleEyeTab() {
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
@@ -32,6 +36,10 @@ export default function EagleEyeTab() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [sortPlace, setSortPlace] = useState<SortRoi>(DEFAULT_SORT_PLACE);
+  const [phaseRequest, setPhaseRequest] = useState<{
+    phase: EagleEyePhase;
+    nonce: number;
+  } | null>(null);
   const [state, setState] = useState<EagleEyeViewerState>({
     phase: "orbit",
     selectedSatellite: null,
@@ -48,21 +56,34 @@ export default function EagleEyeTab() {
     sortPlaceLabel: DEFAULT_SORT_PLACE.label,
   });
 
+  const [pendingNearestSelect, setPendingNearestSelect] = useState(false);
+
   const handleStateChange = useCallback((next: EagleEyeViewerState) => {
     setState(next);
   }, []);
 
-  function applyPlaceSearch() {
+  function onSearchClick() {
     const resolved = resolvePlaceQuery(placeQuery);
     if (!resolved) {
       setPlaceError("地名が見つかりません（例: 東京、大阪、35.68,139.76）");
       return;
     }
     setPlaceError(null);
-    setSortPlace(resolved);
+    setPendingNearestSelect(true);
+    setSortPlace({ ...resolved });
   }
 
+  useEffect(() => {
+    if (!pendingNearestSelect || !state.nearestSatelliteId) return;
+    setPendingNearestSelect(false);
+    setSelectedSatelliteId(state.nearestSatelliteId);
+    setSelectNonce((n) => n + 1);
+    setPhaseRequest({ phase: "map", nonce: Date.now() });
+  }, [pendingNearestSelect, state.nearestSatelliteId]);
+
   const displaySat = state.selectedSatellite;
+  const nearestSat = state.satellites.find((s) => s.id === state.nearestSatelliteId);
+  const nearestLive = state.liveInfos.find((i) => i.id === state.nearestSatelliteId);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
@@ -71,11 +92,40 @@ export default function EagleEyeTab() {
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-indigo-300/80">
             Eagle Eye / 鷹の目
           </p>
-          <h2 className="mt-1 text-lg font-semibold text-white">
-            衛星俯瞰 → 上空写真 → 地上カメラ
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">
-            {state.satelliteCount || "—"}機 · 全衛星軌道線 · Esri 衛星画像
+          <h2 className="mt-2 text-lg font-semibold text-white">視点モード</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {PHASE_STEPS.map((step, index) => {
+              const active = state.phase === step.id;
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() =>
+                    setPhaseRequest({ phase: step.id, nonce: Date.now() })
+                  }
+                  className={`rounded-xl border px-3 py-2 text-left transition ${
+                    active
+                      ? "border-cyan-300/50 bg-cyan-400/15 text-cyan-50"
+                      : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  <p className="text-[10px] text-slate-500">
+                    {index + 1}. {step.hint}
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {step.label}
+                    {step.id === "map" ? (
+                      <span className="ml-1 text-[10px] font-normal text-amber-200">
+                        （上空写真）
+                      </span>
+                    ) : null}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            {state.satelliteCount || "—"}機 · 地上カメラ {state.activeCamera ? "接続中" : "ピン表示中"} · 地球画像
           </p>
         </div>
         <div className="h-[560px] w-full">
@@ -83,6 +133,7 @@ export default function EagleEyeTab() {
             selectedSatelliteId={selectedSatelliteId}
             selectNonce={selectNonce}
             sortPlace={sortPlace}
+            phaseRequest={phaseRequest}
             onStateChange={handleStateChange}
           />
         </div>
@@ -98,13 +149,13 @@ export default function EagleEyeTab() {
               type="text"
               value={placeQuery}
               onChange={(e) => setPlaceQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyPlaceSearch()}
+              onKeyDown={(e) => e.key === "Enter" && onSearchClick()}
               placeholder="例: 東京、大阪、渋谷"
               className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500"
             />
             <button
               type="button"
-              onClick={applyPlaceSearch}
+              onClick={onSearchClick}
               className="shrink-0 rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/25"
             >
               検索
@@ -115,13 +166,36 @@ export default function EagleEyeTab() {
             基準: <span className="text-cyan-300">{state.sortPlaceLabel ?? sortPlace.label}</span>
             {" · "}近い順に一覧表示
           </p>
+          {nearestSat && nearestLive && (
+            <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2">
+              <p className="text-[10px] text-amber-100/80">最寄り衛星</p>
+              <p className="text-sm font-semibold text-white">{nearestSat.name}</p>
+              <p className="mt-1 font-mono text-[10px] text-amber-50/90">
+                距離 {Math.round(nearestLive.footprintDistKm)} km · 高度{" "}
+                {Math.round(nearestLive.altKm)} km · {nearestLive.speedKmS.toFixed(2)} km/s
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSatelliteId(nearestSat.id);
+                  setSelectNonce((n) => n + 1);
+                }}
+                className="mt-2 text-[10px] text-amber-100 underline-offset-2 hover:underline"
+              >
+                この衛星を開く
+              </button>
+            </div>
+          )}
         </div>
 
         <div className={spacePanelClass}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             ステータス
           </p>
-          <p className="mt-2 text-sm font-medium text-white">{phaseLabels[state.phase]}</p>
+          <p className="mt-2 text-sm font-medium text-white">
+            {PHASE_STEPS.find((s) => s.id === state.phase)?.label ?? state.phase}
+            {state.phase === "map" ? "（上空写真）" : ""}
+          </p>
           {state.orbitalSpeedKmS != null && (
             <p className="mt-1 font-mono text-xs text-cyan-300">
               軌道速度: {state.orbitalSpeedKmS.toFixed(2)} km/s
@@ -131,7 +205,7 @@ export default function EagleEyeTab() {
 
         <div className={spacePanelClass}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            衛星スキャン画像
+            衛星情報 / 写真
           </p>
           {displaySat ? (
             <div className="mt-3">
@@ -142,8 +216,16 @@ export default function EagleEyeTab() {
               {displaySat.info && (
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{displaySat.info}</p>
               )}
-              {state.selectedFootprint && (
-                <p className="mt-1 text-[10px] text-slate-500">{state.selectedFootprint.label}</p>
+              {displaySat.appearanceUrl && (
+                <div className="mt-2 overflow-hidden rounded-lg border border-white/10">
+                  <p className="bg-white/5 px-2 py-1 text-[10px] text-slate-400">衛星の外観</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={displaySat.appearanceUrl}
+                    alt={`${displaySat.name} appearance`}
+                    className="aspect-video w-full object-cover"
+                  />
+                </div>
               )}
               {state.liveStreamUrl && (
                 <div className="mt-2 overflow-hidden rounded-lg border border-red-400/40 bg-black">
@@ -160,28 +242,16 @@ export default function EagleEyeTab() {
                 </div>
               )}
               {state.footprintImageUrl && (
-                <div className={`overflow-hidden rounded-lg border border-amber-400/30 ${state.liveStreamUrl ? "mt-2" : "mt-2"}`}>
-                  {!state.liveStreamUrl && (
-                    <p className="bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200">
-                      共有画像
-                    </p>
-                  )}
-                  {displaySat.mediaType === "video" && !state.liveStreamUrl ? (
-                    <iframe
-                      title={displaySat.name}
-                      src={state.footprintImageUrl}
-                      className="aspect-video w-full"
-                      allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={state.footprintImageUrl}
-                      alt={displaySat.name}
-                      className="aspect-video w-full object-cover"
-                    />
-                  )}
+                <div className="mt-2 overflow-hidden rounded-lg border border-amber-400/30">
+                  <p className="bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200">
+                    上空写真 / スキャン画像
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={state.footprintImageUrl}
+                    alt={displaySat.name}
+                    className="aspect-video w-full object-cover"
+                  />
                 </div>
               )}
               {state.satelliteAltitude && (
@@ -190,7 +260,7 @@ export default function EagleEyeTab() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              衛星一覧から選択すると、情報とライブ映像がここに表示されます
+              衛星を選ぶと外観写真・上空写真・ライブ映像を表示します
             </p>
           )}
         </div>
@@ -199,12 +269,15 @@ export default function EagleEyeTab() {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             地上カメラ / 映像
           </p>
+          <p className="mt-1 text-[10px] text-slate-500">
+            河川・道路・観光・個人公開など公開ソースをピン留め（地図上のピンをクリック）
+          </p>
           {state.activeCamera ? (
             <div className="mt-3">
               <p className="text-sm font-semibold text-white">{state.activeCamera.name}</p>
               <p className="text-xs text-orange-300">
                 {state.activeCamera.type} ·{" "}
-                {state.activeCamera.mediaType === "video" ? "🎥 ライブ映像" : "🖼 静止画"} · 向き{" "}
+                {state.activeCamera.mediaType === "video" ? "🎥 ライブ映像" : "🖼 画像"} · 向き{" "}
                 {state.activeCamera.headingDeg}°
               </p>
               <div className="mt-2 overflow-hidden rounded-lg border border-orange-400/30 bg-black">
@@ -228,14 +301,14 @@ export default function EagleEyeTab() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              🎥オレンジ=映像 · 🖼水色=画像 · ピンをクリックで地上に降下
+              🎥オレンジ=映像 · 🖼水色=画像
             </p>
           )}
         </div>
 
         <div className={spacePanelClass}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            衛星一覧 ({state.satelliteCount || "…"})
+            衛星一覧（近い順） ({state.satelliteCount || "…"})
           </p>
           <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
             {state.satellites.length > 0
@@ -273,13 +346,13 @@ export default function EagleEyeTab() {
                           <span className="truncate font-medium text-white">{sat.name}</span>
                           {isNearest && (
                             <span className="ml-auto shrink-0 rounded bg-amber-500/20 px-1 py-0.5 text-[9px] text-amber-200">
-                              最接近
+                              最寄り
                             </span>
                           )}
                         </div>
                         <span className="mt-0.5 block pl-[18px] font-mono text-[9px] text-slate-600">
                           {live
-                            ? `${live.speedKmS.toFixed(2)} km/s · ${Math.round(live.altKm)} km · ${Math.round(live.footprintDistKm)} km`
+                            ? `${Math.round(live.footprintDistKm)} km · ${Math.round(live.altKm)} km · ${live.speedKmS.toFixed(2)} km/s`
                             : "—"}
                         </span>
                       </button>

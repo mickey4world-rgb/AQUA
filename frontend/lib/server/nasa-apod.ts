@@ -37,21 +37,25 @@ export type ApodTimelineResult =
   | { ok: true; entries: ApodEntry[]; days: number }
   | { ok: false; reason: string };
 
-export async function fetchApodTimeline(days = 21): Promise<ApodTimelineResult> {
-  const capped = Math.min(Math.max(days, 7), 30);
+export async function fetchApodTimeline(days = 10): Promise<ApodTimelineResult> {
+  const capped = Math.min(Math.max(days, 5), 21);
   const startDate = daysAgoIso(capped);
   const endDate = daysAgoIso(0);
   const key = getNasaApiKey();
 
   try {
     const url = `https://api.nasa.gov/planetary/apod?api_key=${key}&start_date=${startDate}&end_date=${endDate}`;
-    const data = await fetchNasaJson<RawApod | RawApod[]>(url);
+    // 長めにキャッシュしてタイムラインの体感を速くする
+    const res = await fetch(url, { next: { revalidate: 21_600 } });
+    if (!res.ok) throw new Error(`NASA API error: ${res.status}`);
+    const data = (await res.json()) as RawApod | RawApod[];
     const list = Array.isArray(data) ? data : [data];
 
     const entries = list
       .map(normalizeApod)
       .filter((e): e is ApodEntry => Boolean(e))
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, capped);
 
     return { ok: true, entries, days: capped };
   } catch (error) {

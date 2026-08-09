@@ -408,6 +408,11 @@ function AsteroidMesh({
           <p className="font-semibold">{designation}</p>
           <p>{phase}</p>
           <p>{distanceLd.toFixed(2)} LD</p>
+          {size > 0 && (
+            <p className="text-orange-200/80">
+              表示サイズ比 {size.toFixed(2)}
+            </p>
+          )}
         </div>
       </Html>
     </group>
