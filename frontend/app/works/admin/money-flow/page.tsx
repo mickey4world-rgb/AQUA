@@ -1,30 +1,29 @@
 import Link from "next/link";
 import Reveal from "@/components/layout/Reveal";
-import ConsultWorkspace from "@/components/works/ConsultWorkspace";
+import MoneyFlowPanel from "@/components/works/admin/MoneyFlowPanel";
 import WorksPageShell from "@/components/works/WorksPageShell";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 
-export default function WorksConsultPage() {
+export default function MoneyFlowPage() {
   return (
     <WorksPageShell>
       <main className={PAGE_MAIN_CLASS}>
         <Reveal>
           <Link
-            href="/works"
+            href="/works/admin"
             className="eyebrow inline-flex items-center gap-2 transition hover:text-slate-300"
           >
-            ← Works
+            ← 行政パネル
           </Link>
-          <h1 className="display-section mt-4 text-white">AI 相談ボード</h1>
+          <h1 className="display-section mt-4 text-white">お金の流れ</h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400">
-            Gemini の無料枠で IT・AI・Claude Code の実装を相談します。会話がまとまったら「まとめる」を押すと、
-            実装ステップと Claude Code 用プロンプトに整形して保存できます。
+            行政事業レビューの主要事項データベースをもとに、政府予算がどの府省庁・事業を経て、どの支出先へ流れたかを可視化します。
           </p>
         </Reveal>
 
         <Reveal delayMs={80}>
           <div className="mt-8">
-            <ConsultWorkspace />
+            <MoneyFlowPanel />
           </div>
         </Reveal>
       </main>

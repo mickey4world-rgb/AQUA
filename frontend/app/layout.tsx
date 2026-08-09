@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { Geist, Geist_Mono, Manrope, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,10 +12,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const spaceGrotesk = Space_Grotesk({
+// 見出し用。Space Grotesk の角張った印象をやめ、細字が綺麗に出る書体にする。
+const manrope = Manrope({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["300", "400", "500", "600"],
+});
+
+// 和文が明朝寄りの OS フォント任せだと硬く見えるので、丸みのあるゴシックを当てる。
+const zenKaku = Zen_Kaku_Gothic_New({
+  variable: "--font-jp",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -28,7 +37,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#020818",
+  themeColor: "#030b1a",
 };
 
 export default function RootLayout({
@@ -39,9 +48,9 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${zenKaku.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col overflow-x-hidden bg-zinc-950 text-slate-100">
+      <body className="min-h-full flex flex-col overflow-x-hidden text-slate-100">
         {children}
       </body>
     </html>
