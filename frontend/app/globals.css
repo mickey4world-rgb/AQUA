@@ -608,6 +608,80 @@ body {
   animation-duration: 1.6s;
 }
 
+/* ── Judicial companion ── */
+.judicial-companion {
+  position: relative;
+  width: 5.5rem;
+  height: 5.5rem;
+  flex-shrink: 0;
+}
+
+.judicial-companion__core {
+  position: absolute;
+  inset: 28%;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #faf5ff, #c4b5fd 45%, #a78bfa 80%);
+  box-shadow:
+    0 0 18px rgba(196, 181, 253, 0.65),
+    0 0 42px rgba(167, 139, 250, 0.35);
+  animation: consult-breathe 3.6s ease-in-out infinite;
+}
+
+.judicial-companion__ring {
+  position: absolute;
+  inset: 18%;
+  border-radius: 9999px;
+  border: 1px solid rgba(216, 180, 254, 0.4);
+  animation: consult-pulse-ring 2.8s ease-out infinite;
+}
+
+.judicial-companion__orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px;
+  border-radius: 9999px;
+  background: #e9d5ff;
+  box-shadow: 0 0 10px rgba(233, 213, 255, 0.9);
+  animation: consult-orbit var(--orbit-dur, 7s) linear infinite;
+}
+
+.judicial-companion__spark {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(250, 245, 255, 0.9);
+  box-shadow: 0 0 8px rgba(221, 214, 254, 0.8);
+  animation: consult-drift var(--drift-dur, 4.5s) ease-in-out infinite;
+}
+
+.judicial-companion[data-mood="thinking"] .judicial-companion__core {
+  animation-duration: 1.2s;
+  box-shadow:
+    0 0 22px rgba(232, 121, 249, 0.7),
+    0 0 48px rgba(167, 139, 250, 0.45);
+  background: radial-gradient(circle at 35% 30%, #fdf4ff, #e879f9 40%, #a78bfa 85%);
+}
+
+.judicial-companion[data-mood="thinking"] .judicial-companion__orb {
+  animation-duration: calc(var(--orbit-dur, 7s) * 0.45);
+}
+
+.judicial-companion[data-mood="speaking"] .judicial-companion__core {
+  animation-duration: 1.8s;
+  box-shadow:
+    0 0 26px rgba(196, 181, 253, 0.8),
+    0 0 56px rgba(167, 139, 250, 0.45);
+  background: radial-gradient(circle at 35% 30%, #f5f3ff, #c4b5fd 40%, #8b5cf6 85%);
+}
+
+.judicial-companion[data-mood="speaking"] .judicial-companion__ring {
+  animation-duration: 1.6s;
+}
+
 /* ── Disney companions ── */
 .disney-companion {
   position: relative;
@@ -763,6 +837,10 @@ body {
   .consult-companion__ring,
   .consult-companion__orb,
   .consult-companion__spark,
+  .judicial-companion__core,
+  .judicial-companion__ring,
+  .judicial-companion__orb,
+  .judicial-companion__spark,
   .disney-companion__core,
   .disney-companion__ring,
   .disney-companion__orb,

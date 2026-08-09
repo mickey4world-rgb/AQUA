@@ -17,6 +17,13 @@ export const JUDICIAL_DOC_KIND_LABELS: Record<JudicialDocKind, string> = {
   statement: "陳述書",
 };
 
+export type JudicialAiProvider = "gemini" | "openai";
+
+export const JUDICIAL_AI_PROVIDER_LABELS: Record<JudicialAiProvider, string> = {
+  gemini: "Gemini",
+  openai: "OpenAI",
+};
+
 export type JudicialCaseDocument = {
   id: string;
   title: string;
@@ -39,4 +46,5 @@ export type JudicialCaseChatRequest = {
     kind: JudicialDocKind;
     content: string;
   }>;
+  provider?: JudicialAiProvider;
 };
