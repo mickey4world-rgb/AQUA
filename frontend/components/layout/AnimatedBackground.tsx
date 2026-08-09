@@ -16,18 +16,13 @@ type AnimatedBackgroundProps = {
   theme: BackgroundTheme;
 };
 
-const PARTICLE_COUNT = { full: 16, mobile: 8, lite: 0 } as const;
+const MOTE_COUNT = { full: 14, mobile: 7 } as const;
 
 export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
   const { liteMode, isMobile, reducedMotion } = useMobileProfile();
 
-  const particleCount = reducedMotion || liteMode
-    ? isMobile
-      ? PARTICLE_COUNT.lite
-      : PARTICLE_COUNT.lite
-    : isMobile
-      ? PARTICLE_COUNT.mobile
-      : PARTICLE_COUNT.full;
+  const showMotes = !reducedMotion && !liteMode;
+  const moteCount = isMobile ? MOTE_COUNT.mobile : MOTE_COUNT.full;
 
   return (
     <div
@@ -35,35 +30,31 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
       data-theme={theme}
       aria-hidden
     >
-      {!reducedMotion && (
-        <>
-          <div className="bg-aurora bg-aurora-a" />
-          <div className="bg-aurora bg-aurora-b" />
-          <div className="bg-aurora bg-aurora-c" />
-          {!liteMode && <div className="bg-grid" />}
-          {!liteMode && (
-            <>
-              <div className="bg-orbit bg-orbit-1" />
-              <div className="bg-orbit bg-orbit-2" />
-            </>
-          )}
-          {!isMobile && !liteMode && <div className="bg-orbit bg-orbit-3" />}
-          {!liteMode && <div className="bg-scanline" />}
-          {!liteMode && <div className="bg-meteor" />}
-        </>
-      )}
+      {/* 宇宙 */}
+      <div className="aq-stars aq-stars-far" />
+      {!liteMode && <div className="aq-stars aq-stars-near" />}
 
-      {particleCount > 0 && (
+      {/* 光 */}
+      <div className="aq-nebula aq-nebula-a" />
+      <div className="aq-nebula aq-nebula-b" />
+      {!liteMode && <div className="aq-nebula aq-nebula-c" />}
+      {!liteMode && <div className="aq-rays" />}
+
+      {/* 水 */}
+      <div className="aq-water" />
+      {!liteMode && <div className="aq-shimmer" />}
+
+      {showMotes && (
         <div className="absolute inset-0">
-          {Array.from({ length: particleCount }).map((_, i) => (
+          {Array.from({ length: moteCount }).map((_, i) => (
             <span
               key={i}
-              className="bg-particle"
+              className="aq-mote"
               style={{
-                left: `${(i * 19 + 11) % 100}%`,
-                top: `${(i * 27 + 13) % 100}%`,
-                animationDelay: `${(i % 6) * 1.1}s`,
-                animationDuration: `${5 + (i % 4)}s`,
+                left: `${(i * 23 + 9) % 100}%`,
+                top: `${(i * 31 + 17) % 100}%`,
+                animationDelay: `${(i % 7) * 1.3}s`,
+                animationDuration: `${7 + (i % 5)}s`,
               }}
             />
           ))}

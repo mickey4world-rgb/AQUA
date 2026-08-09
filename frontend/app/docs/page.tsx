@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** 資料生成は WORKS 配下へ移動。旧 URL は互換のため転送する。 */
+/** 資料生成は WORKS「その他」配下へ移動。旧 URL は互換のため転送する。 */
 export default function DocsPage() {
-  redirect("/works/docs");
+  redirect("/works/misc/docs");
 }

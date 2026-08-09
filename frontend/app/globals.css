@@ -1,15 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020818;
-  --foreground: #f0f9ff;
+  --background: #030b1a;
+  --foreground: #eef7ff;
 
-  /* Editorial / portfolio tokens */
-  --aq-line: rgba(255, 255, 255, 0.1);
-  --aq-line-strong: rgba(255, 255, 255, 0.2);
-  --aq-muted: #7f8ea6;
-  --aq-accent: #22d3ee;
+  /* Editorial tokens */
+  --aq-line: rgba(255, 255, 255, 0.08);
+  --aq-line-strong: rgba(255, 255, 255, 0.16);
+  --aq-muted: #8296ad;
+  --aq-accent: #67e8f9;
   --aq-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* 背景シーンの色。テーマごとに差し替える（rgb() に流し込むので空白区切り） */
+  --scene-1: 45 212 191;
+  --scene-2: 34 211 238;
+  --scene-3: 129 140 248;
 }
 
 @theme inline {
@@ -23,324 +28,331 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), "Hiragino Kaku Gothic ProN", "Yu Gothic",
-    Meiryo, Arial, Helvetica, sans-serif;
+  font-family: var(--font-jp), var(--font-geist-sans), "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+  font-feature-settings: "palt" 1;
+  letter-spacing: 0.012em;
   -webkit-tap-highlight-color: transparent;
 }
 
 /* ── Shell base colors ── */
-.app-shell-portal { background: #020818; }
-.app-shell-global { background: #020617; }
-.app-shell-disney { background: #0a0e1f; }
-.app-shell-costs { background: #0a0a0f; }
-.app-shell-council { background: #080612; }
-.app-shell-docs { background: #061018; }
-.app-shell-space { background: #050510; }
-.app-shell-works { background: #04100e; }
+.app-shell-portal { background: #030b1a; }
+.app-shell-global { background: #030918; }
+.app-shell-disney { background: #0b1020; }
+.app-shell-costs { background: #0b0a10; }
+.app-shell-council { background: #090713; }
+.app-shell-docs { background: #06111c; }
+.app-shell-space { background: #060612; }
+.app-shell-works { background: #04110f; }
+
+[data-theme="portal"] { --scene-1: 45 212 191; --scene-2: 34 211 238; --scene-3: 129 140 248; }
+[data-theme="global"] { --scene-1: 34 211 238; --scene-2: 99 102 241; --scene-3: 45 212 191; }
+[data-theme="disney"] { --scene-1: 217 70 239; --scene-2: 56 189 248; --scene-3: 129 140 248; }
+[data-theme="costs"] { --scene-1: 245 158 11; --scene-2: 249 115 22; --scene-3: 244 63 94; }
+[data-theme="council"] { --scene-1: 139 92 246; --scene-2: 16 185 129; --scene-3: 99 102 241; }
+[data-theme="docs"] { --scene-1: 37 99 235; --scene-2: 59 130 246; --scene-3: 99 102 241; }
+[data-theme="space"] { --scene-1: 99 102 241; --scene-2: 168 85 247; --scene-3: 56 89 200; }
+[data-theme="works"] { --scene-1: 16 185 129; --scene-2: 45 212 191; --scene-3: 34 211 238; }
 
 .bg-mesh-portal {
   background:
-    radial-gradient(ellipse at 12% 8%, rgba(34, 211, 238, 0.14) 0%, transparent 42%),
-    radial-gradient(ellipse at 88% 18%, rgba(99, 102, 241, 0.13) 0%, transparent 48%),
-    radial-gradient(ellipse at 55% 92%, rgba(167, 139, 250, 0.09) 0%, transparent 52%),
-    radial-gradient(ellipse at 20% 0%, #0c4a6e28 0%, #020818 58%);
+    radial-gradient(ellipse at 14% 4%, rgba(34, 211, 238, 0.1) 0%, transparent 46%),
+    radial-gradient(ellipse at 86% 16%, rgba(99, 102, 241, 0.09) 0%, transparent 50%),
+    radial-gradient(ellipse at 52% 96%, rgba(45, 212, 191, 0.07) 0%, transparent 54%),
+    radial-gradient(ellipse at 20% 0%, #0c4a6e1f 0%, #030b1a 60%);
 }
 .bg-mesh-global {
   background:
-    radial-gradient(ellipse at 80% 0%, rgba(34, 211, 238, 0.12) 0%, transparent 45%),
-    radial-gradient(ellipse at 10% 60%, rgba(79, 70, 229, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 0%, #0c4a6e22 0%, #020617 55%);
+    radial-gradient(ellipse at 80% 0%, rgba(34, 211, 238, 0.09) 0%, transparent 48%),
+    radial-gradient(ellipse at 10% 62%, rgba(79, 70, 229, 0.08) 0%, transparent 52%),
+    radial-gradient(ellipse at 80% 0%, #0c4a6e1c 0%, #030918 58%);
 }
 .bg-mesh-disney {
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(217, 70, 239, 0.12) 0%, transparent 45%),
-    radial-gradient(ellipse at 20% 70%, rgba(56, 189, 248, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 0%, #581c8722 0%, #0a0e1f 55%);
+    radial-gradient(ellipse at 50% 0%, rgba(217, 70, 239, 0.09) 0%, transparent 48%),
+    radial-gradient(ellipse at 20% 72%, rgba(56, 189, 248, 0.08) 0%, transparent 52%),
+    radial-gradient(ellipse at 50% 0%, #581c871c 0%, #0b1020 58%);
 }
 .bg-mesh-costs {
   background:
-    radial-gradient(ellipse at 30% 0%, rgba(251, 191, 36, 0.12) 0%, transparent 45%),
-    radial-gradient(ellipse at 70% 80%, rgba(244, 63, 94, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 30% 0%, #78350f22 0%, #0a0a0f 55%);
+    radial-gradient(ellipse at 30% 0%, rgba(251, 191, 36, 0.09) 0%, transparent 48%),
+    radial-gradient(ellipse at 70% 82%, rgba(244, 63, 94, 0.06) 0%, transparent 52%),
+    radial-gradient(ellipse at 30% 0%, #78350f1c 0%, #0b0a10 58%);
 }
 .bg-mesh-council {
   background:
-    radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.14) 0%, transparent 45%),
-    radial-gradient(ellipse at 80% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(99, 102, 241, 0.08) 0%, transparent 52%),
-    radial-gradient(ellipse at 20% 0%, #312e8122 0%, #080612 55%);
+    radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.1) 0%, transparent 48%),
+    radial-gradient(ellipse at 80% 42%, rgba(16, 185, 129, 0.07) 0%, transparent 52%),
+    radial-gradient(ellipse at 20% 0%, #312e811c 0%, #090713 58%);
 }
 .bg-mesh-docs {
   background:
-    radial-gradient(ellipse at 15% 0%, rgba(37, 99, 235, 0.16) 0%, transparent 45%),
-    radial-gradient(ellipse at 85% 30%, rgba(59, 130, 246, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(27, 42, 74, 0.2) 0%, transparent 52%),
-    radial-gradient(ellipse at 15% 0%, #1e3a8a22 0%, #061018 55%);
+    radial-gradient(ellipse at 15% 0%, rgba(37, 99, 235, 0.12) 0%, transparent 48%),
+    radial-gradient(ellipse at 85% 32%, rgba(59, 130, 246, 0.09) 0%, transparent 52%),
+    radial-gradient(ellipse at 15% 0%, #1e3a8a1c 0%, #06111c 58%);
 }
 .bg-mesh-space {
   background:
-    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.18) 0%, transparent 45%),
-    radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(30, 58, 138, 0.15) 0%, transparent 52%),
-    radial-gradient(ellipse at 30% 0%, #1e1b4b22 0%, #050510 55%);
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.13) 0%, transparent 48%),
+    radial-gradient(ellipse at 80% 22%, rgba(168, 85, 247, 0.09) 0%, transparent 52%),
+    radial-gradient(ellipse at 30% 0%, #1e1b4b1c 0%, #060612 58%);
 }
 .bg-mesh-works {
   background:
-    radial-gradient(ellipse at 10% 0%, rgba(16, 185, 129, 0.16) 0%, transparent 46%),
-    radial-gradient(ellipse at 88% 24%, rgba(45, 212, 191, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 55% 100%, rgba(251, 146, 60, 0.08) 0%, transparent 52%),
-    radial-gradient(ellipse at 15% 0%, #064e3b22 0%, #04100e 56%);
+    radial-gradient(ellipse at 10% 0%, rgba(16, 185, 129, 0.11) 0%, transparent 48%),
+    radial-gradient(ellipse at 88% 26%, rgba(45, 212, 191, 0.09) 0%, transparent 52%),
+    radial-gradient(ellipse at 15% 0%, #064e3b1c 0%, #04110f 60%);
 }
 
-/* ── Shared animation keyframes ── */
-@keyframes bg-aurora-drift {
-  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  33% { transform: translate(4%, -3%) scale(1.06) rotate(2deg); }
-  66% { transform: translate(-2%, 2%) scale(0.98) rotate(-1deg); }
+/* ══════════════════════════════════════════════
+   背景シーン — 光 / 水 / 宇宙
+   派手なグリッドやスキャンラインは使わず、ゆっくりした光の動きだけで奥行きを出す。
+   ══════════════════════════════════════════════ */
+
+/* ── 宇宙: 遠近 2 層の星をゆっくり流す ── */
+@keyframes aq-star-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-8%, 5%, 0); }
 }
 
-@keyframes bg-aurora-hue {
-  0%, 100% { filter: blur(80px) hue-rotate(0deg); }
-  50% { filter: blur(90px) hue-rotate(28deg); }
+@keyframes aq-twinkle {
+  0%, 100% { opacity: 0.32; }
+  50% { opacity: 0.72; }
 }
 
-@keyframes bg-grid-scroll {
-  0% { background-position: 0 0; }
-  100% { background-position: 0 64px; }
+.aq-stars {
+  position: absolute;
+  inset: -18%;
+  background-repeat: repeat;
 }
 
-@keyframes bg-orbit-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.aq-stars-far {
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(1px 1px at 68% 9%, rgba(207, 240, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 34% 62%, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1px 1px at 84% 48%, rgba(199, 210, 254, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 52% 84%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(1px 1px at 8% 76%, rgba(186, 230, 253, 0.6), transparent 60%);
+  background-size: 360px 360px;
+  animation:
+    aq-star-drift 220s linear infinite,
+    aq-twinkle 13s ease-in-out infinite;
 }
 
-@keyframes bg-scan {
-  0% { top: -2%; opacity: 0; }
-  8% { opacity: 0.7; }
-  92% { opacity: 0.7; }
-  100% { top: 102%; opacity: 0; }
+.aq-stars-near {
+  background-image:
+    radial-gradient(1.8px 1.8px at 24% 28%, rgba(255, 255, 255, 0.95), transparent 58%),
+    radial-gradient(1.5px 1.5px at 76% 66%, rgba(224, 247, 255, 0.85), transparent 58%),
+    radial-gradient(1.6px 1.6px at 46% 12%, rgba(199, 210, 254, 0.8), transparent 58%),
+    radial-gradient(1.4px 1.4px at 92% 22%, rgba(255, 255, 255, 0.7), transparent 58%);
+  background-size: 240px 240px;
+  animation:
+    aq-star-drift 140s linear infinite reverse,
+    aq-twinkle 8s ease-in-out infinite;
 }
 
-@keyframes bg-particle-float {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.15; }
-  50% { transform: translateY(-16px) scale(1.3); opacity: 0.75; }
+/* ── 光: 上から差し込む光条をゆっくり振らせる ── */
+@keyframes aq-ray-sweep {
+  0%, 100% { transform: rotate(-5deg); opacity: 0.34; }
+  50% { transform: rotate(5deg); opacity: 0.62; }
 }
 
-@keyframes bg-meteor {
-  0% { transform: translateX(-120%) translateY(-20%) rotate(25deg); opacity: 0; }
-  6% { opacity: 0.9; }
-  14% { transform: translateX(120vw) translateY(40vh) rotate(25deg); opacity: 0; }
-  100% { transform: translateX(120vw) translateY(40vh) rotate(25deg); opacity: 0; }
+.aq-rays {
+  position: absolute;
+  top: -38%;
+  left: 50%;
+  width: 150%;
+  height: 132%;
+  margin-left: -75%;
+  transform-origin: 50% 0%;
+  filter: blur(18px);
+  background: conic-gradient(
+    from 168deg at 50% 0%,
+    transparent 0deg,
+    rgb(var(--scene-2) / 0.1) 5deg,
+    transparent 11deg,
+    transparent 15deg,
+    rgb(var(--scene-1) / 0.08) 19deg,
+    transparent 26deg,
+    transparent 30deg,
+    rgb(var(--scene-3) / 0.09) 34deg,
+    transparent 41deg,
+    transparent 44deg
+  );
+  -webkit-mask-image: linear-gradient(to bottom, #000 4%, transparent 66%);
+  mask-image: linear-gradient(to bottom, #000 4%, transparent 66%);
+  animation: aq-ray-sweep 30s ease-in-out infinite;
 }
 
-@keyframes home-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.55); }
-  50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(129, 140, 248, 0); }
+/* ── 光: 大きくぼかした光の塊が呼吸するように動く ── */
+@keyframes aq-nebula-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(3%, -2.5%, 0) scale(1.07); }
+  66% { transform: translate3d(-2.5%, 2%, 0) scale(0.96); }
 }
 
-/* ── Aurora blobs ── */
-.bg-aurora {
+.aq-nebula {
   position: absolute;
   border-radius: 9999px;
-  animation: bg-aurora-drift 18s ease-in-out infinite, bg-aurora-hue 32s ease-in-out infinite;
+  filter: blur(90px);
+  animation: aq-nebula-drift 34s ease-in-out infinite;
 }
 
-.bg-aurora-a { top: -8rem; left: -6rem; width: min(28rem, 90vw); height: min(28rem, 90vw); }
-.bg-aurora-b { top: 18%; right: -8rem; width: min(32rem, 95vw); height: min(32rem, 95vw); animation-delay: -6s, -10s; }
-.bg-aurora-c { bottom: -10rem; left: 25%; width: min(26rem, 85vw); height: min(26rem, 85vw); animation-delay: -12s, -20s; }
+.aq-nebula-a {
+  top: -14%;
+  left: -10%;
+  width: min(34rem, 92vw);
+  aspect-ratio: 1;
+  background: rgb(var(--scene-1) / 0.16);
+}
+.aq-nebula-b {
+  top: 10%;
+  right: -14%;
+  width: min(38rem, 96vw);
+  aspect-ratio: 1;
+  background: rgb(var(--scene-2) / 0.14);
+  animation-delay: -11s;
+}
+.aq-nebula-c {
+  bottom: -20%;
+  left: 20%;
+  width: min(32rem, 88vw);
+  aspect-ratio: 1;
+  background: rgb(var(--scene-3) / 0.13);
+  animation-delay: -22s;
+}
 
-.bg-grid {
+/* ── 水: 下半分にたゆたう水面と、その上を走る光の帯 ── */
+@keyframes aq-water-drift {
+  0%, 100% { transform: translate3d(-2%, 0, 0) scaleY(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scaleY(1.08); }
+}
+
+@keyframes aq-shimmer {
+  from { background-position: 0 0; }
+  to { background-position: 240px 0; }
+}
+
+.aq-water {
   position: absolute;
-  inset: 0;
-  opacity: 0.28;
-  background-size: 48px 48px;
-  animation: bg-grid-scroll 10s linear infinite;
-  mask-image: linear-gradient(to bottom, black 15%, transparent 88%);
+  inset: 40% -20% -22% -20%;
+  filter: blur(28px);
+  background:
+    radial-gradient(60% 42% at 18% 40%, rgb(var(--scene-2) / 0.16), transparent 72%),
+    radial-gradient(52% 38% at 62% 64%, rgb(var(--scene-1) / 0.14), transparent 74%),
+    radial-gradient(46% 32% at 88% 34%, rgb(var(--scene-3) / 0.11), transparent 76%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 26%, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 26%, #000 78%, transparent);
+  animation: aq-water-drift 26s ease-in-out infinite;
 }
 
-[data-theme="portal"] .bg-aurora-a { background: rgba(45, 212, 191, 0.16); }
-[data-theme="portal"] .bg-aurora-b { background: rgba(34, 211, 238, 0.15); }
-[data-theme="portal"] .bg-aurora-c { background: rgba(129, 140, 248, 0.14); }
-[data-theme="portal"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(103, 232, 249, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(165, 180, 252, 0.07) 1px, transparent 1px);
-}
-[data-theme="portal"] .bg-orbit { border-color: rgba(103, 232, 249, 0.16); }
-[data-theme="portal"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.5), rgba(167, 139, 250, 0.35), transparent); }
-[data-theme="portal"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.95), rgba(196, 181, 253, 0.7), transparent); }
-[data-theme="portal"] .bg-particle { background: rgba(186, 230, 253, 0.75); }
-
-[data-theme="global"] .bg-aurora-a { background: rgba(34, 211, 238, 0.14); }
-[data-theme="global"] .bg-aurora-b { background: rgba(99, 102, 241, 0.13); }
-[data-theme="global"] .bg-aurora-c { background: rgba(45, 212, 191, 0.11); }
-[data-theme="global"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(103, 232, 249, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(129, 140, 248, 0.07) 1px, transparent 1px);
-}
-[data-theme="global"] .bg-orbit { border-color: rgba(103, 232, 249, 0.15); }
-[data-theme="global"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.45), rgba(129, 140, 248, 0.3), transparent); }
-[data-theme="global"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.9), transparent); }
-[data-theme="global"] .bg-particle { background: rgba(186, 230, 253, 0.7); }
-
-[data-theme="disney"] .bg-aurora-a { background: rgba(217, 70, 239, 0.12); }
-[data-theme="disney"] .bg-aurora-b { background: rgba(56, 189, 248, 0.13); }
-[data-theme="disney"] .bg-aurora-c { background: rgba(129, 140, 248, 0.12); }
-[data-theme="disney"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(232, 121, 249, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(125, 211, 252, 0.08) 1px, transparent 1px);
-}
-[data-theme="disney"] .bg-orbit { border-color: rgba(186, 230, 253, 0.14); }
-[data-theme="disney"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(232, 121, 249, 0.45), rgba(125, 211, 252, 0.35), transparent); }
-[data-theme="disney"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(244, 114, 182, 0.9), rgba(186, 230, 253, 0.6), transparent); }
-[data-theme="disney"] .bg-particle { background: rgba(186, 230, 253, 0.65); }
-
-[data-theme="costs"] .bg-aurora-a { background: rgba(245, 158, 11, 0.13); }
-[data-theme="costs"] .bg-aurora-b { background: rgba(249, 115, 22, 0.11); }
-[data-theme="costs"] .bg-aurora-c { background: rgba(244, 63, 94, 0.1); }
-[data-theme="costs"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(251, 191, 36, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(251, 191, 36, 0.07) 1px, transparent 1px);
-}
-[data-theme="costs"] .bg-orbit { border-color: rgba(251, 191, 36, 0.14); }
-[data-theme="costs"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.45), transparent); }
-[data-theme="costs"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(252, 211, 77, 0.9), transparent); }
-[data-theme="costs"] .bg-particle { background: rgba(251, 191, 36, 0.65); }
-
-[data-theme="council"] .bg-aurora-a { background: rgba(139, 92, 246, 0.14); }
-[data-theme="council"] .bg-aurora-b { background: rgba(16, 185, 129, 0.12); }
-[data-theme="council"] .bg-aurora-c { background: rgba(99, 102, 241, 0.12); }
-[data-theme="council"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(167, 139, 250, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52, 211, 153, 0.07) 1px, transparent 1px);
-}
-[data-theme="council"] .bg-orbit { border-color: rgba(167, 139, 250, 0.15); }
-[data-theme="council"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.45), rgba(52, 211, 153, 0.35), transparent); }
-[data-theme="council"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(196, 181, 253, 0.9), rgba(110, 231, 183, 0.6), transparent); }
-[data-theme="council"] .bg-particle { background: rgba(196, 181, 253, 0.7); }
-
-[data-theme="works"] .bg-aurora-a { background: rgba(16, 185, 129, 0.15); }
-[data-theme="works"] .bg-aurora-b { background: rgba(45, 212, 191, 0.13); }
-[data-theme="works"] .bg-aurora-c { background: rgba(251, 146, 60, 0.09); }
-[data-theme="works"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(52, 211, 153, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(94, 234, 212, 0.07) 1px, transparent 1px);
-}
-[data-theme="works"] .bg-orbit { border-color: rgba(94, 234, 212, 0.15); }
-[data-theme="works"] .bg-scanline { background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.5), rgba(251, 191, 36, 0.3), transparent); }
-[data-theme="works"] .bg-meteor { background: linear-gradient(90deg, transparent, rgba(153, 246, 228, 0.95), rgba(253, 186, 116, 0.6), transparent); }
-[data-theme="works"] .bg-particle { background: rgba(153, 246, 228, 0.7); }
-
-/* ── Orbits ── */
-.bg-orbit {
+.aq-shimmer {
   position: absolute;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  animation: bg-orbit-spin 45s linear infinite;
+  inset: 56% -30% -26% -30%;
+  opacity: 0.2;
+  filter: blur(13px);
+  background: repeating-linear-gradient(
+    97deg,
+    transparent 0 46px,
+    rgb(var(--scene-2) / 0.55) 46px 48px,
+    transparent 48px 120px
+  );
+  -webkit-mask-image: radial-gradient(72% 62% at 50% 50%, #000, transparent 82%);
+  mask-image: radial-gradient(72% 62% at 50% 50%, #000, transparent 82%);
+  animation: aq-shimmer 22s linear infinite;
 }
 
-.bg-orbit-1 { top: 10%; right: 6%; width: 9rem; height: 9rem; }
-.bg-orbit-2 { bottom: 16%; left: 4%; width: 12rem; height: 12rem; animation-duration: 58s; animation-direction: reverse; }
-.bg-orbit-3 { top: 42%; left: 42%; width: 18rem; height: 18rem; animation-duration: 72s; opacity: 0.35; }
-
-/* ── Scanline & meteor ── */
-.bg-scanline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  animation: bg-scan 7s ease-in-out infinite;
+/* ── 漂う光の粒 ── */
+@keyframes aq-mote-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.12; }
+  50% { transform: translateY(-22px) scale(1.35); opacity: 0.55; }
 }
 
-.bg-meteor {
-  position: absolute;
-  top: 18%;
-  left: 0;
-  width: 120px;
-  height: 2px;
-  border-radius: 9999px;
-  animation: bg-meteor 14s ease-in-out infinite;
-}
-
-/* ── Particles & noise ── */
-.bg-particle {
+.aq-mote {
   position: absolute;
   width: 3px;
   height: 3px;
   border-radius: 9999px;
-  animation: bg-particle-float ease-in-out infinite;
+  background: rgb(var(--scene-2) / 0.85);
+  box-shadow: 0 0 8px rgb(var(--scene-2) / 0.55);
+  animation: aq-mote-float ease-in-out infinite;
 }
 
 .bg-noise {
   position: absolute;
   inset: 0;
-  opacity: 0.06;
-  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.35) 1px, transparent 0);
-  background-size: 32px 32px;
+  opacity: 0.045;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.3) 1px, transparent 0);
+  background-size: 34px 34px;
 }
 
-/* ── Legacy home page helpers ── */
-.home-pulse-dot { animation: home-pulse 2s ease-in-out infinite; }
+@keyframes home-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.45); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 7px rgba(103, 232, 249, 0); }
+}
+
+.home-pulse-dot { animation: home-pulse 2.6s ease-in-out infinite; }
 
 /* ══════════════════════════════════════════════
-   Editorial / portfolio layer
+   タイポグラフィ
+   大きく硬い見出しはやめ、細めの字幅でゆったり組む。
    ══════════════════════════════════════════════ */
 
 .font-display {
-  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-display), var(--font-jp), var(--font-geist-sans), sans-serif;
 }
 
 .eyebrow {
   font-family: var(--font-display), var(--font-geist-sans), sans-serif;
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.42em;
+  font-weight: 500;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
   color: var(--aq-muted);
 }
 
 .display-hero {
-  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-  line-height: 0.85;
-  letter-spacing: -0.045em;
-  font-size: clamp(2.6rem, 11.5vw, 9.5rem);
+  font-family: var(--font-display), var(--font-jp), var(--font-geist-sans), sans-serif;
+  font-weight: 300;
+  line-height: 1.16;
+  letter-spacing: -0.012em;
+  font-size: clamp(1.95rem, 5vw, 3.85rem);
 }
 
 .display-section {
-  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  font-size: clamp(1.85rem, 5.5vw, 3.75rem);
+  font-family: var(--font-display), var(--font-jp), var(--font-geist-sans), sans-serif;
+  font-weight: 400;
+  line-height: 1.24;
+  letter-spacing: -0.006em;
+  font-size: clamp(1.45rem, 3.1vw, 2.2rem);
+}
+
+.display-sub {
+  font-family: var(--font-display), var(--font-jp), var(--font-geist-sans), sans-serif;
+  font-weight: 500;
+  line-height: 1.4;
+  font-size: clamp(1.02rem, 1.7vw, 1.2rem);
 }
 
 .ink-gradient {
-  background: linear-gradient(102deg, #ecfeff 0%, #a5f3fc 34%, #c4b5fd 68%, #f5d0fe 100%);
+  background: linear-gradient(100deg, #ecfeff 0%, #a5f3fc 44%, #c7d2fe 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-.ink-outline {
-  color: transparent;
-  -webkit-text-stroke: 1.5px rgba(226, 232, 240, 0.42);
+.ink-soft {
+  color: rgba(203, 219, 238, 0.62);
 }
 
 /* ── Scroll reveal ── */
 .reveal {
   opacity: 0;
-  transform: translateY(28px);
+  transform: translateY(20px);
   transition:
-    opacity 0.9s var(--aq-ease),
-    transform 0.9s var(--aq-ease);
+    opacity 1s var(--aq-ease),
+    transform 1s var(--aq-ease);
   will-change: opacity, transform;
 }
 .reveal.is-in {
@@ -356,13 +368,13 @@ body {
 
 .marquee {
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 .marquee__track {
   display: flex;
   width: max-content;
-  animation: marquee-scroll 38s linear infinite;
+  animation: marquee-scroll 46s linear infinite;
 }
 .marquee:hover .marquee__track {
   animation-play-state: paused;
@@ -374,11 +386,10 @@ body {
   padding-right: 1.5rem;
   white-space: nowrap;
   font-family: var(--font-display), var(--font-geist-sans), sans-serif;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(203, 213, 225, 0.55);
+  font-size: 0.78125rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: rgba(190, 208, 228, 0.45);
 }
 
 /* ── Index rows (portfolio work list) ── */
@@ -395,8 +406,8 @@ body {
   overflow: hidden;
   isolation: isolate;
   border-bottom: 1px solid var(--aq-line);
-  padding: 1.35rem 0.75rem;
-  transition: padding-left 0.5s var(--aq-ease);
+  padding: 1.15rem 0.75rem;
+  transition: padding-left 0.55s var(--aq-ease);
 }
 .index-row::before {
   content: "";
@@ -405,11 +416,11 @@ body {
   z-index: -1;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--row-accent) 24%, transparent),
-    transparent 72%
+    color-mix(in srgb, var(--row-accent) 16%, transparent),
+    transparent 70%
   );
   transform: translateX(-101%);
-  transition: transform 0.6s var(--aq-ease);
+  transition: transform 0.7s var(--aq-ease);
 }
 .index-row:hover::before,
 .index-row:focus-visible::before {
@@ -417,16 +428,16 @@ body {
 }
 .index-row:hover,
 .index-row:focus-visible {
-  padding-left: 1.6rem;
+  padding-left: 1.5rem;
   outline: none;
 }
 
 .index-row__num {
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.6875rem;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   color: var(--aq-muted);
-  transition: color 0.45s var(--aq-ease);
+  transition: color 0.5s var(--aq-ease);
 }
 .index-row:hover .index-row__num,
 .index-row:focus-visible .index-row__num {
@@ -434,61 +445,49 @@ body {
 }
 
 .index-row__title {
-  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: -0.025em;
-  line-height: 1;
-  font-size: clamp(1.5rem, 4.6vw, 2.75rem);
-  color: transparent;
-  -webkit-text-stroke: 1px rgba(226, 232, 240, 0.55);
-  transition:
-    color 0.45s var(--aq-ease),
-    -webkit-text-stroke-color 0.45s var(--aq-ease);
+  font-family: var(--font-display), var(--font-jp), var(--font-geist-sans), sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+  font-size: clamp(1.05rem, 2.3vw, 1.5rem);
+  color: rgba(226, 232, 240, 0.9);
+  transition: color 0.5s var(--aq-ease);
 }
 .index-row:hover .index-row__title,
 .index-row:focus-visible .index-row__title {
   color: #ffffff;
-  -webkit-text-stroke-color: transparent;
 }
 
 .index-row__arrow {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   color: var(--aq-muted);
   transition:
-    transform 0.5s var(--aq-ease),
-    color 0.45s var(--aq-ease);
+    transform 0.55s var(--aq-ease),
+    color 0.5s var(--aq-ease);
 }
 .index-row:hover .index-row__arrow,
 .index-row:focus-visible .index-row__arrow {
   color: var(--row-accent);
-  transform: translate(5px, -5px);
-}
-
-@media (hover: none) {
-  .index-row__title {
-    color: #ffffff;
-    -webkit-text-stroke-color: transparent;
-  }
+  transform: translate(4px, -4px);
 }
 
 /* ── Surfaces ── */
 .glass-panel {
   border: 1px solid var(--aq-line);
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(16px);
 }
 
 .hover-lift {
   transition:
-    transform 0.5s var(--aq-ease),
-    border-color 0.5s var(--aq-ease),
-    background-color 0.5s var(--aq-ease);
+    transform 0.55s var(--aq-ease),
+    border-color 0.55s var(--aq-ease),
+    background-color 0.55s var(--aq-ease);
 }
 .hover-lift:hover {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
   border-color: var(--aq-line-strong);
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 /* ── Scroll cue ── */
@@ -502,18 +501,18 @@ body {
 .scroll-cue {
   display: block;
   width: 1px;
-  height: 3.25rem;
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.9), transparent);
-  animation: scroll-cue 2.4s ease-in-out infinite;
+  height: 3rem;
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.75), transparent);
+  animation: scroll-cue 2.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bg-aurora,
-  .bg-grid,
-  .bg-orbit,
-  .bg-scanline,
-  .bg-meteor,
-  .bg-particle,
+  .aq-stars,
+  .aq-rays,
+  .aq-nebula,
+  .aq-water,
+  .aq-shimmer,
+  .aq-mote,
   .home-pulse-dot,
   .marquee__track,
   .scroll-cue {
@@ -524,11 +523,5 @@ body {
     opacity: 1;
     transform: none;
     transition: none;
-  }
-}
-
-@media (max-width: 768px) {
-  .bg-orbit-3 {
-    display: none;
   }
 }

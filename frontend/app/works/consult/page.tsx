@@ -15,9 +15,7 @@ export default function WorksConsultPage() {
           >
             ← Works
           </Link>
-          <h1 className="display-section mt-4 text-white">
-            Consult<span className="text-emerald-400">.</span>
-          </h1>
+          <h1 className="display-section mt-4 text-white">AI 相談ボード</h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400">
             Gemini の無料枠で IT・AI・Claude Code の実装を相談します。会話がまとまったら「まとめる」を押すと、
             実装ステップと Claude Code 用プロンプトに整形して保存できます。
