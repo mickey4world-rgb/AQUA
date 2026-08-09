@@ -37,3 +37,4 @@ npm-debug.log*
 
 # Azure
 .azure/
+gemini-proxy*.zip
