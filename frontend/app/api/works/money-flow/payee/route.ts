@@ -1,5 +1,6 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { buildPayeeDossier } from "@/lib/server/payee-dossier";
+import { enrichPayeeRisk } from "@/lib/server/payee-risk";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,8 @@ export async function GET(request: Request) {
       if (!dossier) {
         return Response.json({ error: "支出先を特定できませんでした。" }, { status: 404 });
       }
-      return Response.json(dossier);
+      const enriched = await enrichPayeeRisk(dossier);
+      return Response.json(enriched);
     } catch (error) {
       console.error("[money-flow/payee]", error);
       return Response.json(

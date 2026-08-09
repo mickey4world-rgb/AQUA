@@ -163,6 +163,34 @@ export type PayeeDossier = {
   recentContracts: PayeeRecentContract[];
   contractMix: Array<{ method: string; amount: number; share: number }>;
   soleSourceShare: number | null;
+  suspensions?: Array<{
+    date: string;
+    agency: string;
+    company: string;
+    address: string;
+    type: string;
+    overviewUrl: string | null;
+    detailUrl: string | null;
+  }>;
+  reputation?: {
+    japanTitle: string | null;
+    japanSummary: string | null;
+    japanUrl: string | null;
+    worldTitle: string | null;
+    worldSummary: string | null;
+    worldUrl: string | null;
+    notes: string[];
+  };
+  finance?: {
+    symbol: string | null;
+    exchange: string | null;
+    currency: string | null;
+    lastPrice: number | null;
+    change5yPct: number | null;
+    drawdownFromPeakPct: number | null;
+    summary: string;
+    concern: boolean;
+  };
 };
 
 export type MoneyFlowResponse = {
