@@ -36,10 +36,14 @@ export default function DisneyChatPanel({
 
   const character = resolveDisneyCharacter(characterId);
 
-  useEffect(() => {
+  // 公園・日付・キャラクターのどれかが変わったら会話をやり直す。
+  const conversationKey = `${park}:${targetDate}:${characterId}`;
+  const [syncedKey, setSyncedKey] = useState(conversationKey);
+  if (syncedKey !== conversationKey) {
+    setSyncedKey(conversationKey);
     setMessages([]);
     setError(null);
-  }, [park, targetDate, characterId]);
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -93,12 +97,17 @@ export default function DisneyChatPanel({
   }
 
   return (
-    <div className={`${disneyPanelClass} flex min-h-[24rem] flex-col p-5 lg:min-h-[32rem]`}>
+    <div
+      className={`${disneyPanelClass} flex min-h-[24rem] flex-col p-5 lg:min-h-[32rem]`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">{character.nameJa}に聞く</h2>
+          <h2 className="text-sm font-semibold text-white">
+            {character.nameJa}に聞く
+          </h2>
           <p className="mt-1 text-xs text-slate-400">
-            {parkName} · {targetDate} — キャラクターごとの口調で回り方・豆知識に答えます
+            {parkName} · {targetDate} —
+            キャラクターごとの口調で回り方・豆知識に答えます
           </p>
         </div>
         <span className="rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-200">
@@ -128,7 +137,9 @@ export default function DisneyChatPanel({
       <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 && (
           <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
-            <p>{character.nameJa}に回り方・待ち時間・混雑対策を相談してみてね！</p>
+            <p>
+              {character.nameJa}に回り方・待ち時間・混雑対策を相談してみてね！
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {STARTER_PROMPTS.map((prompt) => (
                 <button

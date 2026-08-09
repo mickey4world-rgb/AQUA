@@ -1,9 +1,4 @@
-import {
-  eciToGeodetic,
-  gstime,
-  propagate,
-  twoline2satrec,
-} from "satellite.js";
+import { eciToGeodetic, gstime, propagate, twoline2satrec } from "satellite.js";
 import type { EagleEyeSatelliteDef } from "@/lib/eagle-eye-data";
 import {
   ORBIT_SAMPLE_MINUTES,
@@ -27,7 +22,10 @@ export interface SatelliteTrack {
   nowIndex: number;
 }
 
-function propagateAt(satrec: ReturnType<typeof twoline2satrec>, date: Date): SatellitePosition | null {
+function propagateAt(
+  satrec: ReturnType<typeof twoline2satrec>,
+  date: Date,
+): SatellitePosition | null {
   const pv = propagate(satrec, date);
   if (!pv?.position || typeof pv.position === "boolean") return null;
 
@@ -35,10 +33,14 @@ function propagateAt(satrec: ReturnType<typeof twoline2satrec>, date: Date): Sat
   const gd = eciToGeodetic(pv.position, gmst);
 
   const lat = (gd.latitude * 180) / Math.PI;
-  let lon = (gd.longitude * 180) / Math.PI;
+  const lon = (gd.longitude * 180) / Math.PI;
   const altKm = gd.height;
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(altKm)) {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    !Number.isFinite(altKm)
+  ) {
     return null;
   }
 

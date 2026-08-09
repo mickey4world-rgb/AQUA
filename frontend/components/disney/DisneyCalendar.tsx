@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   crowdLevelCellStyles,
   crowdLevelDotColors,
@@ -39,33 +39,51 @@ export default function DisneyCalendar({
   const [viewYear, setViewYear] = useState(initialYear);
   const [viewMonth, setViewMonth] = useState(initialMonth);
   const [calendar, setCalendar] = useState<DisneyCalendarMonth | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const monthParam = useMemo(
     () => toMonthParam(viewYear, viewMonth),
     [viewYear, viewMonth],
   );
 
-  const loadCalendar = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch(`/api/disney/calendar?park=${park}&month=${monthParam}`);
-    if (res.ok) setCalendar(await res.json());
-    setLoading(false);
+  // 表示中の公園・月と、取得済みのデータがずれている間がローディング。
+  const requestKey = `${park}:${monthParam}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== requestKey;
+
+  // 親が日付を変えたらその月を開く。レンダー中に前回値と比べて調整する React 公式の書き方。
+  const [syncedDate, setSyncedDate] = useState(selectedDate);
+  if (syncedDate !== selectedDate) {
+    setSyncedDate(selectedDate);
+    setViewYear(Number(selectedDate.slice(0, 4)));
+    setViewMonth(Number(selectedDate.slice(5, 7)));
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/disney/calendar?park=${park}&month=${monthParam}`)
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as DisneyCalendarMonth) : null,
+      )
+      .catch(() => null)
+      .then((data) => {
+        if (cancelled) return;
+        // 失敗しても前の月の表示は残し、ローディングだけ解除する。
+        if (data) setCalendar(data);
+        setLoadedKey(`${park}:${monthParam}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [park, monthParam]);
 
-  useEffect(() => {
-    loadCalendar();
-  }, [loadCalendar]);
-
-  useEffect(() => {
-    const year = Number(selectedDate.slice(0, 4));
-    const month = Number(selectedDate.slice(5, 7));
-    setViewYear(year);
-    setViewMonth(month);
-  }, [selectedDate]);
-
   const canGoPrev = calendar
-    ? monthParam > toMonthParam(Number(calendar.today.slice(0, 4)), Number(calendar.today.slice(5, 7)))
+    ? monthParam >
+      toMonthParam(
+        Number(calendar.today.slice(0, 4)),
+        Number(calendar.today.slice(5, 7)),
+      )
     : false;
 
   const canGoNext = useMemo(() => {
@@ -138,14 +156,21 @@ export default function DisneyCalendar({
 
         <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-slate-500">
           {WEEKDAYS.map((label, i) => (
-            <div key={label} className={i === 0 ? "text-rose-400/80" : i === 6 ? "text-sky-400/80" : ""}>
+            <div
+              key={label}
+              className={
+                i === 0 ? "text-rose-400/80" : i === 6 ? "text-sky-400/80" : ""
+              }
+            >
               {label}
             </div>
           ))}
         </div>
 
         {loading ? (
-          <p className="mt-6 text-sm text-slate-400">カレンダーを読み込み中...</p>
+          <p className="mt-6 text-sm text-slate-400">
+            カレンダーを読み込み中...
+          </p>
         ) : calendar ? (
           <div className="mt-2 grid grid-cols-7 gap-1">
             {Array.from({ length: leadingBlanks }).map((_, i) => (
@@ -200,8 +225,12 @@ export default function DisneyCalendar({
               key={level}
               className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${crowdLevelCellStyles[level]}`}
             >
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${crowdLevelDotColors[level]}`} />
-              <span className="text-[10px] font-medium text-white">{crowdLevelLabels[level]}</span>
+              <span
+                className={`h-2.5 w-2.5 shrink-0 rounded-full ${crowdLevelDotColors[level]}`}
+              />
+              <span className="text-[10px] font-medium text-white">
+                {crowdLevelLabels[level]}
+              </span>
             </div>
           ))}
         </div>

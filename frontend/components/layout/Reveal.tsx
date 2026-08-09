@@ -9,7 +9,11 @@ type RevealProps = {
   className?: string;
 };
 
-export default function Reveal({ children, delayMs = 0, className = "" }: RevealProps) {
+export default function Reveal({
+  children,
+  delayMs = 0,
+  className = "",
+}: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
 
@@ -17,11 +21,7 @@ export default function Reveal({ children, delayMs = 0, className = "" }: Reveal
     const element = ref.current;
     if (!element) return;
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setShown(true);
-      return;
-    }
-
+    // prefers-reduced-motion の場合は globals.css が .reveal を可視状態に固定する。
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {

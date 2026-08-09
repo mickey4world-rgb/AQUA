@@ -10,21 +10,36 @@ type CosmicLocationSceneProps = {
   location: CosmicLocation;
 };
 
+/**
+ * 星や銀河の散らばりは見た目のためだけのものなので、固定シードの擬似乱数で作る。
+ * 描画のたびに配置が変わらず、サーバーとクライアントで同じ結果になる。
+ */
+function createRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function GalaxySpiral() {
   const pointsRef = useRef<THREE.Points>(null);
 
   const geometry = useMemo(() => {
+    const random = createRandom(0x5eed1);
     const count = 12000;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i += 1) {
       const arm = i % 4;
-      const t = Math.random() * Math.PI * 5;
-      const r = 0.4 + Math.random() * 9.5;
+      const t = random() * Math.PI * 5;
+      const r = 0.4 + random() * 9.5;
       const armOffset = (arm / 4) * Math.PI * 2 + t * 0.22;
       const x = Math.cos(armOffset) * r;
       const z = Math.sin(armOffset) * r;
-      const y = (Math.random() - 0.5) * 0.35 * (1 - r / 12);
+      const y = (random() - 0.5) * 0.35 * (1 - r / 12);
       positions[i * 3] = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;
@@ -45,7 +60,14 @@ function GalaxySpiral() {
 
   return (
     <points ref={pointsRef} geometry={geometry}>
-      <pointsMaterial size={0.035} vertexColors transparent opacity={0.85} sizeAttenuation depthWrite={false} />
+      <pointsMaterial
+        size={0.035}
+        vertexColors
+        transparent
+        opacity={0.85}
+        sizeAttenuation
+        depthWrite={false}
+      />
     </points>
   );
 }
@@ -67,26 +89,29 @@ function GalacticCore() {
 }
 
 function DistantGalaxies() {
-  const galaxies = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, i) => ({
-        pos: [
-          (Math.random() - 0.5) * 28,
-          (Math.random() - 0.5) * 6,
-          (Math.random() - 0.5) * 28,
-        ] as [number, number, number],
-        size: 0.08 + Math.random() * 0.18,
-        hue: 0.55 + Math.random() * 0.2,
-      })),
-    [],
-  );
+  const galaxies = useMemo(() => {
+    const random = createRandom(0x9a1a);
+    return Array.from({ length: 18 }, () => ({
+      pos: [
+        (random() - 0.5) * 28,
+        (random() - 0.5) * 6,
+        (random() - 0.5) * 28,
+      ] as [number, number, number],
+      size: 0.08 + random() * 0.18,
+      hue: 0.55 + random() * 0.2,
+    }));
+  }, []);
 
   return (
     <group>
       {galaxies.map((g, i) => (
         <mesh key={i} position={g.pos}>
           <sphereGeometry args={[g.size, 8, 8]} />
-          <meshBasicMaterial color={new THREE.Color().setHSL(g.hue, 0.35, 0.65)} transparent opacity={0.55} />
+          <meshBasicMaterial
+            color={new THREE.Color().setHSL(g.hue, 0.35, 0.65)}
+            transparent
+            opacity={0.55}
+          />
         </mesh>
       ))}
     </group>
@@ -148,10 +173,24 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
       { name: "水星", orbit: 0.55, radius: 0.04, color: "#a8a29e", angle: 0.2 },
       { name: "金星", orbit: 0.75, radius: 0.06, color: "#fcd34d", angle: 1.1 },
       { name: "地球", orbit: 1.0, radius: 0.07, color: "#60a5fa", angle: 2.4 },
-      { name: "月", orbit: 1.18, radius: 0.025, color: "#d4d4d4", angle: 2.7, parent: "地球" },
+      {
+        name: "月",
+        orbit: 1.18,
+        radius: 0.025,
+        color: "#d4d4d4",
+        angle: 2.7,
+        parent: "地球",
+      },
       { name: "火星", orbit: 1.35, radius: 0.05, color: "#f87171", angle: 3.8 },
       { name: "木星", orbit: 1.75, radius: 0.12, color: "#d97706", angle: 5.1 },
-      { name: "土星", orbit: 2.1, radius: 0.1, color: "#fbbf24", angle: 0.9, ring: true },
+      {
+        name: "土星",
+        orbit: 2.1,
+        radius: 0.1,
+        color: "#fbbf24",
+        angle: 0.9,
+        ring: true,
+      },
     ],
     [],
   );
@@ -191,12 +230,23 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
             </mesh>
             {body.ring && (
               <mesh rotation-x={Math.PI / 2}>
-                <ringGeometry args={[body.radius * 1.5, body.radius * 2.1, 32]} />
-                <meshBasicMaterial color="#fde68a" transparent opacity={0.45} side={THREE.DoubleSide} />
+                <ringGeometry
+                  args={[body.radius * 1.5, body.radius * 2.1, 32]}
+                />
+                <meshBasicMaterial
+                  color="#fde68a"
+                  transparent
+                  opacity={0.45}
+                  side={THREE.DoubleSide}
+                />
               </mesh>
             )}
             {highlighted && (
-              <Html distanceFactor={8} position={[0, body.radius + 0.12, 0]} center>
+              <Html
+                distanceFactor={8}
+                position={[0, body.radius + 0.12, 0]}
+                center
+              >
                 <span className="whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-amber-100">
                   {body.name}
                 </span>
@@ -221,9 +271,8 @@ function CosmicSceneContent({ location }: { location: CosmicLocation }) {
       <GalaxySpiral />
       <GalacticCore />
 
-      {(location.scale === "deep-universe" || location.scale === "local-group") && (
-        <DistantGalaxies />
-      )}
+      {(location.scale === "deep-universe" ||
+        location.scale === "local-group") && <DistantGalaxies />}
 
       <LocationMarker
         position={sunPos}
@@ -257,13 +306,27 @@ function CosmicSceneContent({ location }: { location: CosmicLocation }) {
         gapSize={0.12}
       />
 
-      <Stars radius={60} depth={30} count={2500} factor={2.5} fade speed={0.2} />
-      <OrbitControls enablePan minDistance={4} maxDistance={28} target={location.showLocalSystem ? sunPos : markerPos} />
+      <Stars
+        radius={60}
+        depth={30}
+        count={2500}
+        factor={2.5}
+        fade
+        speed={0.2}
+      />
+      <OrbitControls
+        enablePan
+        minDistance={4}
+        maxDistance={28}
+        target={location.showLocalSystem ? sunPos : markerPos}
+      />
     </>
   );
 }
 
-export default function CosmicLocationScene({ location }: CosmicLocationSceneProps) {
+export default function CosmicLocationScene({
+  location,
+}: CosmicLocationSceneProps) {
   const sceneKey = `${location.scale}-${location.positionLabel}`;
 
   return (
