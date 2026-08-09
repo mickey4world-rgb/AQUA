@@ -1,9 +1,15 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { loadJudicialSampleDocuments, JUDICIAL_SAMPLE_CASE } from "@/data/judicial/samples";
-import { isGeminiConfigured } from "@/lib/server/gemini";
-import { sendJudicialCaseChat } from "@/lib/server/judicial-case-chat";
+import {
+  getJudicialProvidersStatus,
+  sendJudicialCaseChat,
+} from "@/lib/server/judicial-case-chat";
 import { parseJsonBody } from "@/lib/server/security";
-import type { JudicialCaseChatRequest, JudicialChatMessage } from "@/lib/types/judicial-case";
+import type {
+  JudicialAiProvider,
+  JudicialCaseChatRequest,
+  JudicialChatMessage,
+} from "@/lib/types/judicial-case";
 
 export const runtime = "nodejs";
 
@@ -16,7 +22,7 @@ export async function GET(request: Request) {
         documents: loadJudicialSampleDocuments(),
       });
     }
-    return Response.json({ configured: isGeminiConfigured() });
+    return Response.json({ providers: getJudicialProvidersStatus() });
   });
 }
 
@@ -38,10 +44,14 @@ export async function POST(request: Request) {
       ? (body.history as JudicialChatMessage[])
       : [];
 
+    const provider: JudicialAiProvider =
+      body.provider === "openai" ? "openai" : "gemini";
+
     const result = await sendJudicialCaseChat(auth.userId, {
       message: typeof body.message === "string" ? body.message : "",
       history,
       documents: Array.isArray(body.documents) ? body.documents : [],
+      provider,
     });
 
     if (!result.ok) {
@@ -51,6 +61,7 @@ export async function POST(request: Request) {
     return Response.json({
       reply: result.reply,
       model: result.model,
+      provider: result.provider,
     });
   });
 }

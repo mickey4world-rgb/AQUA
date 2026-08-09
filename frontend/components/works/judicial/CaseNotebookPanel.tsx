@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import JudicialCompanion, {
+  type JudicialMood,
+} from "@/components/works/judicial/JudicialCompanion";
 import { worksPanelClass } from "@/lib/works-utils";
 import {
+  JUDICIAL_AI_PROVIDER_LABELS,
   JUDICIAL_DOC_KIND_LABELS,
+  type JudicialAiProvider,
   type JudicialCaseDocument,
   type JudicialChatMessage,
   type JudicialDocKind,
@@ -20,8 +25,55 @@ const KIND_OPTIONS = Object.entries(JUDICIAL_DOC_KIND_LABELS) as Array<
   [JudicialDocKind, string]
 >;
 
+const IDLE_LINES = [
+  "記録を開いたら、一緒に整理しましょう。",
+  "争点でも時系列でも、聞きたいことからどうぞ。",
+  "選択した資料だけを根拠に答えます。",
+];
+
 function newId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildExportText(
+  messages: JudicialChatMessage[],
+  model: string | null,
+  provider: JudicialAiProvider,
+  caseTitle: string | null,
+  selectedTitles: string[],
+): string {
+  const lines = [
+    "訴訟記録ノート — 会話エクスポート",
+    `日時: ${new Date().toLocaleString("ja-JP")}`,
+    `モデル: ${JUDICIAL_AI_PROVIDER_LABELS[provider]}${model ? ` (${model})` : ""}`,
+    caseTitle ? `事件: ${caseTitle}` : null,
+    selectedTitles.length > 0
+      ? `根拠資料: ${selectedTitles.join(" / ")}`
+      : null,
+    "",
+    "※ 法的助言ではありません。記録整理の学習用メモです。",
+    "",
+    "----------",
+    "",
+  ];
+
+  for (const message of messages) {
+    lines.push(message.role === "user" ? "[ユーザー]" : "[アシスタント]");
+    lines.push(message.content);
+    lines.push("");
+  }
+
+  return lines.filter((line) => line !== null).join("\n");
 }
 
 export default function CaseNotebookPanel() {
@@ -32,13 +84,20 @@ export default function CaseNotebookPanel() {
   const [sending, setSending] = useState(false);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [uploadKind, setUploadKind] = useState<JudicialDocKind>("brief");
+  const [provider, setProvider] = useState<JudicialAiProvider>("gemini");
+  const [providersAvailable, setProvidersAvailable] = useState({
+    gemini: true,
+    openai: true,
+  });
   const [pasteTitle, setPasteTitle] = useState("");
   const [pasteBody, setPasteBody] = useState("");
   const [showPaste, setShowPaste] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<JudicialCaseDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [caseTitle, setCaseTitle] = useState<string | null>(null);
+  const [idleTick, setIdleTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -46,10 +105,52 @@ export default function CaseNotebookPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/works/judicial/case-chat");
+        const data = await res.json();
+        if (data.providers) {
+          setProvidersAvailable({
+            gemini: Boolean(data.providers.gemini),
+            openai: Boolean(data.providers.openai),
+          });
+          if (!data.providers.gemini && data.providers.openai) {
+            setProvider("openai");
+          }
+        }
+      } catch {
+        // ignore; UI still lets the user try
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0 || sending) return;
+    const id = window.setInterval(() => {
+      setIdleTick((value) => value + 1);
+    }, 5200);
+    return () => window.clearInterval(id);
+  }, [messages.length, sending]);
+
   const selectedDocs = useMemo(
     () => documents.filter((doc) => selectedIds.has(doc.id)),
     [documents, selectedIds],
   );
+
+  const mood: JudicialMood = sending
+    ? "thinking"
+    : messages.some((message) => message.role === "assistant")
+      ? "speaking"
+      : "idle";
+
+  const companionLine = useMemo(() => {
+    if (sending) return "記録を読みながら整理しています…";
+    if (messages.length === 0) return IDLE_LINES[idleTick % IDLE_LINES.length];
+    const last = messages[messages.length - 1];
+    if (last.role === "assistant") return "続きの観点も聞けます。";
+    return "受け取りました。";
+  }, [sending, messages, idleTick]);
 
   function addDocuments(next: JudicialCaseDocument[], selectAll = true) {
     setDocuments((prev) => {
@@ -171,6 +272,7 @@ export default function CaseNotebookPanel() {
       copy.delete(id);
       return copy;
     });
+    setPreviewDoc((prev) => (prev?.id === id ? null : prev));
   }
 
   async function sendMessage(text: string) {
@@ -200,6 +302,7 @@ export default function CaseNotebookPanel() {
         body: JSON.stringify({
           message: trimmed,
           history: priorMessages,
+          provider,
           documents: selectedDocs.map((doc) => ({
             id: doc.id,
             title: doc.title,
@@ -232,6 +335,22 @@ export default function CaseNotebookPanel() {
     setError(null);
     setNotice(null);
     setInput("");
+  }
+
+  function exportTxt() {
+    if (messages.length === 0) return;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    downloadText(
+      `case-notebook-${stamp}.txt`,
+      buildExportText(
+        messages,
+        model,
+        provider,
+        caseTitle,
+        selectedDocs.map((doc) => doc.title),
+      ),
+    );
+    setNotice("会話を .txt でダウンロードしました。");
   }
 
   return (
@@ -309,17 +428,22 @@ export default function CaseNotebookPanel() {
                         : "border-white/8 bg-white/[0.02]"
                     }`}
                   >
-                    <label className="flex cursor-pointer items-start gap-2">
+                    <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleSelected(doc.id)}
                         className="mt-1"
+                        aria-label={`${doc.title} を選択`}
                       />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-medium text-white">
+                      <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc(doc)}
+                          className="block w-full truncate text-left text-xs font-medium text-white underline-offset-2 hover:text-violet-100 hover:underline"
+                        >
                           {doc.title}
-                        </span>
+                        </button>
                         <span className="mt-1 flex flex-wrap gap-1.5">
                           <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-400">
                             {JUDICIAL_DOC_KIND_LABELS[doc.kind]}
@@ -328,15 +452,24 @@ export default function CaseNotebookPanel() {
                             {doc.source === "sample" ? "sample" : "upload"}
                           </span>
                         </span>
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => removeDocument(doc.id)}
-                      className="mt-2 text-[10px] text-slate-500 hover:text-rose-200"
-                    >
-                      削除
-                    </button>
+                        <div className="mt-2 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc(doc)}
+                            className="text-[10px] text-violet-200/80 hover:text-violet-100"
+                          >
+                            開く
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeDocument(doc.id)}
+                            className="text-[10px] text-slate-500 hover:text-rose-200"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </li>
                 );
               })}
@@ -415,34 +548,64 @@ export default function CaseNotebookPanel() {
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_15%_0%,rgba(196,181,253,0.14),transparent_45%),radial-gradient(ellipse_at_90%_20%,rgba(244,114,182,0.08),transparent_40%)]" />
 
-        <div className="relative flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-medium tracking-[0.2em] text-violet-200/80 uppercase">
-              Case chat
-            </p>
-            <h2 className="mt-1 text-sm font-semibold text-white">
-              選択資料に基づく整理チャット
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              選択中 {selectedDocs.length} 件
-              {model ? ` · ${model}` : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-violet-300/30 bg-violet-400/10 px-2.5 py-0.5 text-[10px] font-medium text-violet-100">
-              Gemini
-            </span>
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <JudicialCompanion mood={mood} line={companionLine} />
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5"
+              role="group"
+              aria-label="AI モデル"
+            >
+              {(["gemini", "openai"] as JudicialAiProvider[]).map((option) => {
+                const available = providersAvailable[option];
+                const active = provider === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    disabled={!available && option !== provider}
+                    onClick={() => setProvider(option)}
+                    className={`rounded-full px-3 py-1 text-[10px] font-medium transition ${
+                      active
+                        ? "bg-violet-300 text-slate-950"
+                        : "text-slate-400 hover:text-slate-200 disabled:opacity-40"
+                    }`}
+                    title={
+                      available
+                        ? JUDICIAL_AI_PROVIDER_LABELS[option]
+                        : `${JUDICIAL_AI_PROVIDER_LABELS[option]}（未設定）`
+                    }
+                  >
+                    {JUDICIAL_AI_PROVIDER_LABELS[option]}
+                  </button>
+                );
+              })}
+            </div>
             {messages.length > 0 && (
-              <button
-                type="button"
-                onClick={resetChat}
-                className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5"
-              >
-                新しい会話
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={exportTxt}
+                  className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"
+                >
+                  .txt 出力
+                </button>
+                <button
+                  type="button"
+                  onClick={resetChat}
+                  className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5"
+                >
+                  新しい会話
+                </button>
+              </>
             )}
           </div>
         </div>
+
+        <p className="relative mt-3 text-xs text-slate-400">
+          選択中 {selectedDocs.length} 件
+          {model ? ` · ${JUDICIAL_AI_PROVIDER_LABELS[provider]} / ${model}` : ""}
+        </p>
 
         <div className="relative mt-4 flex flex-wrap gap-2">
           {STARTERS.map((starter) => (
@@ -462,7 +625,7 @@ export default function CaseNotebookPanel() {
           {messages.length === 0 && (
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-5">
               <p className="text-sm leading-relaxed text-slate-300">
-                左のライブラリで資料を選び、争点整理や時系列などから聞いてみてください。回答は選択した資料だけを根拠にします。
+                左のライブラリで資料を選び、争点整理や時系列などから聞いてみてください。回答は選択した資料だけを根拠にします。資料名をクリックすると本文を開けます。
               </p>
             </div>
           )}
@@ -533,10 +696,50 @@ export default function CaseNotebookPanel() {
         </form>
 
         <p className="relative mt-3 text-[10px] leading-relaxed text-slate-500">
-          法的助言ではありません。記録の整理・争点抽出・判断材料の整理に限定した学習用ツールです。アップロード本文はサーバに永続化しません（送信時のみ選択資料を API
-          に載せます）。サンプルは完全に架空の事件です。
+          法的助言ではありません。記録の整理・争点抽出・判断材料の整理に限定した学習用ツールです。アップロード本文はサーバに永続化しません（送信時のみ選択資料を
+          API に載せます）。サンプルは完全に架空の事件です。OpenAI
+          選択時は Azure OpenAI 経由で、月次トークン上限が適用されます。
         </p>
       </section>
+
+      {previewDoc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="judicial-doc-preview-title"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/12 bg-slate-950 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-[10px] tracking-[0.18em] text-violet-200/70 uppercase">
+                  {JUDICIAL_DOC_KIND_LABELS[previewDoc.kind]}
+                </p>
+                <h3
+                  id="judicial-doc-preview-title"
+                  className="mt-1 truncate text-sm font-semibold text-white"
+                >
+                  {previewDoc.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(null)}
+                className="rounded-full border border-white/12 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"
+              >
+                閉じる
+              </button>
+            </div>
+            <pre className="flex-1 overflow-y-auto whitespace-pre-wrap px-5 py-4 font-sans text-xs leading-relaxed text-slate-200">
+              {previewDoc.content}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
