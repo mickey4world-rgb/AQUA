@@ -25,6 +25,8 @@ export interface ApodAnalysis {
   objectType?: string;
   bands: WavelengthBand[];
   cosmic?: CosmicLocation;
+  /** 地球から見たこの写真の光・波長の要約 */
+  earthLightSummary?: string;
 }
 
 export type CosmicScale = "solar-system" | "milky-way" | "local-group" | "deep-universe";
@@ -33,6 +35,8 @@ export interface CosmicLocation {
   scale: CosmicScale;
   regionLabel: string;
   positionLabel: string;
+  /** 写真に写る対象の短い表示名（3Dマーカー用） */
+  targetLabel: string;
   distanceLy?: number;
   constellation?: string;
   localBody?: string;
@@ -40,6 +44,8 @@ export interface CosmicLocation {
   markerPosition: [number, number, number];
   sunGalacticPosition: [number, number, number];
   showLocalSystem: boolean;
+  /** 銀河外スケール時、天の川を縮小表示するか */
+  showMilkyWayContext: boolean;
 }
 
 export interface CloseApproach {

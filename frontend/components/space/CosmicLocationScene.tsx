@@ -1,19 +1,17 @@
 "use client";
 
-import { Suspense, useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Suspense, useLayoutEffect, useMemo, useRef } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, Line, OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
-import type { CosmicLocation } from "@/lib/types/space";
+import type { CosmicLocation, CosmicScale } from "@/lib/types/space";
 
 type CosmicLocationSceneProps = {
   location: CosmicLocation;
+  /** 写真切替でシーンを確実に更新するためのキー */
+  viewKey?: string;
 };
 
-/**
- * 星や銀河の散らばりは見た目のためだけのものなので、固定シードの擬似乱数で作る。
- * 描画のたびに配置が変わらず、サーバーとクライアントで同じ結果になる。
- */
 function createRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -24,7 +22,7 @@ function createRandom(seed: number): () => number {
   };
 }
 
-function GalaxySpiral() {
+function GalaxySpiral({ scale = 1 }: { scale?: number }) {
   const pointsRef = useRef<THREE.Points>(null);
 
   const geometry = useMemo(() => {
@@ -59,22 +57,24 @@ function GalaxySpiral() {
   });
 
   return (
-    <points ref={pointsRef} geometry={geometry}>
-      <pointsMaterial
-        size={0.035}
-        vertexColors
-        transparent
-        opacity={0.85}
-        sizeAttenuation
-        depthWrite={false}
-      />
-    </points>
+    <group scale={scale}>
+      <points ref={pointsRef} geometry={geometry}>
+        <pointsMaterial
+          size={0.035 * Math.max(scale, 0.35)}
+          vertexColors
+          transparent
+          opacity={0.85}
+          sizeAttenuation
+          depthWrite={false}
+        />
+      </points>
+    </group>
   );
 }
 
-function GalacticCore() {
+function GalacticCore({ scale = 1 }: { scale?: number }) {
   return (
-    <group>
+    <group scale={scale}>
       <mesh>
         <sphereGeometry args={[0.55, 32, 32]} />
         <meshBasicMaterial color="#fde68a" />
@@ -88,19 +88,20 @@ function GalacticCore() {
   );
 }
 
-function DistantGalaxies() {
+function DistantGalaxies({ denser = false }: { denser?: boolean }) {
   const galaxies = useMemo(() => {
-    const random = createRandom(0x9a1a);
-    return Array.from({ length: 18 }, () => ({
+    const random = createRandom(denser ? 0xb00b : 0x9a1a);
+    const count = denser ? 36 : 18;
+    return Array.from({ length: count }, () => ({
       pos: [
-        (random() - 0.5) * 28,
-        (random() - 0.5) * 6,
-        (random() - 0.5) * 28,
+        (random() - 0.5) * (denser ? 48 : 28),
+        (random() - 0.5) * (denser ? 10 : 6),
+        (random() - 0.5) * (denser ? 48 : 28),
       ] as [number, number, number],
       size: 0.08 + random() * 0.18,
       hue: 0.55 + random() * 0.2,
     }));
-  }, []);
+  }, [denser]);
 
   return (
     <group>
@@ -118,14 +119,13 @@ function DistantGalaxies() {
   );
 }
 
-function LocationMarker({
+/** ラベルなしの位置マーカー（写真の対象） */
+function TargetMarker({
   position,
-  label,
   color,
   size = 0.18,
 }: {
   position: [number, number, number];
-  label: string;
   color: string;
   size?: number;
 }) {
@@ -133,7 +133,7 @@ function LocationMarker({
 
   useFrame((state) => {
     if (glowRef.current) {
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.5) * 0.15;
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.5) * 0.18;
       glowRef.current.scale.setScalar(pulse);
     }
   });
@@ -141,8 +141,8 @@ function LocationMarker({
   return (
     <group position={position}>
       <mesh ref={glowRef}>
-        <sphereGeometry args={[size * 2.2, 16, 16]} />
-        <meshBasicMaterial color={color} transparent opacity={0.2} />
+        <sphereGeometry args={[size * 2.4, 16, 16]} />
+        <meshBasicMaterial color={color} transparent opacity={0.22} />
       </mesh>
       <mesh>
         <sphereGeometry args={[size, 20, 20]} />
@@ -150,15 +150,56 @@ function LocationMarker({
       </mesh>
       <Line
         points={[
-          [0, 0, 0],
-          [0, 0.8, 0],
+          [0, -0.35, 0],
+          [0, 0.9, 0],
         ]}
         color={color}
         lineWidth={1.5}
       />
-      <Html distanceFactor={14} position={[0, 1.1, 0]} center>
-        <div className="max-w-[140px] rounded-lg border border-indigo-400/40 bg-black/85 px-2 py-1 text-center text-[10px] text-indigo-100 shadow-lg">
-          {label}
+    </group>
+  );
+}
+
+/** 太陽位置（ラベルなし・小さな金色マーカー） */
+function SunMarker({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh>
+        <sphereGeometry args={[0.11, 16, 16]} />
+        <meshBasicMaterial color="#fbbf24" />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[0.22, 12, 12]} />
+        <meshBasicMaterial color="#f59e0b" transparent opacity={0.25} />
+      </mesh>
+    </group>
+  );
+}
+
+/** 銀河外スケール時の天の川の目印 */
+function MilkyWayContextBadge({
+  position,
+  compactScale,
+}: {
+  position: [number, number, number];
+  compactScale: number;
+}) {
+  return (
+    <group position={position}>
+      <GalaxySpiral scale={compactScale} />
+      <GalacticCore scale={compactScale} />
+      <mesh rotation-x={Math.PI / 2}>
+        <ringGeometry args={[compactScale * 9.2, compactScale * 9.8, 64]} />
+        <meshBasicMaterial
+          color="#a5b4fc"
+          transparent
+          opacity={0.35}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <Html distanceFactor={22} position={[0, compactScale * 3.2, 0]} center>
+        <div className="rounded-md border border-sky-300/35 bg-black/80 px-2 py-0.5 text-[9px] tracking-wide text-sky-100">
+          天の川銀河
         </div>
       </Html>
     </group>
@@ -179,7 +220,6 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
         radius: 0.025,
         color: "#d4d4d4",
         angle: 2.7,
-        parent: "地球",
       },
       { name: "火星", orbit: 1.35, radius: 0.05, color: "#f87171", angle: 3.8 },
       { name: "木星", orbit: 1.75, radius: 0.12, color: "#d97706", angle: 5.1 },
@@ -214,10 +254,7 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
       {bodies.map((body) => {
         const x = Math.cos(body.angle) * body.orbit;
         const z = Math.sin(body.angle) * body.orbit;
-        const highlighted =
-          !highlightBody ||
-          body.name === highlightBody ||
-          (highlightBody === "月" && body.name === "月");
+        const highlighted = Boolean(highlightBody) && body.name === highlightBody;
         return (
           <group key={body.name} position={[x, 0, z]}>
             <mesh>
@@ -225,7 +262,7 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
               <meshStandardMaterial
                 color={body.color}
                 emissive={highlighted ? body.color : "#000000"}
-                emissiveIntensity={highlighted ? 0.45 : 0.08}
+                emissiveIntensity={highlighted ? 0.55 : 0.08}
               />
             </mesh>
             {body.ring && (
@@ -241,17 +278,6 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
                 />
               </mesh>
             )}
-            {highlighted && (
-              <Html
-                distanceFactor={8}
-                position={[0, body.radius + 0.12, 0]}
-                center
-              >
-                <span className="whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-amber-100">
-                  {body.name}
-                </span>
-              </Html>
-            )}
           </group>
         );
       })}
@@ -259,35 +285,123 @@ function LocalSolarSystem({ highlightBody }: { highlightBody?: string }) {
   );
 }
 
+function cameraConfig(scale: CosmicScale, sunPos: [number, number, number], markerPos: [number, number, number]) {
+  if (scale === "solar-system") {
+    return {
+      position: [sunPos[0] + 2.2, 2.4, sunPos[2] + 3.4] as [number, number, number],
+      target: sunPos,
+      minDistance: 1.5,
+      maxDistance: 10,
+    };
+  }
+  if (scale === "milky-way") {
+    const mid: [number, number, number] = [
+      (sunPos[0] + markerPos[0]) / 2,
+      Math.max(markerPos[1], 0.5) + 1,
+      (sunPos[2] + markerPos[2]) / 2,
+    ];
+    return {
+      position: [mid[0] + 4, 8, mid[2] + 11] as [number, number, number],
+      target: markerPos,
+      minDistance: 4,
+      maxDistance: 24,
+    };
+  }
+  if (scale === "local-group") {
+    return {
+      position: [markerPos[0] * 0.25, 16, 26] as [number, number, number],
+      target: [
+        markerPos[0] * 0.35,
+        0,
+        markerPos[2] * 0.35,
+      ] as [number, number, number],
+      minDistance: 8,
+      maxDistance: 42,
+    };
+  }
+  return {
+    position: [markerPos[0] * 0.15, 22, 34] as [number, number, number],
+    target: [
+      markerPos[0] * 0.25,
+      0,
+      markerPos[2] * 0.25,
+    ] as [number, number, number],
+    minDistance: 10,
+    maxDistance: 58,
+  };
+}
+
+function CameraSetup({
+  scale,
+  sunPos,
+  markerPos,
+}: {
+  scale: CosmicScale;
+  sunPos: [number, number, number];
+  markerPos: [number, number, number];
+}) {
+  const { camera } = useThree();
+  const controlsRef = useRef<{
+    target: THREE.Vector3;
+    update: () => void;
+  } | null>(null);
+  const cfg = useMemo(
+    () => cameraConfig(scale, sunPos, markerPos),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scale, sunPos.join(","), markerPos.join(",")],
+  );
+
+  useLayoutEffect(() => {
+    camera.position.set(...cfg.position);
+    camera.lookAt(...cfg.target);
+    camera.updateProjectionMatrix();
+    controlsRef.current?.target.set(...cfg.target);
+    controlsRef.current?.update();
+  }, [camera, cfg]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef as never}
+      enablePan
+      minDistance={cfg.minDistance}
+      maxDistance={cfg.maxDistance}
+      target={cfg.target}
+    />
+  );
+}
+
 function CosmicSceneContent({ location }: { location: CosmicLocation }) {
   const sunPos = location.sunGalacticPosition;
   const markerPos = location.markerPosition;
+  const outside = location.showMilkyWayContext;
+  const compact = location.scale === "deep-universe" ? 0.22 : 0.32;
 
   return (
     <>
       <ambientLight intensity={0.35} />
       <directionalLight position={[4, 8, 2]} intensity={0.4} color="#c7d2fe" />
 
-      <GalaxySpiral />
-      <GalacticCore />
+      {/* 銀河内スケール: 通常サイズの天の川 */}
+      {!outside && (
+        <>
+          <GalaxySpiral />
+          <GalacticCore />
+          <SunMarker position={sunPos} />
+        </>
+      )}
+
+      {/* 銀河外: 縮小した天の川を残し、どこが銀河か分かるようにする */}
+      {outside && (
+        <MilkyWayContextBadge position={[0, 0, 0]} compactScale={compact} />
+      )}
 
       {(location.scale === "deep-universe" ||
-        location.scale === "local-group") && <DistantGalaxies />}
-
-      <LocationMarker
-        position={sunPos}
-        label="太陽系（太陽の位置）"
-        color="#fbbf24"
-        size={0.12}
-      />
+        location.scale === "local-group") && (
+        <DistantGalaxies denser={location.scale === "deep-universe"} />
+      )}
 
       {!location.showLocalSystem && (
-        <LocationMarker
-          position={markerPos}
-          label={location.positionLabel}
-          color="#818cf8"
-          size={0.16}
-        />
+        <TargetMarker position={markerPos} color="#818cf8" size={outside ? 0.28 : 0.16} />
       )}
 
       {location.showLocalSystem && (
@@ -296,29 +410,32 @@ function CosmicSceneContent({ location }: { location: CosmicLocation }) {
         </group>
       )}
 
-      <Line
-        points={[sunPos, markerPos]}
-        color="#6366f1"
-        transparent
-        opacity={location.showLocalSystem ? 0 : 0.35}
-        dashed
-        dashSize={0.2}
-        gapSize={0.12}
-      />
+      {/* 太陽（地球側）から写真の対象への視線 */}
+      {!location.showLocalSystem && (
+        <Line
+          points={[outside ? ([0, 0, 0] as [number, number, number]) : sunPos, markerPos]}
+          color="#6366f1"
+          transparent
+          opacity={0.4}
+          dashed
+          dashSize={0.25}
+          gapSize={0.14}
+        />
+      )}
 
       <Stars
-        radius={60}
-        depth={30}
-        count={2500}
+        radius={outside ? 90 : 60}
+        depth={40}
+        count={outside ? 3200 : 2500}
         factor={2.5}
         fade
         speed={0.2}
       />
-      <OrbitControls
-        enablePan
-        minDistance={4}
-        maxDistance={28}
-        target={location.showLocalSystem ? sunPos : markerPos}
+
+      <CameraSetup
+        scale={location.scale}
+        sunPos={sunPos}
+        markerPos={markerPos}
       />
     </>
   );
@@ -326,12 +443,21 @@ function CosmicSceneContent({ location }: { location: CosmicLocation }) {
 
 export default function CosmicLocationScene({
   location,
+  viewKey,
 }: CosmicLocationSceneProps) {
-  const sceneKey = `${location.scale}-${location.positionLabel}`;
+  const sceneKey =
+    viewKey ??
+    `${location.scale}-${location.targetLabel}-${location.markerPosition.join(",")}`;
+
+  const initial = cameraConfig(
+    location.scale,
+    location.sunGalacticPosition,
+    location.markerPosition,
+  );
 
   return (
     <div className="h-[320px] w-full overflow-hidden rounded-xl border border-white/10 bg-black/70 sm:h-[360px]">
-      <Canvas key={sceneKey} camera={{ position: [0, 9, 14], fov: 50 }}>
+      <Canvas key={sceneKey} camera={{ position: initial.position, fov: 50 }}>
         <Suspense fallback={null}>
           <CosmicSceneContent location={location} />
         </Suspense>
