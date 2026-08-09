@@ -84,6 +84,7 @@ export type MoneyFlowRow = {
   block: string;
   contract: string | null;
   work: string;
+  address?: string;
   corpNumber?: string;
 };
 
@@ -95,6 +96,7 @@ export type ExternalCompany = {
   city: string;
   inReviewData: boolean;
   reviewAmount: number;
+  addressSource?: "review" | "openstreetmap" | "houjin";
 };
 
 export type NearbyMunicipalPayee = {

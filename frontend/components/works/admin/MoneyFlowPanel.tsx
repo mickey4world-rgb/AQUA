@@ -393,15 +393,12 @@ export default function MoneyFlowPanel() {
           <p className="eyebrow">企業情報</p>
           <h3 className="display-sub mt-2 text-white">検索した支出先</h3>
           <p className="mt-2 text-sm text-slate-400">
-            レビューシートに無い企業も一覧に出します。
-            {data.houjinEnabled
-              ? " 法人番号公表サイトから住所を取得しています。"
-              : " 法人番号連携は HOUJIN_BANGOU_APP_ID を設定すると有効になります。"}
+            レビューシートの所在地を優先し、無い場合は OpenStreetMap で住所を補完します。
           </p>
           <ul className="mt-4 space-y-3">
             {data.externalCompanies.map((company) => (
               <li
-                key={`${company.corporateNumber}-${company.name}`}
+                key={`${company.corporateNumber}-${company.name}-${company.address}`}
                 className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -410,6 +407,16 @@ export default function MoneyFlowPanel() {
                     <p className="mt-1 text-xs text-slate-400">
                       {company.address || "住所情報なし"}
                     </p>
+                    {company.addressSource && company.address && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        出典:{" "}
+                        {company.addressSource === "review"
+                          ? "行政事業レビュー"
+                          : company.addressSource === "openstreetmap"
+                            ? "OpenStreetMap"
+                            : "法人番号公表サイト"}
+                      </p>
+                    )}
                     {company.corporateNumber && (
                       <p className="mt-1 font-mono text-[11px] text-slate-500">
                         法人番号 {company.corporateNumber}
@@ -542,6 +549,14 @@ export default function MoneyFlowPanel() {
                       >
                         {row.payee}
                       </button>
+                      {row.address && (
+                        <div
+                          className="mt-1 max-w-[16rem] truncate text-xs text-slate-500"
+                          title={row.address}
+                        >
+                          {row.address}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">
                       {row.block}
@@ -568,7 +583,8 @@ export default function MoneyFlowPanel() {
           >
             {data.source.url}
           </a>
-          。2023–2025 は見える化サイト CSV の取込後に有効化できます。
+          。企業住所はレビュー所在地を優先し、不足分は OpenStreetMap で補完します。
+          OSM データ © OpenStreetMap contributors。
         </p>
       )}
     </div>
