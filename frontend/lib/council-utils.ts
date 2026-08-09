@@ -4,6 +4,9 @@ export function formatModelDisplay(meta: CouncilModelMeta): string {
   if (meta.provider === "openai") {
     return `OpenAI · ${meta.model ?? "—"}`;
   }
+  if (meta.provider === "gemini") {
+    return `Gemini · ${meta.model ?? "—"}`;
+  }
   return `Azure · ${meta.deployment ?? meta.model ?? "—"}`;
 }
 

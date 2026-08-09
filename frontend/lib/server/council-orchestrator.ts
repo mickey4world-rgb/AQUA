@@ -10,11 +10,13 @@ import {
 } from "@/lib/server/council-attachments";
 import { councilDepthConfig } from "@/lib/server/council-config";
 import {
+  formatModelDisplay,
   getCouncilConfigMeta,
   getCouncilDebaters,
   getCouncilJudge,
   type CouncilModelConfig,
 } from "@/lib/server/council-models";
+import { generateWithGemini } from "@/lib/server/gemini";
 import { canUseAiTokens, recordTokenUsage } from "@/lib/server/token-usage";
 import type {
   CouncilAttachment,
@@ -84,6 +86,24 @@ async function callCouncilModel(
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,
       requestId: completion.id,
+    };
+  }
+
+  if (model.provider === "gemini") {
+    const result = await generateWithGemini({
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: maxTokens,
+      temperature: 0.7,
+    });
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+    return {
+      content: result.text.trim(),
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
     };
   }
 
@@ -299,10 +319,8 @@ export async function runCouncilDebate(
           provider: m.provider,
           deployment: m.deployment,
           model: m.model,
-          displayName:
-            m.provider === "openai"
-              ? `OpenAI · ${m.model}`
-              : `Azure · ${m.deployment}`,
+          role: m.role,
+          displayName: formatModelDisplay(m),
         })),
         judge: judgeMeta,
         initial,
