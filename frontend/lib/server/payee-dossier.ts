@@ -99,6 +99,26 @@ export function buildPayeeDossier(query: string): PayeeDossier | null {
       recentContracts: [],
       contractMix: [],
       soleSourceShare: null,
+      suspensions: [],
+      reputation: {
+        japanTitle: null,
+        japanSummary: null,
+        japanUrl: null,
+        worldTitle: null,
+        worldSummary: null,
+        worldUrl: null,
+        notes: [],
+      },
+      finance: {
+        symbol: null,
+        exchange: null,
+        currency: null,
+        lastPrice: null,
+        change5yPct: null,
+        drawdownFromPeakPct: null,
+        summary: "公開株価を未取得です。",
+        concern: false,
+      },
     };
   }
 
@@ -149,6 +169,26 @@ export function buildPayeeDossier(query: string): PayeeDossier | null {
       .slice(0, 12),
     contractMix,
     soleSourceShare,
+    suspensions: [],
+    reputation: {
+      japanTitle: null,
+      japanSummary: null,
+      japanUrl: null,
+      worldTitle: null,
+      worldSummary: null,
+      worldUrl: null,
+      notes: [],
+    },
+    finance: {
+      symbol: null,
+      exchange: null,
+      currency: null,
+      lastPrice: null,
+      change5yPct: null,
+      drawdownFromPeakPct: null,
+      summary: "公開株価を未取得です。",
+      concern: false,
+    },
   };
 }
 
@@ -305,6 +345,27 @@ function buildIssues(args: {
         detail: "年によって受注額が大きく上下しています。単年度の実績だけで判断しない方がよいです。",
       });
     }
+    const lastThree = yearPoints.slice(-3);
+    if (
+      lastThree.length === 3 &&
+      lastThree[0]!.amount > lastThree[1]!.amount &&
+      lastThree[1]!.amount > lastThree[2]!.amount
+    ) {
+      issues.push({
+        level: "caution",
+        title: "3年連続で受注減少",
+        detail: `${lastThree[0]!.fiscalYear}→${lastThree[2]!.fiscalYear} で国からの支出が連続減少しています。財務・受注基盤の確認を推奨します。`,
+      });
+    }
+  }
+
+  const latest = yearPoints[yearPoints.length - 1];
+  if (latest && latest.contractCount >= 8 && partnerList.length <= 2) {
+    issues.push({
+      level: "watch",
+      title: "特定府省への集中受注",
+      detail: `直近年度の契約が多く、取引先府省は ${partnerList.length} 先に偏っています。発注元依存リスクがあります。`,
+    });
   }
 
   if (suspectHits > 0) {

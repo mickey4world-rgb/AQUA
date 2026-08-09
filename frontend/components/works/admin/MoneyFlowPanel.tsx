@@ -53,6 +53,7 @@ export default function MoneyFlowPanel() {
   const [dossier, setDossier] = useState<PayeeDossier | null>(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [dossierError, setDossierError] = useState<string | null>(null);
+  const [rowPage, setRowPage] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +92,7 @@ export default function MoneyFlowPanel() {
   useEffect(() => {
     if (!requestKey) return;
     let cancelled = false;
+    setRowPage(0);
     fetchFlow(requestKey)
       .then((payload) => {
         if (cancelled) return;
@@ -182,6 +184,13 @@ export default function MoneyFlowPanel() {
   }
 
   const rowsAreAggregated = Boolean(data?.rows.some((row) => row.aggregated));
+  const ROW_PAGE_SIZE = 20;
+  const pagedRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    const start = rowPage * ROW_PAGE_SIZE;
+    return rows.slice(start, start + ROW_PAGE_SIZE);
+  }, [data?.rows, rowPage]);
+  const rowPageCount = Math.max(1, Math.ceil((data?.rows.length ?? 0) / ROW_PAGE_SIZE));
 
   return (
     <div className="space-y-5">
@@ -547,8 +556,15 @@ export default function MoneyFlowPanel() {
             <p className="eyebrow">明細</p>
             <p className="mt-1 text-sm text-slate-400">
               {rowsAreAggregated
-                ? `支出先ごとの合計（金額の大きい順・最大 ${data.rows.length} 件）`
-                : `契約明細（金額の大きい順・最大 ${data.rows.length} 件）`}
+                ? `支出先ごとの合計（金額の大きい順）`
+                : `契約明細（金額の大きい順）`}
+              {" · "}
+              {(data.rows.length === 0
+                ? "0"
+                : `${rowPage * ROW_PAGE_SIZE + 1}–${Math.min(
+                    (rowPage + 1) * ROW_PAGE_SIZE,
+                    data.rows.length,
+                  )}`) + ` / ${data.rows.length} 件`}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -563,9 +579,9 @@ export default function MoneyFlowPanel() {
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row, index) => (
+                {pagedRows.map((row, index) => (
                   <tr
-                    key={`${row.projectNumber}-${row.payee}-${index}`}
+                    key={`${row.projectNumber}-${row.payee}-${rowPage}-${index}`}
                     className="border-t border-white/5 text-slate-300"
                   >
                     <td className="px-4 py-3 whitespace-nowrap">{row.ministry}</td>
@@ -635,15 +651,38 @@ export default function MoneyFlowPanel() {
               </tbody>
             </table>
           </div>
+          {data.rows.length > ROW_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 border-t border-white/8 px-5 py-3 sm:px-6">
+              <button
+                type="button"
+                disabled={rowPage <= 0}
+                onClick={() => setRowPage((page) => Math.max(0, page - 1))}
+                className="rounded-full border border-white/12 px-3 py-1 text-xs text-slate-300 disabled:opacity-30 hover:bg-white/5"
+              >
+                前の20件
+              </button>
+              <p className="text-xs text-slate-500">
+                {rowPage + 1} / {rowPageCount} ページ
+              </p>
+              <button
+                type="button"
+                disabled={rowPage >= rowPageCount - 1}
+                onClick={() => setRowPage((page) => Math.min(rowPageCount - 1, page + 1))}
+                className="rounded-full border border-white/12 px-3 py-1 text-xs text-slate-300 disabled:opacity-30 hover:bg-white/5"
+              >
+                次の20件
+              </button>
+            </div>
+          )}
         </section>
       )}
 
       {(dossierLoading || dossier || dossierError) && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 pb-8 pt-8 sm:pt-12">
           <div
             role="dialog"
             aria-modal="true"
-            className="glass-panel max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl p-5 sm:p-6"
+            className="glass-panel my-0 max-h-[min(88vh,920px)] w-full max-w-3xl overflow-y-auto rounded-3xl p-5 sm:p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -666,7 +705,9 @@ export default function MoneyFlowPanel() {
             </div>
 
             {dossierLoading && (
-              <p className="mt-6 text-sm text-slate-400">レビュー複数年を集計しています…</p>
+              <p className="mt-6 text-sm text-slate-400">
+                レビュー集計と、指名停止・百科・株価の公開情報を調べています…
+              </p>
             )}
             {dossierError && <p className="mt-6 text-sm text-rose-200">{dossierError}</p>}
 
@@ -755,6 +796,107 @@ export default function MoneyFlowPanel() {
                       </li>
                     ))}
                   </ul>
+                </div>
+
+                <div>
+                  <p className="text-xs tracking-wide text-slate-500">
+                    指名停止（国交省ネガティブ情報・直近5年）
+                  </p>
+                  {(dossier.suspensions?.length ?? 0) === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      該当なし（他省庁・自治体の措置は含まれません）。
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {dossier.suspensions!.map((row) => (
+                        <li
+                          key={`${row.date}-${row.company}-${row.agency}`}
+                          className="rounded-2xl border border-rose-300/20 bg-rose-300/[0.04] px-4 py-3 text-sm text-slate-300"
+                        >
+                          <p className="text-rose-100">
+                            {row.date} · {row.type}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {row.agency} / {row.company}
+                            {row.address ? `（${row.address}）` : ""}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                            {row.overviewUrl && (
+                              <a
+                                href={row.overviewUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline decoration-white/20 underline-offset-2 hover:text-slate-200"
+                              >
+                                概要
+                              </a>
+                            )}
+                            {row.detailUrl && (
+                              <a
+                                href={row.detailUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline decoration-white/20 underline-offset-2 hover:text-slate-200"
+                              >
+                                詳細PDF
+                              </a>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                    <p className="text-[11px] tracking-wide text-slate-500">日本での評価（Wikipedia）</p>
+                    <p className="mt-1 text-sm text-white">
+                      {dossier.reputation?.japanTitle || "記事なし"}
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      {dossier.reputation?.japanSummary || "日本語Wikipediaの要約を取得できませんでした。"}
+                    </p>
+                    {dossier.reputation?.japanUrl && (
+                      <a
+                        href={dossier.reputation.japanUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-block text-[11px] text-cyan-100/80 underline decoration-white/20 underline-offset-2"
+                      >
+                        出典を開く
+                      </a>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                    <p className="text-[11px] tracking-wide text-slate-500">世界での評価（Wikipedia EN）</p>
+                    <p className="mt-1 text-sm text-white">
+                      {dossier.reputation?.worldTitle || "記事なし"}
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      {dossier.reputation?.worldSummary || "英語Wikipediaの要約を取得できませんでした。"}
+                    </p>
+                    {dossier.reputation?.worldUrl && (
+                      <a
+                        href={dossier.reputation.worldUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-block text-[11px] text-cyan-100/80 underline decoration-white/20 underline-offset-2"
+                      >
+                        出典を開く
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                  <p className="text-[11px] tracking-wide text-slate-500">財務的な心配（上場株価）</p>
+                  <p className="mt-1 text-sm text-white">
+                    {dossier.finance?.concern ? "心配あり" : dossier.finance?.symbol ? "大きな毀損は見えず" : "未上場または未特定"}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                    {dossier.finance?.summary}
+                  </p>
                 </div>
 
                 <div>

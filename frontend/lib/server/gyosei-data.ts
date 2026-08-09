@@ -20,7 +20,7 @@ import type {
 const DATA_DIR = path.join(process.cwd(), "data", "gyosei");
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 80;
-const MAX_ROWS = 120;
+const MAX_ROWS = 200;
 /** 主要事項DBに無い直近年度。見える化サイト CSV を取り込めば有効化される。 */
 const PENDING_YEARS = [2023, 2024, 2025];
 
