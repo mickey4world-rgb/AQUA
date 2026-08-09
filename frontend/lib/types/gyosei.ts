@@ -86,6 +86,9 @@ export type MoneyFlowRow = {
   work: string;
   address?: string;
   corpNumber?: string;
+  /** 支出先集計行のとき true */
+  aggregated?: boolean;
+  flowCount?: number;
 };
 
 export type ExternalCompany = {
@@ -101,9 +104,65 @@ export type ExternalCompany = {
 
 export type NearbyMunicipalPayee = {
   municipality: string;
-  payee: string;
+  /** 同一事業などで周辺自治体（支出先）が受けた国からの額 */
+  municipalityAmount: number;
+  /** 同一事業で当該業者が受けた額 */
+  vendorAmount: number;
+  vendor: string;
+  projectCount: number;
+  topProjects: string[];
+  relation: "same-project" | "work-mention";
+};
+
+export type PayeeYearPoint = {
+  fiscalYear: number;
   amount: number;
   projectCount: number;
+  contractCount: number;
+};
+
+export type PayeeContractPartner = {
+  ministry: string;
+  amount: number;
+  projectCount: number;
+};
+
+export type PayeeRecentContract = {
+  fiscalYear: number;
+  ministry: string;
+  project: string;
+  amount: number;
+  contract: string | null;
+  work: string;
+};
+
+export type PayeeIssue = {
+  level: "info" | "watch" | "caution";
+  title: string;
+  detail: string;
+};
+
+export type PayeeDossier = {
+  name: string;
+  corporateNumber: string;
+  address: string;
+  unit: string;
+  years: PayeeYearPoint[];
+  totalAmount: number;
+  trend: {
+    label: "拡大" | "横ばい" | "縮小" | "データ不足";
+    changeRate: number | null;
+    summary: string;
+  };
+  procurement: {
+    verdict: "問題なさそう" | "注意して確認" | "慎重に判断" | "判断材料不足";
+    summary: string;
+  };
+  issues: PayeeIssue[];
+  partners: PayeeContractPartner[];
+  recentContracts: PayeeRecentContract[];
+  contractMix: Array<{ method: string; amount: number; share: number }>;
+  soleSourceShare: number | null;
 };
 
 export type MoneyFlowResponse = {
