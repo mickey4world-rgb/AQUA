@@ -6,7 +6,7 @@ import {
   queryMoneyFlow,
 } from "@/lib/server/gyosei-data";
 import { PAYEE_SECTORS } from "@/lib/gyosei-sectors";
-import { isHoujinConfigured } from "@/lib/server/houjin";
+import { isAddressLookupReady } from "@/lib/server/company-address";
 import type { MoneyFlowFocusKind } from "@/lib/types/gyosei";
 
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
           })),
           sectors: PAYEE_SECTORS.map((item) => ({ id: item.id, label: item.label })),
           topPayees: summary.topPayees.slice(0, 20),
-          houjinEnabled: isHoujinConfigured(),
+          houjinEnabled: isAddressLookupReady(),
         });
       }
 

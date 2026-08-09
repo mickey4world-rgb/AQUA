@@ -3,10 +3,10 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { PAYEE_SECTORS, matchSector } from "@/lib/gyosei-sectors";
 import {
-  isHoujinConfigured,
-  parseJapanAddress,
-  searchHoujinByName,
-} from "@/lib/server/houjin";
+  isAddressLookupReady,
+  resolveCompaniesByName,
+  splitWorkAndAddress,
+} from "@/lib/server/company-address";
 import type {
   GyoseiSummary,
   GyoseiYearDataset,
@@ -101,7 +101,7 @@ export async function queryMoneyFlow(
     sectors,
     externalCompanies: [],
     nearbyMunicipal: [],
-    houjinEnabled: isHoujinConfigured(),
+    houjinEnabled: isAddressLookupReady(),
     yearAvailable: false,
   };
 
@@ -202,9 +202,10 @@ export async function queryMoneyFlow(
     .sort((a, b) => dataset.flows[b][2] - dataset.flows[a][2])
     .slice(0, MAX_ROWS)
     .map((index) => {
-      const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, work] =
+      const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, rawWork] =
         dataset.flows[index];
       const project = dataset.projects[projectIndex];
+      const { work, address } = splitWorkAndAddress(rawWork || "");
       return {
         ministry: dataset.dictionaries.ministries[project[0]],
         project: project[1],
@@ -215,6 +216,7 @@ export async function queryMoneyFlow(
         contract:
           contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null,
         work,
+        address: address || undefined,
         corpNumber: corpNumber || undefined,
       };
     });
@@ -251,7 +253,7 @@ export async function queryMoneyFlow(
     ),
     sectors,
     ...external,
-    houjinEnabled: isHoujinConfigured(),
+    houjinEnabled: isAddressLookupReady(),
     yearAvailable: true,
   };
 }
@@ -260,47 +262,50 @@ async function enrichExternalCompanies(
   query: string,
   dataset: GyoseiYearDataset | null,
 ) {
-  const houjin = await searchHoujinByName(query, 8);
+  const resolved = await resolveCompaniesByName(query, 8);
   const reviewAmounts = new Map<string, number>();
 
   if (dataset) {
     const needle = normalizePayeeQuery(query);
-    for (const [projectIndex, payeeIndex, amount] of dataset.flows) {
+    for (const [projectIndex, payeeIndex, amount, , , corpNumber] of dataset.flows) {
       if (dataset.projects[projectIndex][6]) continue;
       const name = dataset.dictionaries.payees[payeeIndex];
-      const corp = dataset.flows.find((flow) => flow[1] === payeeIndex)?.[5] ?? "";
-      if (
-        normalizePayeeQuery(name).includes(needle) ||
-        (corp && houjin.some((company) => company.corporateNumber === corp))
-      ) {
+      const nameHit = normalizePayeeQuery(name).includes(needle);
+      const corpHit =
+        Boolean(corpNumber) &&
+        resolved.some((company) => company.corporateNumber === corpNumber);
+      if (nameHit || corpHit) {
         reviewAmounts.set(name, (reviewAmounts.get(name) ?? 0) + amount);
       }
     }
   }
 
-  const externalCompanies = houjin.map((company) => {
+  const externalCompanies = resolved.map((company) => {
     const matchedAmount =
       [...reviewAmounts.entries()].find(([name]) =>
         normalizePayeeQuery(name).includes(normalizePayeeQuery(company.name)),
-      )?.[1] ?? 0;
+      )?.[1] ??
+      [...reviewAmounts.entries()].find(([name]) =>
+        normalizePayeeQuery(company.name).includes(normalizePayeeQuery(name)),
+      )?.[1] ??
+      0;
     return {
       name: company.name,
       corporateNumber: company.corporateNumber,
       address: company.address,
-      prefecture: company.prefecture || parseJapanAddress(company.address).prefecture,
-      city: company.city || parseJapanAddress(company.address).city,
+      prefecture: company.prefecture,
+      city: company.city,
       inReviewData: matchedAmount > 0,
       reviewAmount: round1(matchedAmount),
+      addressSource: company.source,
     };
   });
 
-  // レビューに無い会社でも一覧に出す。逆に NTA 未設定時はクエリ名だけ出す。
   if (externalCompanies.length === 0 && query.trim()) {
-    const amount = reviewAmounts.get(
-      [...reviewAmounts.keys()].find((name) =>
+    const amount =
+      [...reviewAmounts.entries()].find(([name]) =>
         normalizePayeeQuery(name).includes(normalizePayeeQuery(query)),
-      ) ?? "",
-    ) ?? 0;
+      )?.[1] ?? 0;
     externalCompanies.push({
       name: query.trim(),
       corporateNumber: "",
@@ -309,6 +314,7 @@ async function enrichExternalCompanies(
       city: "",
       inReviewData: amount > 0,
       reviewAmount: round1(amount),
+      addressSource: "review" as const,
     });
   }
 

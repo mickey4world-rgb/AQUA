@@ -17,10 +17,15 @@ https://www.gyoukaku.go.jp/review/database/index.html
 [行政事業レビュー見える化サイト](https://rssystem.go.jp/download-csv) の `5-1_RS_YYYY_支出先_支出情報.zip` を
 `data-src/rs/` に置き、次で `fyYYYY.json.gz` を生成します（ファイルがあれば年度セレクトに自動反映）。
 
-## 法人番号連携
+## 企業住所の補完
 
-環境変数 `HOUJIN_BANGOU_APP_ID`（国税庁 Web-API の無料アプリ ID）を設定すると、
-レビューに無い企業も法人番号・住所付きで一覧表示し、所在地付近の自治体名支出先を併記します。
+アプリ ID は不要です。支出先名で検索すると次の順で住所を解決します。
+
+1. 同梱レビューデータ（見える化サイト CSV の所在地）
+2. OpenStreetMap Nominatim（レビューに住所が無い／載っていない企業）
+3. （任意）`HOUJIN_BANGOU_APP_ID` があれば国税庁法人番号 Web-API
+
+付近の自治体名支出先は、解決した都道府県・市区町村名からレビュー支出先を突き合わせます。
 
 ## 再生成
 
