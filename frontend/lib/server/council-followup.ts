@@ -67,7 +67,7 @@ async function callFollowUpModel(
   const client = getAzureOpenAiClient(deployment, residency);
   const completion = await client.chat.completions.create({
     model: deployment,
-    max_completion_tokens: 300,
+    max_completion_tokens: 1200,
     messages: [
       { role: "system", content: systemPrompt },
       ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),

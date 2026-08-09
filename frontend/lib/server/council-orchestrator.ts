@@ -54,6 +54,34 @@ function buildTopicWithAttachments(topic: string, attachments: CouncilAttachment
   return `${topic}\n\n${attachmentBlock}`;
 }
 
+function extractMessageText(message: {
+  content?: string | Array<{ type?: string; text?: string }> | null;
+  refusal?: string | null;
+} | null | undefined): string {
+  if (!message) return "";
+  const content = message.content;
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === "string" ? part : part?.text ?? ""))
+      .join("")
+      .trim();
+  }
+  if (typeof message.refusal === "string" && message.refusal.trim()) {
+    return message.refusal.trim();
+  }
+  return "";
+}
+
+function azureCompletionBudget(requested: number, deployment: string): number {
+  const name = deployment.toLowerCase();
+  // 最新系は reasoning / 内部思考でトークンを先に使うため下限を上げる
+  if (/gpt-5|o1|o3|o4|reason/.test(name)) {
+    return Math.max(requested, 1600);
+  }
+  return Math.max(requested, 600);
+}
+
 async function callCouncilModel(
   model: CouncilModelConfig,
   mode: CouncilMode,
@@ -72,14 +100,21 @@ async function callCouncilModel(
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await client.chat.completions.create({
       model: model.model ?? "gpt-5.6-sol",
-      max_tokens: maxTokens,
+      max_tokens: Math.max(maxTokens, 800),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });
-    const content = completion.choices[0]?.message?.content?.trim();
-    if (!content) throw new Error(`Empty response from ${model.label}`);
+    const content = extractMessageText(completion.choices[0]?.message);
+    if (!content) {
+      throw new Error(
+        `Empty response from ${model.label}` +
+          (completion.choices[0]?.finish_reason
+            ? `（finish=${completion.choices[0].finish_reason}）`
+            : ""),
+      );
+    }
     return {
       content,
       model: completion.model ?? model.model ?? "openai",
@@ -93,14 +128,16 @@ async function callCouncilModel(
     const result = await generateWithGemini({
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
-      maxOutputTokens: maxTokens,
+      maxOutputTokens: Math.max(maxTokens, 800),
       temperature: 0.7,
     });
     if (!result.ok) {
       throw new Error(result.reason);
     }
+    const content = result.text.trim();
+    if (!content) throw new Error(`Empty response from ${model.label}`);
     return {
-      content: result.text.trim(),
+      content,
       model: result.model,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
@@ -110,23 +147,40 @@ async function callCouncilModel(
   const deployment = model.deployment!;
   const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
   const client = getAzureOpenAiClient(deployment, residency);
-  const completion = await client.chat.completions.create({
-    model: deployment,
-    max_completion_tokens: maxTokens,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-  });
-  const content = completion.choices[0]?.message?.content?.trim();
-  if (!content) throw new Error(`Empty response from ${model.label}`);
-  return {
-    content,
-    model: completion.model ?? deployment,
-    promptTokens: completion.usage?.prompt_tokens ?? 0,
-    completionTokens: completion.usage?.completion_tokens ?? 0,
-    requestId: completion.id,
-  };
+
+  let budget = azureCompletionBudget(maxTokens, deployment);
+  let lastFinish: string | undefined;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const completion = await client.chat.completions.create({
+      model: deployment,
+      max_completion_tokens: budget,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    const choice = completion.choices[0];
+    lastFinish = choice?.finish_reason ?? undefined;
+    const content = extractMessageText(choice?.message);
+    if (content) {
+      return {
+        content,
+        model: completion.model ?? deployment,
+        promptTokens: completion.usage?.prompt_tokens ?? 0,
+        completionTokens: completion.usage?.completion_tokens ?? 0,
+        requestId: completion.id,
+      };
+    }
+    // length / 空応答なら思考枠を広げて再試行
+    budget = Math.max(budget * 2, 2400);
+  }
+
+  throw new Error(
+    `Empty response from ${model.label}` +
+      (lastFinish ? `（finish=${lastFinish}）` : "") +
+      "。デプロイ名やトークン上限を確認してください。",
+  );
 }
 
 async function runModelPhase(
@@ -143,7 +197,7 @@ async function runModelPhase(
     ? formatOpinionsForJudge(prior, depthConfig.judgeInputMaxChars)
     : "";
 
-  const results = await Promise.all(
+  const settled = await Promise.allSettled(
     models.map(async (model) => {
       const userPrompt =
         phase === "initial"
@@ -177,6 +231,26 @@ async function runModelPhase(
       } satisfies CouncilModelOpinion;
     }),
   );
+
+  const results: CouncilModelOpinion[] = [];
+  const failures: string[] = [];
+  for (let i = 0; i < settled.length; i += 1) {
+    const item = settled[i]!;
+    if (item.status === "fulfilled") {
+      results.push(item.value);
+      continue;
+    }
+    const label = models[i]?.label ?? `model-${i}`;
+    const reason = item.reason instanceof Error ? item.reason.message : String(item.reason);
+    failures.push(`${label}: ${reason}`);
+    console.warn("[council]", phase, label, reason);
+  }
+
+  if (results.length === 0) {
+    throw new Error(
+      failures[0] ?? `Empty response from council ${phase} phase`,
+    );
+  }
 
   return results;
 }
