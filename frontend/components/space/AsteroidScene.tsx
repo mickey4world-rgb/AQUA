@@ -2,7 +2,13 @@
 
 import { Suspense, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars, Line, Html, useTexture } from "@react-three/drei";
+import {
+  OrbitControls,
+  Stars,
+  Line,
+  Html,
+  useTexture,
+} from "@react-three/drei";
 import * as THREE from "three";
 import type { CloseApproach } from "@/lib/types/space";
 import {
@@ -28,6 +34,7 @@ const EARTH_SPECULAR =
   "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_specular_2048.jpg";
 const EARTH_CLOUDS =
   "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_clouds_1024.png";
+const MOON_START_ANGLE = Math.PI * 0.35;
 
 type SceneProps = {
   approach: CloseApproach;
@@ -78,7 +85,15 @@ function SunMesh() {
   );
 }
 
-function OrbitRing({ radius, color = "#475569", opacity = 0.35 }: { radius: number; color?: string; opacity?: number }) {
+function OrbitRing({
+  radius,
+  color = "#475569",
+  opacity = 0.35,
+}: {
+  radius: number;
+  color?: string;
+  opacity?: number;
+}) {
   const points = useMemo(() => {
     const pts: [number, number, number][] = [];
     for (let i = 0; i <= 96; i += 1) {
@@ -88,12 +103,21 @@ function OrbitRing({ radius, color = "#475569", opacity = 0.35 }: { radius: numb
     return pts;
   }, [radius]);
 
-  return <Line points={points} color={color} transparent opacity={opacity} lineWidth={1} />;
+  return (
+    <Line
+      points={points}
+      color={color}
+      transparent
+      opacity={opacity}
+      lineWidth={1}
+    />
+  );
 }
 
 function MoonMesh() {
   const moonRef = useRef<THREE.Group>(null);
-  const angleRef = useRef(Math.random() * Math.PI * 2);
+  // 開始位置は見た目の都合だけなので固定値にしておく（描画のたびに変わると困る）
+  const angleRef = useRef(MOON_START_ANGLE);
 
   useFrame((_, delta) => {
     angleRef.current += delta * 0.9;
@@ -110,7 +134,12 @@ function MoonMesh() {
     <group ref={moonRef}>
       <mesh>
         <sphereGeometry args={[0.06, 24, 24]} />
-        <meshStandardMaterial color="#d4d4d8" emissive="#888888" emissiveIntensity={0.25} roughness={0.95} />
+        <meshStandardMaterial
+          color="#d4d4d8"
+          emissive="#888888"
+          emissiveIntensity={0.25}
+          roughness={0.95}
+        />
       </mesh>
     </group>
   );
@@ -122,7 +151,11 @@ function EarthMesh({ initialAngle }: { initialAngle: number }) {
   const cloudsRef = useRef<THREE.Mesh>(null);
   const angleRef = useRef(initialAngle);
 
-  const [map, specular, clouds] = useTexture([EARTH_TEXTURE, EARTH_SPECULAR, EARTH_CLOUDS]);
+  const [map, specular, clouds] = useTexture([
+    EARTH_TEXTURE,
+    EARTH_SPECULAR,
+    EARTH_CLOUDS,
+  ]);
 
   useFrame((_, delta) => {
     angleRef.current += delta * 0.05;
@@ -148,7 +181,12 @@ function EarthMesh({ initialAngle }: { initialAngle: number }) {
       </mesh>
       <mesh ref={cloudsRef}>
         <sphereGeometry args={[EARTH_RADIUS * 1.015, 64, 64]} />
-        <meshPhongMaterial map={clouds} transparent opacity={0.48} depthWrite={false} />
+        <meshPhongMaterial
+          map={clouds}
+          transparent
+          opacity={0.48}
+          depthWrite={false}
+        />
       </mesh>
       <mesh>
         <sphereGeometry args={[EARTH_RADIUS * 1.1, 32, 32]} />
@@ -172,11 +210,57 @@ type PlanetSpec = {
 };
 
 const PLANETS: PlanetSpec[] = [
-  { id: "mercury", label: "水星", orbit: MERCURY_ORBIT, radius: 0.07, color: "#a8a29e", emissive: "#57534e", speedKey: "mercury", initialAngle: 0.4 },
-  { id: "venus", label: "金星", orbit: VENUS_ORBIT, radius: 0.1, color: "#fde68a", emissive: "#ca8a04", speedKey: "venus", initialAngle: 2.1 },
-  { id: "mars", label: "火星", orbit: MARS_ORBIT, radius: 0.11, color: "#f87171", emissive: "#b91c1c", speedKey: "mars", initialAngle: 4.2 },
-  { id: "jupiter", label: "木星", orbit: JUPITER_ORBIT, radius: 0.28, color: "#d97706", emissive: "#92400e", speedKey: "jupiter", initialAngle: 1.3 },
-  { id: "saturn", label: "土星", orbit: SATURN_ORBIT, radius: 0.24, color: "#fcd34d", emissive: "#a16207", speedKey: "saturn", ring: true, initialAngle: 5.5 },
+  {
+    id: "mercury",
+    label: "水星",
+    orbit: MERCURY_ORBIT,
+    radius: 0.07,
+    color: "#a8a29e",
+    emissive: "#57534e",
+    speedKey: "mercury",
+    initialAngle: 0.4,
+  },
+  {
+    id: "venus",
+    label: "金星",
+    orbit: VENUS_ORBIT,
+    radius: 0.1,
+    color: "#fde68a",
+    emissive: "#ca8a04",
+    speedKey: "venus",
+    initialAngle: 2.1,
+  },
+  {
+    id: "mars",
+    label: "火星",
+    orbit: MARS_ORBIT,
+    radius: 0.11,
+    color: "#f87171",
+    emissive: "#b91c1c",
+    speedKey: "mars",
+    initialAngle: 4.2,
+  },
+  {
+    id: "jupiter",
+    label: "木星",
+    orbit: JUPITER_ORBIT,
+    radius: 0.28,
+    color: "#d97706",
+    emissive: "#92400e",
+    speedKey: "jupiter",
+    initialAngle: 1.3,
+  },
+  {
+    id: "saturn",
+    label: "土星",
+    orbit: SATURN_ORBIT,
+    radius: 0.24,
+    color: "#fcd34d",
+    emissive: "#a16207",
+    speedKey: "saturn",
+    ring: true,
+    initialAngle: 5.5,
+  },
 ];
 
 function PlanetMesh({ planet }: { planet: PlanetSpec }) {
@@ -186,7 +270,9 @@ function PlanetMesh({ planet }: { planet: PlanetSpec }) {
   useFrame((_, delta) => {
     angleRef.current += delta * PLANET_ORBIT_SPEED[planet.speedKey];
     if (groupRef.current) {
-      groupRef.current.position.copy(planetPosition(angleRef.current, planet.orbit));
+      groupRef.current.position.copy(
+        planetPosition(angleRef.current, planet.orbit),
+      );
     }
   });
 
@@ -204,8 +290,15 @@ function PlanetMesh({ planet }: { planet: PlanetSpec }) {
       </mesh>
       {planet.ring && (
         <mesh rotation-x={Math.PI / 2}>
-          <ringGeometry args={[planet.radius * 1.45, planet.radius * 2.05, 48]} />
-          <meshBasicMaterial color="#fde68a" transparent opacity={0.5} side={THREE.DoubleSide} />
+          <ringGeometry
+            args={[planet.radius * 1.45, planet.radius * 2.05, 48]}
+          />
+          <meshBasicMaterial
+            color="#fde68a"
+            transparent
+            opacity={0.5}
+            side={THREE.DoubleSide}
+          />
         </mesh>
       )}
       <Html distanceFactor={14} position={[0, planet.radius + 0.2, 0]} center>
@@ -217,9 +310,24 @@ function PlanetMesh({ planet }: { planet: PlanetSpec }) {
   );
 }
 
-function AsteroidPath({ points, color }: { points: [number, number, number][]; color: string }) {
+function AsteroidPath({
+  points,
+  color,
+}: {
+  points: [number, number, number][];
+  color: string;
+}) {
   return (
-    <Line points={points} color={color} transparent opacity={0.9} lineWidth={2} dashed dashSize={0.15} gapSize={0.08} />
+    <Line
+      points={points}
+      color={color}
+      transparent
+      opacity={0.9}
+      lineWidth={2}
+      dashed
+      dashSize={0.15}
+      gapSize={0.08}
+    />
   );
 }
 
@@ -228,7 +336,12 @@ function ClosestMarker({ position }: { position: THREE.Vector3 }) {
     <group position={position}>
       <mesh rotation-x={Math.PI / 2}>
         <ringGeometry args={[0.12, 0.18, 32]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.75} side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          color="#fbbf24"
+          transparent
+          opacity={0.75}
+          side={THREE.DoubleSide}
+        />
       </mesh>
     </group>
   );
@@ -257,7 +370,7 @@ function AsteroidMesh({
   const nearClosest = Math.abs(progress - 0.5) < 0.08;
 
   const scale = useMemo(() => {
-    const sx = 1 + ((seed % 30) / 100);
+    const sx = 1 + (seed % 30) / 100;
     const sy = 0.85 + ((seed >> 4) % 25) / 100;
     const sz = 0.9 + ((seed >> 8) % 20) / 100;
     return new THREE.Vector3(sx, sy, sz);
@@ -269,7 +382,9 @@ function AsteroidMesh({
       meshRef.current.rotation.y += delta * 2.1;
     }
     if (glowRef.current) {
-      const pulse = nearClosest ? 1.25 + Math.sin(Date.now() * 0.008) * 0.15 : 1;
+      const pulse = nearClosest
+        ? 1.25 + Math.sin(Date.now() * 0.008) * 0.15
+        : 1;
       glowRef.current.scale.setScalar(pulse);
     }
   });
@@ -288,7 +403,11 @@ function AsteroidMesh({
       </mesh>
       <mesh ref={glowRef}>
         <sphereGeometry args={[size * 1.8, 16, 16]} />
-        <meshBasicMaterial color="#f97316" transparent opacity={nearClosest ? 0.18 : 0.05} />
+        <meshBasicMaterial
+          color="#f97316"
+          transparent
+          opacity={nearClosest ? 0.18 : 0.05}
+        />
       </mesh>
       <Html distanceFactor={10} position={[0, size + 0.35, 0]} center>
         <div className="whitespace-nowrap rounded-lg border border-orange-400/40 bg-black/80 px-2 py-1 text-[10px] text-orange-100 shadow-lg">
@@ -304,11 +423,15 @@ function AsteroidMesh({
 function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
   const orbit = useMemo(() => buildAsteroidOrbit(approach), [approach]);
   const pathPoints = useMemo(
-    () => orbit.curve.getPoints(100).map((p) => [p.x, p.y, p.z] as [number, number, number]),
+    () =>
+      orbit.curve
+        .getPoints(100)
+        .map((p) => [p.x, p.y, p.z] as [number, number, number]),
     [orbit.curve],
   );
   const seed = useMemo(
-    () => approach.designation.length * 17 + approach.closeApproachDate.length * 31,
+    () =>
+      approach.designation.length * 17 + approach.closeApproachDate.length * 31,
     [approach],
   );
   const phase = orbitPhaseLabel(progress, orbit.closestProgress);
@@ -323,7 +446,11 @@ function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
   return (
     <>
       <ambientLight intensity={0.22} color="#1e293b" />
-      <directionalLight position={[-6, 3, -4]} intensity={0.9} color="#fff4e0" />
+      <directionalLight
+        position={[-6, 3, -4]}
+        intensity={0.9}
+        color="#fff4e0"
+      />
       <SunMesh />
       <OrbitRing radius={EARTH_ORBIT} />
       <OrbitRing radius={MARS_ORBIT} color="#334155" opacity={0.22} />
@@ -343,7 +470,14 @@ function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
         distanceLd={approach.distanceMinLd}
         phase={phase}
       />
-      <Stars radius={90} depth={45} count={4000} factor={3.5} fade speed={0.35} />
+      <Stars
+        radius={90}
+        depth={45}
+        count={4000}
+        factor={3.5}
+        fade
+        speed={0.35}
+      />
       <OrbitControls enablePan={false} minDistance={5} maxDistance={28} />
     </>
   );

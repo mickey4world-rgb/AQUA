@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppSummaryGrid from "@/components/costs/AppSummaryGrid";
 import AzureInfraCostPanel from "@/components/costs/AzureInfraCostPanel";
 import CostsPageShell from "@/components/costs/CostsPageShell";
@@ -21,7 +21,9 @@ function currentMonthParam(): string {
 function shiftMonth(month: string, delta: number): string {
   const match = /^(\d{4})-(\d{2})$/.exec(month);
   if (!match) return currentMonthParam();
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1 + delta, 1));
+  const date = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1 + delta, 1),
+  );
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
@@ -30,20 +32,31 @@ function shiftMonth(month: string, delta: number): string {
 export default function CostsPage() {
   const [month, setMonth] = useState(currentMonthParam());
   const [dashboard, setDashboard] = useState<CostDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 表示中の月と読み込み済みの月がずれている間がローディング。
+  const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
+  const loading = loadedMonth !== month;
 
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
-  const loadDashboard = useCallback(async (selectedMonth: string) => {
-    setLoading(true);
-    const res = await fetch(`/api/costs/dashboard?month=${selectedMonth}`);
-    if (res.ok) setDashboard(await res.json());
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
-    loadDashboard(month);
-  }, [month, loadDashboard]);
+    let cancelled = false;
+
+    fetch(`/api/costs/dashboard?month=${month}`)
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as CostDashboard) : null,
+      )
+      .catch(() => null)
+      .then((data) => {
+        if (cancelled) return;
+        // 取得に失敗したときは前月分の表示を残したままローディングだけ解除する。
+        if (data) setDashboard(data);
+        setLoadedMonth(month);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
 
   return (
     <CostsPageShell>
@@ -57,7 +70,8 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              各アプリの AI トークン使用量・推定コストに加え、Azure サブスクリプションの実績請求額も確認できます。
+              各アプリの AI トークン使用量・推定コストに加え、Azure
+              サブスクリプションの実績請求額も確認できます。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -98,7 +112,10 @@ export default function CostsPage() {
           </div>
         ) : (
           <div className="mt-8 space-y-6">
-            <QuotaCard quota={dashboard.quota} monthLabel={dashboard.monthLabel} />
+            <QuotaCard
+              quota={dashboard.quota}
+              monthLabel={dashboard.monthLabel}
+            />
             <AzureInfraCostPanel
               azure={dashboard.azureInfra}
               quota={dashboard.quota}
@@ -107,7 +124,10 @@ export default function CostsPage() {
             <AppSummaryGrid apps={dashboard.byApp} />
             <DailyUsageChart points={dashboard.dailyUsage} />
             <FeatureBreakdownTable features={dashboard.byFeature} />
-            <UsageHistory tokens={dashboard.recentTokens} access={dashboard.recentAccess} />
+            <UsageHistory
+              tokens={dashboard.recentTokens}
+              access={dashboard.recentAccess}
+            />
           </div>
         )}
       </main>

@@ -9,7 +9,11 @@ import DisneyPageShell from "@/components/disney/DisneyPageShell";
 import WaitTimeList from "@/components/disney/WaitTimeList";
 import { crowdLevelColors, formatJstDateLabel } from "@/lib/disney-utils";
 import { DISNEY_PARKS } from "@/lib/disney-constants";
-import { getAdaptiveRefreshMs, PAGE_MAIN_CLASS, useMobileProfile } from "@/lib/mobile-utils";
+import {
+  getAdaptiveRefreshMs,
+  PAGE_MAIN_CLASS,
+  useMobileProfile,
+} from "@/lib/mobile-utils";
 import type {
   AttractionWait,
   DisneyAdvice,
@@ -29,8 +33,37 @@ type WaitResponse = {
 
 const BASE_REFRESH_MS = 90_000;
 
+type RefreshResult = {
+  status: DisneyResortStatus | null;
+  waits: WaitResponse | null;
+  advice: DisneyAdvice | null;
+  key: string;
+};
+
 function getJstTodayClient(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+}
+
+async function fetchResortStatus(): Promise<DisneyResortStatus | null> {
+  const res = await fetch("/api/disney/status");
+  return res.ok ? ((await res.json()) as DisneyResortStatus) : null;
+}
+
+async function fetchParkData(
+  park: DisneyParkKey,
+  date: string,
+  today: string,
+): Promise<Pick<RefreshResult, "waits" | "advice">> {
+  const dateQuery = date !== today ? `&date=${date}` : "";
+  const [waitsRes, adviceRes] = await Promise.all([
+    fetch(`/api/disney/waits?park=${park}${dateQuery}`),
+    fetch(`/api/disney/advice?park=${park}${dateQuery}`),
+  ]);
+
+  return {
+    waits: waitsRes.ok ? ((await waitsRes.json()) as WaitResponse) : null,
+    advice: adviceRes.ok ? ((await adviceRes.json()) as DisneyAdvice) : null,
+  };
 }
 
 export default function DisneyPage() {
@@ -39,49 +72,63 @@ export default function DisneyPage() {
   const refreshMs = getAdaptiveRefreshMs(BASE_REFRESH_MS, mobileProfile);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
   const [selectedDate, setSelectedDate] = useState(today);
-  const [resortStatus, setResortStatus] = useState<DisneyResortStatus | null>(null);
+  const [resortStatus, setResortStatus] = useState<DisneyResortStatus | null>(
+    null,
+  );
   const [waitData, setWaitData] = useState<WaitResponse | null>(null);
   const [advice, setAdvice] = useState<DisneyAdvice | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // 選んでいる公園・日付と、実際に表示しているデータがずれている間がローディング。
+  // 自動更新ではキーが変わらないため、90秒ごとにスピナーへ戻ることはない。
+  const dataKey = `${park}:${selectedDate}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== dataKey;
 
   const isLiveDay = selectedDate === today;
   const parkName = DISNEY_PARKS[park].nameJa;
 
-  const loadResortStatus = useCallback(async () => {
-    const res = await fetch("/api/disney/status");
-    if (res.ok) setResortStatus(await res.json());
+  const runRefresh = useCallback(async (): Promise<RefreshResult> => {
+    const [status, parkData] = await Promise.all([
+      fetchResortStatus(),
+      fetchParkData(park, selectedDate, today),
+    ]);
+    return { status, ...parkData, key: `${park}:${selectedDate}` };
+  }, [park, selectedDate, today]);
+
+  const applyRefresh = useCallback((result: RefreshResult) => {
+    if (result.status) setResortStatus(result.status);
+    if (result.waits) setWaitData(result.waits);
+    if (result.advice) setAdvice(result.advice);
+    setLoadedKey(result.key);
   }, []);
 
-  const loadParkData = useCallback(
-    async (selectedPark: DisneyParkKey, date: string) => {
-      setLoading(true);
-      const dateQuery = date !== today ? `&date=${date}` : "";
-      const [waitsRes, adviceRes] = await Promise.all([
-        fetch(`/api/disney/waits?park=${selectedPark}${dateQuery}`),
-        fetch(`/api/disney/advice?park=${selectedPark}${dateQuery}`),
-      ]);
-
-      if (waitsRes.ok) setWaitData(await waitsRes.json());
-      if (adviceRes.ok) setAdvice(await adviceRes.json());
-      setLoading(false);
-    },
-    [today],
-  );
-
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadResortStatus(), loadParkData(park, selectedDate)]);
-  }, [loadResortStatus, loadParkData, park, selectedDate]);
+    applyRefresh(await runRefresh());
+  }, [runRefresh, applyRefresh]);
 
   useEffect(() => {
-    refreshAll();
-    if (!isLiveDay) return;
-    const timer = setInterval(refreshAll, refreshMs);
-    return () => clearInterval(timer);
-  }, [refreshAll, isLiveDay, refreshMs]);
+    let cancelled = false;
 
-  useEffect(() => {
-    loadParkData(park, selectedDate);
-  }, [park, selectedDate, loadParkData]);
+    const tick = () => {
+      runRefresh().then((result) => {
+        if (!cancelled) applyRefresh(result);
+      });
+    };
+
+    tick();
+
+    if (!isLiveDay) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const timer = setInterval(tick, refreshMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [runRefresh, applyRefresh, isLiveDay, refreshMs]);
 
   const predictionLabel =
     waitData?.prediction && "label" in waitData.prediction
@@ -125,7 +172,10 @@ export default function DisneyPage() {
 
         {!isLiveDay && (
           <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-            選択中: <span className="font-semibold">{formatJstDateLabel(selectedDate)}</span>
+            選択中:{" "}
+            <span className="font-semibold">
+              {formatJstDateLabel(selectedDate)}
+            </span>
             {" — "}
             祝日・曜日・季節要因に基づく混雑予測を表示しています。
           </div>
@@ -133,19 +183,39 @@ export default function DisneyPage() {
 
         {isLiveDay && resortStatus && (
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.overallCrowdLevel]}`}>
-              <p className="text-xs uppercase tracking-wider opacity-80">Resort Overall</p>
-              <p className="mt-1 text-2xl font-bold">{resortStatus.overallLabel}</p>
+            <div
+              className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.overallCrowdLevel]}`}
+            >
+              <p className="text-xs uppercase tracking-wider opacity-80">
+                Resort Overall
+              </p>
+              <p className="mt-1 text-2xl font-bold">
+                {resortStatus.overallLabel}
+              </p>
             </div>
-            <div className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.tdl.crowdLevel]}`}>
-              <p className="text-xs uppercase tracking-wider opacity-80">Land</p>
-              <p className="mt-1 text-xl font-bold">{resortStatus.tdl.crowdLabel}</p>
-              <p className="text-sm opacity-80">平均 {resortStatus.tdl.averageWait}分</p>
+            <div
+              className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.tdl.crowdLevel]}`}
+            >
+              <p className="text-xs uppercase tracking-wider opacity-80">
+                Land
+              </p>
+              <p className="mt-1 text-xl font-bold">
+                {resortStatus.tdl.crowdLabel}
+              </p>
+              <p className="text-sm opacity-80">
+                平均 {resortStatus.tdl.averageWait}分
+              </p>
             </div>
-            <div className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.tds.crowdLevel]}`}>
+            <div
+              className={`rounded-2xl border p-4 ${crowdLevelColors[resortStatus.tds.crowdLevel]}`}
+            >
               <p className="text-xs uppercase tracking-wider opacity-80">Sea</p>
-              <p className="mt-1 text-xl font-bold">{resortStatus.tds.crowdLabel}</p>
-              <p className="text-sm opacity-80">平均 {resortStatus.tds.averageWait}分</p>
+              <p className="mt-1 text-xl font-bold">
+                {resortStatus.tds.crowdLabel}
+              </p>
+              <p className="text-sm opacity-80">
+                平均 {resortStatus.tds.averageWait}分
+              </p>
             </div>
           </div>
         )}
@@ -162,7 +232,9 @@ export default function DisneyPage() {
                   : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
               }`}
             >
-              <span className="sm:hidden">{key === "tdl" ? "ランド" : "シー"}</span>
+              <span className="sm:hidden">
+                {key === "tdl" ? "ランド" : "シー"}
+              </span>
               <span className="hidden sm:inline">
                 {key === "tdl" ? "東京ディズニーランド" : "東京ディズニーシー"}
               </span>

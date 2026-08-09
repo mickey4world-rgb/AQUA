@@ -9,14 +9,19 @@ import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import { sortStockWatches, type StockSortKey } from "@/lib/stock-utils";
 import type { StockWatchWithAdvice } from "@/lib/types/stock";
 
+async function fetchWatches(): Promise<StockWatchWithAdvice[] | null> {
+  const res = await fetch("/api/stocks/watches");
+  return res.ok ? ((await res.json()) as StockWatchWithAdvice[]) : null;
+}
+
 export default function StocksPage() {
   const [watches, setWatches] = useState<StockWatchWithAdvice[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<StockWatchWithAdvice | null>(
-    null,
-  );
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [fetchedDetail, setFetchedDetail] = useState<{
+    id: string;
+    watch: StockWatchWithAdvice | null;
+  } | null>(null);
   const [sortKey, setSortKey] = useState<StockSortKey>("registered");
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
 
@@ -25,50 +30,59 @@ export default function StocksPage() {
     [watches, sortKey],
   );
 
-  const loadWatches = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/stocks/watches");
-    if (res.ok) {
-      const data = (await res.json()) as StockWatchWithAdvice[];
+  // AI アドバイス付きの詳細が届くまでは一覧が持っている情報をそのまま見せる。
+  const selectedDetail = useMemo(() => {
+    if (!selectedId) return null;
+    if (fetchedDetail?.id === selectedId && fetchedDetail.watch) {
+      return fetchedDetail.watch;
+    }
+    return sortedWatches.find((watch) => watch.id === selectedId) ?? null;
+  }, [selectedId, fetchedDetail, sortedWatches]);
+
+  const detailLoading = selectedId !== null && fetchedDetail?.id !== selectedId;
+
+  const applyWatches = useCallback((data: StockWatchWithAdvice[] | null) => {
+    if (data) {
       setWatches(data);
       setSelectedId((current) => {
         const active = data.filter((watch) => watch.isActive);
         if (active.length === 0) return null;
-        if (current && active.some((watch) => watch.id === current)) return current;
+        if (current && active.some((watch) => watch.id === current))
+          return current;
         return active[0].id;
       });
     }
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadWatches();
-  }, [loadWatches]);
+  const loadWatches = useCallback(async () => {
+    applyWatches(await fetchWatches());
+  }, [applyWatches]);
 
   useEffect(() => {
-    if (!selectedId) {
-      setSelectedDetail(null);
-      return;
-    }
-    setSelectedDetail(sortedWatches.find((watch) => watch.id === selectedId) ?? null);
-  }, [selectedId, sortedWatches]);
+    let cancelled = false;
+
+    fetchWatches().then((data) => {
+      if (!cancelled) applyWatches(data);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyWatches]);
 
   useEffect(() => {
     if (!selectedId) return;
 
     let cancelled = false;
-    setDetailLoading(true);
 
     fetch(`/api/stocks/watches/${selectedId}?ai=1`)
-      .then(async (res) => {
-        if (!res.ok) return null;
-        return (await res.json()) as StockWatchWithAdvice;
-      })
-      .then((detail) => {
-        if (!cancelled && detail) setSelectedDetail(detail);
-      })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false);
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as StockWatchWithAdvice) : null,
+      )
+      .catch(() => null)
+      .then((watch) => {
+        if (!cancelled) setFetchedDetail({ id: selectedId, watch });
       });
 
     return () => {
@@ -94,13 +108,16 @@ export default function StocksPage() {
               保有株ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
-              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と AI
-              売買アドバイスを確認できます。
+              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と
+              AI 売買アドバイスを確認できます。
             </p>
           </div>
           {!loading && sortedWatches.length > 0 && (
             <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
-              <span className="font-semibold text-white">{sortedWatches.length}</span> 銘柄をウォッチ中
+              <span className="font-semibold text-white">
+                {sortedWatches.length}
+              </span>{" "}
+              銘柄をウォッチ中
             </div>
           )}
         </div>
@@ -113,7 +130,9 @@ export default function StocksPage() {
             </div>
           ) : (
             <div className="grid gap-6 lg:grid-cols-5">
-              <div className={`lg:col-span-2 ${mobileView === "detail" ? "hidden lg:block" : ""}`}>
+              <div
+                className={`lg:col-span-2 ${mobileView === "detail" ? "hidden lg:block" : ""}`}
+              >
                 <StockWatchList
                   watches={sortedWatches}
                   selectedId={selectedId}
@@ -125,7 +144,9 @@ export default function StocksPage() {
                   }}
                 />
               </div>
-              <div className={`lg:col-span-3 ${mobileView === "list" ? "hidden lg:block" : ""}`}>
+              <div
+                className={`lg:col-span-3 ${mobileView === "list" ? "hidden lg:block" : ""}`}
+              >
                 {mobileView === "detail" && (
                   <button
                     type="button"
@@ -161,7 +182,9 @@ export default function StocksPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/70">
               Register
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-white">銘柄を追加</h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">
+              銘柄を追加
+            </h2>
             <p className="mt-1 text-sm text-slate-400">
               新しいウォッチ銘柄を登録します。日常の確認は上の一覧・詳細から行えます。
             </p>
