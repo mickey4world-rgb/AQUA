@@ -1,527 +1,341 @@
-# システム設計書
+# システム設計書 — AQUA
 
-> 最終更新: 2026-07-31  
-> 対象リポジトリ: ClaudeCodeWork  
-> プロジェクトルール: `.claudecode.json` を参照
+> 最終更新: 2026-08-09  
+> 対象リポジトリ: ClaudeCodeWork（プロダクト名: **AQUA**）  
+> プロジェクトルール: `.claudecode.json` を参照（制約の要約。実装の正は本設計書と `frontend/`）
 
 ---
 
 ## 目次
 
-1. [システム概要](#システム概要)
-2. [技術スタック](#技術スタック)
-3. [非機能要件](#非機能要件)
-4. [アーキテクチャ構成図](#アーキテクチャ構成図)
-5. [データ設計](#データ設計)
-6. [現状実装と今後の拡張](#現状実装と今後の拡張)
+1. [システム概要](#1-システム概要)
+2. [技術スタック](#2-技術スタック)
+3. [画面・ドメイン構成](#3-画面ドメイン構成)
+4. [アーキテクチャ](#4-アーキテクチャ)
+5. [API 概要](#5-api-概要)
+6. [データ設計](#6-データ設計)
+7. [AI 利用方針](#7-ai-利用方針)
+8. [非機能要件](#8-非機能要件)
+9. [リポジトリ構成](#9-リポジトリ構成)
+10. [今後の拡張](#10-今後の拡張)
 
 ---
 
-## システム概要
+## 1. システム概要
 
 ### 目的
 
-本システムは、個人向けの統合ダッシュボードおよび自動化基盤である。  
-Azure 上のサーバーレス構成を採用し、以下のドメインを単一の認証基盤のもとで提供する。
+AQUA は個人向けの統合ダッシュボードである。  
+Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメインのツール・AI 支援を一つのゲートウェイで提供する。
 
-| ドメイン | 概要 |
-|---|---|
-| **認証** | ユーザー識別・セッション管理。全機能の共通ゲートウェイ |
-| **米国株** | 米国株の価格取得・分析・目標株価アラート |
-| **ディズニー** | ディズニーリゾート関連情報（パーク予定・チケット・メモ等）の管理 |
-| **コストレポート** | Azure OpenAI トークン消費量の集計・可視化・コスト試算 |
+### プロダクト原則
+
+- **個人利用**: 許可リストのログインのみ（SWA 認証 + `allowed-users`）
+- **コスト極小**: Serverless / Free 枠優先、月次トークン上限、Gemini 無料枠の活用
+- **データ配慮**: ユーザーデータは Cosmos（日本）。合議の国内限定モードは Japan East OpenAI のみ
+- **体験**: トップや各アプリに「生きている」AI プレゼンス（コンパニオン、背景演出）
+
+### ドメイン一覧（現行）
+
+| ドメイン | ルート | 概要 |
+|---|---|---|
+| **Portal** | `/` | モジュール索引、動的背景（星・泡） |
+| **Works** | `/works/*` | AI 相談、司法ノート、行政お金の流れ、資料生成 |
+| **Stocks** | `/stocks` | 日米株ウォッチ + AI 売買アドバイス |
+| **Disney** | `/disney` | TDR 混雑・待ち時間・キャラクターチャット |
+| **Council** | `/council` | 複数 AI 合議（国内 / グローバル） |
+| **Space** | `/space` | 望遠鏡タイムライン・小惑星 3D・鷹の目 |
+| **Costs** | `/costs` | トークン・機能別・Azure 実績コスト |
+| **Settings / Login** | `/settings`, `/login` | プロファイル・認証入口 |
 
 ---
 
-## 技術スタック
-
-プロジェクトの固定ルールは `.claudecode.json` に定義する。以下はその要約。
+## 2. 技術スタック
 
 | レイヤー | 技術 | 備考 |
 |---|---|---|
-| **フロントエンド** | Next.js（App Router）+ TypeScript + Tailwind CSS | Azure Static Web Apps（`swa-personal-apps-prod`）にデプロイ |
-| **バックエンド** | Azure Functions（Node.js / Serverless） | Consumption プラン、`/api/*` で SWA からプロキシ |
-| **データベース** | Azure Cosmos DB（Serverless） | パーティションキー `userId` |
-| **AI** | Azure OpenAI Service | AI Proxy Function 経由で呼び出し |
+| **フロント / API** | Next.js **16**（App Router）+ React 19 + TypeScript + Tailwind CSS 4 | ページも API（`app/api/**/route.ts`）も同一アプリ |
+| **ホスト** | Azure Static Web Apps（`swa-personal-apps-prod`） | `staticwebapp.config.json` で認証と `/api/*` |
+| **DB** | Azure Cosmos DB Serverless（`personal-apps`） | パーティションキー概ね `userId` |
+| **AI（課金）** | Azure OpenAI（Japan East ほか） | `openai` SDK |
+| **AI（無料枠）** | Google Gemini（AI Studio） | SWA（East Asia）からは **Japan East 中継 Functions** 経由 |
+| **株価** | `yahoo-finance2` | サーバ側 lookup |
+| **3D / 地球** | Three.js + R3F、Cesium（鷹の目） | `satellite.js` |
+| **可視化** | d3-sankey（お金の流れ） | |
+| **資料** | pptxgenjs | WORKS / Docs 資料生成 |
 
-### フロントエンド構成（Next.js）
-
-```
-frontend/
-├── app/                  # App Router（ページ・レイアウト）
-│   ├── layout.tsx        # 共通レイアウト
-│   ├── page.tsx          # ダッシュボード TOP
-│   ├── stocks/           # 米国株画面
-│   ├── disney/           # ディズニー画面
-│   └── costs/            # コストレポート画面
-├── components/           # 共通 UI コンポーネント
-├── lib/                  # API クライアント・ユーティリティ
-└── tailwind.config.ts
-```
-
-- **App Router**: ファイルベースルーティング。Server Components をデフォルトとし、インタラクティブ UI のみ `"use client"` を付与
-- **TypeScript**: 全ソースを TypeScript で記述。API レスポンス型は `lib/types/` に集約
-- **Tailwind CSS**: スタイリングは Tailwind ユーティリティクラスを使用。カスタムテーマは `tailwind.config.ts` で定義
-- **SWA 連携**: `staticwebapp.config.json` で認証ルールと `/api/*` プロキシを設定。API 呼び出しは同一オリジンの `/api/...` 経由（Cookie 自動送信）
-
-### Azure リソース命名規則
+### Azure リソース命名
 
 | リソース | 名前 |
 |---|---|
 | リソースグループ | `rg-personal-apps-prod` |
 | Static Web App | `swa-personal-apps-prod` |
+| Cosmos DB | `cosmos-personal-apps-prod`（想定） |
+| Gemini 中継 | `func-gemini-proxy-aqua`（Japan East） |
 
-### 主要機能
-
-#### 1. 認証（Authentication）
-
-- Azure Static Web Apps（SWA）組み込み認証（Microsoft Entra ID / GitHub 等）を利用
-- Next.js フロントエンドから Azure Functions への API 呼び出しは SWA が付与する `x-ms-client-principal` ヘッダーでユーザー識別
-- セッション管理は SWA 組み込み認証の HttpOnly Cookie を使用（クライアント JS からトークンを直接扱わない）
-- バックエンドは `userId` をパーティションキーとして Cosmos DB と紐付け
-
-#### 2. 米国株（US Stocks）
-
-- 外部 API（yfinance 等）から米国株の終値・移動平均を取得
-- 購入価格・目標株価（倍率）をユーザー設定として保持
-- 目標到達時にメール通知（現状: `stock.py` によるローカル実行プロトタイプ）
-- 将来: Functions のタイマートリガーで定期実行し、結果を Cosmos DB に保存
-
-#### 3. ディズニー（Disney）
-
-- パーク訪問予定日・エリア・同行者メモの登録・一覧表示
-- チケット種別・購入日・有効期限の管理
-- 将来的に AI による旅程サジェスト（Azure OpenAI 連携）を想定
-
-#### 4. コストレポート（Cost Report）
-
-- Azure OpenAI へのリクエストごとにトークン使用量（prompt / completion）を記録
-- 月次・機能別の集計ダッシュボードを Next.js 画面（`/costs`）で表示
-- コスト極小化のため、使用量上限アラートおよびモデル選択の記録を行う
+> **注**: `.claudecode.json` は歴史的に「Backend = Azure Functions」と記述しているが、**現行の業務 API は Next.js Route Handlers**。Functions は主に Gemini 中継などの補助用途。
 
 ---
 
-## 非機能要件
+## 3. 画面・ドメイン構成
 
-### セキュリティ方針
+### Works（`/works`）
 
-| 項目 | 方針 |
+| アプリ | パス | 状態 | 要点 |
+|---|---|---|---|
+| AI 相談ボード | `/works/consult` | 利用可 | Gemini、メモ保存（Cosmos `WorkNotes`）、コンパニオン |
+| 訴訟記録ノート | `/works/judicial/case-notebook` | 利用可 | NotebookLM 風。選択資料のみ Gemini/OpenAI へ。セッション内のみ保持 |
+| お金の流れ | `/works/admin/money-flow` | 利用可 | 行政事業レビュー支出のサンキー、支出先ドシエ |
+| 資料生成スタジオ | `/works/misc/docs`（`/docs` も可） | 利用可 | pptx 生成・プレビュー |
+
+司法サンプル: `frontend/data/judicial/samples/*.md`  
+行政データ: `frontend/data/gyosei/*.json.gz` + `summary.json`
+
+### Stocks（`/stocks`）
+
+- ウォッチ CRUD、銘柄 lookup、AI アドバイス（Azure OpenAI）
+- Cosmos: `StockWatches`
+
+### Disney（`/disney`）
+
+- ThemeParks 系待ち時間・混雑カレンダー
+- キャラクター別チャット（Azure OpenAI）+ コンパニオン演出
+
+### Council（`/council`）
+
+- **国内限定**: Japan East OpenAI のみ（データ国内保持）
+- **グローバル**: 最新デプロイ + Gemini「探査派」（global のみ）
+- 合議 → フォローアップチャット
+
+### Space（`/space`）
+
+| タブ | 内容 |
 |---|---|
-| **認証・認可** | SWA 組み込み認証 + HttpOnly Cookie + Functions 側での `clientPrincipal` 検証。未認証リクエストは 401 を返却 |
-| **通信** | すべて HTTPS。Next.js（SWA）→ Functions は同一 SWA アプリ内の `/api/*` プロキシ経由 |
-| **秘密情報** | API キー・接続文字列は環境変数または Azure Key Vault に格納。コードへの直書きは禁止。Functions は Managed Identity で Key Vault を参照 |
-| **データ分離** | Cosmos DB のパーティションキーを `userId` とし、他ユーザーのデータへのアクセスを防止 |
-| **入力検証** | Functions 入口でリクエストボディ・クエリパラメータをバリデーション |
-| **監査** | 認証失敗・異常な API 呼び出しは Application Insights に記録 |
+| 望遠鏡タイムライン | NASA APOD、3D 宇宙位置、地球視点の波長分析、AI 解説 |
+| 小惑星 3D | JPL CAD 接近一覧、JST 最接近、衝突確率（簡易+Sentry）、接近アニメで惑星同期、参考写真 |
+| 鷹の目 | 衛星軌道・Cesium ビューア |
 
-### コスト極小化のルール
+### Costs（`/costs`）
 
-| ルール | 詳細 |
-|---|---|
-| **サーバーレス優先** | すべて Free 枠または Serverless / Consumption プランを選択し、待機コストを 0 円に抑える |
-| **プラン選定** | Azure Functions（Consumption）、Cosmos DB（Serverless）、SWA（Free/Standard）、Azure OpenAI（従量課金） |
-| **AI 呼び出し最小化** | キャッシュ可能な応答は Cosmos DB に保存し、同一プロンプトの再実行を避ける |
-| **タイマー実行の間引き** | 株価取得は市場時間外はスキップ。ディズニー通知は日次 1 回に限定 |
-| **Cosmos DB RU 抑制** | ポイント読み取りを優先。全件スキャンを避け、必要なパーティションのみクエリ |
-| **ログ保持期間** | Application Insights の保持期間を 30 日に設定 |
-| **環境分離** | 開発環境は本番リソースを共有せず、Functions の `--dry-run` フラグで外部 API 呼び出しを抑制可能にする |
-| **トークン上限** | ユーザーあたり月次トークン上限を設定し、超過時は AI 機能を一時停止 |
-
-### データ国内保持（リージョン制約）
-
-> **すべてのユーザーデータ、プロンプト、ログは日本国内リージョン（`Japan East` / `Japan West`）に保持する。海外リージョンへのデータ転送は禁止。**
-
-| リソース | リージョン | 備考 |
-|---|---|---|
-| Azure Static Web Apps | East Asia または Japan East 相当 | SWA はグローバル CDN 配信だが、API バックエンドは国内リージョンに固定 |
-| Azure Functions | **Japan East** または **Japan West** | Node.js / Consumption プラン |
-| Azure Cosmos DB | **Japan East** または **Japan West** | Serverless、単一リージョン書き込み |
-| Azure OpenAI | **Japan East** | GPT-4o mini 等、利用可能モデルに限定 |
-| Azure Key Vault | **Japan East** または **Japan West** | シークレット管理 |
-| Application Insights | **Japan East** または **Japan West** | ログ・メトリクス |
-
-- バックアップ・レプリケーションは同一国内リージョン内のみ。海外リージョンへのフェイルオーバーは行わない
-- 外部 API（yfinance 等）への outbound 通信はデータ保存を伴わない参照のみ許可
+- 機能別トークン・推定コスト、Azure Cost Management 実績（設定時）
 
 ---
 
-## アーキテクチャ構成図
+## 4. アーキテクチャ
 
-### システム全体構成
+### 全体構成
 
 ```mermaid
 graph TB
-    subgraph Client["クライアント"]
-        Browser["Web ブラウザ"]
-    end
+  Browser["ブラウザ"]
 
-    subgraph Azure["Azure（国内リージョン）"]
-        subgraph SWA["Azure Static Web Apps<br/>swa-personal-apps-prod"]
-            FE["Next.js フロントエンド<br/>App Router / TypeScript / Tailwind"]
-            Proxy["/api/* リバースプロキシ"]
-        end
+  subgraph SWA["Azure Static Web Apps"]
+    Next["Next.js 16<br/>Pages + Route Handlers"]
+    Auth["SWA Auth<br/>x-ms-client-principal"]
+  end
 
-        subgraph Backend["Azure Functions（Node.js）"]
-            AuthFn["Auth API"]
-            StockFn["Stock API / Timer"]
-            DisneyFn["Disney API"]
-            CostFn["Cost Report API"]
-            AIFn["AI Proxy API"]
-        end
+  subgraph Japan["Japan East 周辺"]
+    Cosmos["Cosmos DB Serverless"]
+    AOAI["Azure OpenAI"]
+    GeminiRelay["Gemini Relay Functions"]
+    CostAPI["Azure Cost Management"]
+  end
 
-        KV["Azure Key Vault"]
-        Cosmos["Cosmos DB<br/>（Serverless）"]
-        OpenAI["Azure OpenAI"]
-        AppInsights["Application Insights"]
-    end
+  subgraph External["外部"]
+    Gemini["Google AI Studio"]
+    Yahoo["Yahoo Finance"]
+    NASA["NASA / JPL"]
+    ThemeParks["ThemeParks API"]
+    NTA["法人番号 Web-API 等"]
+  end
 
-    subgraph External["外部サービス"]
-        YahooFinance["yfinance / 株価 API"]
-        Gmail["Gmail SMTP"]
-    end
-
-    Browser --> FE
-    FE --> Proxy
-    Proxy --> AuthFn
-    Proxy --> StockFn
-    Proxy --> DisneyFn
-    Proxy --> CostFn
-    Proxy --> AIFn
-
-    AuthFn --> Cosmos
-    StockFn --> Cosmos
-    StockFn --> YahooFinance
-    StockFn --> Gmail
-    DisneyFn --> Cosmos
-    CostFn --> Cosmos
-    AIFn --> OpenAI
-    AIFn --> Cosmos
-
-    Backend --> KV
-    Backend --> AppInsights
+  Browser --> Next
+  Next --> Auth
+  Next --> Cosmos
+  Next --> AOAI
+  Next --> GeminiRelay
+  GeminiRelay --> Gemini
+  Next --> Yahoo
+  Next --> NASA
+  Next --> ThemeParks
+  Next --> CostAPI
+  Next --> NTA
 ```
 
-### 認証付き API リクエスト（シーケンス）
+### 認証フロー
 
 ```mermaid
 sequenceDiagram
-    actor User as ユーザー
-    participant SWA as Next.js（SWA）
-    participant Proxy as SWA プロキシ
-    participant Fn as Azure Functions
-    participant Cosmos as Cosmos DB
+  actor U as ユーザー
+  participant SWA as SWA / Next.js
+  participant MW as middleware.ts
+  participant API as app/api/*
 
-    User->>SWA: ログイン（Entra ID / GitHub）
-    SWA->>SWA: HttpOnly Cookie 発行
-
-    User->>SWA: /stocks ページ操作
-    SWA->>Proxy: GET /api/stocks（Cookie 付き）
-    Proxy->>Fn: x-ms-client-principal ヘッダー付き転送
-    Fn->>Fn: clientPrincipal 検証・userId 抽出
-    Fn->>Cosmos: SELECT ... WHERE userId = @userId
-    Cosmos-->>Fn: 株価設定・履歴
-    Fn-->>Proxy: JSON レスポンス
-    Proxy-->>SWA: 200 OK
-    SWA-->>User: 画面更新
+  U->>SWA: ログイン（Entra / GitHub 等）
+  SWA-->>U: HttpOnly Cookie
+  U->>SWA: /works など保護パス
+  MW->>MW: principal 解析 + allowed-users
+  alt 未許可
+    MW-->>U: /login へリダイレクト
+  else 許可
+    MW-->>U: ページ表示
+    U->>API: /api/...（Cookie 付き）
+    API->>API: withApiAccessLog + 認可
+    API-->>U: JSON
+  end
 ```
 
-### AI コスト記録フロー（シーケンス）
+保護プレフィックス（`middleware.ts`）:  
+`/stocks`, `/disney`, `/costs`, `/council`, `/docs`, `/works`, `/space`, `/settings`
 
-```mermaid
-sequenceDiagram
-    actor User as ユーザー
-    participant SWA as Next.js（SWA）
-    participant Fn as AI Proxy Function
-    participant OpenAI as Azure OpenAI
-    participant Cosmos as Cosmos DB
+### デプロイ
 
-    User->>SWA: AI サジェスト要求（例: 旅程提案）
-    SWA->>Fn: POST /api/ai/suggest
-    Fn->>Fn: 月次トークン上限チェック
-    alt 上限超過
-        Fn-->>SWA: 429 Too Many Requests
-    else 上限内
-        Fn->>OpenAI: Chat Completions API
-        OpenAI-->>Fn: 応答 + usage（prompt/completion tokens）
-        Fn->>Cosmos: TokenUsage レコード保存
-        Fn->>Cosmos: キャッシュ保存（任意）
-        Fn-->>SWA: AI 応答 JSON
-    end
-    SWA-->>User: 結果表示
-```
-
-### 株価アラート定期実行（シーケンス）
-
-```mermaid
-sequenceDiagram
-    participant Timer as Timer Trigger<br/>（Functions）
-    participant Fn as Stock Function
-    participant Yahoo as yfinance
-    participant Cosmos as Cosmos DB
-    participant Gmail as Gmail SMTP
-
-    Timer->>Fn: 毎日 22:00 JST（米国市場終了後）
-    Fn->>Cosmos: 全ユーザーの StockWatch 一覧取得
-    loop 各ウォッチ銘柄
-        Fn->>Yahoo: 最新株価取得
-        Yahoo-->>Fn: 終値・履歴
-        Fn->>Cosmos: StockPriceHistory 保存
-        alt 目標株価到達
-            Fn->>Gmail: アラートメール送信
-            Fn->>Cosmos: StockAlert ログ保存
-        end
-    end
-```
+- `main` への push → GitHub Actions「Azure Static Web Apps CI/CD」
+- ローカル: `frontend/` で `npm run dev`、秘密情報は `.env.local`（`.env.local.example` 参照）
 
 ---
 
-## データ設計
+## 5. API 概要
 
-Cosmos DB は **Serverless モード**、コンテナ単位でパーティションキー `userId` を統一する。
+すべて `frontend/app/api/**/route.ts`。認証必須ルートは SWA `allowedRoles: authenticated`。
 
-### コンテナ一覧
-
-| コンテナ名 | パーティションキー | 用途 |
+| 領域 | 主なエンドポイント | 役割 |
 |---|---|---|
-| `Users` | `/userId` | ユーザープロファイル |
-| `StockWatches` | `/userId` | 株価ウォッチ設定 |
-| `StockPriceHistory` | `/userId` | 株価履歴 |
-| `DisneyPlans` | `/userId` | ディズニー予定・チケット |
-| `TokenUsage` | `/userId` | AI トークン消費履歴 |
+| **users** | `GET /api/users/me` | プロファイル |
+| **stocks** | `/api/stocks/watches`, `lookup`, `[id]` | ウォッチ・検索・詳細 |
+| **disney** | `/api/disney/{chat,advice,waits,status,calendar}` | チャット・混雑 |
+| **council** | `/api/council/{ask,followup,config}` | 合議・設定 |
+| **docs** | `POST /api/docs/generate` | pptx 生成 |
+| **works** | `/api/works/consult`, `summarize`, `notes`, `money-flow`, `money-flow/payee`, `judicial/case-chat` | 相談・メモ・行政・司法 |
+| **space** | `/api/space/apod`, `apod/summary`, `chat`, `neo`, `neo/image`, `eagle-eye/tracks` | 宇宙系 |
+| **costs** | `GET /api/costs/dashboard` | 利用ダッシュボード |
+| **roles** | `/api/GetRoles` | SWA ロール補助 |
+
+共通パターン:
+
+- `withApiAccessLog` でアクセスログ（Cosmos `AccessLogs`）
+- AI 呼び出し後 `recordTokenUsage`（`TokenUsage`）
+- Azure OpenAI 利用時は `canUseAiTokens` で月次上限チェック
 
 ---
 
-### Users（ユーザー管理）
+## 6. データ設計
 
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | Cosmos DB ドキュメント ID（= `userId`） |
-| `userId` | string | ✓ | SWA `clientPrincipal.userId`（パーティションキー） |
-| `email` | string | ✓ | ログインメールアドレス |
-| `displayName` | string | | 表示名 |
-| `authProvider` | string | ✓ | 認証プロバイダ（`aad` / `github` 等） |
-| `notifyEmail` | string | | 通知先メール（未設定時は `email` を使用） |
-| `monthlyTokenLimit` | number | ✓ | 月次 AI トークン上限（デフォルト: 100,000） |
-| `createdAt` | string (ISO 8601) | ✓ | 登録日時 |
-| `updatedAt` | string (ISO 8601) | ✓ | 最終更新日時 |
+### Cosmos コンテナ（現行）
 
-**サンプル JSON**
-
-```json
-{
-  "id": "abc123",
-  "userId": "abc123",
-  "email": "user@example.com",
-  "displayName": "Mickey",
-  "authProvider": "aad",
-  "notifyEmail": "user@example.com",
-  "monthlyTokenLimit": 100000,
-  "createdAt": "2026-07-31T00:00:00+09:00",
-  "updatedAt": "2026-07-31T00:00:00+09:00"
-}
-```
-
----
-
-### StockWatches / StockPriceHistory（米国株・拡張案）
-
-#### StockWatches — ウォッチ設定
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | ドキュメント ID（UUID） |
-| `userId` | string | ✓ | パーティションキー |
-| `ticker` | string | ✓ | 銘柄コード（例: `TSLA`） |
-| `buyPrice` | number | ✓ | 購入価格（USD） |
-| `targetMultiplier` | number | ✓ | 目標倍率（例: 1.3） |
-| `targetPrice` | number | ✓ | 目標株価（`buyPrice × targetMultiplier`） |
-| `isActive` | boolean | ✓ | 監視有効フラグ |
-| `createdAt` | string | ✓ | 登録日時 |
-
-#### StockPriceHistory — 株価履歴
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | ドキュメント ID |
-| `userId` | string | ✓ | パーティションキー |
-| `watchId` | string | ✓ | `StockWatches.id` への参照 |
-| `ticker` | string | ✓ | 銘柄コード |
-| `date` | string | ✓ | 取得日（YYYY-MM-DD） |
-| `closePrice` | number | ✓ | 終値（USD） |
-| `ma5` | number | | 5 日移動平均 |
-| `ma25` | number | | 25 日移動平均 |
-| `changePct` | number | | 前日比（%） |
-| `trend` | string | | `bullish` / `bearish` |
-| `fetchedAt` | string | ✓ | 取得日時 |
-
-#### StockAlerts — アラートログ（任意）
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | ドキュメント ID |
-| `userId` | string | ✓ | パーティションキー |
-| `watchId` | string | ✓ | ウォッチ設定 ID |
-| `ticker` | string | ✓ | 銘柄コード |
-| `triggerPrice` | number | ✓ | アラート発火時株価 |
-| `targetPrice` | number | ✓ | 目標株価 |
-| `notifiedAt` | string | ✓ | 通知日時 |
-
----
-
-### DisneyPlans（ディズニー・拡張案）
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | ドキュメント ID |
-| `userId` | string | ✓ | パーティションキー |
-| `planType` | string | ✓ | `visit`（訪問予定）/ `ticket`（チケット）/ `memo`（メモ） |
-| `park` | string | | パーク名（`TDL` / `TDS`） |
-| `visitDate` | string | | 訪問予定日（YYYY-MM-DD） |
-| `title` | string | ✓ | タイトル |
-| `description` | string | | 詳細メモ |
-| `ticketType` | string | | チケット種別（1-Day Passport 等） |
-| `purchaseDate` | string | | 購入日 |
-| `expiryDate` | string | | 有効期限 |
-| `companions` | string[] | | 同行者リスト |
-| `createdAt` | string | ✓ | 登録日時 |
-| `updatedAt` | string | ✓ | 最終更新日時 |
-
-**サンプル JSON（訪問予定）**
-
-```json
-{
-  "id": "disney-001",
-  "userId": "abc123",
-  "planType": "visit",
-  "park": "TDL",
-  "visitDate": "2026-12-25",
-  "title": "クリスマスパレード",
-  "description": "15:00 ショー優先",
-  "companions": ["家族"],
-  "createdAt": "2026-07-31T00:00:00+09:00",
-  "updatedAt": "2026-07-31T00:00:00+09:00"
-}
-```
-
----
-
-### TokenUsage（トークン履歴・コストレポート）
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `id` | string | ✓ | ドキュメント ID |
-| `userId` | string | ✓ | パーティションキー |
-| `feature` | string | ✓ | 機能識別子（`disney-suggest` / `stock-analysis` 等） |
-| `model` | string | ✓ | 使用モデル（例: `gpt-4o-mini`） |
-| `promptTokens` | number | ✓ | 入力トークン数 |
-| `completionTokens` | number | ✓ | 出力トークン数 |
-| `totalTokens` | number | ✓ | 合計トークン数 |
-| `estimatedCostUsd` | number | | 推定コスト（USD） |
-| `requestId` | string | | Azure OpenAI リクエスト ID |
-| `createdAt` | string | ✓ | リクエスト日時 |
-
-**月次集計クエリ例（Cosmos DB SQL）**
-
-```sql
-SELECT
-  c.feature,
-  SUM(c.totalTokens) AS totalTokens,
-  SUM(c.estimatedCostUsd) AS totalCostUsd
-FROM c
-WHERE c.userId = @userId
-  AND c.createdAt >= @monthStart
-  AND c.createdAt < @monthEnd
-GROUP BY c.feature
-```
-
----
-
-### ER 概略図
-
-```mermaid
-erDiagram
-    Users ||--o{ StockWatches : "owns"
-    Users ||--o{ StockPriceHistory : "owns"
-    Users ||--o{ DisneyPlans : "owns"
-    Users ||--o{ TokenUsage : "owns"
-    StockWatches ||--o{ StockPriceHistory : "generates"
-    StockWatches ||--o{ StockAlerts : "triggers"
-
-    Users {
-        string userId PK
-        string email
-        string displayName
-        number monthlyTokenLimit
-    }
-
-    StockWatches {
-        string id PK
-        string userId FK
-        string ticker
-        number buyPrice
-        number targetPrice
-        boolean isActive
-    }
-
-    StockPriceHistory {
-        string id PK
-        string userId FK
-        string watchId FK
-        string date
-        number closePrice
-    }
-
-    DisneyPlans {
-        string id PK
-        string userId FK
-        string planType
-        string park
-        string visitDate
-    }
-
-    TokenUsage {
-        string id PK
-        string userId FK
-        string feature
-        string model
-        number totalTokens
-        number estimatedCostUsd
-    }
-```
-
----
-
-## 現状実装と今後の拡張
-
-### 現状（2026-07-31 時点）
-
-| コンポーネント | 状態 | 備考 |
-|---|---|---|
-| 米国株ローカルスクリプト | **実装済** | `stock.py` — TSLA の移動平均分析・目標株価 Gmail 通知 |
-| Next.js フロントエンド | 未実装 | App Router + TypeScript + Tailwind CSS。SWA（`swa-personal-apps-prod`）へデプロイ予定 |
-| Azure Functions | 未実装 | Node.js / Serverless。各ドメイン API + タイマートリガー |
-| Cosmos DB | 未実装 | 上記データ設計に基づきコンテナ作成 |
-| Azure OpenAI 連携 | 未実装 | AI Proxy Function 経由 |
-| 認証 | 未実装 | SWA 組み込み認証 |
-| ディズニー機能 | 未実装 | `DisneyPlans` コンテナ利用 |
-| コストレポート | 未実装 | `TokenUsage` コンテナ利用 |
-
-### 推奨実装順序
-
-1. **Next.js プロジェクト初期化** — App Router + TypeScript + Tailwind CSS、`staticwebapp.config.json` 設定
-2. **認証基盤** — SWA + Entra ID 設定、Functions（Node.js）での `clientPrincipal` 検証 middleware
-3. **Cosmos DB セットアップ** — Japan East / Serverless、`Users` コンテナ
-4. **米国株 Functions 化** — `stock.py` ロジックを Node.js Timer Trigger + Stock API に移植
-5. **コストレポート** — AI Proxy 実装と同時に `TokenUsage` 記録を組み込み、`/costs` 画面を追加
-6. **ディズニー機能** — CRUD API + `/disney` 画面
-7. **AI サジェスト** — ディズニー旅程提案等、トークン上限ガード付き
-
----
-
-## 関連ファイル
-
-| ファイル | 説明 |
+| コンテナ | 用途 |
 |---|---|
-| `.claudecode.json` | プロジェクト固定ルール（アーキテクチャ・制約・命名規則） |
-| `stock.py` | 米国株分析・Gmail 通知プロトタイプ（TSLA / 目標 1.3 倍） |
-| `docs/DESIGN.md` | 本設計書 |
+| `Users` | ユーザー、月次トークン上限など |
+| `StockWatches` | 保有・監視銘柄 |
+| `TokenUsage` | AI トークン・推定コスト |
+| `AccessLogs` | API アクセス監査 |
+| `WorkNotes` | WORKS 相談メモ |
+
+環境変数例は `frontend/.env.local.example`。
+
+### リポジトリ同梱データ（サーバ読み取り）
+
+| パス | 内容 |
+|---|---|
+| `frontend/data/gyosei/` | 行政事業レビュー支出（年次 gzip JSON + summary） |
+| `frontend/data/judicial/samples/` | 架空民事の訴訟記録サンプル MD |
+
+### 永続化しないもの（意図的）
+
+- 訴訟記録ノートのアップロード本文 → **ブラウザセッションのみ**（送信時だけ API に載せる）
+- 合議の添付・一時プロンプト → 永続化方針は機能ごとに限定
+
+---
+
+## 7. AI 利用方針
+
+| 機能 | 既定プロバイダ | 備考 |
+|---|---|---|
+| WORKS 相談 / まとめ | Gemini | 無料枠。本番は中継必須 |
+| 訴訟記録ノート | Gemini **または** Azure OpenAI | UI で切替。OpenAI は月次上限対象 |
+| 株アドバイス・Disney・Space 解説・Docs | Azure OpenAI | |
+| 合議（domestic） | Azure OpenAI Japan のみ | Gemini 不可 |
+| 合議（global） | Azure OpenAI + Gemini 探査派 | |
+
+### リージョンと Gemini
+
+- SWA 実行リージョンは East Asia になりやすく、Google が拒否するため **`GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY`** で Japan East 中継する。
+- ローカル（日本）では `GEMINI_API_KEY` 直叩き可。
+
+### 免責（プロダクト）
+
+- 訴訟記録ノート・行政ドシエ・小惑星衝突確率などは **学習・可視化用**。法的助言・公式予報の代替ではない。
+
+---
+
+## 8. 非機能要件
+
+### セキュリティ
+
+| 項目 | 方針 |
+|---|---|
+| 認証 | SWA 組み込み + HttpOnly Cookie |
+| 認可 | `allowed-users` ホワイトリスト + API 側検証 |
+| 秘密情報 | 環境変数 / Key Vault。リポジトリへ直書き禁止 |
+| ヘッダ | middleware で CSP・nosniff・frame deny 等 |
+| データ分離 | Cosmos は `userId` ベース |
+
+### コスト
+
+| ルール | 詳細 |
+|---|---|
+| Serverless 優先 | SWA / Cosmos Serverless / OpenAI 従量 |
+| トークン上限 | ユーザー月次。超過時は課金 AI を抑制 |
+| Gemini 優先箇所 | 日常相談・司法整理など無料枠向け |
+| キャッシュ | APOD 等は `fetch` revalidate / クライアント要約キャッシュ |
+
+### データ国内保持
+
+| 対象 | 方針 |
+|---|---|
+| Cosmos・国内合議プロンプト | Japan East（または West）OpenAI |
+| グローバル合議・Gemini | 国外処理があり得る。UI でモード明示 |
+| SWA 静的配信 | CDN はグローバル。業務データは API/Cosmos 側で制御 |
+
+---
+
+## 9. リポジトリ構成
+
+```
+ClaudeCodeWork/
+├── .claudecode.json          # プロジェクト制約（要約）
+├── docs/DESIGN.md            # 本設計書
+├── tools/                    # データ変換・調査スクリプト
+└── frontend/                 # AQUA 本体
+    ├── app/                  # ページ + API Routes
+    ├── components/           # UI（works / space / council / …）
+    ├── data/                 # gyosei / judicial samples
+    ├── lib/
+    │   ├── server/           # Cosmos, AI, ドメインロジック
+    │   ├── types/            # 共有型
+    │   └── *.ts              # クライアント/共有ユーティリティ
+    ├── middleware.ts
+    ├── staticwebapp.config.json
+    └── .env.local.example
+```
+
+---
+
+## 10. 今後の拡張
+
+| 優先 | 候補 | メモ |
+|---|---|---|
+| 中 | 訴訟ノート PDF 入力 | v1 は txt/md のみ |
+| 中 | 株アラートの定期実行 | 現状はオンデマンド中心。タイマは別途 |
+| 低 | Disney 予定の Cosmos 永続 | 現状はライブ API + チャット中心 |
+| 低 | `.claudecode.json` の backend 記述更新 | Functions 中心表記を Route Handlers 実態に合わせる |
+| 継続 | 行政パネルの追加アプリ | ハッカソンアイデア等 |
+
+---
+
+## 変更履歴（設計書）
+
+| 日付 | 内容 |
+|---|---|
+| 2026-07-31 | 初版（株・Disney・コスト中心、Functions 前提） |
+| 2026-08-09 | AQUA 現行に再進化。Works/司法/行政/合議/Space、Next.js API、Gemini 中継、実コンテナ構成を反映 |
