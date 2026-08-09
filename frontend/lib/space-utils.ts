@@ -75,17 +75,17 @@ export function inferApodAnalysis(title: string, explanation: string): ApodAnaly
     {
       id: "gamma",
       patterns: [/gamma.?ray/, /ガンマ線/],
-      note: "高エネルギー現象",
+      note: "地球からは大気で遮られるが、宇宙望遠鏡が捉えた高エネルギー光",
     },
     {
       id: "xray",
       patterns: [/x-ray/, /xray/, /chandra/],
-      note: "高温ガス・衝撃波",
+      note: "地球大気は通さない。宇宙から届く高温ガス・衝撃波の光",
     },
     {
       id: "uv",
       patterns: [/ultraviolet/, /\buv\b/, /紫外/],
-      note: "若い星・星形成",
+      note: "地表では弱い。若い星や星形成領域から地球方向へ来る紫外光",
     },
     {
       id: "visible",
@@ -99,7 +99,7 @@ export function inferApodAnalysis(title: string, explanation: string): ApodAnaly
         /水素/,
         /星形成/,
       ],
-      note: "星・ガスの構造",
+      note: "地球の空・光学望遠鏡に届く可視光（星・ガスの形）",
     },
     {
       id: "ir",
@@ -113,12 +113,12 @@ export function inferApodAnalysis(title: string, explanation: string): ApodAnaly
         /polycyclic aromatic/,
         /\bpah/,
       ],
-      note: "塵・分子雲",
+      note: "塵に隠れた構造から地球方向へ届く赤外。JWST 等が検出",
     },
     {
       id: "radio",
       patterns: [/radio/, /電波/],
-      note: "分子線・パルサー",
+      note: "大気を通り地上電波望遠鏡にも届く分子線・連続波",
     },
   ];
 
@@ -136,11 +136,24 @@ export function inferApodAnalysis(title: string, explanation: string): ApodAnaly
     const visible = bands.find((b) => b.id === "visible");
     if (visible) {
       visible.detected = true;
-      visible.note = "APOD 光学画像（可視光域）";
+      visible.note = "地球から見た光学写真として、主に可視光が届いている";
     }
   }
 
-  return { telescope, objectType, bands, cosmic: inferCosmicLocation(title, explanation) };
+  const detectedLabels = bands.filter((b) => b.detected).map((b) => b.label);
+  const earthLightSummary =
+    detectedLabels.length > 0
+      ? `地球からこの写真の天体を見ると、主に ${detectedLabels.join("・")} が観測されています。` +
+        (telescope ? `（観測: ${telescope}）` : "")
+      : "地球から届く光の波長帯を推定中です。";
+
+  return {
+    telescope,
+    objectType,
+    bands,
+    cosmic: inferCosmicLocation(title, explanation),
+    earthLightSummary,
+  };
 }
 
 export const spacePanelClass =

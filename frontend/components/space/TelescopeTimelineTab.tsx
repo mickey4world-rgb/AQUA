@@ -225,13 +225,19 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
 
             {analysis.cosmic && (
               <div className={spacePanelClass}>
-                <h3 className="text-sm font-semibold text-white">宇宙の位置（3D）</h3>
-                <p className="mt-1 text-xs text-slate-400">
-                  天の川銀河・太陽系・深宇宙のどこを見ているかを3Dで表示
-                </p>
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-white">宇宙の位置（3D）</h3>
+                  <p className="text-[10px] text-indigo-200/80">
+                    写真の対象 → {analysis.cosmic.targetLabel}
+                  </p>
+                </div>
 
                 <div className="mt-4">
-                  <CosmicLocationScene location={analysis.cosmic} />
+                  <CosmicLocationScene
+                    key={selected.date}
+                    viewKey={selected.date}
+                    location={analysis.cosmic}
+                  />
                 </div>
 
                 <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
@@ -262,11 +268,24 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
                     </div>
                   )}
                 </dl>
+                {analysis.cosmic.showMilkyWayContext && (
+                  <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+                    対象が天の川の外のため表示を縮小しています。中央の輪が天の川銀河、紫の点がこの写真の天体です。
+                  </p>
+                )}
               </div>
             )}
 
             <div className={spacePanelClass}>
               <h3 className="text-sm font-semibold text-white">光・波長分析</h3>
+              <p className="mt-1 text-xs text-slate-400">
+                地球から見た、この写真の天体の光と波長
+              </p>
+              {analysis.earthLightSummary && (
+                <p className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/[0.06] px-3 py-2 text-xs leading-relaxed text-amber-50/90">
+                  {analysis.earthLightSummary}
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {analysis.telescope && (
                   <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-indigo-200">
@@ -304,7 +323,7 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
                       )}
                     </div>
                     {band.detected && (
-                      <span className="text-[10px] font-medium text-emerald-300">検出</span>
+                      <span className="text-[10px] font-medium text-emerald-300">地球側で検出</span>
                     )}
                   </div>
                 ))}
