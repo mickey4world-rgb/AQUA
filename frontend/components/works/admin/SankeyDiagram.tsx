@@ -15,6 +15,7 @@ type SankeyDiagramProps = {
   unit: string;
   width?: number;
   height?: number;
+  onNodeClick?: (node: MoneyFlowNode) => void;
 };
 
 type NodeExtra = MoneyFlowNode & SankeyExtraProperties;
@@ -25,6 +26,8 @@ const KIND_COLOR: Record<MoneyFlowNode["kind"], string> = {
   ministry: "#5eead4",
   project: "#a5b4fc",
   payee: "#fcd34d",
+  block: "#c4b5fd",
+  year: "#93c5fd",
 };
 
 export default function SankeyDiagram({
@@ -33,6 +36,7 @@ export default function SankeyDiagram({
   unit,
   width = 960,
   height = 520,
+  onNodeClick,
 }: SankeyDiagramProps) {
   const layout = useMemo(() => {
     if (nodes.length === 0 || links.length === 0) return null;
@@ -116,8 +120,16 @@ export default function SankeyDiagram({
           const y0 = node.y0 ?? 0;
           const y1 = node.y1 ?? 0;
           const labelOnRight = x0 > width * 0.55;
+          const clickable = Boolean(onNodeClick && node.drillable !== false && node.kind !== "government");
           return (
-            <g key={node.id} transform={`translate(${x0},${y0})`}>
+            <g
+              key={node.id}
+              transform={`translate(${x0},${y0})`}
+              style={{ cursor: clickable ? "pointer" : "default" }}
+              onClick={() => {
+                if (clickable) onNodeClick?.(node);
+              }}
+            >
               <rect
                 width={Math.max(1, x1 - x0)}
                 height={Math.max(1, y1 - y0)}
@@ -125,7 +137,11 @@ export default function SankeyDiagram({
                 fill={color}
                 opacity={0.9}
               >
-                <title>{`${node.label}: ${formatAmount(node.amount)} ${unit}`}</title>
+                <title>
+                  {`${node.label}: ${formatAmount(node.amount)} ${unit}${
+                    clickable ? "（クリックで深掘り）" : ""
+                  }`}
+                </title>
               </rect>
               <text
                 x={labelOnRight ? -8 : x1 - x0 + 8}
@@ -133,7 +149,7 @@ export default function SankeyDiagram({
                 dy="0.35em"
                 textAnchor={labelOnRight ? "end" : "start"}
                 className="fill-slate-200"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: 11, pointerEvents: "none" }}
               >
                 {node.label}
               </text>

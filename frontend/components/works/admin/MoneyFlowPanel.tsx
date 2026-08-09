@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
-import type { MoneyFlowResponse } from "@/lib/types/gyosei";
+import type {
+  MoneyFlowFocusKind,
+  MoneyFlowNode,
+  MoneyFlowResponse,
+} from "@/lib/types/gyosei";
 
 type MetaResponse = {
   unit: string;
@@ -12,12 +16,22 @@ type MetaResponse = {
     total: number;
     projectCount: number;
     flowCount: number;
+    available: boolean;
     ministries: Array<{ name: string; amount: number; projectCount: number }>;
   }>;
+  pendingYears: Array<{ fiscalYear: number; available: boolean }>;
+  sectors: Array<{ id: string; label: string }>;
   topPayees: Array<{ name: string; amount: number; years: number[] }>;
+  houjinEnabled: boolean;
 };
 
 const ALL_MINISTRIES = "政府全体";
+
+type DrillStep = {
+  kind: MoneyFlowFocusKind;
+  value: string;
+  label: string;
+};
 
 type FlowState = {
   key: string;
@@ -30,8 +44,10 @@ export default function MoneyFlowPanel() {
   const [metaError, setMetaError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [ministry, setMinistry] = useState(ALL_MINISTRIES);
+  const [sector, setSector] = useState("");
   const [payeeInput, setPayeeInput] = useState("");
   const [payee, setPayee] = useState("");
+  const [drill, setDrill] = useState<DrillStep[]>([]);
   const [flow, setFlow] = useState<FlowState>({ key: "", data: null, error: null });
 
   useEffect(() => {
@@ -54,10 +70,19 @@ export default function MoneyFlowPanel() {
     };
   }, []);
 
-  const requestKey = useMemo(
-    () => (year == null ? "" : `${year}|${ministry}|${payee}`),
-    [year, ministry, payee],
-  );
+  const focus = drill[drill.length - 1] ?? null;
+
+  const requestKey = useMemo(() => {
+    if (year == null) return "";
+    return [
+      year,
+      ministry,
+      payee,
+      sector,
+      focus?.kind ?? "",
+      focus?.value ?? "",
+    ].join("|");
+  }, [year, ministry, payee, sector, focus]);
 
   useEffect(() => {
     if (!requestKey) return;
@@ -80,6 +105,18 @@ export default function MoneyFlowPanel() {
   const loading = Boolean(requestKey) && flow.key !== requestKey;
   const error = metaError ?? (flow.key === requestKey ? flow.error : null);
 
+  const yearOptions = useMemo(() => {
+    const loaded = (meta?.years ?? []).map((entry) => ({
+      fiscalYear: entry.fiscalYear,
+      available: true as boolean,
+    }));
+    const pending = (meta?.pendingYears ?? []).map((entry) => ({
+      fiscalYear: entry.fiscalYear,
+      available: false as boolean,
+    }));
+    return [...loaded, ...pending].sort((a, b) => a.fiscalYear - b.fiscalYear);
+  }, [meta]);
+
   const ministries =
     data?.ministries ??
     meta?.years.flatMap((entry) => entry.ministries.map((item) => item.name)) ??
@@ -87,6 +124,41 @@ export default function MoneyFlowPanel() {
   const uniqueMinistries = [...new Set(ministries)].sort((a, b) =>
     a.localeCompare(b, "ja"),
   );
+
+  function handleNodeClick(node: MoneyFlowNode) {
+    if (node.kind === "government" || node.drillable === false) return;
+
+    if (node.kind === "ministry") {
+      setMinistry(node.label);
+      setDrill([{ kind: "ministry", value: node.label, label: node.label }]);
+      return;
+    }
+    if (node.kind === "project") {
+      const value = node.rawLabel ?? node.label.replace(/…$/, "");
+      setDrill((prev) => [
+        ...prev.filter((step) => step.kind !== "project" && step.kind !== "payee" && step.kind !== "block"),
+        { kind: "project", value, label: node.label },
+      ]);
+      return;
+    }
+    if (node.kind === "block") {
+      const block = node.label.replace(/^ブロック\s*/, "");
+      setDrill((prev) => [
+        ...prev.filter((step) => step.kind !== "block" && step.kind !== "payee"),
+        { kind: "block", value: block, label: `ブロック ${block}` },
+      ]);
+      return;
+    }
+    if (node.kind === "payee") {
+      const value = node.rawLabel ?? node.label.replace(/…$/, "");
+      setPayeeInput(value);
+      setPayee(value);
+      setDrill((prev) => [
+        ...prev.filter((step) => step.kind !== "payee"),
+        { kind: "payee", value, label: node.label },
+      ]);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -96,11 +168,10 @@ export default function MoneyFlowPanel() {
             <p className="eyebrow">行政事業レビュー</p>
             <h2 className="display-sub mt-2 text-white">お金の流れ</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              公開されている主要事項データベースをもとに、政府 → 府省庁 → 事業 → 支出先の流れをサンキー図で見ます。
-              支出先の企業名で絞ると、いつ・どこから・いくら入ったかが追えます。
+              ノードをクリックすると一段深いサンキーに入れます。支出先は企業名だけでなく、コンサルなどの分野でも探せます。
             </p>
           </div>
-          {data && (
+          {data?.yearAvailable && (
             <div className="text-right">
               <p className="font-mono text-2xl text-cyan-100">
                 {formatTrillion(data.totals.amount)}
@@ -113,9 +184,10 @@ export default function MoneyFlowPanel() {
         </div>
 
         <form
-          className="mt-6 grid gap-3 md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1.2fr)_auto]"
+          className="mt-6 grid gap-3 lg:grid-cols-[120px_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_auto]"
           onSubmit={(event) => {
             event.preventDefault();
+            setDrill([]);
             setPayee(payeeInput.trim());
           }}
         >
@@ -123,12 +195,15 @@ export default function MoneyFlowPanel() {
             年度
             <select
               value={year ?? ""}
-              onChange={(event) => setYear(Number(event.target.value))}
+              onChange={(event) => {
+                setYear(Number(event.target.value));
+                setDrill([]);
+              }}
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-300/40"
             >
-              {(meta?.years ?? []).map((entry) => (
+              {yearOptions.map((entry) => (
                 <option key={entry.fiscalYear} value={entry.fiscalYear}>
-                  {entry.fiscalYear}年度
+                  {entry.fiscalYear}年度{entry.available ? "" : "（未収録）"}
                 </option>
               ))}
             </select>
@@ -138,7 +213,14 @@ export default function MoneyFlowPanel() {
             府省庁
             <select
               value={ministry}
-              onChange={(event) => setMinistry(event.target.value)}
+              onChange={(event) => {
+                setMinistry(event.target.value);
+                setDrill(
+                  event.target.value === ALL_MINISTRIES
+                    ? []
+                    : [{ kind: "ministry", value: event.target.value, label: event.target.value }],
+                );
+              }}
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-300/40"
             >
               <option value={ALL_MINISTRIES}>{ALL_MINISTRIES}</option>
@@ -151,11 +233,30 @@ export default function MoneyFlowPanel() {
           </label>
 
           <label className="block text-xs text-slate-400">
-            支出先（企業名・団体名）
+            分野
+            <select
+              value={sector}
+              onChange={(event) => {
+                setSector(event.target.value);
+                setDrill([]);
+              }}
+              className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-300/40"
+            >
+              <option value="">すべて</option>
+              {(meta?.sectors ?? data?.sectors ?? []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-xs text-slate-400">
+            支出先（企業名・分野キーワード）
             <input
               value={payeeInput}
               onChange={(event) => setPayeeInput(event.target.value)}
-              placeholder="例: 電通 / 富士通 / 日本郵便"
+              placeholder="例: 電通 / コンサル / 富士通"
               className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300/40"
             />
           </label>
@@ -167,13 +268,15 @@ export default function MoneyFlowPanel() {
             >
               絞り込む
             </button>
-            {(ministry !== ALL_MINISTRIES || payee) && (
+            {(ministry !== ALL_MINISTRIES || payee || sector || drill.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
                   setMinistry(ALL_MINISTRIES);
                   setPayeeInput("");
                   setPayee("");
+                  setSector("");
+                  setDrill([]);
                 }}
                 className="rounded-xl border border-white/12 px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/5"
               >
@@ -185,22 +288,53 @@ export default function MoneyFlowPanel() {
 
         {meta && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {meta.topPayees.slice(0, 8).map((entry) => (
+            {(meta.sectors ?? []).map((item) => (
               <button
-                key={entry.name}
+                key={item.id}
                 type="button"
                 onClick={() => {
-                  setPayeeInput(entry.name);
-                  setPayee(entry.name);
+                  setSector(item.id);
+                  setDrill([]);
                 }}
-                className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+                className={`rounded-full border px-3 py-1 text-[11px] transition ${
+                  sector === item.id
+                    ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-50"
+                    : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-cyan-300/30"
+                }`}
               >
-                {entry.name}
+                {item.label}
               </button>
             ))}
           </div>
         )}
       </section>
+
+      {drill.length > 0 && (
+        <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <button
+            type="button"
+            onClick={() => {
+              setDrill([]);
+              setMinistry(ALL_MINISTRIES);
+            }}
+            className="rounded-full border border-white/10 px-3 py-1 hover:bg-white/5"
+          >
+            政府全体
+          </button>
+          {drill.map((step, index) => (
+            <span key={`${step.kind}-${step.value}`} className="inline-flex items-center gap-2">
+              <span className="text-slate-600">/</span>
+              <button
+                type="button"
+                onClick={() => setDrill(drill.slice(0, index + 1))}
+                className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-cyan-50 hover:bg-cyan-400/15"
+              >
+                {step.label}
+              </button>
+            </span>
+          ))}
+        </nav>
+      )}
 
       <section className="glass-panel rounded-3xl p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -209,15 +343,16 @@ export default function MoneyFlowPanel() {
             <p className="mt-1 text-sm text-slate-400">
               {loading
                 ? "集計中…"
-                : data
-                  ? `${data.totals.flowCount.toLocaleString("ja-JP")} 件の支出 / 事業 ${data.totals.projectCount.toLocaleString("ja-JP")} / 支出先 ${data.totals.payeeCount.toLocaleString("ja-JP")}`
-                  : "—"}
+                : data?.yearAvailable
+                  ? `${data.totals.flowCount.toLocaleString("ja-JP")} 件 / ノードをクリックして深掘り`
+                  : data?.message ?? "—"}
             </p>
           </div>
           <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
             <LegendDot color="#67e8f9" label="政府" />
             <LegendDot color="#5eead4" label="府省庁" />
             <LegendDot color="#a5b4fc" label="事業" />
+            <LegendDot color="#c4b5fd" label="ブロック" />
             <LegendDot color="#fcd34d" label="支出先" />
           </div>
         </div>
@@ -228,18 +363,121 @@ export default function MoneyFlowPanel() {
           </p>
         )}
 
-        {!error && data && (
-          <SankeyDiagram nodes={data.nodes} links={data.links} unit={data.unit} />
+        {!error && data && !data.yearAvailable && (
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-4 text-sm text-amber-50">
+            <p>{data.message}</p>
+            <p className="mt-2 text-xs text-amber-100/70">
+              取込手順は <code className="font-mono">frontend/data/gyosei/README.md</code> を参照。
+            </p>
+          </div>
+        )}
+
+        {!error && data?.yearAvailable && (
+          <SankeyDiagram
+            nodes={data.nodes}
+            links={data.links}
+            unit={data.unit}
+            onNodeClick={handleNodeClick}
+          />
         )}
 
         {data?.totals.truncated && (
           <p className="mt-3 text-xs text-slate-500">
-            見やすさのため上位の流れに絞っています。府省庁や企業名で絞り込むと細部まで見えます。
+            見やすさのため上位の流れに絞っています。ノードをクリックするか、条件を絞ると細部まで見えます。
           </p>
         )}
       </section>
 
-      {data && data.rows.length > 0 && (
+      {data && data.externalCompanies.length > 0 && (
+        <section className="glass-panel rounded-3xl p-5 sm:p-6">
+          <p className="eyebrow">企業情報</p>
+          <h3 className="display-sub mt-2 text-white">検索した支出先</h3>
+          <p className="mt-2 text-sm text-slate-400">
+            レビューシートに無い企業も一覧に出します。
+            {data.houjinEnabled
+              ? " 法人番号公表サイトから住所を取得しています。"
+              : " 法人番号連携は HOUJIN_BANGOU_APP_ID を設定すると有効になります。"}
+          </p>
+          <ul className="mt-4 space-y-3">
+            {data.externalCompanies.map((company) => (
+              <li
+                key={`${company.corporateNumber}-${company.name}`}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{company.name}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {company.address || "住所情報なし"}
+                    </p>
+                    {company.corporateNumber && (
+                      <p className="mt-1 font-mono text-[11px] text-slate-500">
+                        法人番号 {company.corporateNumber}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right text-xs">
+                    {company.inReviewData ? (
+                      <p className="text-cyan-100">
+                        レビュー実績 {formatAmount(company.reviewAmount)} 百万円
+                      </p>
+                    ) : (
+                      <p className="text-amber-100/80">レビュー実績なし</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayeeInput(company.name);
+                        setPayee(company.name);
+                        setDrill([
+                          { kind: "payee", value: company.name, label: company.name },
+                        ]);
+                      }}
+                      className="mt-2 rounded-full border border-white/12 px-3 py-1 text-slate-300 hover:bg-white/5"
+                    >
+                      この企業で絞る
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data && data.nearbyMunicipal.length > 0 && (
+        <section className="glass-panel rounded-3xl p-5 sm:p-6">
+          <p className="eyebrow">付近の自治体</p>
+          <h3 className="display-sub mt-2 text-white">住所周辺の支出先</h3>
+          <p className="mt-2 text-sm text-slate-400">
+            会社所在地の都道府県・市区町村名が、レビューシートの支出先に含まれるものを拾っています。
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">地域</th>
+                  <th className="px-3 py-2 font-medium">支出先</th>
+                  <th className="px-3 py-2 font-medium text-right">金額</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.nearbyMunicipal.map((row) => (
+                  <tr key={`${row.municipality}-${row.payee}`} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 whitespace-nowrap">{row.municipality}</td>
+                    <td className="px-3 py-2">{row.payee}</td>
+                    <td className="px-3 py-2 text-right font-mono text-cyan-50/90 whitespace-nowrap">
+                      {formatAmount(row.amount)} {data.unit}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {data && data.yearAvailable && data.rows.length > 0 && (
         <section className="glass-panel overflow-hidden rounded-3xl">
           <div className="border-b border-white/8 px-5 py-4 sm:px-6">
             <p className="eyebrow">明細</p>
@@ -266,9 +504,21 @@ export default function MoneyFlowPanel() {
                   >
                     <td className="px-4 py-3 whitespace-nowrap">{row.ministry}</td>
                     <td className="px-4 py-3">
-                      <div className="max-w-[16rem] truncate" title={row.project}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDrill([
+                            ...(ministry !== ALL_MINISTRIES
+                              ? [{ kind: "ministry" as const, value: row.ministry, label: row.ministry }]
+                              : []),
+                            { kind: "project", value: row.project, label: row.project },
+                          ])
+                        }
+                        className="max-w-[16rem] truncate text-left text-cyan-100/90 hover:text-cyan-50"
+                        title={row.project}
+                      >
                         {row.project}
-                      </div>
+                      </button>
                       {row.work && (
                         <div
                           className="mt-1 max-w-[18rem] truncate text-xs text-slate-500"
@@ -284,6 +534,9 @@ export default function MoneyFlowPanel() {
                         onClick={() => {
                           setPayeeInput(row.payee);
                           setPayee(row.payee);
+                          setDrill([
+                            { kind: "payee", value: row.payee, label: row.payee },
+                          ]);
                         }}
                         className="text-left text-cyan-100/90 transition hover:text-cyan-50"
                       >
@@ -315,7 +568,7 @@ export default function MoneyFlowPanel() {
           >
             {data.source.url}
           </a>
-          。一部事業は原データの単位入力が疑わしいため集計から除外しています。
+          。2023–2025 は見える化サイト CSV の取込後に有効化できます。
         </p>
       )}
     </div>
@@ -323,12 +576,16 @@ export default function MoneyFlowPanel() {
 }
 
 async function fetchFlow(key: string): Promise<MoneyFlowResponse> {
-  const [yearText, ministryText, payeeText] = key.split("|");
+  const [yearText, ministryText, payeeText, sectorText, focusKind, focusValue] =
+    key.split("|");
   const params = new URLSearchParams({ year: yearText });
   if (ministryText && ministryText !== ALL_MINISTRIES) {
     params.set("ministry", ministryText);
   }
   if (payeeText) params.set("payee", payeeText);
+  if (sectorText) params.set("sector", sectorText);
+  if (focusKind) params.set("focusKind", focusKind);
+  if (focusValue) params.set("focusValue", focusValue);
   const response = await fetch(`/api/works/money-flow?${params}`);
   if (!response.ok) throw new Error("flow");
   return (await response.json()) as MoneyFlowResponse;

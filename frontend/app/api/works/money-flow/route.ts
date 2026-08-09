@@ -1,5 +1,13 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
-import { listGyoseiYears, loadGyoseiSummary, queryMoneyFlow } from "@/lib/server/gyosei-data";
+import {
+  listGyoseiYears,
+  listPendingGyoseiYears,
+  loadGyoseiSummary,
+  queryMoneyFlow,
+} from "@/lib/server/gyosei-data";
+import { PAYEE_SECTORS } from "@/lib/gyosei-sectors";
+import { isHoujinConfigured } from "@/lib/server/houjin";
+import type { MoneyFlowFocusKind } from "@/lib/types/gyosei";
 
 export const runtime = "nodejs";
 
@@ -12,6 +20,9 @@ export async function GET(request: Request) {
       const year = Number.isFinite(yearParam) ? yearParam : years[years.length - 1];
       const ministry = searchParams.get("ministry") ?? undefined;
       const payee = searchParams.get("payee") ?? undefined;
+      const sector = searchParams.get("sector") ?? undefined;
+      const focusKind = (searchParams.get("focusKind") as MoneyFlowFocusKind | null) ?? undefined;
+      const focusValue = searchParams.get("focusValue") ?? undefined;
       const limitParam = Number(searchParams.get("limit"));
       const limit = Number.isFinite(limitParam) ? limitParam : undefined;
 
@@ -25,17 +36,32 @@ export async function GET(request: Request) {
             total: entry.total,
             projectCount: entry.projectCount,
             flowCount: entry.flowCount,
+            available: true,
             ministries: entry.ministries.map((ministryEntry) => ({
               name: ministryEntry.name,
               amount: ministryEntry.amount,
               projectCount: ministryEntry.projectCount,
             })),
           })),
+          pendingYears: listPendingGyoseiYears().map((fiscalYear) => ({
+            fiscalYear,
+            available: false,
+          })),
+          sectors: PAYEE_SECTORS.map((item) => ({ id: item.id, label: item.label })),
           topPayees: summary.topPayees.slice(0, 20),
+          houjinEnabled: isHoujinConfigured(),
         });
       }
 
-      const result = queryMoneyFlow({ year, ministry, payee, limit });
+      const result = await queryMoneyFlow({
+        year,
+        ministry,
+        payee,
+        sector,
+        focusKind,
+        focusValue,
+        limit,
+      });
       return Response.json(result);
     } catch (error) {
       console.error("[money-flow]", error);
