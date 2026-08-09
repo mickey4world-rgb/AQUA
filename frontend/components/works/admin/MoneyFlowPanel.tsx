@@ -6,6 +6,7 @@ import type {
   MoneyFlowFocusKind,
   MoneyFlowNode,
   MoneyFlowResponse,
+  PayeeDossier,
 } from "@/lib/types/gyosei";
 
 type MetaResponse = {
@@ -49,6 +50,9 @@ export default function MoneyFlowPanel() {
   const [payee, setPayee] = useState("");
   const [drill, setDrill] = useState<DrillStep[]>([]);
   const [flow, setFlow] = useState<FlowState>({ key: "", data: null, error: null });
+  const [dossier, setDossier] = useState<PayeeDossier | null>(null);
+  const [dossierLoading, setDossierLoading] = useState(false);
+  const [dossierError, setDossierError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +163,25 @@ export default function MoneyFlowPanel() {
       ]);
     }
   }
+
+  async function openPayeeDetail(name: string) {
+    setDossier(null);
+    setDossierError(null);
+    setDossierLoading(true);
+    try {
+      const response = await fetch(
+        `/api/works/money-flow/payee?name=${encodeURIComponent(name)}`,
+      );
+      if (!response.ok) throw new Error("dossier");
+      setDossier((await response.json()) as PayeeDossier);
+    } catch {
+      setDossierError("支出先の詳細を取得できませんでした。");
+    } finally {
+      setDossierLoading(false);
+    }
+  }
+
+  const rowsAreAggregated = Boolean(data?.rows.some((row) => row.aggregated));
 
   return (
     <div className="space-y-5">
@@ -393,7 +416,7 @@ export default function MoneyFlowPanel() {
           <p className="eyebrow">企業情報</p>
           <h3 className="display-sub mt-2 text-white">検索した支出先</h3>
           <p className="mt-2 text-sm text-slate-400">
-            レビューシートの所在地を優先し、無い場合は OpenStreetMap で住所を補完します。
+            レビュー実績の大きい順。詳細では受注の勢い・契約の相手・調達上の注意点を見られます。
           </p>
           <ul className="mt-4 space-y-3">
             {data.externalCompanies.map((company) => (
@@ -431,19 +454,28 @@ export default function MoneyFlowPanel() {
                     ) : (
                       <p className="text-amber-100/80">レビュー実績なし</p>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPayeeInput(company.name);
-                        setPayee(company.name);
-                        setDrill([
-                          { kind: "payee", value: company.name, label: company.name },
-                        ]);
-                      }}
-                      className="mt-2 rounded-full border border-white/12 px-3 py-1 text-slate-300 hover:bg-white/5"
-                    >
-                      この企業で絞る
-                    </button>
+                    <div className="mt-2 flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void openPayeeDetail(company.name)}
+                        className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-cyan-50 hover:bg-cyan-300/15"
+                      >
+                        詳細
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPayeeInput(company.name);
+                          setPayee(company.name);
+                          setDrill([
+                            { kind: "payee", value: company.name, label: company.name },
+                          ]);
+                        }}
+                        className="rounded-full border border-white/12 px-3 py-1 text-slate-300 hover:bg-white/5"
+                      >
+                        この企業で絞る
+                      </button>
+                    </div>
                   </div>
                 </div>
               </li>
@@ -455,26 +487,51 @@ export default function MoneyFlowPanel() {
       {data && data.nearbyMunicipal.length > 0 && (
         <section className="glass-panel rounded-3xl p-5 sm:p-6">
           <p className="eyebrow">付近の自治体</p>
-          <h3 className="display-sub mt-2 text-white">住所周辺の支出先</h3>
+          <h3 className="display-sub mt-2 text-white">周辺自治体と当該業者</h3>
           <p className="mt-2 text-sm text-slate-400">
-            会社所在地の都道府県・市区町村名が、レビューシートの支出先に含まれるものを拾っています。
+            住所近辺の自治体が支出先として入っている国の事業で、同じ事業から当該業者へも支出があるものを拾っています（地方単独の発注データではありません）。
           </p>
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">地域</th>
-                  <th className="px-3 py-2 font-medium">支出先</th>
-                  <th className="px-3 py-2 font-medium text-right">金額</th>
+                  <th className="px-3 py-2 font-medium">自治体</th>
+                  <th className="px-3 py-2 font-medium">業者</th>
+                  <th className="px-3 py-2 font-medium text-right">自治体向け</th>
+                  <th className="px-3 py-2 font-medium text-right">業者向け</th>
+                  <th className="px-3 py-2 font-medium">関係</th>
                 </tr>
               </thead>
               <tbody>
                 {data.nearbyMunicipal.map((row) => (
-                  <tr key={`${row.municipality}-${row.payee}`} className="border-t border-white/5 text-slate-300">
+                  <tr
+                    key={`${row.municipality}-${row.vendor}`}
+                    className="border-t border-white/5 text-slate-300"
+                  >
                     <td className="px-3 py-2 whitespace-nowrap">{row.municipality}</td>
-                    <td className="px-3 py-2">{row.payee}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="text-left text-cyan-100/90 hover:text-cyan-50"
+                        onClick={() => void openPayeeDetail(row.vendor)}
+                      >
+                        {row.vendor}
+                      </button>
+                      {row.topProjects[0] && (
+                        <div className="mt-1 max-w-[16rem] truncate text-xs text-slate-500" title={row.topProjects.join(" / ")}>
+                          {row.topProjects[0]}
+                          {row.projectCount > 1 ? ` 他${row.projectCount - 1}` : ""}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right font-mono text-cyan-50/90 whitespace-nowrap">
-                      {formatAmount(row.amount)} {data.unit}
+                      {formatAmount(row.municipalityAmount)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-cyan-50/90 whitespace-nowrap">
+                      {formatAmount(row.vendorAmount)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-slate-500">
+                      {row.relation === "same-project" ? "同一事業" : "契約概要で言及"}
                     </td>
                   </tr>
                 ))}
@@ -489,7 +546,9 @@ export default function MoneyFlowPanel() {
           <div className="border-b border-white/8 px-5 py-4 sm:px-6">
             <p className="eyebrow">明細</p>
             <p className="mt-1 text-sm text-slate-400">
-              金額の大きい順（最大 {data.rows.length} 件）
+              {rowsAreAggregated
+                ? `支出先ごとの合計（金額の大きい順・最大 ${data.rows.length} 件）`
+                : `契約明細（金額の大きい順・最大 ${data.rows.length} 件）`}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -499,7 +558,7 @@ export default function MoneyFlowPanel() {
                   <th className="px-4 py-3 font-medium">府省庁</th>
                   <th className="px-4 py-3 font-medium">事業</th>
                   <th className="px-4 py-3 font-medium">支出先</th>
-                  <th className="px-4 py-3 font-medium">ブロック</th>
+                  <th className="px-4 py-3 font-medium">{rowsAreAggregated ? "件数" : "ブロック"}</th>
                   <th className="px-4 py-3 font-medium text-right">金額</th>
                 </tr>
               </thead>
@@ -557,9 +616,16 @@ export default function MoneyFlowPanel() {
                           {row.address}
                         </div>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => void openPayeeDetail(row.payee)}
+                        className="mt-2 rounded-full border border-white/12 px-2.5 py-0.5 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                      >
+                        詳細
+                      </button>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                      {row.block}
+                      {rowsAreAggregated ? `${row.flowCount ?? "—"}` : row.block}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-cyan-50/90 whitespace-nowrap">
                       {formatAmount(row.amount)} {data.unit}
@@ -570,6 +636,180 @@ export default function MoneyFlowPanel() {
             </table>
           </div>
         </section>
+      )}
+
+      {(dossierLoading || dossier || dossierError) && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="glass-panel max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl p-5 sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="eyebrow">支出先詳細</p>
+                <h3 className="display-sub mt-2 text-white">
+                  {dossier?.name ?? (dossierLoading ? "読み込み中…" : "詳細")}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDossier(null);
+                  setDossierError(null);
+                  setDossierLoading(false);
+                }}
+                className="rounded-full border border-white/12 px-3 py-1 text-xs text-slate-300 hover:bg-white/5"
+              >
+                閉じる
+              </button>
+            </div>
+
+            {dossierLoading && (
+              <p className="mt-6 text-sm text-slate-400">レビュー複数年を集計しています…</p>
+            )}
+            {dossierError && <p className="mt-6 text-sm text-rose-200">{dossierError}</p>}
+
+            {dossier && (
+              <div className="mt-5 space-y-5">
+                <p className="text-sm text-slate-400">
+                  {dossier.address || "住所情報なし"}
+                  {dossier.corporateNumber
+                    ? ` / 法人番号 ${dossier.corporateNumber}`
+                    : ""}
+                </p>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <p className="text-[11px] tracking-wide text-slate-500">受注の勢い</p>
+                    <p className="mt-1 text-lg text-cyan-50">{dossier.trend.label}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      {dossier.trend.summary}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <p className="text-[11px] tracking-wide text-slate-500">調達判断</p>
+                    <p className="mt-1 text-lg text-cyan-50">{dossier.procurement.verdict}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      {dossier.procurement.summary}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <p className="text-[11px] tracking-wide text-slate-500">累計（レビュー）</p>
+                    <p className="mt-1 font-mono text-lg text-cyan-50">
+                      {formatAmount(dossier.totalAmount)} {dossier.unit}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-400">
+                      ※企業会計の黒字・赤字ではなく、国からの支出推移の代理指標です。
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs tracking-wide text-slate-500">年度別の国からの支出</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {dossier.years.map((point) => (
+                      <div
+                        key={point.fiscalYear}
+                        className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300"
+                      >
+                        <span className="text-slate-500">{point.fiscalYear}</span>{" "}
+                        <span className="font-mono text-cyan-50">
+                          {formatAmount(point.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs tracking-wide text-slate-500">問題点・注意点</p>
+                  <ul className="mt-2 space-y-2">
+                    {dossier.issues.map((issue) => (
+                      <li
+                        key={issue.title}
+                        className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3"
+                      >
+                        <p className="text-sm text-white">
+                          <span
+                            className={
+                              issue.level === "caution"
+                                ? "text-rose-200"
+                                : issue.level === "watch"
+                                  ? "text-amber-100"
+                                  : "text-cyan-100"
+                            }
+                          >
+                            {issue.level === "caution"
+                              ? "注意"
+                              : issue.level === "watch"
+                                ? "確認"
+                                : "参考"}
+                          </span>
+                          {" · "}
+                          {issue.title}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                          {issue.detail}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-xs tracking-wide text-slate-500">主な契約相手（府省庁）</p>
+                  <ul className="mt-2 space-y-1 text-sm text-slate-300">
+                    {dossier.partners.map((partner) => (
+                      <li key={partner.ministry} className="flex justify-between gap-3">
+                        <span>{partner.ministry}</span>
+                        <span className="font-mono text-cyan-50/90">
+                          {formatAmount(partner.amount)} {dossier.unit}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-xs tracking-wide text-slate-500">最近の契約</p>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1 font-medium">年度</th>
+                          <th className="px-2 py-1 font-medium">府省庁</th>
+                          <th className="px-2 py-1 font-medium">事業・概要</th>
+                          <th className="px-2 py-1 font-medium text-right">金額</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dossier.recentContracts.map((contract, index) => (
+                          <tr
+                            key={`${contract.fiscalYear}-${contract.project}-${index}`}
+                            className="border-t border-white/5 text-slate-300"
+                          >
+                            <td className="px-2 py-2 whitespace-nowrap">{contract.fiscalYear}</td>
+                            <td className="px-2 py-2 whitespace-nowrap">{contract.ministry}</td>
+                            <td className="px-2 py-2">
+                              <div>{contract.project}</div>
+                              <div className="mt-0.5 text-slate-500">
+                                {[contract.contract, contract.work].filter(Boolean).join(" / ")}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 text-right font-mono whitespace-nowrap">
+                              {formatAmount(contract.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {data && (

@@ -197,29 +197,12 @@ export async function queryMoneyFlow(
     limit,
   });
 
-  const rows = matchingFlowIndexes
-    .slice()
-    .sort((a, b) => dataset.flows[b][2] - dataset.flows[a][2])
-    .slice(0, MAX_ROWS)
-    .map((index) => {
-      const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, rawWork] =
-        dataset.flows[index];
-      const project = dataset.projects[projectIndex];
-      const { work, address } = splitWorkAndAddress(rawWork || "");
-      return {
-        ministry: dataset.dictionaries.ministries[project[0]],
-        project: project[1],
-        projectNumber: project[5],
-        payee: dataset.dictionaries.payees[payeeIndex],
-        amount,
-        block,
-        contract:
-          contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null,
-        work,
-        address: address || undefined,
-        corpNumber: corpNumber || undefined,
-      };
-    });
+  const detailByPayee =
+    Boolean(payeeFilter) || focusKind === "payee" || Boolean(sectorFilter);
+
+  const rows = detailByPayee
+    ? buildFlowDetailRows(dataset, matchingFlowIndexes)
+    : buildPayeeAggregateRows(dataset, matchingFlowIndexes);
 
   const external = filters.payee
     ? await enrichExternalCompanies(filters.payee, dataset)
@@ -280,26 +263,28 @@ async function enrichExternalCompanies(
     }
   }
 
-  const externalCompanies = resolved.map((company) => {
-    const matchedAmount =
-      [...reviewAmounts.entries()].find(([name]) =>
-        normalizePayeeQuery(name).includes(normalizePayeeQuery(company.name)),
-      )?.[1] ??
-      [...reviewAmounts.entries()].find(([name]) =>
-        normalizePayeeQuery(company.name).includes(normalizePayeeQuery(name)),
-      )?.[1] ??
-      0;
-    return {
-      name: company.name,
-      corporateNumber: company.corporateNumber,
-      address: company.address,
-      prefecture: company.prefecture,
-      city: company.city,
-      inReviewData: matchedAmount > 0,
-      reviewAmount: round1(matchedAmount),
-      addressSource: company.source,
-    };
-  });
+  const externalCompanies = resolved
+    .map((company) => {
+      const matchedAmount =
+        [...reviewAmounts.entries()].find(([name]) =>
+          normalizePayeeQuery(name).includes(normalizePayeeQuery(company.name)),
+        )?.[1] ??
+        [...reviewAmounts.entries()].find(([name]) =>
+          normalizePayeeQuery(company.name).includes(normalizePayeeQuery(name)),
+        )?.[1] ??
+        0;
+      return {
+        name: company.name,
+        corporateNumber: company.corporateNumber,
+        address: company.address,
+        prefecture: company.prefecture,
+        city: company.city,
+        inReviewData: matchedAmount > 0,
+        reviewAmount: round1(matchedAmount),
+        addressSource: company.source,
+      };
+    })
+    .sort((a, b) => b.reviewAmount - a.reviewAmount);
 
   if (externalCompanies.length === 0 && query.trim()) {
     const amount =
@@ -318,54 +303,251 @@ async function enrichExternalCompanies(
     });
   }
 
+  const vendorNames = externalCompanies.map((company) => company.name);
   const nearbyMunicipal = dataset
-    ? findNearbyMunicipalPayees(dataset, externalCompanies)
+    ? findNearbyMunicipalVendorLinks(dataset, externalCompanies, vendorNames)
     : [];
 
   return { externalCompanies, nearbyMunicipal };
 }
 
-function findNearbyMunicipalPayees(
+function buildFlowDetailRows(
   dataset: GyoseiYearDataset,
-  companies: Array<{ prefecture: string; city: string }>,
-): NearbyMunicipalPayee[] {
-  const targets = new Set<string>();
-  for (const company of companies) {
-    if (company.city) targets.add(company.city.replace(/市$|区$|町$|村$/, ""));
-    if (company.prefecture) targets.add(company.prefecture.replace(/都$|道$|府$|県$/, ""));
-    if (company.city) targets.add(company.city);
-    if (company.prefecture) targets.add(company.prefecture);
-  }
-  if (targets.size === 0) return [];
+  matchingFlowIndexes: number[],
+) {
+  return matchingFlowIndexes
+    .slice()
+    .sort((a, b) => dataset.flows[b][2] - dataset.flows[a][2])
+    .slice(0, MAX_ROWS)
+    .map((index) => {
+      const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, rawWork] =
+        dataset.flows[index];
+      const project = dataset.projects[projectIndex];
+      const { work, address } = splitWorkAndAddress(rawWork || "");
+      return {
+        ministry: dataset.dictionaries.ministries[project[0]],
+        project: project[1],
+        projectNumber: project[5],
+        payee: dataset.dictionaries.payees[payeeIndex],
+        amount,
+        block,
+        contract:
+          contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null,
+        work,
+        address: address || undefined,
+        corpNumber: corpNumber || undefined,
+        aggregated: false,
+        flowCount: 1,
+      };
+    });
+}
 
-  const bucket = new Map<string, { amount: number; projects: Set<number>; payee: string }>();
+function buildPayeeAggregateRows(
+  dataset: GyoseiYearDataset,
+  matchingFlowIndexes: number[],
+) {
+  type Agg = {
+    payee: string;
+    amount: number;
+    flowCount: number;
+    ministries: Map<string, number>;
+    projects: Map<string, number>;
+    corpNumber: string;
+    address: string;
+  };
+  const bucket = new Map<string, Agg>();
 
-  for (let i = 0; i < dataset.flows.length; i += 1) {
-    const [projectIndex, payeeIndex, amount] = dataset.flows[i];
-    if (dataset.projects[projectIndex][6]) continue;
+  for (const index of matchingFlowIndexes) {
+    const [projectIndex, payeeIndex, amount, , , corpNumber, rawWork] = dataset.flows[index];
+    const project = dataset.projects[projectIndex];
     const payee = dataset.dictionaries.payees[payeeIndex];
-    const hit = [...targets].find((token) => token.length >= 2 && payee.includes(token));
-    if (!hit) continue;
-    const key = `${hit}::${payee}`;
-    const current = bucket.get(key) ?? {
-      amount: 0,
-      projects: new Set<number>(),
+    const ministry = dataset.dictionaries.ministries[project[0]];
+    const { address } = splitWorkAndAddress(rawWork || "");
+    const current = bucket.get(payee) ?? {
       payee,
+      amount: 0,
+      flowCount: 0,
+      ministries: new Map<string, number>(),
+      projects: new Map<string, number>(),
+      corpNumber: "",
+      address: "",
     };
     current.amount += amount;
-    current.projects.add(projectIndex);
-    bucket.set(key, current);
+    current.flowCount += 1;
+    current.ministries.set(ministry, (current.ministries.get(ministry) ?? 0) + amount);
+    current.projects.set(project[1], (current.projects.get(project[1]) ?? 0) + amount);
+    if (!current.corpNumber && corpNumber) current.corpNumber = corpNumber;
+    if (!current.address && address) current.address = address;
+    bucket.set(payee, current);
   }
 
-  return [...bucket.entries()]
-    .map(([key, value]) => ({
-      municipality: key.split("::")[0],
-      payee: value.payee,
-      amount: round1(value.amount),
-      projectCount: value.projects.size,
-    }))
+  return [...bucket.values()]
     .sort((a, b) => b.amount - a.amount)
+    .slice(0, MAX_ROWS)
+    .map((entry) => {
+      const topMinistry =
+        [...entry.ministries.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      const topProject =
+        [...entry.projects.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      return {
+        ministry: topMinistry,
+        project: topProject,
+        projectNumber: "",
+        payee: entry.payee,
+        amount: round1(entry.amount),
+        block: "—",
+        contract: null,
+        work: `${entry.flowCount} 件の支出を合算`,
+        address: entry.address || undefined,
+        corpNumber: entry.corpNumber || undefined,
+        aggregated: true,
+        flowCount: entry.flowCount,
+      };
+    });
+}
+
+function findNearbyMunicipalVendorLinks(
+  dataset: GyoseiYearDataset,
+  companies: Array<{ prefecture: string; city: string; name: string }>,
+  vendorNames: string[],
+): NearbyMunicipalPayee[] {
+  const municipalityTokens = new Set<string>();
+  for (const company of companies) {
+    for (const token of municipalityVariants(company.prefecture, company.city)) {
+      municipalityTokens.add(token);
+    }
+  }
+  if (municipalityTokens.size === 0 || vendorNames.length === 0) return [];
+
+  const vendorNeedles = vendorNames
+    .map((name) => normalizePayeeQuery(name))
+    .filter((name) => name.length >= 2);
+
+  type ProjectBucket = {
+    municipal: Map<string, number>;
+    vendor: Map<string, number>;
+    projectName: string;
+  };
+  const byProject = new Map<number, ProjectBucket>();
+
+  for (let i = 0; i < dataset.flows.length; i += 1) {
+    const [projectIndex, payeeIndex, amount, , , , rawWork] = dataset.flows[i];
+    if (dataset.projects[projectIndex][6]) continue;
+    const payee = dataset.dictionaries.payees[payeeIndex];
+    const payeeKey = normalizePayeeQuery(payee);
+    const work = rawWork || "";
+
+    const municipalHit = [...municipalityTokens].find(
+      (token) => token.length >= 2 && isMunicipalPayee(payee) && payee.includes(token),
+    );
+    const vendorHit = vendorNeedles.find(
+      (needle) => payeeKey.includes(needle) || needle.includes(payeeKey),
+    );
+
+    if (!municipalHit && !vendorHit) {
+      // 契約概要に自治体名があり、支出先が当該業者のときも拾う
+      if (
+        vendorNeedles.some((needle) => payeeKey.includes(needle) || needle.includes(payeeKey))
+      ) {
+        const mentioned = [...municipalityTokens].find(
+          (token) => token.length >= 2 && work.includes(token),
+        );
+        if (!mentioned) continue;
+        const bucket =
+          byProject.get(projectIndex) ??
+          ({
+            municipal: new Map(),
+            vendor: new Map(),
+            projectName: dataset.projects[projectIndex][1],
+          } satisfies ProjectBucket);
+        bucket.vendor.set(payee, (bucket.vendor.get(payee) ?? 0) + amount);
+        // 言及のみの場合は自治体額 0 で後で relation を work-mention にする
+        if (!bucket.municipal.has(mentioned)) bucket.municipal.set(mentioned, 0);
+        byProject.set(projectIndex, bucket);
+      }
+      continue;
+    }
+
+    const bucket =
+      byProject.get(projectIndex) ??
+      ({
+        municipal: new Map(),
+        vendor: new Map(),
+        projectName: dataset.projects[projectIndex][1],
+      } satisfies ProjectBucket);
+    if (municipalHit) {
+      bucket.municipal.set(municipalHit, (bucket.municipal.get(municipalHit) ?? 0) + amount);
+    }
+    if (vendorHit) {
+      bucket.vendor.set(payee, (bucket.vendor.get(payee) ?? 0) + amount);
+    }
+    byProject.set(projectIndex, bucket);
+  }
+
+  const rows = new Map<
+    string,
+    {
+      municipality: string;
+      municipalityAmount: number;
+      vendorAmount: number;
+      vendor: string;
+      projects: Set<string>;
+      relation: "same-project" | "work-mention";
+    }
+  >();
+
+  for (const bucket of byProject.values()) {
+    if (bucket.vendor.size === 0 || bucket.municipal.size === 0) continue;
+    for (const [municipality, municipalityAmount] of bucket.municipal) {
+      for (const [vendor, vendorAmount] of bucket.vendor) {
+        const key = `${municipality}::${vendor}`;
+        const current = rows.get(key) ?? {
+          municipality,
+          municipalityAmount: 0,
+          vendorAmount: 0,
+          vendor,
+          projects: new Set<string>(),
+          relation:
+            municipalityAmount > 0 ? ("same-project" as const) : ("work-mention" as const),
+        };
+        current.municipalityAmount += municipalityAmount;
+        current.vendorAmount += vendorAmount;
+        current.projects.add(bucket.projectName);
+        if (municipalityAmount > 0) current.relation = "same-project";
+        rows.set(key, current);
+      }
+    }
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      municipality: row.municipality,
+      municipalityAmount: round1(row.municipalityAmount),
+      vendorAmount: round1(row.vendorAmount),
+      vendor: row.vendor,
+      projectCount: row.projects.size,
+      topProjects: [...row.projects].slice(0, 3),
+      relation: row.relation,
+    }))
+    .sort((a, b) => b.vendorAmount - a.vendorAmount || b.municipalityAmount - a.municipalityAmount)
     .slice(0, 20);
+}
+
+function municipalityVariants(prefecture: string, city: string): string[] {
+  const values = [prefecture, city]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const extras: string[] = [];
+  for (const value of values) {
+    extras.push(value);
+    extras.push(value.replace(/[都道府県]$/u, ""));
+    extras.push(value.replace(/[市区町村]$/u, ""));
+  }
+  return [...new Set(extras.filter((value) => value.length >= 2))];
+}
+
+function isMunicipalPayee(name: string): boolean {
+  return /[都道府県市区町村]|広域連合|一部事務組合|企業団|事務組合/.test(name);
 }
 
 function buildGraph(args: {
