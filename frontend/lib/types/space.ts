@@ -51,7 +51,12 @@ export interface CosmicLocation {
 export interface CloseApproach {
   designation: string;
   fullName?: string;
+  /** JPL CAD の生文字列（例: 2028-Jun-26 05:23） */
   closeApproachDate: string;
+  /** 日本時間の最接近日時（表示用） */
+  closeApproachDateJst: string;
+  /** 最接近の Unix ms（UTC 近似） */
+  closeApproachAt: number;
   distanceAu: number;
   distanceMinAu: number;
   distanceMaxAu: number;
@@ -60,6 +65,18 @@ export interface CloseApproach {
   velocityKmS: number;
   absoluteMagnitude: number;
   diameterKm?: number;
+  /** この接近での衝突確率（0〜1）。幾何・不確実性の簡易推定 */
+  impactProbability: number;
+  /** 表示用パーセント文字列 */
+  impactProbabilityLabel: string;
+  /** Sentry 累積衝突確率（あれば） */
+  sentryImpactProbability?: number;
+  sentryImpactProbabilityLabel?: string;
+  /** 衝突しうる場合の参考国・地域（教育用） */
+  nearbyRegions?: string[];
+  /** あれば小惑星の参考写真 */
+  imageUrl?: string;
+  imageCredit?: string;
 }
 
 export type SpaceChatMessage = {

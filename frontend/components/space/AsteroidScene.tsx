@@ -17,11 +17,13 @@ import {
   MARS_ORBIT,
   MERCURY_ORBIT,
   MOON_ORBIT,
-  PLANET_ORBIT_SPEED,
+  PLANET_PERIOD_YEARS,
   SATURN_ORBIT,
   SUN_RADIUS,
   VENUS_ORBIT,
+  angleAfterDays,
   buildAsteroidOrbit,
+  dayOffsetForProgress,
   earthPosition,
   orbitPhaseLabel,
   planetPosition,
@@ -145,11 +147,14 @@ function MoonMesh() {
   );
 }
 
-function EarthMesh({ initialAngle }: { initialAngle: number }) {
+function EarthMesh({
+  angle,
+}: {
+  angle: number;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
-  const angleRef = useRef(initialAngle);
 
   const [map, specular, clouds] = useTexture([
     EARTH_TEXTURE,
@@ -158,16 +163,15 @@ function EarthMesh({ initialAngle }: { initialAngle: number }) {
   ]);
 
   useFrame((_, delta) => {
-    angleRef.current += delta * 0.05;
     if (groupRef.current) {
-      groupRef.current.position.copy(earthPosition(angleRef.current));
+      groupRef.current.position.copy(earthPosition(angle));
     }
     if (earthRef.current) earthRef.current.rotation.y += delta * 0.35;
     if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.42;
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} position={earthPosition(angle)}>
       <mesh ref={earthRef}>
         <sphereGeometry args={[EARTH_RADIUS, 64, 64]} />
         <meshPhongMaterial
@@ -204,9 +208,8 @@ type PlanetSpec = {
   radius: number;
   color: string;
   emissive: string;
-  speedKey: keyof typeof PLANET_ORBIT_SPEED;
+  speedKey: string;
   ring?: boolean;
-  initialAngle: number;
 };
 
 const PLANETS: PlanetSpec[] = [
@@ -218,7 +221,6 @@ const PLANETS: PlanetSpec[] = [
     color: "#a8a29e",
     emissive: "#57534e",
     speedKey: "mercury",
-    initialAngle: 0.4,
   },
   {
     id: "venus",
@@ -228,7 +230,6 @@ const PLANETS: PlanetSpec[] = [
     color: "#fde68a",
     emissive: "#ca8a04",
     speedKey: "venus",
-    initialAngle: 2.1,
   },
   {
     id: "mars",
@@ -238,7 +239,6 @@ const PLANETS: PlanetSpec[] = [
     color: "#f87171",
     emissive: "#b91c1c",
     speedKey: "mars",
-    initialAngle: 4.2,
   },
   {
     id: "jupiter",
@@ -248,7 +248,6 @@ const PLANETS: PlanetSpec[] = [
     color: "#d97706",
     emissive: "#92400e",
     speedKey: "jupiter",
-    initialAngle: 1.3,
   },
   {
     id: "saturn",
@@ -259,25 +258,20 @@ const PLANETS: PlanetSpec[] = [
     emissive: "#a16207",
     speedKey: "saturn",
     ring: true,
-    initialAngle: 5.5,
   },
 ];
 
-function PlanetMesh({ planet }: { planet: PlanetSpec }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const angleRef = useRef(planet.initialAngle);
-
-  useFrame((_, delta) => {
-    angleRef.current += delta * PLANET_ORBIT_SPEED[planet.speedKey];
-    if (groupRef.current) {
-      groupRef.current.position.copy(
-        planetPosition(angleRef.current, planet.orbit),
-      );
-    }
-  });
+function PlanetMesh({
+  planet,
+  angle,
+}: {
+  planet: PlanetSpec;
+  angle: number;
+}) {
+  const pos = planetPosition(angle, planet.orbit);
 
   return (
-    <group ref={groupRef}>
+    <group position={pos}>
       <mesh>
         <sphereGeometry args={[planet.radius, 32, 32]} />
         <meshStandardMaterial
@@ -422,13 +416,50 @@ function AsteroidMesh({
 
 function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
   const orbit = useMemo(() => buildAsteroidOrbit(approach), [approach]);
+  const dayOffset = dayOffsetForProgress(progress, orbit.animationSpanDays);
+
+  const earthAngle = angleAfterDays(orbit.earthAngle, dayOffset, 1);
+  const planetAngles = useMemo(() => {
+    const next: Record<string, number> = {};
+    for (const [id, base] of Object.entries(orbit.planetAngles)) {
+      const period = PLANET_PERIOD_YEARS[id] ?? 1;
+      next[id] = angleAfterDays(base, dayOffset, period);
+    }
+    return next;
+  }, [orbit.planetAngles, dayOffset]);
+
+  // 小惑星軌道は最接近時の地球位置基準。現在の地球位置へオフセットして追従させる。
+  const pathOffset = useMemo(() => {
+    const closest = earthPosition(orbit.earthAngle);
+    const now = earthPosition(earthAngle);
+    return now.clone().sub(closest);
+  }, [orbit.earthAngle, earthAngle]);
+
   const pathPoints = useMemo(
     () =>
       orbit.curve
         .getPoints(100)
-        .map((p) => [p.x, p.y, p.z] as [number, number, number]),
-    [orbit.curve],
+        .map(
+          (p) =>
+            [
+              p.x + pathOffset.x,
+              p.y + pathOffset.y,
+              p.z + pathOffset.z,
+            ] as [number, number, number],
+        ),
+    [orbit.curve, pathOffset],
   );
+
+  const closestPoint = useMemo(
+    () => orbit.closestPoint.clone().add(pathOffset),
+    [orbit.closestPoint, pathOffset],
+  );
+
+  const shiftedCurve = useMemo(() => {
+    const pts = orbit.curve.getPoints(64).map((p) => p.clone().add(pathOffset));
+    return new THREE.CatmullRomCurve3(pts);
+  }, [orbit.curve, pathOffset]);
+
   const seed = useMemo(
     () =>
       approach.designation.length * 17 + approach.closeApproachDate.length * 31,
@@ -455,14 +486,18 @@ function SceneContent({ approach, progress, playing, onProgress }: SceneProps) {
       <OrbitRing radius={EARTH_ORBIT} />
       <OrbitRing radius={MARS_ORBIT} color="#334155" opacity={0.22} />
       <OrbitRing radius={JUPITER_ORBIT} color="#334155" opacity={0.18} />
-      <EarthMesh initialAngle={orbit.earthAngle} />
+      <EarthMesh angle={earthAngle} />
       {PLANETS.map((planet) => (
-        <PlanetMesh key={planet.id} planet={planet} />
+        <PlanetMesh
+          key={planet.id}
+          planet={planet}
+          angle={planetAngles[planet.id] ?? 0}
+        />
       ))}
       <AsteroidPath points={pathPoints} color="#fb923c" />
-      <ClosestMarker position={orbit.closestPoint} />
+      <ClosestMarker position={closestPoint} />
       <AsteroidMesh
-        curve={orbit.curve}
+        curve={shiftedCurve}
         progress={progress}
         size={orbit.asteroidSize}
         seed={seed}

@@ -19,14 +19,22 @@ export function formatDistanceKm(km: number): string {
 }
 
 export function parseCloseApproachDate(cd: string): number {
-  const normalized = cd.replace(/(\d{4})-(\w{3})-(\d{1,2})/, (_, y, mon, d) => {
-    const months: Record<string, string> = {
-      Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
-      Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
-    };
-    return `${y}-${months[mon] ?? "01"}-${String(d).padStart(2, "0")}`;
-  });
-  const ts = Date.parse(normalized);
+  const match = cd.trim().match(
+    /^(\d{4})-([A-Za-z]{3})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/,
+  );
+  if (!match) {
+    const fallback = Date.parse(cd);
+    return Number.isFinite(fallback) ? fallback : 0;
+  }
+  const months: Record<string, string> = {
+    Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+    Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+  };
+  const mon = months[match[2]] ?? "01";
+  const day = match[3].padStart(2, "0");
+  const hh = (match[4] ?? "00").padStart(2, "0");
+  const mm = (match[5] ?? "00").padStart(2, "0");
+  const ts = Date.parse(`${match[1]}-${mon}-${day}T${hh}:${mm}:00Z`);
   return Number.isFinite(ts) ? ts : 0;
 }
 

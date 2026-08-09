@@ -24,6 +24,7 @@ export default function AsteroidSimulatorTab() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/space/neo?limit=30")
@@ -35,16 +36,54 @@ export default function AsteroidSimulatorTab() {
         }
         const list = data.approaches as CloseApproach[];
         setApproaches(list);
-        if (list[0]) setSelected(list[0]);
+        if (list[0]) void selectApproach(list[0], list);
       })
       .catch(() => setError("小惑星データの読み込みに失敗しました"))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectApproach(item: CloseApproach) {
-    setSelected(item);
+  async function loadImageFor(item: CloseApproach) {
+    if (item.imageUrl) return item;
+    setImageLoading(true);
+    try {
+      const res = await fetch(
+        `/api/space/neo/image?des=${encodeURIComponent(item.designation)}&name=${encodeURIComponent(item.fullName ?? "")}`,
+      );
+      const data = await res.json();
+      if (data.url) {
+        return {
+          ...item,
+          imageUrl: data.url as string,
+          imageCredit: (data.credit as string) || "NASA Images",
+        };
+      }
+    } catch {
+      // 写真なしでも詳細は表示
+    } finally {
+      setImageLoading(false);
+    }
+    return item;
+  }
+
+  async function selectApproach(
+    item: CloseApproach,
+    list: CloseApproach[] = approaches,
+  ) {
     setProgress(0);
     setPlaying(false);
+    setSelected(item);
+
+    const withImage = await loadImageFor(item);
+    setSelected(withImage);
+    setApproaches((prev) =>
+      (prev.length ? prev : list).map((row) =>
+        row.designation === withImage.designation &&
+        row.closeApproachDate === withImage.closeApproachDate
+          ? withImage
+          : row,
+      ),
+    );
   }
 
   function togglePlay() {
@@ -52,7 +91,6 @@ export default function AsteroidSimulatorTab() {
     setPlaying((p) => !p);
   }
 
-  // 終端まで進んだらそこで再生を止める。
   const advanceProgress = useCallback((value: number) => {
     setProgress(value);
     if (value >= 1) setPlaying(false);
@@ -81,7 +119,7 @@ export default function AsteroidSimulatorTab() {
               <li key={`${item.designation}-${item.closeApproachDate}`}>
                 <button
                   type="button"
-                  onClick={() => selectApproach(item)}
+                  onClick={() => void selectApproach(item)}
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     selected?.designation === item.designation &&
                     selected?.closeApproachDate === item.closeApproachDate
@@ -93,11 +131,14 @@ export default function AsteroidSimulatorTab() {
                     {item.designation}
                   </p>
                   <p className="mt-1 text-[10px] text-slate-500">
-                    {item.closeApproachDate}
+                    {item.closeApproachDateJst}
                   </p>
                   <p className="mt-1 text-xs text-orange-200">
                     最接近: {item.distanceMinLd.toFixed(1)} LD (
                     {formatDistanceKm(item.distanceMinKm)})
+                  </p>
+                  <p className="mt-1 text-[10px] text-rose-200/80">
+                    衝突確率（この接近）: {item.impactProbabilityLabel}
                   </p>
                 </button>
               </li>
@@ -111,39 +152,68 @@ export default function AsteroidSimulatorTab() {
           <>
             <div className={spacePanelClass}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-bold text-white">
-                    {selected.designation}
+                    {selected.fullName ?? selected.designation}
                   </h2>
-                  <p className="mt-1 text-xs text-slate-400">
-                    接近日: {selected.closeApproachDate}
+                  <p className="mt-2 text-sm font-medium text-amber-100">
+                    最接近（日本時間）: {selected.closeApproachDateJst}
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    JPL 記録: {selected.closeApproachDate}
                   </p>
                 </div>
-                <div className="rounded-xl border border-orange-400/30 bg-orange-500/10 px-3 py-2 text-right">
-                  <p className="text-[10px] uppercase tracking-wider text-orange-200/80">
-                    最小接近距離
-                  </p>
-                  <p className="text-lg font-bold text-orange-100">
-                    {selected.distanceMinLd.toFixed(2)} LD
-                  </p>
-                  <p className="text-xs text-orange-200/80">
-                    {formatDistanceKm(selected.distanceMinKm)} ·{" "}
-                    {selected.distanceMinAu.toFixed(4)} AU
-                  </p>
+                <div className="flex items-start gap-3">
+                  {(selected.imageUrl || imageLoading) && (
+                    <div className="h-24 w-24 overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                      {selected.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={selected.imageUrl}
+                          alt={selected.designation}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-slate-500">
+                          …
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-orange-400/30 bg-orange-500/10 px-3 py-2 text-right">
+                    <p className="text-[10px] uppercase tracking-wider text-orange-200/80">
+                      最小接近距離
+                    </p>
+                    <p className="text-lg font-bold text-orange-100">
+                      {selected.distanceMinLd.toFixed(2)} LD
+                    </p>
+                    <p className="text-xs text-orange-200/80">
+                      {formatDistanceKm(selected.distanceMinKm)} ·{" "}
+                      {selected.distanceMinAu.toFixed(4)} AU
+                    </p>
+                  </div>
                 </div>
               </div>
+              {selected.imageCredit && (
+                <p className="mt-2 text-[10px] text-slate-500">{selected.imageCredit}</p>
+              )}
 
-              <div className="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
+              <div className="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 sm:col-span-2">
+                  <p className="text-[10px] text-rose-200/80">衝突確率（この接近・簡易推定）</p>
+                  <p className="mt-1 text-lg font-bold text-rose-100">
+                    {selected.impactProbabilityLabel}
+                  </p>
+                  {selected.sentryImpactProbabilityLabel && (
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Sentry 累積 IP: {selected.sentryImpactProbabilityLabel}
+                    </p>
+                  )}
+                </div>
                 <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
                   <p className="text-[10px] text-slate-500">相対速度</p>
                   <p className="font-medium text-slate-200">
                     {selected.velocityKmS.toFixed(1)} km/s
-                  </p>
-                </div>
-                <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
-                  <p className="text-[10px] text-slate-500">絶対等級 H</p>
-                  <p className="font-medium text-slate-200">
-                    {selected.absoluteMagnitude.toFixed(1)}
                   </p>
                 </div>
                 <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
@@ -153,6 +223,17 @@ export default function AsteroidSimulatorTab() {
                   </p>
                 </div>
               </div>
+
+              {selected.nearbyRegions && selected.nearbyRegions.length > 0 && (
+                <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/[0.06] px-3 py-2">
+                  <p className="text-[10px] text-amber-100/80">
+                    衝突しうる場合の参考地域（教育用の仮置き）
+                  </p>
+                  <p className="mt-1 text-sm text-amber-50">
+                    {selected.nearbyRegions.join(" / ")}
+                  </p>
+                </div>
+              )}
             </div>
 
             <AsteroidScene
@@ -187,8 +268,7 @@ export default function AsteroidSimulatorTab() {
                   リセット
                 </button>
                 <span className="text-xs text-slate-500">
-                  {Math.round(progress * 100)}% —
-                  選択した小惑星の軌道で接近をシミュレーション
+                  {Math.round(progress * 100)}% — 最接近日時の惑星配置に合わせて再生
                 </span>
               </div>
               <input
@@ -203,8 +283,7 @@ export default function AsteroidSimulatorTab() {
                 className="mt-4 w-full accent-orange-500"
               />
               <p className="mt-2 text-[10px] text-slate-500">
-                データ: JPL
-                SBDB。軌道は接近距離・速度・サイズに基づく簡易モデル（小惑星ごとに軌道が変わります）。
+                データ: JPL SBDB / Sentry。衝突確率は接近距離と不確実性からの簡易推定（公式予報ではない）。軌道・惑星位置も接近日に連動した簡易モデルです。
               </p>
             </div>
           </>
