@@ -530,6 +530,11 @@ body {
   100% { transform: scale(1.35); opacity: 0; }
 }
 
+@keyframes disney-bounce-ears {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 .consult-companion {
   position: relative;
   width: 5.5rem;
@@ -603,6 +608,147 @@ body {
   animation-duration: 1.6s;
 }
 
+/* ── Disney companions ── */
+.disney-companion {
+  position: relative;
+  width: 5.25rem;
+  height: 5.25rem;
+  flex-shrink: 0;
+}
+
+.disney-companion__core {
+  position: absolute;
+  inset: 28%;
+  border-radius: 9999px;
+  animation: consult-breathe 3.4s ease-in-out infinite;
+}
+
+.disney-companion__ring {
+  position: absolute;
+  inset: 16%;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  animation: consult-pulse-ring 2.6s ease-out infinite;
+}
+
+.disney-companion__orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 9999px;
+  animation: consult-orbit var(--orbit-dur, 7s) linear infinite;
+}
+
+.disney-companion__ears {
+  pointer-events: none;
+}
+
+.disney-companion__ears[data-character="mickey"]::before,
+.disney-companion__ears[data-character="mickey"]::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 40% 35%, #1f2937, #111827 70%);
+  box-shadow: 0 0 10px rgba(15, 23, 42, 0.45);
+  animation: disney-bounce-ears 2.8s ease-in-out infinite;
+}
+
+.disney-companion__ears[data-character="mickey"]::before { left: 12%; }
+.disney-companion__ears[data-character="mickey"]::after { right: 12%; }
+
+.disney-companion[data-character="donald"][data-mood="thinking"] .disney-companion__core {
+  animation-duration: 0.85s;
+}
+
+.disney-companion[data-character="elsa"] .disney-companion__orb {
+  width: 5px;
+  height: 5px;
+  margin: -2.5px;
+}
+
+.disney-companion[data-character="baymax"] .disney-companion__core {
+  animation-duration: 4.8s;
+}
+
+.disney-companion[data-mood="thinking"] .disney-companion__core {
+  animation-duration: 1.15s;
+}
+
+.disney-companion[data-mood="thinking"] .disney-companion__orb {
+  animation-duration: calc(var(--orbit-dur, 7s) * 0.42);
+}
+
+.disney-companion[data-mood="speaking"] .disney-companion__core {
+  animation-duration: 1.7s;
+}
+
+.disney-companion[data-mood="speaking"] .disney-companion__ring {
+  animation-duration: 1.5s;
+}
+
+/* ── Council avatars ── */
+.council-avatar {
+  position: relative;
+  width: 3.75rem;
+  height: 3.75rem;
+  flex-shrink: 0;
+}
+
+.council-avatar--compact {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.council-avatar__core {
+  position: absolute;
+  inset: 26%;
+  border-radius: 9999px;
+  animation: consult-breathe 3.2s ease-in-out infinite;
+}
+
+.council-avatar__ring {
+  position: absolute;
+  inset: 14%;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  animation: consult-pulse-ring 2.7s ease-out infinite;
+}
+
+.council-avatar__orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px;
+  border-radius: 9999px;
+  animation: consult-orbit var(--orbit-dur, 6s) linear infinite;
+}
+
+.council-avatar[data-mood="thinking"] .council-avatar__core {
+  animation-duration: 1.05s;
+}
+
+.council-avatar[data-mood="thinking"] .council-avatar__orb {
+  animation-duration: calc(var(--orbit-dur, 6s) * 0.4);
+}
+
+.council-avatar[data-mood="speaking"] .council-avatar__core {
+  animation-duration: 1.65s;
+}
+
+.council-avatar[data-role="explorer"] .council-avatar__orb {
+  width: 4px;
+  height: 4px;
+  margin: -2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aq-stars,
   .aq-rays,
@@ -616,7 +762,15 @@ body {
   .consult-companion__core,
   .consult-companion__ring,
   .consult-companion__orb,
-  .consult-companion__spark {
+  .consult-companion__spark,
+  .disney-companion__core,
+  .disney-companion__ring,
+  .disney-companion__orb,
+  .disney-companion__ears[data-character="mickey"]::before,
+  .disney-companion__ears[data-character="mickey"]::after,
+  .council-avatar__core,
+  .council-avatar__ring,
+  .council-avatar__orb {
     animation: none !important;
   }
 

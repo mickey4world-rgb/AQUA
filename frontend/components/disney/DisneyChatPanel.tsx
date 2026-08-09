@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import DisneyCompanion, {
+  type DisneyMood,
+} from "@/components/disney/DisneyCompanion";
 import {
   DISNEY_CHARACTER_LIST,
   resolveDisneyCharacter,
@@ -15,6 +18,29 @@ const STARTER_PROMPTS = [
   "このパークの隠れミッキー、どこにある？",
   "子連れ向けのおすすめを教えて！",
 ];
+
+const IDLE_LINES: Record<DisneyCharacterId, string[]> = {
+  mickey: [
+    "ハハッ！ 今日はどこから回る？",
+    "ぼくと一緒に、わくわくプランを考えよう！",
+    "待ち時間も味方にできるよ。聞いてみて！",
+  ],
+  donald: [
+    "クワッ！ ぼ、僕に任せてくれよ！",
+    "ミッキーより先に答えられるぞ！",
+    "なんだい、回り方の相談かい？",
+  ],
+  elsa: [
+    "大丈夫。落ち着いて順番を整えましょう。",
+    "光を浴びるように、無理のない計画を。",
+    "私に聞いて。混雑の流れを見ます。",
+  ],
+  baymax: [
+    "こんにちは。私はベイマックスです。",
+    "心拍数は安定しています。質問をどうぞ。",
+    "疲労リスクを下げる回り方を提案できます。",
+  ],
+};
 
 type DisneyChatPanelProps = {
   park: DisneyParkKey;
@@ -32,11 +58,11 @@ export default function DisneyChatPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idleTick, setIdleTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const character = resolveDisneyCharacter(characterId);
 
-  // 公園・日付・キャラクターのどれかが変わったら会話をやり直す。
   const conversationKey = `${park}:${targetDate}:${characterId}`;
   const [syncedKey, setSyncedKey] = useState(conversationKey);
   if (syncedKey !== conversationKey) {
@@ -48,6 +74,36 @@ export default function DisneyChatPanel({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  useEffect(() => {
+    if (messages.length > 0 || sending) return;
+    const id = window.setInterval(() => {
+      setIdleTick((value) => value + 1);
+    }, 4800);
+    return () => window.clearInterval(id);
+  }, [messages.length, sending, characterId]);
+
+  const mood: DisneyMood = sending
+    ? "thinking"
+    : messages.some((message) => message.role === "assistant")
+      ? "speaking"
+      : "idle";
+
+  const companionLine = useMemo(() => {
+    if (sending) return character.greeting;
+    if (messages.length === 0) {
+      const lines = IDLE_LINES[characterId];
+      return lines[idleTick % lines.length]!;
+    }
+    const last = messages[messages.length - 1];
+    if (last?.role === "assistant") {
+      if (characterId === "mickey") return "続きもハハッと聞いてね！";
+      if (characterId === "donald") return "ほら、まだ聞きたいだろ！";
+      if (characterId === "elsa") return "必要なら、もう少し深く見ましょう。";
+      return "追加の症状…ではなく、質問をどうぞ。";
+    }
+    return "受け取ったよ。少し待ってね。";
+  }, [sending, messages, characterId, character.greeting, idleTick]);
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -107,12 +163,21 @@ export default function DisneyChatPanel({
           </h2>
           <p className="mt-1 text-xs text-slate-400">
             {parkName} · {targetDate} —
-            キャラクターごとの口調で回り方・豆知識に答えます
+            キャラクターごとの口調と生きた光で答えます
           </p>
         </div>
         <span className="rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-200">
           {character.badge}
         </span>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+        <DisneyCompanion
+          characterId={characterId}
+          mood={mood}
+          line={companionLine}
+          nameJa={character.nameJa}
+        />
       </div>
 
       <div className="mt-3 flex items-center gap-2">
@@ -178,9 +243,6 @@ export default function DisneyChatPanel({
           </div>
         ))}
 
-        {sending && (
-          <p className="text-xs text-slate-500">{character.greeting}</p>
-        )}
         <div ref={bottomRef} />
       </div>
 

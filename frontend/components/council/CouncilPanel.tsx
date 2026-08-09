@@ -122,8 +122,13 @@ export default function CouncilPanel() {
   }
 
   const modeConfig = mode === "domestic" ? config?.domestic : config?.global;
+  const geminiInPlay = Boolean(config?.geminiConfigured && mode === "global");
+  const compactCalls = geminiInPlay ? 4 : 3;
+  const standardCalls = geminiInPlay ? 9 : 7;
   const depthLabel =
-    depth === "compact" ? "簡潔（3回・節約）" : "標準（7回・詳細）";
+    depth === "compact"
+      ? `簡潔（${compactCalls}回・節約）`
+      : `標準（${standardCalls}回・詳細）`;
   const azureBlocked = Boolean(config && !config.azureConfigured);
 
   return (
@@ -199,6 +204,7 @@ export default function CouncilPanel() {
                 title="使用モデル（設定値）"
                 models={modeConfig.models}
                 judge={modeConfig.judge}
+                mood={loading ? "thinking" : "idle"}
               />
             </div>
           </div>
@@ -208,7 +214,9 @@ export default function CouncilPanel() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談テーマ</h2>
         <p className="mt-1 text-xs text-slate-400">
-          {depthLabel} — AI 呼び出し {depth === "compact" ? "3" : "7"} 回。テキストファイル添付可。
+          {depthLabel} — AI 呼び出し {depth === "compact" ? compactCalls : standardCalls}{" "}
+          回。テキストファイル添付可。
+          {geminiInPlay ? " Gemini も探査派として参加します。" : ""}
         </p>
 
         {!result && !loading && (
@@ -293,10 +301,22 @@ export default function CouncilPanel() {
         </form>
 
         {loading && (
-          <div className="mt-4 space-y-2 text-xs text-slate-500">
-            <p>① 各 AI が要点を述べています...</p>
-            {depth === "standard" && <p>② AI 同士が議論しています...</p>}
-            <p>{depth === "standard" ? "③" : "②"} 議長がまとめを作成しています...</p>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-2xl border border-violet-400/20 bg-violet-500/5 px-4 py-3">
+              <CouncilModelRoster
+                title="合議メンバーが考えています"
+                models={modeConfig?.models ?? []}
+                judge={modeConfig?.judge}
+                mood="thinking"
+              />
+            </div>
+            <div className="space-y-2 text-xs text-slate-500">
+              <p>① 各 AI が要点を述べています...</p>
+              {depth === "standard" && <p>② AI 同士が議論しています...</p>}
+              <p>
+                {depth === "standard" ? "③" : "②"} 議長がまとめを作成しています...
+              </p>
+            </div>
           </div>
         )}
 
@@ -324,6 +344,7 @@ export default function CouncilPanel() {
               title="実行時モデル"
               models={result.models}
               judge={result.judge}
+              mood="speaking"
             />
           </div>
           <div className="mt-5">

@@ -7,10 +7,11 @@ export type CouncilPhase = "initial" | "rebuttal" | "synthesis" | "followup";
 export interface CouncilModelMeta {
   id: string;
   label: string;
-  provider: "azure" | "openai";
+  provider: "azure" | "openai" | "gemini";
   deployment?: string;
   model?: string;
   displayName?: string;
+  role?: "logic" | "creative" | "skeptic" | "explorer" | "judge";
 }
 
 export interface CouncilAttachment {
@@ -31,7 +32,7 @@ export interface CouncilModelOpinion {
   phase: CouncilPhase;
   content: string;
   modelUsed?: string;
-  provider?: "azure" | "openai";
+  provider?: "azure" | "openai" | "gemini";
 }
 
 export interface CouncilDebateResult {
@@ -50,6 +51,7 @@ export interface CouncilDebateResult {
 
 export interface CouncilConfigResponse {
   azureConfigured: boolean;
+  geminiConfigured: boolean;
   setupHint?: string;
   domestic: {
     available: boolean;
