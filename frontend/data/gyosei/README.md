@@ -8,14 +8,14 @@ https://www.gyoukaku.go.jp/review/database/index.html
 
 | ファイル | 内容 |
 | --- | --- |
-| `fy2019.json.gz` 〜 `fy2022.json.gz` | 令和2〜5年度シート由来の支出先明細（執行年度は前年度） |
+| `fy2019.json.gz` 〜 `fy2022.json.gz` | 主要事項データベース（令和2〜5年度シート）由来 |
+| `fy2024.json.gz` / `fy2025.json.gz` | 見える化サイト「5-1 支出情報」CSV 由来 |
 | `summary.json` | 府省庁別合計・上位支出先などの軽量サマリ |
 
-## 2023〜2025 年度の追加
+## 2023 年度など未収録年の追加
 
-主要事項データベースは令和5年度（執行 2022）までです。それ以降は
-[行政事業レビュー見える化サイト](https://rssystem.go.jp/download-csv) の CSV（ZIP）を手動ダウンロードし、
-同形式の `fy2023.json.gz` などを生成してください。ファイルがあれば年度セレクトに自動で現れます。
+[行政事業レビュー見える化サイト](https://rssystem.go.jp/download-csv) の `5-1_RS_YYYY_支出先_支出情報.zip` を
+`data-src/rs/` に置き、次で `fyYYYY.json.gz` を生成します（ファイルがあれば年度セレクトに自動反映）。
 
 ## 法人番号連携
 
@@ -27,10 +27,15 @@ https://www.gyoukaku.go.jp/review/database/index.html
 リポジトリ直下で:
 
 ```bash
-# 1. 公式サイトから XLSX / ZIP を data-src/ へ取得
-# 2. 前処理
+# 主要事項 DB（〜fy2022）
 py tools/build_review_dataset.py data-src/R05.xlsx frontend/data/gyosei/fy2022.json.gz
+
+# 見える化サイト CSV（fy2024/2025 など）
+py tools/build_rs_dataset.py data-src/rs frontend/data/gyosei
+
+# サマリ
 py tools/build_review_summary.py frontend/data/gyosei
 ```
 
-単位入力が疑わしい事業（支出合計が執行額の 100 倍超）は `suspect=1` として集計から除外しています。
+単位入力が疑わしい事業は `suspect=1` として集計から除外しています。
+RS 側は単一契約が 1,000 億円超の行を疑わしいとしてマークします。
