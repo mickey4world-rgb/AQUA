@@ -1,50 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ConsultCompanion, {
+  type ConsultMood,
+} from "@/components/works/ConsultCompanion";
 import {
   copyToClipboard,
   downloadMarkdown,
   worksPanelClass,
 } from "@/lib/works-utils";
 import {
-  WORKS_TOPICS,
-  resolveWorksTopic,
   workNoteToMarkdown,
   type WorkNote,
   type WorkNoteDraft,
   type WorksChatMessage,
-  type WorksTopicId,
 } from "@/lib/types/works";
-
-const STARTER_PROMPTS: Record<WorksTopicId, string[]> = {
-  "claude-code": [
-    "この AQUA に新しいアプリを追加する手順を教えて",
-    "Cosmos DB のコンテナ設計を見直したい",
-    "Claude Code に渡すプロンプトの粒度のコツは？",
-  ],
-  architecture: [
-    "Azure Static Web Apps と App Service はどちらが向いている？",
-    "Cosmos DB のパーティションキー設計を相談したい",
-    "Next.js App Router のキャッシュ戦略を整理したい",
-  ],
-  ai: [
-    "無料枠で使える LLM の使い分けを教えて",
-    "トークンコストを半分にする方法は？",
-    "RAG を個人開発で試すなら最小構成は？",
-  ],
-  general: [
-    "TypeScript の型設計で気をつけることは？",
-    "個人開発の CI/CD 最小構成を教えて",
-    "セキュリティ対策の優先順位を整理したい",
-  ],
-};
 
 type ConsultPanelProps = {
   onNoteSaved: (note: WorkNote) => void;
 };
 
+const IDLE_LINES = [
+  "今日は何を一緒に考える？",
+  "ちょっとした疑問でも大丈夫だよ。",
+  "ここに書いてくれたら、すぐ返事するね。",
+];
+
 export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
-  const [topicId, setTopicId] = useState<WorksTopicId>("claude-code");
   const [messages, setMessages] = useState<WorksChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -54,13 +36,37 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [draft, setDraft] = useState<WorkNoteDraft | null>(null);
+  const [idleTick, setIdleTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  const topic = resolveWorksTopic(topicId);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  useEffect(() => {
+    if (messages.length > 0 || sending) return;
+    const id = window.setInterval(() => {
+      setIdleTick((value) => value + 1);
+    }, 5200);
+    return () => window.clearInterval(id);
+  }, [messages.length, sending]);
+
+  const mood: ConsultMood = sending || summarizing
+    ? "thinking"
+    : messages.some((message) => message.role === "assistant")
+      ? "speaking"
+      : "idle";
+
+  const companionLine = useMemo(() => {
+    if (sending) return "うん、少し考えてる…";
+    if (summarizing) return "いま話をまとめているよ。";
+    if (saving) return "メモに残しているね。";
+    if (draft) return "まとめたよ。保存する？";
+    if (messages.length === 0) return IDLE_LINES[idleTick % IDLE_LINES.length];
+    const last = messages[messages.length - 1];
+    if (last.role === "assistant") return "続きも聞いてね。";
+    return "受け取ったよ。";
+  }, [sending, summarizing, saving, draft, messages, idleTick]);
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -85,7 +91,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
         body: JSON.stringify({
           message: trimmed,
           history: priorMessages,
-          topic: topicId,
+          topic: "general",
         }),
       });
 
@@ -117,17 +123,15 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
       const res = await fetch("/api/works/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history: messages, topic: topicId }),
+        body: JSON.stringify({ history: messages, topic: "general" }),
       });
-
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "まとめの生成に失敗しました");
+        setError(data.error ?? "まとめに失敗しました");
         return;
       }
-
       setDraft(data.draft as WorkNoteDraft);
-      setModel(data.model as string);
+      if (data.model) setModel(data.model as string);
     } catch {
       setError("通信エラーが発生しました");
     } finally {
@@ -146,18 +150,16 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
       const res = await fetch("/api/works/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draft, topic: topicId, model: model ?? "gemini" }),
+        body: JSON.stringify({ draft, topic: "general", model: model ?? "gemini" }),
       });
-
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? data.message ?? "保存に失敗しました");
+        setError(data.error ?? "保存に失敗しました");
         return;
       }
-
       onNoteSaved(data.note as WorkNote);
       setDraft(null);
-      setNotice("メモを保存しました。下の一覧からいつでも取り出せます。");
+      setNotice("メモを保存しました。右の一覧からいつでも取り出せます。");
     } catch {
       setError("通信エラーが発生しました");
     } finally {
@@ -181,63 +183,33 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
   }
 
   return (
-    <div className={`${worksPanelClass} flex min-h-[34rem] flex-col p-5`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-white">AI 相談ボード</h2>
-          <p className="mt-1 text-xs text-slate-400">{topic.hint}</p>
+    <div className={`${worksPanelClass} relative flex min-h-[34rem] flex-col overflow-hidden p-5`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(103,232,249,0.12),transparent_45%),radial-gradient(ellipse_at_90%_30%,rgba(167,139,250,0.08),transparent_40%)]" />
+
+      <div className="relative flex flex-wrap items-start justify-between gap-4">
+        <ConsultCompanion mood={mood} line={companionLine} />
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-medium text-cyan-100">
+            Gemini
+          </span>
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={resetThread}
+              className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5"
+            >
+              新しい相談
+            </button>
+          )}
         </div>
-        <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-200">
-          Gemini 無料枠
-        </span>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {WORKS_TOPICS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTopicId(item.id)}
-            disabled={sending}
-            className={`rounded-full border px-3 py-1.5 text-xs transition disabled:opacity-50 ${
-              item.id === topicId
-                ? "border-emerald-400/50 bg-emerald-500/15 font-medium text-emerald-100"
-                : "border-white/10 text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-        {messages.length > 0 && (
-          <button
-            type="button"
-            onClick={resetThread}
-            className="ml-auto rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5"
-          >
-            新しい相談
-          </button>
-        )}
-      </div>
-
-      <div className="mt-4 max-h-[26rem] flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className="relative mt-5 max-h-[26rem] flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 && (
-          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4">
-            <p className="text-sm text-slate-400">
-              相談したいことを書いてください。方針・トレードオフ・具体的な実装手順まで返します。
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-5">
+            <p className="text-sm leading-relaxed text-slate-300">
+              思いついたことをそのまま書いてね。短い一言でも大丈夫。
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {STARTER_PROMPTS[topicId].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => sendMessage(prompt)}
-                  disabled={sending}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/10 disabled:opacity-50"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
           </div>
         )}
 
@@ -249,39 +221,33 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
             <div
               className={`max-w-[94%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                 message.role === "user"
-                  ? "bg-gradient-to-r from-emerald-600/80 to-teal-600/80 text-white"
-                  : "border border-white/10 bg-white/5 text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-500/80 to-teal-500/80 text-white"
+                  : "border border-cyan-300/15 bg-cyan-400/[0.06] text-slate-100"
               }`}
             >
-              {message.role === "assistant" && (
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300/80">
-                  Gemini
-                </p>
-              )}
               {message.content}
             </div>
           </div>
         ))}
 
-        {sending && <p className="text-xs text-slate-500">Gemini が考え中...</p>}
         <div ref={bottomRef} />
       </div>
 
       {error && (
-        <p className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+        <p className="relative mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
           {error}
         </p>
       )}
       {notice && (
-        <p className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+        <p className="relative mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
           {notice}
         </p>
       )}
 
       {draft && (
-        <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/[0.06] p-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-emerald-300/80">
-            保存前プレビュー
+        <div className="relative mt-4 rounded-2xl border border-cyan-300/25 bg-cyan-400/[0.06] p-4">
+          <p className="text-[10px] font-medium tracking-[0.2em] text-cyan-200/80 uppercase">
+            まとめ
           </p>
           <h3 className="mt-2 text-sm font-semibold text-white">{draft.title}</h3>
           <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
@@ -292,7 +258,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
             <ol className="mt-3 space-y-1.5">
               {draft.steps.map((step, i) => (
                 <li key={step} className="flex gap-2 text-xs text-slate-300">
-                  <span className="font-mono text-emerald-400/80">{i + 1}.</span>
+                  <span className="font-mono text-cyan-300/80">{i + 1}.</span>
                   <span>{step}</span>
                 </li>
               ))}
@@ -300,7 +266,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
           )}
 
           {draft.claudePrompt && (
-            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
+            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
               {draft.claudePrompt}
             </pre>
           )}
@@ -310,7 +276,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
               type="button"
               onClick={saveDraft}
               disabled={saving}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-4 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
+              className="rounded-xl bg-gradient-to-r from-cyan-300 to-teal-200 px-4 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"
             >
               {saving ? "保存中..." : "メモに保存"}
             </button>
@@ -326,7 +292,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
               onClick={() => downloadMarkdown(draft, workNoteToMarkdown(draft))}
               className="rounded-xl border border-white/15 px-4 py-2 text-xs text-slate-200 hover:bg-white/5"
             >
-              .md をダウンロード
+              .md
             </button>
             <button
               type="button"
@@ -340,7 +306,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
       )}
 
       <form
-        className="mt-4 flex flex-col gap-2 sm:flex-row"
+        className="relative mt-4 flex flex-col gap-2 sm:flex-row"
         onSubmit={(e) => {
           e.preventDefault();
           sendMessage(input);
@@ -350,22 +316,26 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
               e.preventDefault();
               sendMessage(input);
             }
           }}
-          rows={3}
+          rows={2}
           maxLength={2000}
           disabled={sending}
-          placeholder="相談内容を入力（⌘/Ctrl + Enter で送信）"
-          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
+          placeholder="相談したいことを書く（Enter で送信）"
+          className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
         />
         <div className="flex gap-2 sm:flex-col sm:self-end">
           <button
             type="submit"
             disabled={sending || !input.trim()}
-            className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-5 py-2.5 text-sm font-semibold text-emerald-950 disabled:opacity-50 sm:flex-none"
+            className="flex-1 rounded-xl bg-gradient-to-r from-cyan-300 to-teal-200 px-5 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50 sm:flex-none"
           >
             送信
           </button>

@@ -36,6 +36,10 @@ export default function WorkNotesPanel({
   }
 
   async function remove(note: WorkNote) {
+    if (deletingId) return;
+    const confirmed = window.confirm(`「${note.title}」を削除しますか？`);
+    if (!confirmed) return;
+
     setDeletingId(note.id);
     try {
       const res = await fetch(`/api/works/notes/${note.id}`, { method: "DELETE" });
@@ -54,7 +58,7 @@ export default function WorkNotesPanel({
         </span>
       </div>
       <p className="mt-1 text-xs text-slate-400">
-        Claude Code に貼るだけで実装を再開できます。
+        いつでも見返して、不要ならすぐ削除できます。
       </p>
 
       {error && (
@@ -79,21 +83,28 @@ export default function WorkNotesPanel({
               key={note.id}
               className="rounded-xl border border-white/10 bg-black/20 p-3.5"
             >
-              <button
-                type="button"
-                onClick={() => setOpenId(open ? null : note.id)}
-                className="flex w-full items-start justify-between gap-3 text-left"
-                aria-expanded={open}
-              >
-                <div className="min-w-0">
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenId(open ? null : note.id)}
+                  className="min-w-0 flex-1 text-left"
+                  aria-expanded={open}
+                >
                   <p className="truncate text-sm font-medium text-white">{note.title}</p>
                   <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-500">
                     {resolveWorksTopic(note.topic).label} ·{" "}
                     {new Date(note.createdAt).toLocaleDateString("ja-JP")}
                   </p>
-                </div>
-                <span className="shrink-0 text-xs text-slate-500">{open ? "−" : "+"}</span>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(note)}
+                  disabled={deletingId === note.id}
+                  className="shrink-0 rounded-lg border border-rose-400/20 bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-200 transition hover:bg-rose-500/20 disabled:opacity-50"
+                >
+                  {deletingId === note.id ? "削除中" : "削除"}
+                </button>
+              </div>
 
               {note.tags.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -145,14 +156,6 @@ export default function WorkNotesPanel({
                       className="rounded-lg border border-white/15 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-white/5"
                     >
                       .md
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => remove(note)}
-                      disabled={deletingId === note.id}
-                      className="ml-auto rounded-lg px-2 py-1.5 text-[11px] text-rose-300/80 hover:text-rose-200 disabled:opacity-50"
-                    >
-                      {deletingId === note.id ? "削除中..." : "削除"}
                     </button>
                   </div>
                 </div>

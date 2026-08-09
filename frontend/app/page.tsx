@@ -1,5 +1,4 @@
 import Link from "next/link";
-import AuthStatus from "@/components/AuthStatus";
 import HomePageShell from "@/components/home/HomePageShell";
 import Marquee from "@/components/home/Marquee";
 import ModuleIndexRow, {
@@ -75,28 +74,9 @@ const marqueeItems = [
   "TypeScript",
 ];
 
-const capabilities = [
-  {
-    label: "Realtime",
-    title: "リアルタイム観測",
-    body: "衛星軌道・株価・パーク待ち時間を実データで取得し、鮮度の高い状態で提示します。",
-  },
-  {
-    label: "Multi-model",
-    title: "複数 AI の使い分け",
-    body: "Azure OpenAI と Gemini を用途で切り替え、合議・要約・相談をそれぞれ最適なモデルで実行。",
-  },
-  {
-    label: "Cost aware",
-    title: "コストの可視化",
-    body: "トークン消費と Azure 実績請求を同じダッシュボードに集約し、使いすぎを未然に防ぎます。",
-  },
-];
-
 const stats = [
   { label: "Modules", value: "06" },
-  { label: "Auth", value: "Azure SWA" },
-  { label: "Engines", value: "GPT-4o / Gemini" },
+  { label: "Engines", value: "GPT / Gemini" },
   { label: "Region", value: "Japan East" },
 ];
 
@@ -114,13 +94,13 @@ export default function Home() {
 
           <h1 className="display-hero mt-8 text-white">
             <Reveal delayMs={70}>
-              <span className="block">
-                <span className="ink-soft">静かな画面に、</span>
+              <span className="block ink-gradient">
+                AQUA&apos;s Promising Research
               </span>
             </Reveal>
             <Reveal delayMs={160}>
-              <span className="block mt-1">
-                <span className="ink-gradient">日々の判断の手がかりを。</span>
+              <span className="block mt-2 ink-soft">
+                and Challenges Leveraging AI
               </span>
             </Reveal>
           </h1>
@@ -182,56 +162,18 @@ export default function Home() {
               ))}
             </div>
           </Reveal>
-        </section>
-
-        <section className="mx-auto w-full max-w-5xl px-4 pb-16 sm:px-6 sm:pb-20">
-          <Reveal>
-            <p className="eyebrow">Approach</p>
-            <h2 className="display-section mt-3 text-white">大切にしていること</h2>
-          </Reveal>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {capabilities.map((item, i) => (
-              <Reveal key={item.label} delayMs={i * 90}>
-                <article className="glass-panel hover-lift h-full rounded-2xl p-6">
-                  <p className="font-display text-[10px] font-medium uppercase tracking-[0.22em] text-cyan-300/70">
-                    {item.label}
-                  </p>
-                  <h3 className="display-sub mt-4 text-white">{item.title}</h3>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-400">{item.body}</p>
-                </article>
-              </Reveal>
-            ))}
-          </div>
 
           <Reveal delayMs={120}>
-            <dl className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <dl className="mt-10 grid grid-cols-3 gap-3">
               {stats.map((stat) => (
-                <div key={stat.label} className="glass-panel rounded-2xl px-5 py-4">
+                <div key={stat.label} className="rounded-xl px-1 py-2">
                   <dt className="font-display text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">
                     {stat.label}
                   </dt>
-                  <dd className="mt-2 font-mono text-sm text-cyan-100/90">{stat.value}</dd>
+                  <dd className="mt-1.5 font-mono text-sm text-cyan-100/80">{stat.value}</dd>
                 </div>
               ))}
             </dl>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto w-full max-w-5xl px-4 pb-20 sm:px-6 sm:pb-28">
-          <Reveal>
-            <div className="grid gap-8 border-t border-white/8 pt-10 lg:grid-cols-[1fr_auto]">
-              <div>
-                <p className="eyebrow">Access Control</p>
-                <h2 className="display-section mt-3 text-white">認証ステータス</h2>
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-                  Azure Static Web Apps の認証を使用。許可されたアカウントのみが各モジュールへアクセスできます。
-                </p>
-              </div>
-              <div className="w-full lg:w-96">
-                <AuthStatus variant="dark" />
-              </div>
-            </div>
           </Reveal>
         </section>
       </main>
