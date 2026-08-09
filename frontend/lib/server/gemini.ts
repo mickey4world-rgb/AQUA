@@ -4,8 +4,9 @@
  */
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-2.0-flash";
-const REQUEST_TIMEOUT_MS = 30_000;
+/** 思考モデル。maxOutputTokens には思考分（1000〜1500程度）を上乗せして渡すこと。 */
+const DEFAULT_MODEL = "gemini-flash-latest";
+const REQUEST_TIMEOUT_MS = 45_000;
 
 export function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
@@ -51,8 +52,16 @@ type GeminiApiResponse = {
   error?: { message?: string; status?: string };
 };
 
-function failureReason(status: number, body: GeminiApiResponse): string {
+function failureReason(
+  status: number,
+  body: GeminiApiResponse,
+  model: string,
+): string {
   if (status === 429) {
+    // limit: 0 はレート超過ではなく、そのモデルに無料枠が割り当てられていない状態
+    if (body.error?.message?.includes("limit: 0")) {
+      return `${model} はこの Google プロジェクトの無料枠対象外です。GEMINI_MODEL に無料枠のあるモデル（例: gemini-flash-latest）を指定してください。`;
+    }
     return "Gemini 無料枠のレート上限に達しました。1分ほど待ってから再度お試しください。";
   }
   if (status === 400 && body.error?.message?.includes("API key")) {
@@ -100,7 +109,7 @@ export async function generateWithGemini(
           })),
           generationConfig: {
             temperature: request.temperature ?? 0.7,
-            maxOutputTokens: request.maxOutputTokens ?? 1200,
+            maxOutputTokens: request.maxOutputTokens ?? 3000,
             ...(request.responseMimeType
               ? { responseMimeType: request.responseMimeType }
               : {}),
@@ -112,7 +121,7 @@ export async function generateWithGemini(
     const body = (await response.json()) as GeminiApiResponse;
 
     if (!response.ok) {
-      return { ok: false, reason: failureReason(response.status, body) };
+      return { ok: false, reason: failureReason(response.status, body, model) };
     }
 
     const text = (body.candidates?.[0]?.content?.parts ?? [])
@@ -121,7 +130,14 @@ export async function generateWithGemini(
       .trim();
 
     if (!text) {
-      return { ok: false, reason: "Gemini から応答がありませんでした。" };
+      // 思考トークンだけで maxOutputTokens を使い切ると本文が空で返る
+      const truncated = body.candidates?.[0]?.finishReason === "MAX_TOKENS";
+      return {
+        ok: false,
+        reason: truncated
+          ? "回答が長くなりすぎて生成が打ち切られました。相談内容を短く区切って送ってください。"
+          : "Gemini から応答がありませんでした。",
+      };
     }
 
     return {

@@ -136,7 +136,7 @@ export async function sendWorksConsult(
   const result = await generateWithGemini({
     system: TOPIC_PROMPTS[topic.id],
     messages: [...trimHistory(history), { role: "user", content: trimmed }],
-    maxOutputTokens: 1600,
+    maxOutputTokens: 4000,
     temperature: 0.65,
   });
 
@@ -204,7 +204,7 @@ export async function summarizeWorksConsult(
         content: `相談テーマ: ${topic.label}\n\n${transcript}`,
       },
     ],
-    maxOutputTokens: 2000,
+    maxOutputTokens: 3000,
     temperature: 0.3,
     responseMimeType: "application/json",
   });
