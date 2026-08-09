@@ -134,8 +134,8 @@ export function buildAsteroidOrbit(approach: CloseApproach): AsteroidOrbitModel 
   const curve = new THREE.CatmullRomCurve3([start, inbound, closest, outbound, end]);
 
   const asteroidSize = approach.diameterKm
-    ? Math.min(0.16, Math.max(0.045, approach.diameterKm / 600))
-    : Math.min(0.12, Math.max(0.05, (22 - approach.absoluteMagnitude) / 120));
+    ? Math.min(0.55, Math.max(0.06, Math.log10(approach.diameterKm * 1000 + 10) * 0.12))
+    : Math.min(0.2, Math.max(0.06, (22 - approach.absoluteMagnitude) / 90));
 
   const animationSpeed = Math.min(0.22, Math.max(0.08, approach.velocityKmS / 55));
 

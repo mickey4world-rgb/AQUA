@@ -222,6 +222,35 @@ export default function AsteroidSimulatorTab() {
                     {selected.diameterKm ? `約 ${selected.diameterKm} km` : "—"}
                   </p>
                 </div>
+                <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 sm:col-span-2 lg:col-span-4">
+                  <p className="text-[10px] text-amber-100/80">大きさの目安</p>
+                  <p className="mt-1 text-sm text-amber-50">
+                    {selected.diameterKm
+                      ? selected.diameterKm >= 1
+                        ? `直径約 ${selected.diameterKm.toFixed(2)} km（東京ドーム約 ${(selected.diameterKm / 0.2).toFixed(0)} 個分のイメージ）`
+                        : selected.diameterKm >= 0.1
+                          ? `直径約 ${(selected.diameterKm * 1000).toFixed(0)} m（高層ビル規模）`
+                          : `直径約 ${(selected.diameterKm * 1000).toFixed(0)} m（バス〜建物規模）`
+                      : "直径は絶対等級からの推定です。"}
+                  </p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/40">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-orange-400 to-amber-200"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            4,
+                            Math.log10((selected.diameterKm ?? 0.01) * 1000 + 1) * 28,
+                          ),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    バーは相対スケール（ログ）。3D 上の小惑星も直径に比例して大きさを変えています。
+                  </p>
+                </div>
               </div>
 
               {selected.nearbyRegions && selected.nearbyRegions.length > 0 && (

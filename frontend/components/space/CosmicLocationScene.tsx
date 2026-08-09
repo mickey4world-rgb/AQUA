@@ -73,47 +73,77 @@ function GalaxySpiral({ scale = 1 }: { scale?: number }) {
 }
 
 function GalacticCore({ scale = 1 }: { scale?: number }) {
+  const geometry = useMemo(() => {
+    const random = createRandom(0xc0ce);
+    const count = 900;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      const r = Math.pow(random(), 0.55) * 1.15;
+      const theta = random() * Math.PI * 2;
+      const phi = (random() - 0.5) * Math.PI * 0.55;
+      positions[i * 3] = Math.cos(theta) * Math.cos(phi) * r;
+      positions[i * 3 + 1] = Math.sin(phi) * r * 0.55;
+      positions[i * 3 + 2] = Math.sin(theta) * Math.cos(phi) * r;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return geo;
+  }, []);
+
   return (
     <group scale={scale}>
-      <mesh>
-        <sphereGeometry args={[0.55, 32, 32]} />
-        <meshBasicMaterial color="#fde68a" />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[0.9, 24, 24]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.25} />
-      </mesh>
-      <pointLight intensity={2.5} color="#fff3c4" distance={18} decay={2} />
+      <points geometry={geometry}>
+        <pointsMaterial
+          color="#f8fafc"
+          size={0.045 * Math.max(scale, 0.4)}
+          sizeAttenuation
+          transparent
+          opacity={0.92}
+          depthWrite={false}
+        />
+      </points>
     </group>
   );
 }
 
+/** 遠方銀河を点群のかたまりとして描く（球体メッシュではなく宇宙の縮小表現） */
 function DistantGalaxies({ denser = false }: { denser?: boolean }) {
-  const galaxies = useMemo(() => {
+  const clusters = useMemo(() => {
     const random = createRandom(denser ? 0xb00b : 0x9a1a);
-    const count = denser ? 36 : 18;
-    return Array.from({ length: count }, () => ({
-      pos: [
-        (random() - 0.5) * (denser ? 48 : 28),
-        (random() - 0.5) * (denser ? 10 : 6),
-        (random() - 0.5) * (denser ? 48 : 28),
-      ] as [number, number, number],
-      size: 0.08 + random() * 0.18,
-      hue: 0.55 + random() * 0.2,
-    }));
+    const clusterCount = denser ? 48 : 22;
+    return Array.from({ length: clusterCount }, () => {
+      const cx = (random() - 0.5) * (denser ? 52 : 30);
+      const cy = (random() - 0.5) * (denser ? 12 : 7);
+      const cz = (random() - 0.5) * (denser ? 52 : 30);
+      const n = 40 + Math.floor(random() * 80);
+      const positions = new Float32Array(n * 3);
+      const spread = 0.35 + random() * 0.9;
+      for (let i = 0; i < n; i += 1) {
+        const a = random() * Math.PI * 2;
+        const r = Math.pow(random(), 0.6) * spread;
+        positions[i * 3] = cx + Math.cos(a) * r;
+        positions[i * 3 + 1] = cy + (random() - 0.5) * spread * 0.35;
+        positions[i * 3 + 2] = cz + Math.sin(a) * r;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      return { geo, size: 0.04 + random() * 0.05 };
+    });
   }, [denser]);
 
   return (
     <group>
-      {galaxies.map((g, i) => (
-        <mesh key={i} position={g.pos}>
-          <sphereGeometry args={[g.size, 8, 8]} />
-          <meshBasicMaterial
-            color={new THREE.Color().setHSL(g.hue, 0.35, 0.65)}
+      {clusters.map((c, i) => (
+        <points key={i} geometry={c.geo}>
+          <pointsMaterial
+            color="#e2e8f0"
+            size={c.size}
+            sizeAttenuation
             transparent
-            opacity={0.55}
+            opacity={0.75}
+            depthWrite={false}
           />
-        </mesh>
+        </points>
       ))}
     </group>
   );
@@ -396,8 +426,9 @@ function CosmicSceneContent({ location }: { location: CosmicLocation }) {
       )}
 
       {(location.scale === "deep-universe" ||
-        location.scale === "local-group") && (
-        <DistantGalaxies denser={location.scale === "deep-universe"} />
+        location.scale === "local-group" ||
+        location.showMilkyWayContext) && (
+        <DistantGalaxies denser={location.scale === "deep-universe" || location.showMilkyWayContext} />
       )}
 
       {!location.showLocalSystem && (

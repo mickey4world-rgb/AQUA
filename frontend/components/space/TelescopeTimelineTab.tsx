@@ -40,23 +40,59 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const summaryCache = useRef<Map<string, { titleJa: string; explanationJa: string }>>(new Map());
 
+  const summaryTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
-    fetch("/api/space/apod?days=21")
+    const cacheKey = "aqua-apod-timeline-v1";
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as {
+          at: number;
+          entries: ApodEntry[];
+        };
+        if (
+          Date.now() - parsed.at < 60 * 60 * 1000 &&
+          Array.isArray(parsed.entries) &&
+          parsed.entries.length > 0
+        ) {
+          setEntries(parsed.entries.slice(0, 10));
+          if (parsed.entries[0]) selectEntry(parsed.entries[0], { skipSummary: true });
+          setLoading(false);
+        }
+      }
+    } catch {
+      // ignore cache errors
+    }
+
+    fetch("/api/space/apod?days=10")
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
           setError(data.error);
           return;
         }
-        const list = data.entries as ApodEntry[];
+        const list = (data.entries as ApodEntry[]).slice(0, 10);
         setEntries(list);
+        try {
+          sessionStorage.setItem(
+            cacheKey,
+            JSON.stringify({ at: Date.now(), entries: list }),
+          );
+        } catch {
+          // ignore
+        }
         if (list[0]) selectEntry(list[0]);
       })
       .catch(() => setError("APOD の読み込みに失敗しました"))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectEntry(entry: ApodEntry) {
+  function selectEntry(
+    entry: ApodEntry,
+    options?: { skipSummary?: boolean },
+  ) {
     setSelected(entry);
     setAnalysis(inferApodAnalysis(entry.title, entry.explanation));
     setChatMessages([]);
@@ -64,34 +100,48 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
     setSummaryError(null);
     onSelect?.(entry);
 
+    if (summaryTimerRef.current != null) {
+      window.clearTimeout(summaryTimerRef.current);
+      summaryTimerRef.current = null;
+    }
+
     const cached = summaryCache.current.get(entry.date);
     if (cached) {
       setSummaryJa(cached);
+      setSummaryLoading(false);
+      return;
+    }
+
+    if (options?.skipSummary) {
+      setSummaryJa(null);
+      setSummaryLoading(false);
       return;
     }
 
     setSummaryJa(null);
     setSummaryLoading(true);
-    fetch("/api/space/apod/summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apod: entry }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          setSummaryError(data.error);
-          return;
-        }
-        const summary = {
-          titleJa: data.titleJa as string,
-          explanationJa: data.explanationJa as string,
-        };
-        summaryCache.current.set(entry.date, summary);
-        setSummaryJa(summary);
+    summaryTimerRef.current = window.setTimeout(() => {
+      fetch("/api/space/apod/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apod: entry }),
       })
-      .catch(() => setSummaryError("日本語解説の取得に失敗しました"))
-      .finally(() => setSummaryLoading(false));
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) {
+            setSummaryError(data.error);
+            return;
+          }
+          const summary = {
+            titleJa: data.titleJa as string,
+            explanationJa: data.explanationJa as string,
+          };
+          summaryCache.current.set(entry.date, summary);
+          setSummaryJa(summary);
+        })
+        .catch(() => setSummaryError("日本語解説の取得に失敗しました"))
+        .finally(() => setSummaryLoading(false));
+    }, 150);
   }
 
   async function sendChat(text: string) {
@@ -135,7 +185,7 @@ export default function TelescopeTimelineTab({ onSelect }: TelescopeTimelineTabP
       <div className="lg:col-span-2">
         <div className={spacePanelClass}>
           <h2 className="text-sm font-semibold text-white">望遠鏡画像タイムライン</h2>
-          <p className="mt-1 text-xs text-slate-400">NASA APOD — 直近21日分（画像のみ）</p>
+          <p className="mt-1 text-xs text-slate-400">NASA APOD — 直近10件（キャッシュ付き）</p>
 
           {loading && <p className="mt-4 text-sm text-slate-500">読み込み中...</p>}
           {error && (
