@@ -8,8 +8,19 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_MODEL = "gemini-flash-latest";
 const REQUEST_TIMEOUT_MS = 45_000;
 
+/**
+ * Static Web Apps は East Asia でしか動かせず、Google はその地域からの呼び出しを
+ * "User location is not supported for the API use." で拒否する。
+ * Japan East に置いた中継 Functions を挟むことで無料枠のまま利用する。
+ */
+function getRelay(): { url: string; key: string } | null {
+  const url = process.env.GEMINI_RELAY_URL?.trim();
+  const key = process.env.GEMINI_RELAY_KEY?.trim();
+  return url && key ? { url, key } : null;
+}
+
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(process.env.GEMINI_API_KEY) || getRelay() !== null;
 }
 
 export function getGeminiModel(): string {
@@ -70,6 +81,9 @@ function failureReason(
   if (status === 403) {
     return "Gemini API へのアクセスが拒否されました。API キーの権限を確認してください。";
   }
+  if (body.error?.message?.includes("User location is not supported")) {
+    return "この配信リージョンからは Gemini を利用できません。Japan East の中継 Functions を GEMINI_RELAY_URL / GEMINI_RELAY_KEY に設定してください。";
+  }
   return body.error?.message
     ? `Gemini API エラー: ${body.error.message}`
     : `Gemini API エラー（HTTP ${status}）`;
@@ -78,8 +92,9 @@ function failureReason(
 export async function generateWithGemini(
   request: GeminiRequest,
 ): Promise<GeminiResult> {
+  const relay = getRelay();
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!relay && !apiKey) {
     return {
       ok: false,
       reason:
@@ -88,35 +103,51 @@ export async function generateWithGemini(
   }
 
   const model = getGeminiModel();
+  const payload = {
+    systemInstruction: { parts: [{ text: request.system }] },
+    contents: request.messages.map((message) => ({
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text: message.content }],
+    })),
+    generationConfig: {
+      temperature: request.temperature ?? 0.7,
+      maxOutputTokens: request.maxOutputTokens ?? 3000,
+      ...(request.responseMimeType
+        ? { responseMimeType: request.responseMimeType }
+        : {}),
+    },
+  };
+
+  // 中継は Gemini の応答をそのまま返すため、以降の解析は経路によらず共通。
+  const target: { url: string; headers: Record<string, string>; body: string } =
+    relay
+      ? {
+          url: relay.url,
+          headers: {
+            "Content-Type": "application/json",
+            "x-functions-key": relay.key,
+          },
+          body: JSON.stringify({ model, body: payload }),
+        }
+      : {
+          url: `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey as string,
+          },
+          body: JSON.stringify(payload),
+        };
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(
-      `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: request.system }] },
-          contents: request.messages.map((message) => ({
-            role: message.role === "assistant" ? "model" : "user",
-            parts: [{ text: message.content }],
-          })),
-          generationConfig: {
-            temperature: request.temperature ?? 0.7,
-            maxOutputTokens: request.maxOutputTokens ?? 3000,
-            ...(request.responseMimeType
-              ? { responseMimeType: request.responseMimeType }
-              : {}),
-          },
-        }),
-      },
-    );
+    const response = await fetch(target.url, {
+      method: "POST",
+      headers: target.headers,
+      signal: controller.signal,
+      body: target.body,
+    });
 
     const body = (await response.json()) as GeminiApiResponse;
 

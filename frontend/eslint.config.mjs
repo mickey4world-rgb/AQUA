@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Cesium をそのまま配信しているベンダーファイル。手を入れないので対象外。
+    "public/cesium/**",
   ]),
 ]);
 
