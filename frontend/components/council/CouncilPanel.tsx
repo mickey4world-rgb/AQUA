@@ -8,6 +8,7 @@ import {
   COUNCIL_ATTACHMENT_ACCEPT,
   COUNCIL_ATTACHMENT_MAX_BYTES,
   COUNCIL_ATTACHMENT_MAX_FILES,
+  councilDebatersForSession,
 } from "@/lib/council-utils";
 import { readApiJson } from "@/lib/fetch-api";
 import type {
@@ -16,6 +17,7 @@ import type {
   CouncilDebateResult,
   CouncilDepth,
   CouncilMode,
+  CouncilModelOpinion,
 } from "@/lib/types/council";
 
 const STARTER_TOPICS = [
@@ -38,6 +40,7 @@ export default function CouncilPanel() {
   const [topic, setTopic] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CouncilDebateResult | null>(null);
 
@@ -89,6 +92,7 @@ export default function CouncilPanel() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress("合議を開始しています…");
 
     const payloadAttachments: CouncilAttachment[] = attachments.map((a) => ({
       name: a.name,
@@ -96,29 +100,110 @@ export default function CouncilPanel() {
       charCount: a.content.length,
     }));
 
+    const debaters = councilDebatersForSession(config, mode, depth);
+    const depthConfig =
+      config.depths?.[depth] ??
+      (depth === "compact"
+        ? { includeRebuttal: false }
+        : { includeRebuttal: true });
+    const requestBase = {
+      topic: trimmed,
+      mode,
+      depth,
+      attachments: payloadAttachments,
+    };
+
     try {
-      const res = await fetch("/api/council/ask", {
+      const initial: CouncilModelOpinion[] = [];
+
+      for (const debater of debaters) {
+        setProgress(`${debater.label} が要点を述べています…`);
+        const res = await fetch("/api/council/ask/step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...requestBase,
+            step: "debater",
+            phase: "initial",
+            modelId: debater.id,
+          }),
+        });
+        const parsed = await readApiJson<{ opinion: CouncilModelOpinion }>(res);
+        if (!parsed.ok) {
+          setError(parsed.error);
+          return;
+        }
+        initial.push(parsed.data.opinion);
+      }
+
+      const rebuttal: CouncilModelOpinion[] = [];
+      if (depthConfig.includeRebuttal) {
+        for (const debater of debaters) {
+          setProgress(`${debater.label} が議論しています…`);
+          const res = await fetch("/api/council/ask/step", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...requestBase,
+              step: "debater",
+              phase: "rebuttal",
+              modelId: debater.id,
+              initial,
+            }),
+          });
+          const parsed = await readApiJson<{ opinion: CouncilModelOpinion }>(res);
+          if (!parsed.ok) {
+            setError(parsed.error);
+            return;
+          }
+          rebuttal.push(parsed.data.opinion);
+        }
+      }
+
+      setProgress("議長がまとめを作成しています…");
+      const judgeRes = await fetch("/api/council/ask/step", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: trimmed,
-          mode,
-          depth,
-          attachments: payloadAttachments,
+          ...requestBase,
+          step: "judge",
+          initial,
+          rebuttal,
         }),
       });
-      const parsed = await readApiJson<CouncilDebateResult>(res);
-      if (!parsed.ok) {
-        setError(parsed.error);
+      const judgeParsed = await readApiJson<{
+        synthesis: CouncilModelOpinion;
+        judge: CouncilDebateResult["judge"];
+        dataRegionNote: string;
+      }>(judgeRes);
+      if (!judgeParsed.ok) {
+        setError(judgeParsed.error);
         return;
       }
-      setResult(parsed.data);
+
+      const apiCalls =
+        debaters.length + (depthConfig.includeRebuttal ? debaters.length : 0) + 1;
+
+      setResult({
+        mode,
+        depth,
+        topic: trimmed,
+        attachments: payloadAttachments,
+        models: debaters,
+        judge: judgeParsed.data.judge,
+        initial,
+        rebuttal,
+        synthesis: judgeParsed.data.synthesis,
+        dataRegionNote: judgeParsed.data.dataRegionNote,
+        apiCalls,
+      });
       setTopic("");
       setAttachments([]);
     } catch {
       setError("通信エラーが発生しました");
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -312,6 +397,7 @@ export default function CouncilPanel() {
               />
             </div>
             <div className="space-y-2 text-xs text-slate-500">
+              {progress && <p className="text-cyan-200/90">{progress}</p>}
               <p>① 各 AI が要点を述べています...</p>
               {depth === "standard" && <p>② AI 同士が議論しています...</p>}
               <p>

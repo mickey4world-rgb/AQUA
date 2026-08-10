@@ -6,10 +6,16 @@ import { getEmailFromPrincipal } from "@/lib/server/auth";
 import { COSMOS_CONTAINERS, getContainer } from "@/lib/server/cosmos";
 
 export async function getUserById(userId: string): Promise<User | null> {
-  const { resource } = await getContainer(COSMOS_CONTAINERS.users)
-    .item(userId, userId)
-    .read<User>();
-  return resource ?? null;
+  try {
+    const { resource } = await getContainer(COSMOS_CONTAINERS.users)
+      .item(userId, userId)
+      .read<User>();
+    return resource ?? null;
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code === 404) return null;
+    throw error;
+  }
 }
 
 /** 旧上限（100k）のユーザーを DB 上も 1M に引き上げ */

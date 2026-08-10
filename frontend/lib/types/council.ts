@@ -53,6 +53,7 @@ export interface CouncilConfigResponse {
   azureConfigured: boolean;
   geminiConfigured: boolean;
   setupHint?: string;
+  depths?: typeof import("@/lib/server/council-config").COUNCIL_DEPTH_CONFIG;
   domestic: {
     available: boolean;
     label: string;

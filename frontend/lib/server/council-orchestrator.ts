@@ -184,6 +184,254 @@ async function callCouncilModel(
   );
 }
 
+async function invokeCouncilDebater(
+  userId: string,
+  mode: CouncilMode,
+  depth: CouncilDepth,
+  phase: "initial" | "rebuttal",
+  model: CouncilModelConfig,
+  topicWithAttachments: string,
+  prior?: CouncilModelOpinion[],
+): Promise<CouncilModelOpinion> {
+  const depthConfig = councilDepthConfig(depth);
+  const priorText = prior?.length
+    ? formatOpinionsForJudge(prior, depthConfig.judgeInputMaxChars)
+    : "";
+
+  const userPrompt =
+    phase === "initial"
+      ? `テーマ:\n${topicWithAttachments}\n要点だけ述べて。`
+      : `テーマ:\n${topicWithAttachments}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
+
+  const result = await callCouncilModel(
+    model,
+    mode,
+    `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
+    userPrompt,
+    depthConfig.debaterMaxTokens,
+    depth,
+  );
+
+  await recordTokenUsage({
+    userId,
+    feature: `council-${phase}-${model.featureSuffix}`,
+    model: result.model,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+    requestId: result.requestId,
+  });
+
+  return {
+    modelId: model.id,
+    modelLabel: model.label,
+    phase,
+    content: result.content,
+    modelUsed: result.model,
+    provider: model.provider,
+  };
+}
+
+type CouncilSessionContext = {
+  trimmed: string;
+  attachments: CouncilAttachment[];
+  topicWithAttachments: string;
+};
+
+async function prepareCouncilSession(
+  userId: string,
+  topic: string,
+  mode: CouncilMode,
+  depth: CouncilDepth,
+  attachmentsInput: unknown,
+): Promise<{ ok: true; session: CouncilSessionContext } | { ok: false; reason: string }> {
+  const trimmed = topic.trim();
+  const depthConfig = councilDepthConfig(depth);
+
+  if (!trimmed) {
+    return { ok: false, reason: "相談内容を入力してください。" };
+  }
+  if (trimmed.length > depthConfig.topicMaxLength) {
+    return {
+      ok: false,
+      reason: `相談内容が長すぎます（${depthConfig.topicMaxLength}文字以内）。`,
+    };
+  }
+
+  const attachmentResult = normalizeAttachments(attachmentsInput);
+  if (!attachmentResult.ok) {
+    return { ok: false, reason: attachmentResult.reason };
+  }
+
+  if (!isAzureOpenAiConfigured()) {
+    return {
+      ok: false,
+      reason: "Azure OpenAI が未設定のため、AI 合議は利用できません。",
+    };
+  }
+
+  const quota = await canUseAiTokens(userId);
+  if (!quota.allowed) {
+    return {
+      ok: false,
+      reason: `今月の AI 利用上限（${quota.limit.toLocaleString("ja-JP")} tokens）に達しました。`,
+    };
+  }
+
+  const configMeta = getCouncilConfigMeta();
+  if (mode === "domestic" && !configMeta.domestic.available) {
+    return {
+      ok: false,
+      reason:
+        configMeta.domestic.warning ??
+        "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
+    };
+  }
+
+  return {
+    ok: true,
+    session: {
+      trimmed,
+      attachments: attachmentResult.attachments,
+      topicWithAttachments: buildTopicWithAttachments(trimmed, attachmentResult.attachments),
+    },
+  };
+}
+
+export type CouncilDebaterStepResult =
+  | { ok: true; opinion: CouncilModelOpinion }
+  | { ok: false; reason: string };
+
+export async function runCouncilDebaterStep(
+  userId: string,
+  topic: string,
+  mode: CouncilMode,
+  depth: CouncilDepth,
+  phase: "initial" | "rebuttal",
+  modelId: string,
+  attachmentsInput: unknown,
+  priorInitial?: CouncilModelOpinion[],
+): Promise<CouncilDebaterStepResult> {
+  try {
+    const prep = await prepareCouncilSession(userId, topic, mode, depth, attachmentsInput);
+    if (!prep.ok) return prep;
+
+    const debaters = getCouncilDebaters(mode, depth);
+    const model = debaters.find((entry) => entry.id === modelId);
+    if (!model) {
+      return { ok: false, reason: `モデル ${modelId} はこの合議設定では利用できません。` };
+    }
+
+    const opinion = await invokeCouncilDebater(
+      userId,
+      mode,
+      depth,
+      phase,
+      model,
+      prep.session.topicWithAttachments,
+      phase === "rebuttal" ? priorInitial : undefined,
+    );
+
+    return { ok: true, opinion };
+  } catch (error) {
+    console.error("[council] debater step failed", error);
+    return {
+      ok: false,
+      reason:
+        error instanceof Error
+          ? `AI 合議に失敗しました: ${error.message}`
+          : "AI 合議に失敗しました",
+    };
+  }
+}
+
+export type CouncilJudgeStepResult =
+  | {
+      ok: true;
+      synthesis: CouncilModelOpinion;
+      judge: ReturnType<typeof getCouncilConfigMeta>["domestic"]["judge"];
+      dataRegionNote: string;
+    }
+  | { ok: false; reason: string };
+
+export async function runCouncilJudgeStep(
+  userId: string,
+  topic: string,
+  mode: CouncilMode,
+  depth: CouncilDepth,
+  attachmentsInput: unknown,
+  initial: CouncilModelOpinion[],
+  rebuttal: CouncilModelOpinion[],
+): Promise<CouncilJudgeStepResult> {
+  try {
+    const prep = await prepareCouncilSession(userId, topic, mode, depth, attachmentsInput);
+    if (!prep.ok) return prep;
+
+    if (!initial.length) {
+      return { ok: false, reason: "議長のまとめには、少なくとも1件の意見が必要です。" };
+    }
+
+    const depthConfig = councilDepthConfig(depth);
+    const judge = getCouncilJudge(mode);
+    const configMeta = getCouncilConfigMeta();
+    const opinionLines = [
+      formatOpinionsForJudge(initial, depthConfig.judgeInputMaxChars),
+      rebuttal.length
+        ? formatOpinionsForJudge(rebuttal, depthConfig.judgeInputMaxChars)
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const judgeResult = await callCouncilModel(
+      judge,
+      mode,
+      `${judge.persona}\n日本語。${depthConfig.judgeLengthHint}。`,
+      `テーマ:\n${prep.session.topicWithAttachments}\n\n意見:\n${opinionLines}\n\n結論をまとめて。`,
+      depthConfig.judgeMaxTokens,
+      depth,
+    );
+
+    await recordTokenUsage({
+      userId,
+      feature: `council-synthesis-${judge.featureSuffix}`,
+      model: judgeResult.model,
+      promptTokens: judgeResult.promptTokens,
+      completionTokens: judgeResult.completionTokens,
+      requestId: judgeResult.requestId,
+    });
+
+    const synthesis: CouncilModelOpinion = {
+      modelId: judge.id,
+      modelLabel: judge.label,
+      phase: "synthesis",
+      content: judgeResult.content,
+      modelUsed: judgeResult.model,
+      provider: judge.provider,
+    };
+
+    const judgeMeta = mode === "domestic" ? configMeta.domestic.judge : configMeta.global.judge;
+
+    return {
+      ok: true,
+      synthesis,
+      judge: judgeMeta,
+      dataRegionNote:
+        mode === "domestic"
+          ? configMeta.domestic.dataRegion
+          : configMeta.global.dataRegion,
+    };
+  } catch (error) {
+    console.error("[council] judge step failed", error);
+    return {
+      ok: false,
+      reason:
+        error instanceof Error
+          ? `AI 合議に失敗しました: ${error.message}`
+          : "AI 合議に失敗しました",
+    };
+  }
+}
+
 async function runModelPhase(
   userId: string,
   mode: CouncilMode,
@@ -193,44 +441,16 @@ async function runModelPhase(
   depth: CouncilDepth,
   prior?: CouncilModelOpinion[],
 ): Promise<CouncilModelOpinion[]> {
-  const depthConfig = councilDepthConfig(depth);
-  const priorText = prior?.length
-    ? formatOpinionsForJudge(prior, depthConfig.judgeInputMaxChars)
-    : "";
-
-  const invokeModel = async (model: CouncilModelConfig): Promise<CouncilModelOpinion> => {
-    const userPrompt =
-      phase === "initial"
-        ? `テーマ:\n${topicWithAttachments}\n要点だけ述べて。`
-        : `テーマ:\n${topicWithAttachments}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
-
-    const result = await callCouncilModel(
-      model,
-      mode,
-      `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
-      userPrompt,
-      depthConfig.debaterMaxTokens,
-      depth,
-    );
-
-    await recordTokenUsage({
+  const invokeModel = async (model: CouncilModelConfig): Promise<CouncilModelOpinion> =>
+    invokeCouncilDebater(
       userId,
-      feature: `council-${phase}-${model.featureSuffix}`,
-      model: result.model,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      requestId: result.requestId,
-    });
-
-    return {
-      modelId: model.id,
-      modelLabel: model.label,
+      mode,
+      depth,
       phase,
-      content: result.content,
-      modelUsed: result.model,
-      provider: model.provider,
-    };
-  };
+      model,
+      topicWithAttachments,
+      prior,
+    );
 
   const settled =
     depth === "compact"
