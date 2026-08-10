@@ -18,6 +18,17 @@ export async function getUserById(userId: string): Promise<User | null> {
   }
 }
 
+export async function listAllUsers(): Promise<User[]> {
+  try {
+    const { resources } = await getContainer(COSMOS_CONTAINERS.users)
+      .items.query<User>({ query: "SELECT * FROM c" })
+      .fetchAll();
+    return resources;
+  } catch {
+    return [];
+  }
+}
+
 /** 旧上限（100k）のユーザーを DB 上も 1M に引き上げ */
 export async function ensureUserTokenLimit(userId: string): Promise<User | null> {
   const user = await getUserById(userId);

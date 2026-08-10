@@ -49,6 +49,8 @@ function inferFeatureFromPath(path: string, method: string): string {
   if (path.includes("/space/neo/image")) return "neo-image";
   if (path.endsWith("/space/chat")) return "chat";
   if (path.endsWith("/costs/dashboard")) return "dashboard";
+  if (path.endsWith("/costs/azure-infra")) return "azure-infra";
+  if (path.endsWith("/costs/access-analytics")) return "access-analytics";
   if (path.endsWith("/users/me")) return "profile";
   return `${method.toLowerCase()}-${path.split("/").pop() ?? "unknown"}`;
 }
@@ -149,6 +151,80 @@ export async function getAccessStatsByApp(
       apiCalls: row.apiCalls ?? 0,
       avgDurationMs: Math.round(row.avgDurationMs ?? 0),
     }));
+  } catch {
+    return [];
+  }
+}
+
+export type AccessUserFeatureRow = {
+  userId: string;
+  app: AppKey;
+  feature: string;
+  apiCalls: number;
+  avgDurationMs: number;
+  lastAccessAt: string;
+};
+
+/** 全ユーザーの user × app × feature 集計（アクセス分析用） */
+export async function getAccessStatsByUserAndFeature(
+  monthStart: string,
+  monthEnd: string,
+): Promise<AccessUserFeatureRow[]> {
+  if (!isCosmosConfigured()) return [];
+
+  try {
+    const { resources } = await accessLogContainer()
+      .items.query<AccessUserFeatureRow>({
+        query: `
+          SELECT c.userId, c.app, c.feature,
+                 COUNT(1) AS apiCalls,
+                 AVG(c.durationMs) AS avgDurationMs,
+                 MAX(c.createdAt) AS lastAccessAt
+          FROM c
+          WHERE c.createdAt >= @monthStart AND c.createdAt < @monthEnd
+          GROUP BY c.userId, c.app, c.feature
+        `,
+        parameters: [
+          { name: "@monthStart", value: monthStart },
+          { name: "@monthEnd", value: monthEnd },
+        ],
+      })
+      .fetchAll();
+
+    return resources.map((row) => ({
+      userId: row.userId,
+      app: row.app,
+      feature: row.feature,
+      apiCalls: row.apiCalls ?? 0,
+      avgDurationMs: Math.round(row.avgDurationMs ?? 0),
+      lastAccessAt: row.lastAccessAt,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function listRecentAccessLogsAllUsers(
+  monthStart: string,
+  monthEnd: string,
+  limit = 100,
+): Promise<AccessLog[]> {
+  if (!isCosmosConfigured()) return [];
+
+  try {
+    const { resources } = await accessLogContainer()
+      .items.query<AccessLog>({
+        query:
+          "SELECT * FROM c WHERE c.createdAt >= @monthStart AND c.createdAt < @monthEnd ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
+        parameters: [
+          { name: "@monthStart", value: monthStart },
+          { name: "@monthEnd", value: monthEnd },
+          { name: "@limit", value: limit },
+        ],
+      })
+      .fetchAll();
+
+    return resources;
   } catch {
     return [];
   }
