@@ -1,3 +1,7 @@
+import {
+  readAzureCostCache,
+  writeCosmosAzureCostCache,
+} from "@/lib/server/azure-cost-cache";
 import { parseMonthParam } from "@/lib/server/token-usage";
 import type { AzureInfraCostSummary } from "@/lib/types/analytics";
 
@@ -32,8 +36,7 @@ type CostQueryResult = {
   rows: unknown[][];
 };
 
-const COST_CACHE_TTL_MS = 20 * 60 * 1000;
-const costCache = new Map<string, { expiresAt: number; data: AzureInfraCostSummary }>();
+const inflight = new Map<string, Promise<AzureInfraCostSummary | null>>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -146,7 +149,9 @@ async function runCostQuery(
     `https://management.azure.com/subscriptions/${subscriptionId}` +
     `/providers/Microsoft.CostManagement/query?api-version=${COST_API}`;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  let lastError = "Too many requests. Please retry.";
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -160,11 +165,15 @@ async function runCostQuery(
       const retryAfterHeader = Number(res.headers.get("Retry-After"));
       const waitMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
         ? retryAfterHeader * 1000
-        : (attempt + 1) * 2500;
-      if (attempt < 3) {
+        : Math.min(60_000, (attempt + 1) * 8000);
+      lastError = await res.text();
+      if (attempt < 4) {
         await sleep(waitMs);
         continue;
       }
+      throw new Error(
+        `Azure Cost Management query failed (429): ${lastError.slice(0, 200)}`,
+      );
     }
 
     if (!res.ok) {
@@ -178,7 +187,9 @@ async function runCostQuery(
     return parseRows(payload.properties);
   }
 
-  throw new Error("Azure Cost Management query failed (429): Too many requests. Please retry.");
+  throw new Error(
+    `Azure Cost Management query failed (429): ${lastError.slice(0, 200)}`,
+  );
 }
 
 function resourceGroupFilter() {
@@ -193,6 +204,134 @@ function resourceGroupFilter() {
   };
 }
 
+function buildSummaryFromRows(
+  rows: CostQueryRow[],
+  monthKey: string,
+  subscriptionId: string,
+  rgFilter: ReturnType<typeof resourceGroupFilter>,
+): AzureInfraCostSummary {
+  const currency = rows[0]?.currency ?? "JPY";
+  const byServiceMap = new Map<string, number>();
+  const dailyMap = new Map<string, number>();
+
+  for (const row of rows) {
+    if (row.serviceName) {
+      byServiceMap.set(
+        row.serviceName,
+        (byServiceMap.get(row.serviceName) ?? 0) + row.cost,
+      );
+    }
+    if (row.usageDate) {
+      const date = usageDateToIso(row.usageDate);
+      dailyMap.set(date, (dailyMap.get(date) ?? 0) + row.cost);
+    }
+  }
+
+  const byServiceSorted = [...byServiceMap.entries()]
+    .map(([service, costAmount]) => ({
+      service,
+      label: serviceLabel(service),
+      costAmount,
+    }))
+    .sort((a, b) => b.costAmount - a.costAmount);
+
+  const daily = [...dailyMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, costAmount]) => ({ date, costAmount }));
+
+  const totalCost = byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0);
+  const rgName = process.env.AZURE_COST_RESOURCE_GROUP?.trim();
+
+  return {
+    configured: true,
+    month: monthKey,
+    currency,
+    totalCost,
+    resourceGroupCost: rgFilter ? totalCost : undefined,
+    byService: byServiceSorted,
+    daily,
+    scopeLabel: rgFilter && rgName ? `RG「${rgName}」` : "サブスクリプション全体",
+    note: rgFilter
+      ? `RG「${rgName}」内の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。`
+      : "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
+  };
+}
+
+function unavailableSummary(
+  monthKey: string,
+  subscriptionId: string,
+  message?: string,
+): AzureInfraCostSummary {
+  return {
+    configured: true,
+    month: monthKey,
+    currency: "JPY",
+    totalCost: 0,
+    byService: [],
+    daily: [],
+    scopeLabel: subscriptionId,
+    error: message,
+    note: "Azure Cost Management は混雑時に取得できないことがあります。数分後に再読み込みしてください。",
+  };
+}
+
+async function fetchAzureInfraCostsInternal(
+  month?: string | null,
+): Promise<AzureInfraCostSummary | null> {
+  const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
+  if (!subscriptionId || !isAzureCostManagementConfigured()) {
+    return null;
+  }
+
+  const monthDate = parseMonthParam(month);
+  const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`;
+  const key = cacheKey(monthKey, subscriptionId);
+
+  const cachedFresh = await readAzureCostCache(key, false);
+  if (cachedFresh) return cachedFresh;
+
+  const token = await getManagementAccessToken();
+  if (!token) return null;
+
+  const period = monthPeriod(monthDate);
+  const rgFilter = resourceGroupFilter();
+
+  try {
+    const rows = await runCostQuery(token, subscriptionId, {
+      type: "ActualCost",
+      timeframe: "Custom",
+      timePeriod: period,
+      dataset: {
+        aggregation: {
+          totalCost: { name: "PreTaxCost", function: "Sum" },
+        },
+        granularity: "Daily",
+        grouping: [{ type: "Dimension", name: "ServiceName" }],
+        ...(rgFilter ? { filter: rgFilter } : {}),
+      },
+    });
+
+    const result = buildSummaryFromRows(rows, monthKey, subscriptionId, rgFilter);
+    await writeCosmosAzureCostCache(key, result);
+    return result;
+  } catch (error) {
+    const stale = await readAzureCostCache(key, true);
+    if (stale) {
+      return {
+        ...stale,
+        error: undefined,
+        note: "Azure Cost Management が混雑中のため、保存済みのコストデータを表示しています。",
+      };
+    }
+
+    return unavailableSummary(
+      monthKey,
+      subscriptionId,
+      error instanceof Error ? error.message : "Azure Cost Management の取得に失敗しました",
+    );
+  }
+}
+
 export async function fetchAzureInfraCosts(
   month?: string | null,
 ): Promise<AzureInfraCostSummary | null> {
@@ -204,138 +343,13 @@ export async function fetchAzureInfraCosts(
   const monthDate = parseMonthParam(month);
   const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`;
   const key = cacheKey(monthKey, subscriptionId);
-  const cachedEntry = costCache.get(key);
-  if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
-    return cachedEntry.data;
-  }
 
-  const token = await getManagementAccessToken();
-  if (!token) return null;
+  const existing = inflight.get(key);
+  if (existing) return existing;
 
-  const period = monthPeriod(monthDate);
-  const rgFilter = resourceGroupFilter();
-
-  const scopedDataset = {
-    aggregation: {
-      totalCost: { name: "PreTaxCost", function: "Sum" },
-    },
-    ...(rgFilter ? { filter: rgFilter } : {}),
-  };
-
-  try {
-    // 429 回避: 並列 3 本ではなく直列 + 必要時のみ追加クエリ
-    const byService = await runCostQuery(token, subscriptionId, {
-      type: "ActualCost",
-      timeframe: "Custom",
-      timePeriod: period,
-      dataset: {
-        ...scopedDataset,
-        granularity: "None",
-        grouping: [{ type: "Dimension", name: "ServiceName" }],
-      },
-    });
-    await sleep(400);
-
-    const dailyRows = await runCostQuery(token, subscriptionId, {
-      type: "ActualCost",
-      timeframe: "Custom",
-      timePeriod: period,
-      dataset: {
-        aggregation: {
-          totalCost: { name: "PreTaxCost", function: "Sum" },
-        },
-        granularity: "Daily",
-      },
-    });
-
-    let totalRows: CostQueryRow[] = [];
-    if (rgFilter) {
-      await sleep(400);
-      totalRows = await runCostQuery(token, subscriptionId, {
-        type: "ActualCost",
-        timeframe: "Custom",
-        timePeriod: period,
-        dataset: {
-          aggregation: {
-            totalCost: { name: "PreTaxCost", function: "Sum" },
-          },
-          granularity: "None",
-        },
-      });
-    }
-
-    const currency =
-      totalRows[0]?.currency ?? byService[0]?.currency ?? dailyRows[0]?.currency ?? "JPY";
-    const byServiceMap = new Map<string, number>();
-
-    for (const row of byService) {
-      if (!row.serviceName) continue;
-      byServiceMap.set(row.serviceName, (byServiceMap.get(row.serviceName) ?? 0) + row.cost);
-    }
-
-    const byServiceSorted = [...byServiceMap.entries()]
-      .map(([service, costAmount]) => ({
-        service,
-        label: serviceLabel(service),
-        costAmount,
-      }))
-      .sort((a, b) => b.costAmount - a.costAmount);
-
-    const dailyMap = new Map<string, number>();
-    for (const row of dailyRows) {
-      if (!row.usageDate) continue;
-      const date = usageDateToIso(row.usageDate);
-      dailyMap.set(date, (dailyMap.get(date) ?? 0) + row.cost);
-    }
-
-    const daily = [...dailyMap.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, costAmount]) => ({ date, costAmount }));
-
-    const totalCost = rgFilter
-      ? totalRows.reduce((sum, row) => sum + row.cost, 0)
-      : byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0);
-    const rgTotal = rgFilter
-      ? byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0)
-      : undefined;
-
-    const result: AzureInfraCostSummary = {
-      configured: true,
-      month: monthKey,
-      currency,
-      totalCost,
-      resourceGroupCost: rgTotal,
-      byService: byServiceSorted,
-      daily,
-      scopeLabel: "サブスクリプション全体",
-      note: rgFilter
-        ? `合計はサブスクリプション全体の実績（税抜）。内訳は RG「${process.env.AZURE_COST_RESOURCE_GROUP}」。反映に 24〜48 時間かかることがあります。`
-        : "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
-    };
-
-    costCache.set(key, { expiresAt: Date.now() + COST_CACHE_TTL_MS, data: result });
-    return result;
-  } catch (error) {
-    if (cachedEntry) {
-      return {
-        ...cachedEntry.data,
-        note: "Azure Cost Management が混雑中のため、直近のキャッシュを表示しています。",
-      };
-    }
-
-    return {
-      configured: true,
-      month: monthKey,
-      currency: "JPY",
-      totalCost: 0,
-      byService: [],
-      daily: [],
-      scopeLabel: subscriptionId,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Azure Cost Management の取得に失敗しました",
-      note: "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
-    };
-  }
+  const task = fetchAzureInfraCostsInternal(month).finally(() => {
+    inflight.delete(key);
+  });
+  inflight.set(key, task);
+  return task;
 }

@@ -42,7 +42,9 @@ export async function readApiJson<T>(
     const message =
       typeof data === "object" && data && "error" in data && typeof data.error === "string"
         ? data.error
-        : `リクエストに失敗しました (${res.status})`;
+        : res.status >= 500
+          ? `サーバー処理に失敗しました (${res.status})。簡潔モードで再試行してください。`
+          : `リクエストに失敗しました (${res.status})`;
     return { ok: false, error: message };
   }
 

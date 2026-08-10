@@ -5,6 +5,7 @@ type AzureInfraCostPanelProps = {
   azure: AzureInfraCostSummary | null;
   quota: QuotaSummary;
   monthLabel: string;
+  loading?: boolean;
 };
 
 const SERVICE_COLORS = [
@@ -16,7 +17,27 @@ const SERVICE_COLORS = [
   "from-cyan-500 to-sky-400",
 ];
 
-export default function AzureInfraCostPanel({ azure, quota, monthLabel }: AzureInfraCostPanelProps) {
+export default function AzureInfraCostPanel({
+  azure,
+  quota,
+  monthLabel,
+  loading = false,
+}: AzureInfraCostPanelProps) {
+  if (loading) {
+    return (
+      <div className={`${costsPanelClass} p-6`}>
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-sky-300/80">
+          Azure Infrastructure
+        </p>
+        <h2 className="mt-2 text-xl font-bold text-white">{monthLabel} の Azure 実コスト</h2>
+        <div className="mt-6 flex items-center gap-3 text-sm text-slate-400">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400/30 border-t-sky-300" />
+          Azure Cost Management から取得中…
+        </div>
+      </div>
+    );
+  }
+
   if (!azure) {
     return (
       <div className={`${costsPanelClass} p-6`}>
