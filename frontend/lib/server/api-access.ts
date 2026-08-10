@@ -30,6 +30,20 @@ export async function withApiAccessLog(
   const auth = requireAuthOrResponse(request);
   if (auth instanceof Response) return auth;
 
-  const response = await handler(auth);
-  return finalizeApiResponse(request, auth.userId, response, startedAt);
+  try {
+    const response = await handler(auth);
+    return finalizeApiResponse(request, auth.userId, response, startedAt);
+  } catch (error) {
+    console.error("[api]", new URL(request.url).pathname, error);
+    const response = Response.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "サーバー内部エラーが発生しました",
+      },
+      { status: 500 },
+    );
+    return finalizeApiResponse(request, auth.userId, response, startedAt);
+  }
 }
