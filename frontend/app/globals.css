@@ -346,6 +346,7 @@ body {
   height: 2px;
   border-radius: 9999px;
   transform-origin: 100% 50%;
+  opacity: 0;
   background: linear-gradient(
     90deg,
     transparent 0%,
@@ -362,6 +363,7 @@ body {
     0 0 48px rgba(14, 165, 233, 0.45);
   filter: saturate(1.85) brightness(1.12);
   animation: aq-meteor-fall linear infinite;
+  animation-fill-mode: backwards;
   will-change: transform, opacity;
 }
 

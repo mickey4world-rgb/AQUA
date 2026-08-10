@@ -66,11 +66,14 @@ function bubbleStyle(i: number, isPortal: boolean) {
 }
 
 function meteorStyle(i: number) {
+  const duration = METEOR_COUNT * 10;
+  const stagger = duration / METEOR_COUNT;
   return {
     top: `${6 + (i % 3) * 9}%`,
     right: `${4 + (i % 3) * 14}%`,
-    animationDelay: `${i * 10}s`,
-    animationDuration: `${METEOR_COUNT * 10}s`,
+    // 正の delay だと待機中に静止表示されるため、周期内でずらす
+    animationDelay: `${-(i * stagger)}s`,
+    animationDuration: `${duration}s`,
   } as const;
 }
 
