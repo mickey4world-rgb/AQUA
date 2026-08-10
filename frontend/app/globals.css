@@ -1202,6 +1202,14 @@ body {
   animation: showcase-fade-in 0.6s ease;
 }
 
+.showcase-judicial-status {
+  animation: showcase-fade-in 0.45s ease;
+}
+
+.showcase-judicial-result {
+  animation: showcase-fade-in 0.55s ease both;
+}
+
 @keyframes showcase-fade-in {
   from {
     opacity: 0;
