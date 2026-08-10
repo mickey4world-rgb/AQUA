@@ -101,7 +101,7 @@ export default function CostsPage() {
               rel="noopener noreferrer"
               className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-400/25 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-400/40 hover:bg-amber-500/15"
             >
-              アクセス情報分析（別タブ）
+              アクセス分析 — 公開 / 内部（別タブ）
               <span aria-hidden>↗</span>
             </a>
           </div>

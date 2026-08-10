@@ -142,3 +142,46 @@ export interface AccessAnalyticsReport {
   byUserPage: AccessAnalyticsUserPageRow[];
   recentAccess: AccessAnalyticsRecentRow[];
 }
+
+export interface PublicAccessAnalyticsPageSummary {
+  pathname: string;
+  pageLabel: string;
+  pageViews: number;
+  uniqueVisitors: number;
+}
+
+export interface PublicAccessAnalyticsDayPoint {
+  date: string;
+  pageViews: number;
+  uniqueVisitors: number;
+}
+
+export interface PublicAccessAnalyticsReferrerRow {
+  referrer: string;
+  count: number;
+}
+
+export interface PublicAccessAnalyticsRecentRow {
+  id: string;
+  pathname: string;
+  pageLabel: string;
+  visitorMask: string;
+  referrer: string;
+  device: string;
+  createdAt: string;
+}
+
+export interface PublicAccessAnalyticsReport {
+  month: string;
+  monthLabel: string;
+  configured: boolean;
+  summary: {
+    pageViews: number;
+    uniqueVisitors: number;
+    uniquePages: number;
+  };
+  byPage: PublicAccessAnalyticsPageSummary[];
+  byDay: PublicAccessAnalyticsDayPoint[];
+  byReferrer: PublicAccessAnalyticsReferrerRow[];
+  recentViews: PublicAccessAnalyticsRecentRow[];
+}

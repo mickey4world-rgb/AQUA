@@ -7,6 +7,7 @@ export const COSMOS_CONTAINERS = {
   stockWatches: process.env.COSMOS_STOCK_WATCHES_CONTAINER ?? "StockWatches",
   tokenUsage: process.env.COSMOS_TOKEN_USAGE_CONTAINER ?? "TokenUsage",
   accessLogs: process.env.COSMOS_ACCESS_LOGS_CONTAINER ?? "AccessLogs",
+  pageViewLogs: process.env.COSMOS_PAGE_VIEW_LOGS_CONTAINER ?? "PageViewLogs",
   workNotes: process.env.COSMOS_WORK_NOTES_CONTAINER ?? "WorkNotes",
 } as const;
 
