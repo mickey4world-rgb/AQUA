@@ -51,6 +51,8 @@ function inferFeatureFromPath(path: string, method: string): string {
   if (path.endsWith("/costs/dashboard")) return "dashboard";
   if (path.endsWith("/costs/azure-infra")) return "azure-infra";
   if (path.endsWith("/costs/access-analytics")) return "access-analytics";
+  if (path.endsWith("/costs/public-access-analytics")) return "public-access-analytics";
+  if (path.endsWith("/analytics/pageview")) return "pageview";
   if (path.endsWith("/users/me")) return "profile";
   return `${method.toLowerCase()}-${path.split("/").pop() ?? "unknown"}`;
 }

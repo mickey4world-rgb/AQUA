@@ -40,10 +40,10 @@ function SummaryCards({ report }: { report: AccessAnalyticsReport }) {
 function UserTable({ rows }: { rows: AccessAnalyticsUserSummary[] }) {
   return (
     <div className={`${costsPanelClass} overflow-hidden`}>
-      <div className="border-b border-white/10 px-5 py-4">
-        <h2 className="text-sm font-semibold text-white">だれが — ユーザー別集計</h2>
-        <p className="mt-1 text-xs text-slate-500">利用回数の多い順</p>
-      </div>
+        <div className="border-b border-white/10 px-5 py-4">
+          <h2 className="text-sm font-semibold text-white">だれが — ユーザー別集計</h2>
+          <p className="mt-1 text-xs text-slate-500">ログイン済み内部ユーザーの API 呼び出し</p>
+        </div>
       {rows.length === 0 ? (
         <p className="px-5 py-6 text-sm text-slate-500">この月のアクセスはありません。</p>
       ) : (

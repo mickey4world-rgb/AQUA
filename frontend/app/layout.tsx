@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Manrope, Zen_Kaku_Gothic_New } from "next/font/google";
+import PublicPageTracker from "@/components/analytics/PublicPageTracker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,6 +52,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${zenKaku.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden text-slate-100">
+        <PublicPageTracker />
         {children}
       </body>
     </html>

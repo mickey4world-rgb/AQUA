@@ -58,6 +58,8 @@ export const FEATURE_LABELS: Record<string, string> = {
   tracks: "鷹の目 軌道",
   "azure-infra": "Azure インフラコスト",
   "access-analytics": "アクセス情報分析",
+  "public-access-analytics": "公開アクセス分析",
+  pageview: "公開ページビュー",
 };
 
 export const FEATURE_APP_MAP: Record<string, AppKey> = {
