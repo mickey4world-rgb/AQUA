@@ -313,21 +313,120 @@ body {
   will-change: transform, opacity;
 }
 
-/* ── トップ: 下から昇る泡（大・中・小） ── */
-@keyframes aq-bubble-rise {
+/* ── トップ上層: 右上→左下の流れ星（尾は進行方向と逆） ── */
+@keyframes aq-meteor-fall {
   0% {
-    transform: translate3d(0, 12vh, 0) scale(0.92);
+    transform: translate3d(0, 0, 0) rotate(156deg);
     opacity: 0;
   }
-  10% {
+  1.8% {
+    opacity: 1;
+  }
+  11.5% {
+    transform: translate3d(-78vw, 34vh, 0) rotate(156deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(-78vw, 34vh, 0) rotate(156deg);
+    opacity: 0;
+  }
+}
+
+.aq-meteors {
+  position: absolute;
+  inset: 0 0 38% 0;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.aq-meteor {
+  position: absolute;
+  width: 8.5rem;
+  height: 2px;
+  border-radius: 9999px;
+  transform-origin: 100% 50%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.12) 10%,
+    rgba(34, 211, 238, 0.55) 34%,
+    rgba(56, 189, 248, 0.92) 68%,
+    rgba(125, 211, 252, 0.98) 88%,
+    #e0faff 100%
+  );
+  box-shadow:
+    0 0 8px rgba(0, 212, 255, 0.95),
+    0 0 18px rgba(34, 211, 238, 0.9),
+    0 0 32px rgba(56, 189, 248, 0.75),
+    0 0 48px rgba(14, 165, 233, 0.45);
+  filter: saturate(1.85) brightness(1.12);
+  animation: aq-meteor-fall linear infinite;
+  will-change: transform, opacity;
+}
+
+.aq-meteor::before {
+  content: "";
+  position: absolute;
+  inset: -3px -22% -3px 0;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.35) 50%, transparent 100%);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.aq-meteor::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 9999px;
+  background: #b8f4ff;
+  box-shadow:
+    0 0 8px #e0faff,
+    0 0 16px rgba(0, 212, 255, 1),
+    0 0 28px rgba(34, 211, 238, 0.95),
+    0 0 44px rgba(56, 189, 248, 0.85);
+}
+
+/* ── トップ下層（海）: 昇る泡（中・小） ── */
+@keyframes aq-bubble-rise {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.92);
+    opacity: 0;
+  }
+  8% {
     opacity: var(--bubble-opacity, 0.3);
   }
-  70% {
+  72% {
     opacity: var(--bubble-opacity, 0.3);
   }
   100% {
-    transform: translate3d(var(--drift-x, 12px), -108vh, 0) scale(1.06);
+    transform: translate3d(var(--drift-x, 12px), calc(-1 * var(--rise-distance, 98vh)), 0) scale(1.04);
     opacity: 0;
+  }
+}
+
+@keyframes aq-bubble-star-reflect {
+  0%,
+  76%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  82% {
+    opacity: 0.95;
+    transform: scale(1.45);
+    filter: brightness(1.55);
+  }
+  88% {
+    opacity: 0.5;
+    transform: scale(1.08);
+    filter: brightness(1.15);
   }
 }
 
@@ -340,7 +439,7 @@ body {
 
 .aq-bubble {
   position: absolute;
-  bottom: -8%;
+  bottom: -6%;
   border-radius: 9999px;
   pointer-events: none;
   border: 1px solid rgb(var(--scene-2) / 0.28);
@@ -355,14 +454,6 @@ body {
   will-change: transform, opacity;
 }
 
-.aq-bubble--lg {
-  filter: blur(0.4px);
-  border-color: rgb(var(--scene-2) / 0.2);
-  box-shadow:
-    inset 0 0 28px rgb(var(--scene-2) / 0.16),
-    0 0 40px rgb(var(--scene-1) / 0.1);
-}
-
 .aq-bubble--md {
   border-color: rgb(var(--scene-2) / 0.3);
 }
@@ -373,6 +464,27 @@ body {
     radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.55), transparent 48%),
     rgb(var(--scene-2) / 0.1);
   box-shadow: 0 0 12px rgb(var(--scene-2) / 0.22);
+}
+
+/* 宇宙の星の光が水面の泡に時々映る */
+.aq-bubble--glint::after {
+  content: "";
+  position: absolute;
+  top: 16%;
+  left: 20%;
+  width: 34%;
+  height: 20%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    120deg,
+    rgba(186, 242, 255, 0.95),
+    rgba(103, 232, 249, 0.55),
+    transparent 70%
+  );
+  box-shadow: 0 0 14px rgba(103, 232, 249, 0.55);
+  animation: aq-bubble-star-reflect 9.5s ease-in-out infinite;
+  animation-delay: var(--glint-delay, 0s);
+  pointer-events: none;
 }
 
 .bg-noise {
@@ -925,7 +1037,9 @@ body {
   .aq-water,
   .aq-shimmer,
   .aq-mote,
+  .aq-meteor,
   .aq-bubble,
+  .aq-bubble--glint::after,
   .home-pulse-dot,
   .marquee__track,
   .scroll-cue,

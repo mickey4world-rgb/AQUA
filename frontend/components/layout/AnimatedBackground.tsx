@@ -17,7 +17,8 @@ type AnimatedBackgroundProps = {
 };
 
 const MOTE_COUNT = { full: 42, mobile: 18 } as const;
-const BUBBLE_COUNT = { full: 16, mobile: 8 } as const;
+const BUBBLE_COUNT = { full: 14, mobile: 7 } as const;
+const METEOR_COUNT = 3;
 
 /** 疑似乱数（SSR/CSR で同じ並びになるよう index から決定） */
 function moteStyle(i: number) {
@@ -27,7 +28,7 @@ function moteStyle(i: number) {
   const glow = sizeTier <= 1 ? 0.7 : sizeTier === 2 ? 0.5 : 0.35;
   return {
     left: `${(i * 17 + 7) % 100}%`,
-    top: `${(i * 29 + 11) % 100}%`,
+    top: `${(i * 29 + 11) % 55}%`,
     width: `${size}px`,
     height: `${size}px`,
     opacity: 0.2 + (i % 4) * 0.08,
@@ -38,20 +39,18 @@ function moteStyle(i: number) {
 }
 
 function bubbleStyle(i: number, isPortal: boolean) {
-  const tier = i % 5;
-  // 0: large, 1-2: mid, 3-4: small
-  const size =
-    tier === 0
-      ? 140 + (i % 3) * 36
-      : tier <= 2
-        ? 48 + (i % 4) * 14
-        : 14 + (i % 5) * 6;
+  // 中・小のみ（中央を塞ぐ大きな泡は出さない）
+  const isMid = i % 3 !== 0;
+  const size = isMid ? 36 + (i % 5) * 10 : 12 + (i % 5) * 5;
 
-  // タイトル側（左）に寄せる。portal は特に左寄せ
-  const leftBase = isPortal ? (i * 11 + 3) % 58 : (i * 13 + 5) % 92;
-  const drift = ((i % 7) - 3) * 18;
-  const duration = tier === 0 ? 22 + (i % 4) * 4 : tier <= 2 ? 16 + (i % 5) * 2.5 : 11 + (i % 6) * 1.8;
-  const opacity = tier === 0 ? 0.22 : tier <= 2 ? 0.28 : 0.38;
+  // 海エリア寄りに散らす（左右に振って中央の占有を避ける）
+  const lane = i % 2 === 0 ? (i * 9 + 4) % 38 : 58 + ((i * 11 + 6) % 36);
+  const leftBase = isPortal ? lane : (i * 13 + 5) % 92;
+  const drift = ((i % 7) - 3) * 14;
+  const duration = isMid ? 20 + (i % 5) * 3 : 15 + (i % 6) * 2.2;
+  const opacity = isMid ? 0.26 : 0.36;
+  const glintDelay = `${(i * 2.7) % 11}s`;
+  const riseDistance = isMid ? `${94 + (i % 4) * 5}vh` : `${84 + (i % 3) * 5}vh`;
 
   return {
     left: `${leftBase}%`,
@@ -61,6 +60,17 @@ function bubbleStyle(i: number, isPortal: boolean) {
     animationDuration: `${duration}s`,
     ["--bubble-opacity" as string]: String(opacity),
     ["--drift-x" as string]: `${drift}px`,
+    ["--glint-delay" as string]: glintDelay,
+    ["--rise-distance" as string]: riseDistance,
+  } as const;
+}
+
+function meteorStyle(i: number) {
+  return {
+    top: `${6 + (i % 3) * 9}%`,
+    right: `${4 + (i % 3) * 14}%`,
+    animationDelay: `${i * 10}s`,
+    animationDuration: `${METEOR_COUNT * 10}s`,
   } as const;
 }
 
@@ -70,6 +80,7 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
   const showMotes = !reducedMotion && !liteMode;
   const moteCount = isMobile ? MOTE_COUNT.mobile : MOTE_COUNT.full;
   const showBubbles = theme === "portal" && !reducedMotion;
+  const showMeteors = theme === "portal" && !reducedMotion && !liteMode;
   const bubbleCount = liteMode || isMobile ? BUBBLE_COUNT.mobile : BUBBLE_COUNT.full;
 
   return (
@@ -89,6 +100,14 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
       {!liteMode && <div className="aq-nebula aq-nebula-c" />}
       {!liteMode && <div className="aq-rays" />}
 
+      {showMeteors && (
+        <div className="aq-meteors">
+          {Array.from({ length: METEOR_COUNT }).map((_, i) => (
+            <span key={`meteor-${i}`} className="aq-meteor" style={meteorStyle(i)} />
+          ))}
+        </div>
+      )}
+
       {/* 水 */}
       <div className="aq-water" />
       {!liteMode && <div className="aq-shimmer" />}
@@ -98,8 +117,8 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
           {Array.from({ length: bubbleCount }).map((_, i) => (
             <span
               key={`bubble-${i}`}
-              className={`aq-bubble ${
-                i % 5 === 0 ? "aq-bubble--lg" : i % 5 <= 2 ? "aq-bubble--md" : "aq-bubble--sm"
+              className={`aq-bubble ${i % 3 !== 0 ? "aq-bubble--md" : "aq-bubble--sm"}${
+                i % 4 === 1 || i % 5 === 0 ? " aq-bubble--glint" : ""
               }`}
               style={bubbleStyle(i, true)}
             />

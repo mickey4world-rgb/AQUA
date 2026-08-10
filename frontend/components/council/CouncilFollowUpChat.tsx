@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { readApiJson } from "@/lib/fetch-api";
 import type {
   CouncilAttachment,
   CouncilChatMessage,
@@ -42,9 +43,9 @@ export default function CouncilFollowUpChat({ debate, disabled }: CouncilFollowU
           attachments: debate.attachments,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "送信に失敗しました");
+      const parsed = await readApiJson<{ reply: string; model: string }>(res);
+      if (!parsed.ok) {
+        setError(parsed.error);
         setMessages(prior);
         return;
       }
@@ -53,8 +54,8 @@ export default function CouncilFollowUpChat({ debate, disabled }: CouncilFollowU
         nextUser,
         {
           role: "assistant",
-          content: data.reply as string,
-          modelUsed: data.model as string,
+          content: parsed.data.reply,
+          modelUsed: parsed.data.model,
         },
       ]);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
