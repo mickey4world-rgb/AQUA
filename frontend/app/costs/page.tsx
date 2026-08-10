@@ -8,7 +8,7 @@ import DailyUsageChart from "@/components/costs/DailyUsageChart";
 import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
 import UsageHistory from "@/components/costs/UsageHistory";
-import type { CostDashboard } from "@/lib/types/analytics";
+import type { AzureInfraCostSummary, CostDashboard } from "@/lib/types/analytics";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 
 function currentMonthParam(): string {
@@ -32,9 +32,12 @@ function shiftMonth(month: string, delta: number): string {
 export default function CostsPage() {
   const [month, setMonth] = useState(currentMonthParam());
   const [dashboard, setDashboard] = useState<CostDashboard | null>(null);
+  const [azureInfra, setAzureInfra] = useState<AzureInfraCostSummary | null>(null);
   // 表示中の月と読み込み済みの月がずれている間がローディング。
   const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
+  const [azureLoadedMonth, setAzureLoadedMonth] = useState<string | null>(null);
   const loading = loadedMonth !== month;
+  const azureLoading = azureLoadedMonth !== month;
 
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
@@ -51,6 +54,25 @@ export default function CostsPage() {
         // 取得に失敗したときは前月分の表示を残したままローディングだけ解除する。
         if (data) setDashboard(data);
         setLoadedMonth(month);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/costs/azure-infra?month=${month}`)
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as AzureInfraCostSummary | null) : null,
+      )
+      .catch(() => null)
+      .then((data) => {
+        if (cancelled) return;
+        setAzureInfra(data);
+        setAzureLoadedMonth(month);
       });
 
     return () => {
@@ -117,9 +139,10 @@ export default function CostsPage() {
               monthLabel={dashboard.monthLabel}
             />
             <AzureInfraCostPanel
-              azure={dashboard.azureInfra}
+              azure={azureInfra}
               quota={dashboard.quota}
               monthLabel={dashboard.monthLabel}
+              loading={azureLoading}
             />
             <AppSummaryGrid apps={dashboard.byApp} />
             <DailyUsageChart points={dashboard.dailyUsage} />

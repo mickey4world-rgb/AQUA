@@ -77,9 +77,9 @@ function azureCompletionBudget(requested: number, deployment: string, depth: Cou
   const name = deployment.toLowerCase();
   const compact = depth === "compact";
   if (/gpt-5|o1|o3|o4|reason/.test(name)) {
-    return Math.max(requested, compact ? 900 : 1400);
+    return Math.max(requested, compact ? 640 : 1200);
   }
-  return Math.max(requested, compact ? 500 : 700);
+  return Math.max(requested, compact ? 420 : 700);
 }
 
 async function callCouncilModel(
@@ -174,7 +174,7 @@ async function callCouncilModel(
       };
     }
     if (lastFinish !== "length") break;
-    budget = Math.max(budget * 2, depth === "compact" ? 1600 : 2400);
+    budget = Math.max(budget + 320, depth === "compact" ? 960 : 2400);
   }
 
   throw new Error(
@@ -198,41 +198,54 @@ async function runModelPhase(
     ? formatOpinionsForJudge(prior, depthConfig.judgeInputMaxChars)
     : "";
 
-  const settled = await Promise.allSettled(
-    models.map(async (model) => {
-      const userPrompt =
-        phase === "initial"
-          ? `テーマ:\n${topicWithAttachments}\n要点だけ述べて。`
-          : `テーマ:\n${topicWithAttachments}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
+  const invokeModel = async (model: CouncilModelConfig): Promise<CouncilModelOpinion> => {
+    const userPrompt =
+      phase === "initial"
+        ? `テーマ:\n${topicWithAttachments}\n要点だけ述べて。`
+        : `テーマ:\n${topicWithAttachments}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
 
-      const result = await callCouncilModel(
-        model,
-        mode,
-        `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
-        userPrompt,
-        depthConfig.debaterMaxTokens,
-        depth,
-      );
+    const result = await callCouncilModel(
+      model,
+      mode,
+      `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
+      userPrompt,
+      depthConfig.debaterMaxTokens,
+      depth,
+    );
 
-      await recordTokenUsage({
-        userId,
-        feature: `council-${phase}-${model.featureSuffix}`,
-        model: result.model,
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        requestId: result.requestId,
-      });
+    await recordTokenUsage({
+      userId,
+      feature: `council-${phase}-${model.featureSuffix}`,
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      requestId: result.requestId,
+    });
 
-      return {
-        modelId: model.id,
-        modelLabel: model.label,
-        phase,
-        content: result.content,
-        modelUsed: result.model,
-        provider: model.provider,
-      } satisfies CouncilModelOpinion;
-    }),
-  );
+    return {
+      modelId: model.id,
+      modelLabel: model.label,
+      phase,
+      content: result.content,
+      modelUsed: result.model,
+      provider: model.provider,
+    };
+  };
+
+  const settled =
+    depth === "compact"
+      ? await (async () => {
+          const outcomes: PromiseSettledResult<CouncilModelOpinion>[] = [];
+          for (const model of models) {
+            try {
+              outcomes.push({ status: "fulfilled", value: await invokeModel(model) });
+            } catch (reason) {
+              outcomes.push({ status: "rejected", reason });
+            }
+          }
+          return outcomes;
+        })()
+      : await Promise.allSettled(models.map((model) => invokeModel(model)));
 
   const results: CouncilModelOpinion[] = [];
   const failures: string[] = [];
@@ -268,59 +281,59 @@ export async function runCouncilDebate(
   depth: CouncilDepth = "compact",
   attachmentsInput: unknown = null,
 ): Promise<CouncilDebateRunResult> {
-  const trimmed = topic.trim();
-  const depthConfig = councilDepthConfig(depth);
-
-  if (!trimmed) {
-    return { ok: false, reason: "相談内容を入力してください。" };
-  }
-  if (trimmed.length > depthConfig.topicMaxLength) {
-    return {
-      ok: false,
-      reason: `相談内容が長すぎます（${depthConfig.topicMaxLength}文字以内）。`,
-    };
-  }
-
-  const attachmentResult = normalizeAttachments(attachmentsInput);
-  if (!attachmentResult.ok) {
-    return { ok: false, reason: attachmentResult.reason };
-  }
-  const attachments = attachmentResult.attachments;
-
-  if (!isAzureOpenAiConfigured()) {
-    return {
-      ok: false,
-      reason: "Azure OpenAI が未設定のため、AI 合議は利用できません。",
-    };
-  }
-
-  const quota = await canUseAiTokens(userId);
-  if (!quota.allowed) {
-    return {
-      ok: false,
-      reason: `今月の AI 利用上限（${quota.limit.toLocaleString("ja-JP")} tokens）に達しました。`,
-    };
-  }
-
-  const debaters = getCouncilDebaters(mode, depth);
-  if (!debaters.length) {
-    return { ok: false, reason: "利用可能な AI モデルがありません。" };
-  }
-
-  const judge = getCouncilJudge(mode);
-  const configMeta = getCouncilConfigMeta();
-  if (mode === "domestic" && !configMeta.domestic.available) {
-    return {
-      ok: false,
-      reason:
-        configMeta.domestic.warning ??
-        "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
-    };
-  }
-
-  const topicWithAttachments = buildTopicWithAttachments(trimmed, attachments);
-
   try {
+    const trimmed = topic.trim();
+    const depthConfig = councilDepthConfig(depth);
+
+    if (!trimmed) {
+      return { ok: false, reason: "相談内容を入力してください。" };
+    }
+    if (trimmed.length > depthConfig.topicMaxLength) {
+      return {
+        ok: false,
+        reason: `相談内容が長すぎます（${depthConfig.topicMaxLength}文字以内）。`,
+      };
+    }
+
+    const attachmentResult = normalizeAttachments(attachmentsInput);
+    if (!attachmentResult.ok) {
+      return { ok: false, reason: attachmentResult.reason };
+    }
+    const attachments = attachmentResult.attachments;
+
+    if (!isAzureOpenAiConfigured()) {
+      return {
+        ok: false,
+        reason: "Azure OpenAI が未設定のため、AI 合議は利用できません。",
+      };
+    }
+
+    const quota = await canUseAiTokens(userId);
+    if (!quota.allowed) {
+      return {
+        ok: false,
+        reason: `今月の AI 利用上限（${quota.limit.toLocaleString("ja-JP")} tokens）に達しました。`,
+      };
+    }
+
+    const debaters = getCouncilDebaters(mode, depth);
+    if (!debaters.length) {
+      return { ok: false, reason: "利用可能な AI モデルがありません。" };
+    }
+
+    const judge = getCouncilJudge(mode);
+    const configMeta = getCouncilConfigMeta();
+    if (mode === "domestic" && !configMeta.domestic.available) {
+      return {
+        ok: false,
+        reason:
+          configMeta.domestic.warning ??
+          "国内限定モードは日本リージョンの Azure OpenAI が必要です。",
+      };
+    }
+
+    const topicWithAttachments = buildTopicWithAttachments(trimmed, attachments);
+
     const initial = await runModelPhase(
       userId,
       mode,
@@ -411,6 +424,7 @@ export async function runCouncilDebate(
       },
     };
   } catch (error) {
+    console.error("[council] runCouncilDebate failed", error);
     return {
       ok: false,
       reason:
