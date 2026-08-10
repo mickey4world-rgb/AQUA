@@ -74,3 +74,71 @@ export interface AzureInfraCostSummary {
   note?: string;
   error?: string;
 }
+
+export interface AccessAnalyticsUserSummary {
+  userId: string;
+  displayName: string;
+  email: string;
+  apiCalls: number;
+  apps: AppKey[];
+  appLabels: string[];
+  topFeature: string;
+  topFeatureLabel: string;
+  lastAccessAt: string;
+}
+
+export interface AccessAnalyticsPageSummary {
+  app: AppKey;
+  appLabel: string;
+  feature: string;
+  featureLabel: string;
+  pageLabel: string;
+  apiCalls: number;
+  uniqueUsers: number;
+  users: Array<{ userId: string; displayName: string; apiCalls: number }>;
+  lastAccessAt: string;
+}
+
+export interface AccessAnalyticsUserPageRow {
+  userId: string;
+  displayName: string;
+  app: AppKey;
+  appLabel: string;
+  feature: string;
+  featureLabel: string;
+  pageLabel: string;
+  apiCalls: number;
+  avgDurationMs: number;
+  lastAccessAt: string;
+}
+
+export interface AccessAnalyticsRecentRow {
+  id: string;
+  userId: string;
+  displayName: string;
+  app: AppKey;
+  appLabel: string;
+  feature: string;
+  featureLabel: string;
+  pageLabel: string;
+  method: string;
+  path: string;
+  statusCode: number;
+  durationMs: number;
+  createdAt: string;
+}
+
+export interface AccessAnalyticsReport {
+  month: string;
+  monthLabel: string;
+  configured: boolean;
+  summary: {
+    totalApiCalls: number;
+    uniqueUsers: number;
+    uniquePages: number;
+  };
+  byUser: AccessAnalyticsUserSummary[];
+  byPage: AccessAnalyticsPageSummary[];
+  byUserPage: AccessAnalyticsUserPageRow[];
+  recentAccess: AccessAnalyticsRecentRow[];
+}
