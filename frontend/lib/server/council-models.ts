@@ -13,6 +13,8 @@ export type CouncilModelConfig = CouncilModelMeta & {
   persona: string;
   maxTokens: number;
   featureSuffix: string;
+  /** Azure の最新系推論デプロイ（カスタム名でも length 空応答になりやすい） */
+  reasoningHeavy?: boolean;
 };
 
 const PERSONAS = {
@@ -124,6 +126,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       persona: PERSONAS.logic,
       maxTokens: 480,
       featureSuffix: "global-a",
+      reasoningHeavy: true,
     },
     {
       id: "global-b",
@@ -137,6 +140,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       persona: PERSONAS.creative,
       maxTokens: 480,
       featureSuffix: "global-b",
+      reasoningHeavy: true,
     },
     {
       id: "global-c",
@@ -150,6 +154,7 @@ export function getGlobalDebaters(): CouncilModelConfig[] {
       persona: PERSONAS.skeptic,
       maxTokens: 480,
       featureSuffix: "global-c",
+      reasoningHeavy: true,
     },
   ];
 }
@@ -188,6 +193,7 @@ export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
       persona: PERSONAS.judge,
       maxTokens: 550,
       featureSuffix: "judge-global",
+      reasoningHeavy: true,
     };
   }
 

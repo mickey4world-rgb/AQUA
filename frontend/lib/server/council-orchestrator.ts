@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import {
   getAzureOpenAiClient,
+  getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
   type AzureOpenAiResidency,
 } from "@/lib/server/azure-openai";
@@ -55,15 +56,19 @@ function buildTopicWithAttachments(topic: string, attachments: CouncilAttachment
 }
 
 function isReasoningDeployment(deployment: string): boolean {
-  return /gpt-5|o1|o3|o4|reason/i.test(deployment);
+  return /gpt-5|gpt5|o1|o3|o4|reason/i.test(deployment);
+}
+
+function usesReasoningBudget(model: CouncilModelConfig, deployment: string): boolean {
+  return Boolean(model.reasoningHeavy) || isReasoningDeployment(deployment);
 }
 
 function councilChatMessages(
-  deployment: string,
+  reasoning: boolean,
   systemPrompt: string,
   userPrompt: string,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-  if (isReasoningDeployment(deployment)) {
+  if (reasoning) {
     return [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }];
   }
   return [
@@ -72,36 +77,159 @@ function councilChatMessages(
   ];
 }
 
-function extractMessageText(message: {
-  content?: string | Array<{ type?: string; text?: string }> | null;
-  refusal?: string | null;
-} | null | undefined): string {
-  if (!message) return "";
-  const content = message.content;
+function extractMessageText(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
+
+  const record = message as {
+    content?: string | Array<{ type?: string; text?: string }> | null;
+    refusal?: string | null;
+  };
+  const content = record.content;
   if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
     return content
       .map((part) => {
         if (typeof part === "string") return part;
-        if (part?.type === "text" || part?.type === "output_text") return part.text ?? "";
-        return part?.text ?? "";
+        if (part && typeof part === "object") {
+          const typed = part as { type?: string; text?: string };
+          if (typed.type === "text" || typed.type === "output_text") return typed.text ?? "";
+          return typed.text ?? "";
+        }
+        return "";
       })
       .join("")
       .trim();
   }
-  if (typeof message.refusal === "string" && message.refusal.trim()) {
-    return message.refusal.trim();
-  }
+
+  const refusal = record.refusal;
+  if (typeof refusal === "string" && refusal.trim()) return refusal.trim();
+
   return "";
 }
 
-function azureCompletionBudget(requested: number, deployment: string, depth: CouncilDepth): number {
+function azureCompletionBudget(
+  requested: number,
+  reasoning: boolean,
+  depth: CouncilDepth,
+): number {
   const compact = depth === "compact";
-  if (isReasoningDeployment(deployment)) {
-    // 推論トークンを先に消費するため、表示文生成用の余裕を大きく確保する
-    return Math.max(requested, compact ? 2400 : 3600);
+  if (reasoning) {
+    return Math.max(requested, compact ? 8000 : 12000);
   }
-  return Math.max(requested, compact ? 520 : 900);
+  return Math.max(requested, compact ? 720 : 1200);
+}
+
+async function createAzureCouncilCompletion(
+  client: OpenAI,
+  deployment: string,
+  reasoning: boolean,
+  depth: CouncilDepth,
+  budget: number,
+  systemPrompt: string,
+  userPrompt: string,
+) {
+  const requestBody = {
+    model: deployment,
+    max_completion_tokens: budget,
+    messages: councilChatMessages(reasoning, systemPrompt, userPrompt),
+    ...(reasoning
+      ? {
+          reasoning_effort: depth === "compact" ? ("low" as "low" | "medium") : ("medium" as "low" | "medium"),
+        }
+      : {}),
+  };
+
+  try {
+    return await client.chat.completions.create(requestBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (reasoning && /reasoning_effort|unknown|unsupported|invalid/i.test(message)) {
+      const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
+      return await client.chat.completions.create(fallbackBody);
+    }
+    throw error;
+  }
+}
+
+async function callAzureCouncilModel(
+  model: CouncilModelConfig,
+  mode: CouncilMode,
+  deployment: string,
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number,
+  depth: CouncilDepth,
+): Promise<ChatCompletionResult> {
+  const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
+  const client = getAzureOpenAiClient(deployment, residency);
+  const reasoning = usesReasoningBudget(model, deployment);
+
+  let budget = azureCompletionBudget(maxTokens, reasoning, depth);
+  let lastFinish: string | undefined;
+  const maxAttempts = reasoning ? 4 : 2;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const completion = await createAzureCouncilCompletion(
+      client,
+      deployment,
+      reasoning,
+      depth,
+      budget,
+      systemPrompt,
+      userPrompt,
+    );
+    const choice = completion.choices[0];
+    lastFinish = choice?.finish_reason ?? undefined;
+    const content = extractMessageText(choice?.message);
+    if (content) {
+      return {
+        content,
+        model: completion.model ?? deployment,
+        promptTokens: completion.usage?.prompt_tokens ?? 0,
+        completionTokens: completion.usage?.completion_tokens ?? 0,
+        requestId: completion.id,
+      };
+    }
+    if (lastFinish !== "length") break;
+    budget = Math.min(Math.max(budget + 4000, budget * 2), 16384);
+  }
+
+  const fallbackDeployments = [
+    process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_A,
+    process.env.AZURE_OPENAI_DEPLOYMENT,
+    getAzureOpenAiDeployment(),
+  ].filter((dep): dep is string => Boolean(dep && dep !== deployment));
+  const uniqueFallbacks = [...new Set(fallbackDeployments)];
+
+  if (model.reasoningHeavy) {
+    for (const fallbackDeployment of uniqueFallbacks) {
+      const fallbackClient = getAzureOpenAiClient(fallbackDeployment, residency);
+      const completion = await fallbackClient.chat.completions.create({
+        model: fallbackDeployment,
+        max_completion_tokens: Math.max(maxTokens, 900),
+        messages: councilChatMessages(false, systemPrompt, userPrompt),
+      });
+      const content = extractMessageText(completion.choices[0]?.message);
+      if (content) {
+        console.warn(
+          `[council] ${model.label}: latest deployment empty; used fallback ${fallbackDeployment}`,
+        );
+        return {
+          content,
+          model: completion.model ?? fallbackDeployment,
+          promptTokens: completion.usage?.prompt_tokens ?? 0,
+          completionTokens: completion.usage?.completion_tokens ?? 0,
+          requestId: completion.id,
+        };
+      }
+    }
+  }
+
+  throw new Error(
+    `Empty response from ${model.label}` +
+      (lastFinish ? `（finish=${lastFinish}）` : "") +
+      "。デプロイ名やトークン上限を確認してください。",
+  );
 }
 
 async function callCouncilModel(
@@ -168,59 +296,14 @@ async function callCouncilModel(
   }
 
   const deployment = model.deployment!;
-  const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
-  const client = getAzureOpenAiClient(deployment, residency);
-  const reasoning = isReasoningDeployment(deployment);
-
-  let budget = azureCompletionBudget(maxTokens, deployment, depth);
-  let lastFinish: string | undefined;
-  const maxAttempts = reasoning ? 3 : 2;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const requestBody = {
-      model: deployment,
-      max_completion_tokens: budget,
-      messages: councilChatMessages(deployment, systemPrompt, userPrompt),
-      ...(reasoning && depth === "compact"
-        ? { reasoning_effort: "low" as const }
-        : reasoning
-          ? { reasoning_effort: "medium" as const }
-          : {}),
-    };
-
-    let completion;
-    try {
-      completion = await client.chat.completions.create(requestBody);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (reasoning && /reasoning_effort|unknown|unsupported|invalid/i.test(message)) {
-        const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
-        completion = await client.chat.completions.create(fallbackBody);
-      } else {
-        throw error;
-      }
-    }
-
-    const choice = completion.choices[0];
-    lastFinish = choice?.finish_reason ?? undefined;
-    const content = extractMessageText(choice?.message);
-    if (content) {
-      return {
-        content,
-        model: completion.model ?? deployment,
-        promptTokens: completion.usage?.prompt_tokens ?? 0,
-        completionTokens: completion.usage?.completion_tokens ?? 0,
-        requestId: completion.id,
-      };
-    }
-    if (lastFinish !== "length") break;
-    budget = Math.min(Math.max(budget * 2, budget + 1200), 8000);
-  }
-
-  throw new Error(
-    `Empty response from ${model.label}` +
-      (lastFinish ? `（finish=${lastFinish}）` : "") +
-      "。デプロイ名やトークン上限を確認してください。",
+  return callAzureCouncilModel(
+    model,
+    mode,
+    deployment,
+    systemPrompt,
+    userPrompt,
+    maxTokens,
+    depth,
   );
 }
 
@@ -243,10 +326,14 @@ async function invokeCouncilDebater(
       ? `テーマ:\n${topicWithAttachments}\n要点だけ述べて。`
       : `テーマ:\n${topicWithAttachments}\n他AI:\n${priorText}\n1点だけ同意か反論を。`;
 
+  const debaterPrompt = model.reasoningHeavy
+    ? `${model.persona} 日本語。${depthConfig.debaterLengthHint}。長い思考は不要。`
+    : `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`;
+
   const result = await callCouncilModel(
     model,
     mode,
-    `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
+    debaterPrompt,
     userPrompt,
     depthConfig.debaterMaxTokens,
     depth,
