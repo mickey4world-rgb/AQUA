@@ -29,6 +29,37 @@ function deploymentOrDefault(envKey: string, fallback?: string): string {
   return process.env[envKey] ?? fallback ?? getAzureOpenAiDeployment();
 }
 
+const GLOBAL_DEPLOYMENT_ENV_KEYS = [
+  "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
+  "AZURE_OPENAI_DEPLOYMENT_GLOBAL_A",
+  "AZURE_OPENAI_DEPLOYMENT_GLOBAL_B",
+  "AZURE_OPENAI_DEPLOYMENT_GLOBAL_C",
+  "AZURE_OPENAI_DEPLOYMENT_GLOBAL_JUDGE",
+] as const;
+
+/** GLOBAL 系を個別指定しているか（未設定なら既定デプロイへ自動フォールバック） */
+export function isGlobalCouncilExplicitlyConfigured(): boolean {
+  return GLOBAL_DEPLOYMENT_ENV_KEYS.some((key) => Boolean(process.env[key]?.trim()));
+}
+
+function globalDeploymentAutoNote(): string {
+  const defaultDep = getAzureOpenAiDeployment();
+  const sources: string[] = [`AZURE_OPENAI_DEPLOYMENT（${defaultDep}）`];
+
+  if (process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_B?.trim()) {
+    sources.push(`AZURE_OPENAI_DEPLOYMENT_DEBATE_B（${process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_B.trim()}）`);
+  }
+  if (process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_C?.trim()) {
+    sources.push(`AZURE_OPENAI_DEPLOYMENT_DEBATE_C（${process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_C.trim()}）`);
+  }
+
+  return (
+    "GLOBAL 系の環境変数が未設定のため、既存の Azure デプロイ名を自動利用しています。" +
+    ` 参照: ${sources.join("、")}。下の「使用モデル」に実際のデプロイ名が表示されます。` +
+    " 個別指定する場合のみ AZURE_OPENAI_DEPLOYMENT_GLOBAL_* を SWA に追加してください。"
+  );
+}
+
 /** 国内限定 — GLOBAL 系へのフォールバック禁止。日本リージョン専用デプロイのみ */
 function domesticDeployment(envKey: string): string {
   return (
@@ -253,9 +284,10 @@ export function getCouncilConfigMeta() {
       dataRegion: geminiConfigured
         ? "Azure OpenAI — Latest tier + Gemini"
         : "Azure OpenAI — Latest tier",
-      warning: azureConfigured
-        ? "国内限定より新しいモデルデプロイを優先します。Azure ポータルで GLOBAL 系デプロイ名を設定してください。"
-        : undefined,
+      info:
+        azureConfigured && !isGlobalCouncilExplicitlyConfigured()
+          ? globalDeploymentAutoNote()
+          : undefined,
     },
   };
 }

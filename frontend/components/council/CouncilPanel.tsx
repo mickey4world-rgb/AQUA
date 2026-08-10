@@ -285,6 +285,9 @@ export default function CouncilPanel() {
             {mode === "global" && config?.global.warning && (
               <p className="mt-2 text-amber-200/90">{config.global.warning}</p>
             )}
+            {mode === "global" && config?.global.info && (
+              <p className="mt-2 text-sky-200/80">{config.global.info}</p>
+            )}
             <div className="mt-4">
               <CouncilModelRoster
                 title="使用モデル（設定値）"

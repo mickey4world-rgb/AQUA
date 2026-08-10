@@ -71,5 +71,7 @@ export interface CouncilConfigResponse {
     judge: CouncilModelMeta;
     dataRegion: string;
     warning?: string;
+    /** GLOBAL 系未設定時 — 既存デプロイ名から自動解決した旨 */
+    info?: string;
   };
 }
