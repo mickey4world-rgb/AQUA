@@ -1070,3 +1070,409 @@ body {
     transition: none;
   }
 }
+
+/* ── AQUA Studio Showcase (/sample) ── */
+.showcase-scroll {
+  scroll-snap-type: y proximity;
+}
+
+.showcase-hero {
+  position: relative;
+  min-height: 78vh;
+  scroll-snap-align: start;
+  overflow: hidden;
+}
+
+.showcase-hero__film {
+  position: absolute;
+  inset: -10%;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.12), transparent 40%),
+    radial-gradient(circle at 80% 30%, rgba(167, 139, 250, 0.1), transparent 45%),
+    linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.55));
+  animation: showcase-kenburns 18s ease-in-out infinite alternate;
+}
+
+@keyframes showcase-kenburns {
+  from {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.08) translate3d(-2%, 1%, 0);
+  }
+}
+
+.showcase-section {
+  position: relative;
+  scroll-snap-align: start;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.showcase-section__bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 70% 40%,
+    color-mix(in srgb, var(--showcase-accent) 16%, transparent),
+    transparent 55%
+  );
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.showcase-section__copy,
+.showcase-section__demo {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-section__link:hover {
+  border-color: color-mix(in srgb, var(--showcase-accent) 45%, white 10%);
+  color: white;
+}
+
+.showcase-demo {
+  position: relative;
+}
+
+.showcase-demo__glow {
+  position: absolute;
+  inset: -8%;
+  border-radius: 2rem;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--showcase-accent, #67e8f9) 22%, transparent),
+    transparent 70%
+  );
+  filter: blur(18px);
+  opacity: 0.75;
+  animation: showcase-glow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes showcase-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
+  }
+}
+
+.showcase-demo__frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.92));
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  animation: showcase-frame-float 6s ease-in-out infinite;
+}
+
+@keyframes showcase-frame-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.showcase-sankey-flow svg path {
+  animation: showcase-link-pulse 3s ease-in-out infinite;
+}
+
+@keyframes showcase-link-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.45;
+  }
+  50% {
+    stroke-opacity: 0.85;
+  }
+}
+
+.showcase-typewriter {
+  animation: showcase-fade-in 0.6s ease;
+}
+
+@keyframes showcase-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.showcase-sparkline {
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: showcase-spark-draw 2.2s ease forwards infinite;
+}
+
+@keyframes showcase-spark-draw {
+  0% {
+    stroke-dashoffset: 80;
+    opacity: 0.4;
+  }
+  60% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -10;
+    opacity: 0.7;
+  }
+}
+
+.showcase-stock-row {
+  animation: showcase-row-in 0.8s ease both;
+}
+
+@keyframes showcase-row-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.showcase-mickey-head {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #fff, #111 70%);
+  position: relative;
+  box-shadow: 0 0 16px rgba(240, 171, 252, 0.45);
+  animation: showcase-mickey-bob 2.4s ease-in-out infinite;
+}
+
+.showcase-mickey-head::before,
+.showcase-mickey-head::after {
+  content: "";
+  position: absolute;
+  top: -0.45rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 9999px;
+  background: #111;
+}
+
+.showcase-mickey-head::before {
+  left: 0.1rem;
+}
+
+.showcase-mickey-head::after {
+  right: 0.1rem;
+}
+
+@keyframes showcase-mickey-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-3px) rotate(3deg);
+  }
+}
+
+.showcase-orbit-scene {
+  position: relative;
+  height: 280px;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+}
+
+.showcase-orbit-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+  background-size: 120px 120px, 80px 80px;
+  animation: showcase-stars-drift 40s linear infinite;
+  opacity: 0.35;
+}
+
+@keyframes showcase-stars-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-40px, -20px, 0);
+  }
+}
+
+.showcase-orbit-ring {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  border: 1px solid rgba(129, 140, 248, 0.25);
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+}
+
+.showcase-orbit-ring--outer {
+  width: 220px;
+  height: 90px;
+}
+
+.showcase-orbit-ring--inner {
+  width: 150px;
+  height: 62px;
+  border-color: rgba(251, 146, 60, 0.25);
+}
+
+.showcase-earth {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-top: -28px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 28%, #7dd3fc, #0369a1 55%, #0c4a6e 100%);
+  box-shadow:
+    0 0 24px rgba(56, 189, 248, 0.55),
+    inset -8px -8px 16px rgba(0, 0, 0, 0.35);
+  animation: showcase-earth-spin 16s linear infinite;
+}
+
+.showcase-earth__atmosphere {
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+@keyframes showcase-earth-spin {
+  from {
+    filter: hue-rotate(0deg);
+  }
+  to {
+    filter: hue-rotate(12deg);
+  }
+}
+
+.showcase-asteroid-orbit {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: 220px;
+  height: 90px;
+  margin-left: -110px;
+  margin-top: -45px;
+  animation: showcase-orbit-spin 8s linear infinite;
+}
+
+@keyframes showcase-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.showcase-asteroid {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #fde68a, #fb923c 70%, #9a3412 100%);
+  box-shadow: 0 0 14px rgba(251, 146, 60, 0.85);
+}
+
+.showcase-asteroid__trail {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 48px;
+  height: 2px;
+  margin-top: -1px;
+  margin-right: 2px;
+  background: linear-gradient(90deg, transparent, rgba(251, 146, 60, 0.85));
+  filter: blur(0.5px);
+}
+
+.showcase-orbit-hud {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(8px);
+}
+
+.showcase-progress {
+  position: fixed;
+  right: 1rem;
+  top: 50%;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  gap: 0.55rem;
+  transform: translateY(-50%);
+}
+
+@media (min-width: 1024px) {
+  .showcase-progress {
+    display: flex;
+  }
+}
+
+.showcase-progress__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.showcase-progress__dot.is-active {
+  transform: scale(1.35);
+  background: rgba(103, 232, 249, 0.95);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.65);
+}
+
+.showcase-outro {
+  scroll-snap-align: end;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.65));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-hero__film,
+  .showcase-demo__glow,
+  .showcase-demo__frame,
+  .showcase-sankey-flow svg path,
+  .showcase-sparkline,
+  .showcase-mickey-head,
+  .showcase-orbit-stars,
+  .showcase-earth,
+  .showcase-asteroid-orbit {
+    animation: none !important;
+  }
+}
