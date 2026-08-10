@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import AppPageShell from "@/components/layout/AppPageShell";
 import LoginButtons from "@/components/LoginButtons";
@@ -76,6 +77,13 @@ export default function LoginPage() {
               </p>
               <LoginButtons redirectTo="/" switchAccount className="mt-4 justify-center" />
             </div>
+
+            <Link
+              href="/sample"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-100 transition hover:border-cyan-400/40 hover:bg-cyan-500/15"
+            >
+              認証なしで Studio 紹介を見る
+            </Link>
           </div>
         ) : (
           <>
@@ -84,7 +92,14 @@ export default function LoginPage() {
               <br />
               Aya / Gest さんは Microsoft アカウントがおすすめです。
             </p>
-            <LoginButtons redirectTo="/" className="mt-8 justify-center" />
+            <Link
+              href="/sample"
+              className="mt-6 inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-100 transition hover:border-cyan-400/40 hover:bg-cyan-500/15"
+            >
+              認証なしで Studio 紹介を見る
+              <span aria-hidden>→</span>
+            </Link>
+            <LoginButtons redirectTo="/" className="mt-6 justify-center" />
           </>
         )}
       </main>

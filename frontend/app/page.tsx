@@ -121,6 +121,12 @@ export default function Home() {
                 WORKS を見る
                 <span className="transition group-hover:translate-x-0.5">→</span>
               </Link>
+              <Link
+                href="/sample"
+                className="inline-flex items-center gap-2.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-100 transition hover:border-cyan-400/35 hover:bg-cyan-500/15"
+              >
+                Studio 紹介（Sample）
+              </Link>
               <a
                 href="#index"
                 className="inline-flex items-center gap-2.5 rounded-full border border-white/12 px-5 py-2.5 text-sm font-medium text-slate-300 transition hover:border-white/25 hover:bg-white/5"
