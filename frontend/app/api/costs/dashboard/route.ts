@@ -11,6 +11,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
     const dashboard = await buildCostDashboard(auth.userId, month);
-    return Response.json(dashboard);
+    return Response.json(dashboard, {
+      headers: {
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+      },
+    });
   });
 }

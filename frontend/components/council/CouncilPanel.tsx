@@ -9,6 +9,7 @@ import {
   COUNCIL_ATTACHMENT_MAX_BYTES,
   COUNCIL_ATTACHMENT_MAX_FILES,
 } from "@/lib/council-utils";
+import { readApiJson } from "@/lib/fetch-api";
 import type {
   CouncilAttachment,
   CouncilConfigResponse,
@@ -106,12 +107,12 @@ export default function CouncilPanel() {
           attachments: payloadAttachments,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "合議に失敗しました");
+      const parsed = await readApiJson<CouncilDebateResult>(res);
+      if (!parsed.ok) {
+        setError(parsed.error);
         return;
       }
-      setResult(data as CouncilDebateResult);
+      setResult(parsed.data);
       setTopic("");
       setAttachments([]);
     } catch {

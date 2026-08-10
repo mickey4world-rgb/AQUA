@@ -32,6 +32,18 @@ type CostQueryResult = {
   rows: unknown[][];
 };
 
+const COST_CACHE_TTL_MS = 20 * 60 * 1000;
+const costCache = new Map<string, { expiresAt: number; data: AzureInfraCostSummary }>();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function cacheKey(month: string, subscriptionId: string): string {
+  const rg = process.env.AZURE_COST_RESOURCE_GROUP?.trim() ?? "";
+  return `${subscriptionId}:${month}:${rg}`;
+}
+
 function monthPeriod(monthDate: Date): { from: string; to: string } {
   const y = monthDate.getUTCFullYear();
   const m = monthDate.getUTCMonth();
@@ -130,25 +142,43 @@ async function runCostQuery(
   subscriptionId: string,
   body: Record<string, unknown>,
 ): Promise<CostQueryRow[]> {
-  const res = await fetch(
-    `https://management.azure.com/subscriptions/${subscriptionId}/providers/Microsoft.CostManagement/query?api-version=${COST_API}`,
-    {
+  const url =
+    `https://management.azure.com/subscriptions/${subscriptionId}` +
+    `/providers/Microsoft.CostManagement/query?api-version=${COST_API}`;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    },
-  );
+    });
 
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Azure Cost Management query failed (${res.status}): ${detail.slice(0, 200)}`);
+    if (res.status === 429) {
+      const retryAfterHeader = Number(res.headers.get("Retry-After"));
+      const waitMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : (attempt + 1) * 2500;
+      if (attempt < 3) {
+        await sleep(waitMs);
+        continue;
+      }
+    }
+
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(
+        `Azure Cost Management query failed (${res.status}): ${detail.slice(0, 200)}`,
+      );
+    }
+
+    const payload = (await res.json()) as { properties: CostQueryResult };
+    return parseRows(payload.properties);
   }
 
-  const payload = (await res.json()) as { properties: CostQueryResult };
-  return parseRows(payload.properties);
+  throw new Error("Azure Cost Management query failed (429): Too many requests. Please retry.");
 }
 
 function resourceGroupFilter() {
@@ -171,23 +201,19 @@ export async function fetchAzureInfraCosts(
     return null;
   }
 
+  const monthDate = parseMonthParam(month);
+  const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`;
+  const key = cacheKey(monthKey, subscriptionId);
+  const cachedEntry = costCache.get(key);
+  if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+    return cachedEntry.data;
+  }
+
   const token = await getManagementAccessToken();
   if (!token) return null;
 
-  const monthDate = parseMonthParam(month);
   const period = monthPeriod(monthDate);
   const rgFilter = resourceGroupFilter();
-
-  const subscriptionQuery = {
-    type: "ActualCost",
-    timeframe: "Custom",
-    timePeriod: period,
-    dataset: {
-      aggregation: {
-        totalCost: { name: "PreTaxCost", function: "Sum" },
-      },
-    },
-  };
 
   const scopedDataset = {
     aggregation: {
@@ -197,31 +223,46 @@ export async function fetchAzureInfraCosts(
   };
 
   try {
-    const [totalRows, byService, dailyRows] = await Promise.all([
-      runCostQuery(token, subscriptionId, {
-        ...subscriptionQuery,
-        dataset: { ...subscriptionQuery.dataset, granularity: "None" },
-      }),
-      runCostQuery(token, subscriptionId, {
+    // 429 回避: 並列 3 本ではなく直列 + 必要時のみ追加クエリ
+    const byService = await runCostQuery(token, subscriptionId, {
+      type: "ActualCost",
+      timeframe: "Custom",
+      timePeriod: period,
+      dataset: {
+        ...scopedDataset,
+        granularity: "None",
+        grouping: [{ type: "Dimension", name: "ServiceName" }],
+      },
+    });
+    await sleep(400);
+
+    const dailyRows = await runCostQuery(token, subscriptionId, {
+      type: "ActualCost",
+      timeframe: "Custom",
+      timePeriod: period,
+      dataset: {
+        aggregation: {
+          totalCost: { name: "PreTaxCost", function: "Sum" },
+        },
+        granularity: "Daily",
+      },
+    });
+
+    let totalRows: CostQueryRow[] = [];
+    if (rgFilter) {
+      await sleep(400);
+      totalRows = await runCostQuery(token, subscriptionId, {
         type: "ActualCost",
         timeframe: "Custom",
         timePeriod: period,
         dataset: {
-          ...scopedDataset,
+          aggregation: {
+            totalCost: { name: "PreTaxCost", function: "Sum" },
+          },
           granularity: "None",
-          grouping: [{ type: "Dimension", name: "ServiceName" }],
         },
-      }),
-      runCostQuery(token, subscriptionId, {
-        type: "ActualCost",
-        timeframe: "Custom",
-        timePeriod: period,
-        dataset: {
-          ...subscriptionQuery.dataset,
-          granularity: "Daily",
-        },
-      }),
-    ]);
+      });
+    }
 
     const currency =
       totalRows[0]?.currency ?? byService[0]?.currency ?? dailyRows[0]?.currency ?? "JPY";
@@ -251,14 +292,16 @@ export async function fetchAzureInfraCosts(
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, costAmount]) => ({ date, costAmount }));
 
-    const totalCost = totalRows.reduce((sum, row) => sum + row.cost, 0);
+    const totalCost = rgFilter
+      ? totalRows.reduce((sum, row) => sum + row.cost, 0)
+      : byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0);
     const rgTotal = rgFilter
       ? byServiceSorted.reduce((sum, row) => sum + row.costAmount, 0)
       : undefined;
 
-    return {
+    const result: AzureInfraCostSummary = {
       configured: true,
-      month: `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`,
+      month: monthKey,
       currency,
       totalCost,
       resourceGroupCost: rgTotal,
@@ -269,10 +312,20 @@ export async function fetchAzureInfraCosts(
         ? `合計はサブスクリプション全体の実績（税抜）。内訳は RG「${process.env.AZURE_COST_RESOURCE_GROUP}」。反映に 24〜48 時間かかることがあります。`
         : "Azure Cost Management の実績コスト（税抜）。反映に 24〜48 時間かかることがあります。",
     };
+
+    costCache.set(key, { expiresAt: Date.now() + COST_CACHE_TTL_MS, data: result });
+    return result;
   } catch (error) {
+    if (cachedEntry) {
+      return {
+        ...cachedEntry.data,
+        note: "Azure Cost Management が混雑中のため、直近のキャッシュを表示しています。",
+      };
+    }
+
     return {
       configured: true,
-      month: `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`,
+      month: monthKey,
       currency: "JPY",
       totalCost: 0,
       byService: [],

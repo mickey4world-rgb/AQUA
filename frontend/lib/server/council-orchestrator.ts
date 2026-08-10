@@ -73,13 +73,13 @@ function extractMessageText(message: {
   return "";
 }
 
-function azureCompletionBudget(requested: number, deployment: string): number {
+function azureCompletionBudget(requested: number, deployment: string, depth: CouncilDepth): number {
   const name = deployment.toLowerCase();
-  // 最新系は reasoning / 内部思考でトークンを先に使うため下限を上げる
+  const compact = depth === "compact";
   if (/gpt-5|o1|o3|o4|reason/.test(name)) {
-    return Math.max(requested, 1600);
+    return Math.max(requested, compact ? 900 : 1400);
   }
-  return Math.max(requested, 600);
+  return Math.max(requested, compact ? 500 : 700);
 }
 
 async function callCouncilModel(
@@ -88,6 +88,7 @@ async function callCouncilModel(
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number,
+  depth: CouncilDepth,
 ): Promise<ChatCompletionResult> {
   if (mode === "domestic" && model.provider === "openai") {
     throw new Error("国内限定モードでは OpenAI 直 API は使用できません");
@@ -148,7 +149,7 @@ async function callCouncilModel(
   const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
   const client = getAzureOpenAiClient(deployment, residency);
 
-  let budget = azureCompletionBudget(maxTokens, deployment);
+  let budget = azureCompletionBudget(maxTokens, deployment, depth);
   let lastFinish: string | undefined;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -172,8 +173,8 @@ async function callCouncilModel(
         requestId: completion.id,
       };
     }
-    // length / 空応答なら思考枠を広げて再試行
-    budget = Math.max(budget * 2, 2400);
+    if (lastFinish !== "length") break;
+    budget = Math.max(budget * 2, depth === "compact" ? 1600 : 2400);
   }
 
   throw new Error(
@@ -210,6 +211,7 @@ async function runModelPhase(
         `${model.persona}\n日本語。${depthConfig.debaterLengthHint}。`,
         userPrompt,
         depthConfig.debaterMaxTokens,
+        depth,
       );
 
       await recordTokenUsage({
@@ -355,6 +357,7 @@ export async function runCouncilDebate(
       `${judge.persona}\n日本語。${depthConfig.judgeLengthHint}。`,
       `テーマ:\n${topicWithAttachments}\n\n意見:\n${opinionLines}\n\n結論をまとめて。`,
       depthConfig.judgeMaxTokens,
+      depth,
     );
 
     await recordTokenUsage({
