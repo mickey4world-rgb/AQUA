@@ -54,6 +54,24 @@ function buildTopicWithAttachments(topic: string, attachments: CouncilAttachment
   return `${topic}\n\n${attachmentBlock}`;
 }
 
+function isReasoningDeployment(deployment: string): boolean {
+  return /gpt-5|o1|o3|o4|reason/i.test(deployment);
+}
+
+function councilChatMessages(
+  deployment: string,
+  systemPrompt: string,
+  userPrompt: string,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  if (isReasoningDeployment(deployment)) {
+    return [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }];
+  }
+  return [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+}
+
 function extractMessageText(message: {
   content?: string | Array<{ type?: string; text?: string }> | null;
   refusal?: string | null;
@@ -63,7 +81,11 @@ function extractMessageText(message: {
   if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
     return content
-      .map((part) => (typeof part === "string" ? part : part?.text ?? ""))
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" || part?.type === "output_text") return part.text ?? "";
+        return part?.text ?? "";
+      })
       .join("")
       .trim();
   }
@@ -74,12 +96,12 @@ function extractMessageText(message: {
 }
 
 function azureCompletionBudget(requested: number, deployment: string, depth: CouncilDepth): number {
-  const name = deployment.toLowerCase();
   const compact = depth === "compact";
-  if (/gpt-5|o1|o3|o4|reason/.test(name)) {
-    return Math.max(requested, compact ? 640 : 1200);
+  if (isReasoningDeployment(deployment)) {
+    // 推論トークンを先に消費するため、表示文生成用の余裕を大きく確保する
+    return Math.max(requested, compact ? 2400 : 3600);
   }
-  return Math.max(requested, compact ? 420 : 700);
+  return Math.max(requested, compact ? 520 : 900);
 }
 
 async function callCouncilModel(
@@ -148,19 +170,37 @@ async function callCouncilModel(
   const deployment = model.deployment!;
   const residency: AzureOpenAiResidency = mode === "domestic" ? "domestic" : "global";
   const client = getAzureOpenAiClient(deployment, residency);
+  const reasoning = isReasoningDeployment(deployment);
 
   let budget = azureCompletionBudget(maxTokens, deployment, depth);
   let lastFinish: string | undefined;
+  const maxAttempts = reasoning ? 3 : 2;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const completion = await client.chat.completions.create({
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const requestBody = {
       model: deployment,
       max_completion_tokens: budget,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    });
+      messages: councilChatMessages(deployment, systemPrompt, userPrompt),
+      ...(reasoning && depth === "compact"
+        ? { reasoning_effort: "low" as const }
+        : reasoning
+          ? { reasoning_effort: "medium" as const }
+          : {}),
+    };
+
+    let completion;
+    try {
+      completion = await client.chat.completions.create(requestBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (reasoning && /reasoning_effort|unknown|unsupported|invalid/i.test(message)) {
+        const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
+        completion = await client.chat.completions.create(fallbackBody);
+      } else {
+        throw error;
+      }
+    }
+
     const choice = completion.choices[0];
     lastFinish = choice?.finish_reason ?? undefined;
     const content = extractMessageText(choice?.message);
@@ -174,7 +214,7 @@ async function callCouncilModel(
       };
     }
     if (lastFinish !== "length") break;
-    budget = Math.max(budget + 320, depth === "compact" ? 960 : 2400);
+    budget = Math.min(Math.max(budget * 2, budget + 1200), 8000);
   }
 
   throw new Error(
