@@ -29,7 +29,8 @@ function fallbackPayeeDetail(node: MoneyFlowNode): ShowcasePayeeDetail {
     name: node.label,
     totalAmount: node.amount,
     summary: `${node.label} への支出フロー。リンクの太さが金額の強弱を表します。`,
-    contracts: incoming.map((link) => {
+    contracts: incoming
+      .map((link) => {
       const project = SHOWCASE_SANKEY_NODES.find((n) => n.id === link.source);
       const ministryLink = project
         ? SHOWCASE_SANKEY_LINKS.find((l) => l.target === project.id)
@@ -43,7 +44,8 @@ function fallbackPayeeDetail(node: MoneyFlowNode): ShowcasePayeeDetail {
         amount: link.amount,
         fiscalYear: "R6",
       };
-    }),
+    })
+      .sort((a, b) => b.amount - a.amount),
   };
 }
 
@@ -86,7 +88,9 @@ function PayeeDetailPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-white/10">
-            {detail.contracts.map((row) => (
+            {[...detail.contracts]
+              .sort((a, b) => b.amount - a.amount)
+              .map((row) => (
               <tr key={`${row.ministry}-${row.project}`}>
                 <td className="py-2 pr-4 text-slate-200">{row.ministry}</td>
                 <td className="py-2 pr-4 text-slate-300">{row.project}</td>
@@ -134,9 +138,7 @@ export default function SankeyShowcaseDemo() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300/80">
               Sankey
             </p>
-            <p className="mt-0.5 text-sm text-slate-300">
-              令和6年度 — 内閣府×厚労 / 国交×防衛 の合流フロー
-            </p>
+            <p className="mt-0.5 text-sm text-slate-300">行政事業の支出の流れ分析</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-400">
@@ -156,7 +158,6 @@ export default function SankeyShowcaseDemo() {
             height={440}
             selectedNodeId={selectedPayeeId}
             amountWeightedLinks
-            flowAnimation
             onNodeClick={handleNodeClick}
           />
         </div>

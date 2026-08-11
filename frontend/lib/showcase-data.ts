@@ -178,8 +178,8 @@ export const SHOWCASE_PAYEE_DETAILS: Record<string, ShowcasePayeeDetail> = {
     totalAmount: 740,
     summary: "国土交通省の道路維持と防衛省の施設土木の双方から受注。入れ子のサンキーで合流する典型例。",
     contracts: [
-      { ministry: "国土交通省", project: "道路維持補修", amount: 320, fiscalYear: "R6", note: "区間補修・舗装更新" },
       { ministry: "防衛省", project: "防衛施設土木", amount: 420, fiscalYear: "R6", note: "基地内舗装・排水改修" },
+      { ministry: "国土交通省", project: "道路維持補修", amount: 320, fiscalYear: "R6", note: "区間補修・舗装更新" },
     ],
   },
   "corp-c": {
