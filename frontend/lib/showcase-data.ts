@@ -27,9 +27,9 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     id: "judicial",
     index: "02",
     title: "Case Notebook",
-    titleJa: "訴訟記録",
+    titleJa: "訴訟記録分析",
     description:
-      "訴状・答弁書・準備書面を NotebookLM 風に整理。争点・時系列・証拠対応を AI が支援する司法学習ツールです。",
+      "訴状・答弁書・準備書面を AI が横断分析。争点・時系列・証拠対応を構造化して、NotebookLM 風に整理します。",
     accent: "#c4b5fd",
     href: "/works/judicial/case-notebook",
     tag: "WORKS",
@@ -82,65 +82,71 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
 
 export const SHOWCASE_SANKEY_NODES: MoneyFlowNode[] = [
   { id: "gov", label: "一般会計", kind: "government", amount: 12800 },
-  { id: "mhlw", label: "厚労省", kind: "ministry", amount: 3200, drillable: true },
-  { id: "mext", label: "文部科学省", kind: "ministry", amount: 2800, drillable: true },
-  { id: "mlit", label: "国土交通省", kind: "ministry", amount: 2400, drillable: true },
+  { id: "cao", label: "内閣府", kind: "ministry", amount: 1400, drillable: true },
+  { id: "mhlw", label: "厚労省", kind: "ministry", amount: 2800, drillable: true },
+  { id: "mext", label: "文部科学省", kind: "ministry", amount: 2600, drillable: true },
+  { id: "mlit", label: "国土交通省", kind: "ministry", amount: 2200, drillable: true },
   { id: "mod", label: "防衛省", kind: "ministry", amount: 1800, drillable: true },
-  { id: "meti", label: "経済産業省", kind: "ministry", amount: 2600, drillable: true },
+  { id: "meti", label: "経済産業省", kind: "ministry", amount: 3000, drillable: true },
   { id: "med-dx", label: "医療DX推進", kind: "project", amount: 1200, drillable: true },
   { id: "vaccine", label: "ワクチン研究", kind: "project", amount: 900, drillable: true },
-  { id: "welfare-sys", label: "福祉システム刷新", kind: "project", amount: 1100, drillable: true },
+  { id: "welfare-sys", label: "福祉システム刷新", kind: "project", amount: 1300, drillable: true },
   { id: "univ-research", label: "大学研究基盤", kind: "project", amount: 1500, drillable: true },
   { id: "school-it", label: "GIGA端末更新", kind: "project", amount: 1300, drillable: true },
-  { id: "road-maint", label: "道路維持補修", kind: "project", amount: 1400, drillable: true },
+  { id: "road-maint", label: "道路維持補修", kind: "project", amount: 1200, drillable: true },
   { id: "disaster", label: "防災インフラ", kind: "project", amount: 1000, drillable: true },
-  { id: "defense-rd", label: "防衛技術研究", kind: "project", amount: 1800, drillable: true },
+  { id: "defense-rd", label: "防衛技術研究", kind: "project", amount: 1380, drillable: true },
+  { id: "mod-civil", label: "防衛施設土木", kind: "project", amount: 420, drillable: true },
   { id: "industry-dx", label: "産業DX助成", kind: "project", amount: 1600, drillable: true },
   { id: "startup", label: "スタートアップ支援", kind: "project", amount: 1000, drillable: true },
-  { id: "corp-a", label: "システムIntegrator A", kind: "payee", amount: 680 },
-  { id: "corp-b", label: "メディカルB社", kind: "payee", amount: 520 },
-  { id: "univ-x", label: "国立大学X", kind: "payee", amount: 900 },
-  { id: "corp-c", label: "福祉テックC", kind: "payee", amount: 600 },
-  { id: "corp-d", label: "SIベンダD", kind: "payee", amount: 500 },
-  { id: "univ-y", label: "総合大学Y", kind: "payee", amount: 800 },
-  { id: "lab-z", label: "公的研究機関Z", kind: "payee", amount: 700 },
-  { id: "corp-e", label: "教育ICT E社", kind: "payee", amount: 1300 },
-  { id: "corp-f", label: "建設コンサルF", kind: "payee", amount: 900 },
-  { id: "corp-g", label: "土木G社", kind: "payee", amount: 500 },
-  { id: "corp-h", label: "防災H社", kind: "payee", amount: 1000 },
-  { id: "corp-i", label: "防衛関連I社", kind: "payee", amount: 1200 },
-  { id: "corp-j", label: "研究開発J", kind: "payee", amount: 600 },
-  { id: "corp-k", label: "製造DX K社", kind: "payee", amount: 1000 },
-  { id: "corp-l", label: "中小企業L", kind: "payee", amount: 600 },
-  { id: "corp-m", label: "VC連携M", kind: "payee", amount: 1000 },
+  { id: "corp-a", label: "システムIntegrator A", kind: "payee", amount: 680, drillable: true },
+  { id: "corp-b", label: "メディカルB社", kind: "payee", amount: 520, drillable: true },
+  { id: "univ-x", label: "国立大学X", kind: "payee", amount: 900, drillable: true },
+  { id: "corp-c", label: "福祉テックC", kind: "payee", amount: 720, drillable: true },
+  { id: "corp-d", label: "SIベンダD", kind: "payee", amount: 580, drillable: true },
+  { id: "univ-y", label: "総合大学Y", kind: "payee", amount: 800, drillable: true },
+  { id: "lab-z", label: "公的研究機関Z", kind: "payee", amount: 700, drillable: true },
+  { id: "corp-e", label: "教育ICT E社", kind: "payee", amount: 1300, drillable: true },
+  { id: "corp-f", label: "建設コンサルF", kind: "payee", amount: 880, drillable: true },
+  { id: "corp-g", label: "土木G社", kind: "payee", amount: 740, drillable: true },
+  { id: "corp-h", label: "防災H社", kind: "payee", amount: 1000, drillable: true },
+  { id: "corp-i", label: "防衛関連I社", kind: "payee", amount: 1200, drillable: true },
+  { id: "corp-j", label: "研究開発J", kind: "payee", amount: 600, drillable: true },
+  { id: "corp-k", label: "製造DX K社", kind: "payee", amount: 1000, drillable: true },
+  { id: "corp-l", label: "中小企業L", kind: "payee", amount: 600, drillable: true },
+  { id: "corp-m", label: "VC連携M", kind: "payee", amount: 1000, drillable: true },
 ];
 
 export const SHOWCASE_SANKEY_LINKS: MoneyFlowLink[] = [
-  { source: "gov", target: "mhlw", amount: 3200 },
-  { source: "gov", target: "mext", amount: 2800 },
-  { source: "gov", target: "mlit", amount: 2400 },
+  { source: "gov", target: "cao", amount: 1400 },
+  { source: "gov", target: "mhlw", amount: 2800 },
+  { source: "gov", target: "mext", amount: 2600 },
+  { source: "gov", target: "mlit", amount: 2200 },
   { source: "gov", target: "mod", amount: 1800 },
-  { source: "gov", target: "meti", amount: 2600 },
+  { source: "gov", target: "meti", amount: 3000 },
+  { source: "cao", target: "welfare-sys", amount: 700 },
+  { source: "mhlw", target: "welfare-sys", amount: 600 },
   { source: "mhlw", target: "med-dx", amount: 1200 },
   { source: "mhlw", target: "vaccine", amount: 900 },
-  { source: "mhlw", target: "welfare-sys", amount: 1100 },
   { source: "mext", target: "univ-research", amount: 1500 },
   { source: "mext", target: "school-it", amount: 1300 },
-  { source: "mlit", target: "road-maint", amount: 1400 },
+  { source: "mlit", target: "road-maint", amount: 1200 },
   { source: "mlit", target: "disaster", amount: 1000 },
-  { source: "mod", target: "defense-rd", amount: 1800 },
+  { source: "mod", target: "defense-rd", amount: 1380 },
+  { source: "mod", target: "mod-civil", amount: 420 },
   { source: "meti", target: "industry-dx", amount: 1600 },
   { source: "meti", target: "startup", amount: 1000 },
   { source: "med-dx", target: "corp-a", amount: 680 },
   { source: "med-dx", target: "corp-b", amount: 520 },
   { source: "vaccine", target: "univ-x", amount: 900 },
-  { source: "welfare-sys", target: "corp-c", amount: 600 },
-  { source: "welfare-sys", target: "corp-d", amount: 500 },
+  { source: "welfare-sys", target: "corp-c", amount: 720 },
+  { source: "welfare-sys", target: "corp-d", amount: 580 },
   { source: "univ-research", target: "univ-y", amount: 800 },
   { source: "univ-research", target: "lab-z", amount: 700 },
   { source: "school-it", target: "corp-e", amount: 1300 },
-  { source: "road-maint", target: "corp-f", amount: 900 },
-  { source: "road-maint", target: "corp-g", amount: 500 },
+  { source: "road-maint", target: "corp-f", amount: 880 },
+  { source: "road-maint", target: "corp-g", amount: 320 },
+  { source: "mod-civil", target: "corp-g", amount: 420 },
   { source: "disaster", target: "corp-h", amount: 1000 },
   { source: "defense-rd", target: "corp-i", amount: 1200 },
   { source: "defense-rd", target: "corp-j", amount: 600 },
@@ -148,6 +154,81 @@ export const SHOWCASE_SANKEY_LINKS: MoneyFlowLink[] = [
   { source: "industry-dx", target: "corp-l", amount: 600 },
   { source: "startup", target: "corp-m", amount: 1000 },
 ];
+
+export type ShowcasePayeeContract = {
+  ministry: string;
+  project: string;
+  amount: number;
+  fiscalYear: string;
+  note?: string;
+};
+
+export type ShowcasePayeeDetail = {
+  id: string;
+  name: string;
+  totalAmount: number;
+  summary: string;
+  contracts: ShowcasePayeeContract[];
+};
+
+export const SHOWCASE_PAYEE_DETAILS: Record<string, ShowcasePayeeDetail> = {
+  "corp-g": {
+    id: "corp-g",
+    name: "土木G社",
+    totalAmount: 740,
+    summary: "国土交通省の道路維持と防衛省の施設土木の双方から受注。入れ子のサンキーで合流する典型例。",
+    contracts: [
+      { ministry: "国土交通省", project: "道路維持補修", amount: 320, fiscalYear: "R6", note: "区間補修・舗装更新" },
+      { ministry: "防衛省", project: "防衛施設土木", amount: 420, fiscalYear: "R6", note: "基地内舗装・排水改修" },
+    ],
+  },
+  "corp-c": {
+    id: "corp-c",
+    name: "福祉テックC",
+    totalAmount: 720,
+    summary: "内閣府と厚労省が共同系統でつなぐ福祉システム刷新事業の主受託先。",
+    contracts: [
+      { ministry: "内閣府", project: "福祉システム刷新", amount: 390, fiscalYear: "R6", note: "マイナ連携基盤" },
+      { ministry: "厚労省", project: "福祉システム刷新", amount: 330, fiscalYear: "R6", note: "介護請求モジュール" },
+    ],
+  },
+  "corp-a": {
+    id: "corp-a",
+    name: "システムIntegrator A",
+    totalAmount: 680,
+    summary: "医療DX推進の最大支出先。クラウド基盤とレセプト連携を担当。",
+    contracts: [
+      { ministry: "厚労省", project: "医療DX推進", amount: 680, fiscalYear: "R6", note: "電子カルテ連携 PoC" },
+    ],
+  },
+  "corp-i": {
+    id: "corp-i",
+    name: "防衛関連I社",
+    totalAmount: 1200,
+    summary: "防衛技術研究の中核ベンダー。研究開発J社と分担受注。",
+    contracts: [
+      { ministry: "防衛省", project: "防衛技術研究", amount: 1200, fiscalYear: "R6", note: "センサー融合研究" },
+    ],
+  },
+  "corp-f": {
+    id: "corp-f",
+    name: "建設コンサルF",
+    totalAmount: 880,
+    summary: "国交省道路維持の設計・監理。土木G社とは別系統の大口支出先。",
+    contracts: [
+      { ministry: "国土交通省", project: "道路維持補修", amount: 880, fiscalYear: "R6", note: "橋梁点検・設計" },
+    ],
+  },
+  "corp-e": {
+    id: "corp-e",
+    name: "教育ICT E社",
+    totalAmount: 1300,
+    summary: "GIGA端末更新の単独受託。文部科学省から一括流れ。",
+    contracts: [
+      { ministry: "文部科学省", project: "GIGA端末更新", amount: 1300, fiscalYear: "R6", note: "端末調達・保守" },
+    ],
+  },
+};
 
 export const SHOWCASE_JUDICIAL_DOCS = [
   { id: "complaint", label: "訴状", tag: "原告", kind: "complaint" as const },

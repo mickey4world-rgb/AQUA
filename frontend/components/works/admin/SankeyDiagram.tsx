@@ -16,6 +16,12 @@ type SankeyDiagramProps = {
   width?: number;
   height?: number;
   onNodeClick?: (node: MoneyFlowNode) => void;
+  /** 選択中ノードをハイライト */
+  selectedNodeId?: string | null;
+  /** リンク幅・不透明度を金額で強調 */
+  amountWeightedLinks?: boolean;
+  /** 流れアニメーション（ショーケース用） */
+  flowAnimation?: boolean;
 };
 
 type NodeExtra = MoneyFlowNode & SankeyExtraProperties;
@@ -37,7 +43,14 @@ export default function SankeyDiagram({
   width = 960,
   height = 520,
   onNodeClick,
+  selectedNodeId = null,
+  amountWeightedLinks = false,
+  flowAnimation = false,
 }: SankeyDiagramProps) {
+  const maxLinkAmount = useMemo(
+    () => Math.max(1, ...links.map((link) => link.amount)),
+    [links],
+  );
   const layout = useMemo(() => {
     if (nodes.length === 0 || links.length === 0) return null;
 
@@ -97,14 +110,22 @@ export default function SankeyDiagram({
         {layout.links.map((link, index) => {
           const source = link.source as SankeyNode<NodeExtra, LinkExtra>;
           const target = link.target as SankeyNode<NodeExtra, LinkExtra>;
+          const weight = link.amount / maxLinkAmount;
+          const strokeOpacity = amountWeightedLinks
+            ? 0.22 + weight * 0.72
+            : 0.55;
+          const strokeWidth = amountWeightedLinks
+            ? Math.max(1.5, (link.width ?? 1) * (0.85 + weight * 0.35))
+            : Math.max(1.2, link.width ?? 1);
           return (
             <path
               key={`link-${index}`}
               d={path(link) ?? undefined}
               fill="none"
               stroke="url(#link-fade)"
-              strokeOpacity={0.55}
-              strokeWidth={Math.max(1.2, link.width ?? 1)}
+              strokeOpacity={strokeOpacity}
+              strokeWidth={strokeWidth}
+              className={flowAnimation ? "showcase-sankey-link-flow" : undefined}
             >
               <title>
                 {`${source.label} → ${target.label}: ${formatAmount(link.amount)} ${unit}`}
@@ -120,7 +141,10 @@ export default function SankeyDiagram({
           const y0 = node.y0 ?? 0;
           const y1 = node.y1 ?? 0;
           const labelOnRight = x0 > width * 0.55;
-          const clickable = Boolean(onNodeClick && node.drillable !== false && node.kind !== "government");
+          const isSelected = selectedNodeId === node.id;
+          const clickable = Boolean(
+            onNodeClick && node.kind !== "government" && node.drillable !== false,
+          );
           return (
             <g
               key={node.id}
@@ -135,7 +159,9 @@ export default function SankeyDiagram({
                 height={Math.max(1, y1 - y0)}
                 rx={3}
                 fill={color}
-                opacity={0.9}
+                opacity={isSelected ? 1 : 0.9}
+                stroke={isSelected ? "#ffffff" : "transparent"}
+                strokeWidth={isSelected ? 2 : 0}
               >
                 <title>
                   {`${node.label}: ${formatAmount(node.amount)} ${unit}${
