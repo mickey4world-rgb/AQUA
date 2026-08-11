@@ -14,10 +14,17 @@ import {
   type WorkNote,
   type WorkNoteDraft,
   type WorksChatMessage,
+  type WorksConsultResponse,
 } from "@/lib/types/works";
+import type { ConsultVisualDocument } from "@/lib/types/consult-visual";
 
 type ConsultPanelProps = {
   onNoteSaved: (note: WorkNote) => void;
+  onVisualUpdate?: (payload: {
+    visual: ConsultVisualDocument | null;
+    reply: string | null;
+    loading: boolean;
+  }) => void;
 };
 
 const IDLE_LINES = [
@@ -26,7 +33,7 @@ const IDLE_LINES = [
   "ここに書いてくれたら、すぐ返事するね。",
 ];
 
-export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
+export default function ConsultPanel({ onNoteSaved, onVisualUpdate }: ConsultPanelProps) {
   const [messages, setMessages] = useState<WorksChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -76,6 +83,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
     setNotice(null);
     setSending(true);
     setInput("");
+    onVisualUpdate?.({ visual: null, reply: null, loading: true });
 
     const priorMessages = messages;
     const nextHistory: WorksChatMessage[] = [
@@ -99,14 +107,22 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
       if (!res.ok) {
         setError(data.error ?? "送信に失敗しました");
         setMessages(priorMessages);
+        onVisualUpdate?.({ visual: null, reply: null, loading: false });
         return;
       }
 
-      setModel(data.model as string);
-      setMessages([...nextHistory, { role: "assistant", content: data.reply as string }]);
+      const payload = data as WorksConsultResponse;
+      setModel(payload.model);
+      setMessages([...nextHistory, { role: "assistant", content: payload.reply }]);
+      onVisualUpdate?.({
+        visual: payload.visual,
+        reply: payload.reply,
+        loading: false,
+      });
     } catch {
       setError("通信エラーが発生しました");
       setMessages(priorMessages);
+      onVisualUpdate?.({ visual: null, reply: null, loading: false });
     } finally {
       setSending(false);
     }
@@ -180,6 +196,7 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
     setError(null);
     setNotice(null);
     setInput("");
+    onVisualUpdate?.({ visual: null, reply: null, loading: false });
   }
 
   return (
@@ -219,13 +236,21 @@ export default function ConsultPanel({ onNoteSaved }: ConsultPanelProps) {
             className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[94%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              className={`max-w-[94%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                 message.role === "user"
-                  ? "bg-gradient-to-r from-cyan-500/80 to-teal-500/80 text-white"
+                  ? "whitespace-pre-wrap bg-gradient-to-r from-cyan-500/80 to-teal-500/80 text-white"
                   : "border border-cyan-300/15 bg-cyan-400/[0.06] text-slate-100"
               }`}
             >
-              {message.content}
+              {message.role === "assistant" ? (
+                <div className="space-y-2">
+                  {message.content.split(/\n+/).filter(Boolean).map((line, lineIndex) => (
+                    <p key={`${index}-${lineIndex}`}>{line.replace(/^[-*]\s*/, "• ")}</p>
+                  ))}
+                </div>
+              ) : (
+                message.content
+              )}
             </div>
           </div>
         ))}

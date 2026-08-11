@@ -1202,6 +1202,51 @@ body {
   animation: showcase-fade-in 0.45s ease;
 }
 
+/* ── WORKS AI Consult Visual Viewer ── */
+.consult-visual-enter {
+  animation: consult-visual-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.consult-visual-node {
+  animation: consult-visual-node 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.consult-visual-diagram {
+  animation: consult-visual-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.consult-visual-spinner {
+  animation: consult-visual-spin 0.9s linear infinite;
+}
+
+@keyframes consult-visual-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes consult-visual-node {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes consult-visual-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .showcase-typewriter {
   animation: showcase-fade-in 0.6s ease;
 }
