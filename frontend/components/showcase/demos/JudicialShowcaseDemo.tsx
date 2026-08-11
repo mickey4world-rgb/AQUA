@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import JudicialCompanion, {
+  type JudicialMood,
+} from "@/components/works/judicial/JudicialCompanion";
 import {
   SHOWCASE_JUDICIAL_AI,
   SHOWCASE_JUDICIAL_DOCS,
@@ -86,19 +89,26 @@ export default function JudicialShowcaseDemo() {
     return phase.summary;
   }, [stage, thinkingStep, phase, analyzedCount]);
 
+  const companionMood: JudicialMood =
+    stage === "reading" ? "idle" : stage === "thinking" ? "thinking" : "speaking";
+
   return (
     <div className="showcase-demo showcase-demo--judicial">
       <div className="showcase-demo__glow" aria-hidden />
       <div className="showcase-demo__frame p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-3">
+          <JudicialCompanion mood={companionMood} line={statusLine} label="AI Analyst" />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-violet-300/80">
-              Case Notebook · AI
+              訴訟記録分析
             </p>
             <p className="mt-0.5 text-sm text-white">{SHOWCASE_JUDICIAL_AI.caseTitle}</p>
           </div>
           <span className="rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[10px] text-violet-100">
-            {SHOWCASE_JUDICIAL_AI.provider}
+            {SHOWCASE_JUDICIAL_AI.provider} AI
           </span>
         </div>
 
@@ -147,20 +157,9 @@ export default function JudicialShowcaseDemo() {
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  stage === "thinking"
-                    ? "animate-pulse bg-amber-300"
-                    : stage === "result"
-                      ? "bg-emerald-400"
-                      : "animate-pulse bg-violet-400"
-                }`}
-              />
-              <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
-                AI 整理 — {phase.label}
-              </p>
-            </div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+              AI 整理 — {phase.label}
+            </p>
             <p className="showcase-judicial-status mt-2 text-xs text-slate-300">{statusLine}</p>
             <p className="mt-1 text-[10px] text-slate-500">プロンプト: {phase.prompt}</p>
 

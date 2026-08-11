@@ -5,6 +5,7 @@ export type JudicialMood = "idle" | "thinking" | "speaking";
 type JudicialCompanionProps = {
   mood: JudicialMood;
   line: string;
+  label?: string;
 };
 
 const ORBS = [
@@ -22,7 +23,11 @@ const SPARKS = [
   { top: "76%", left: "74%", dur: "4.8s", delay: "-1.7s" },
 ];
 
-export default function JudicialCompanion({ mood, line }: JudicialCompanionProps) {
+export default function JudicialCompanion({
+  mood,
+  line,
+  label = "Clerk",
+}: JudicialCompanionProps) {
   return (
     <div className="flex items-center gap-4">
       <div className="judicial-companion" data-mood={mood} aria-hidden>
@@ -60,7 +65,7 @@ export default function JudicialCompanion({ mood, line }: JudicialCompanionProps
 
       <div className="min-w-0">
         <p className="text-[11px] font-medium tracking-[0.18em] text-violet-200/70 uppercase">
-          Clerk
+          {label}
         </p>
         <p className="mt-1 text-sm leading-relaxed text-slate-200">{line}</p>
       </div>
