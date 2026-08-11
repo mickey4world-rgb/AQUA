@@ -552,6 +552,20 @@ body {
   color: transparent;
 }
 
+.hero-ink-gradient {
+  background: linear-gradient(
+    102deg,
+    #e0f2fe 0%,
+    #7dd3fc 26%,
+    #38bdf8 52%,
+    #3b82f6 78%,
+    #6366f1 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .ink-soft {
   color: rgba(203, 219, 238, 0.62);
 }

@@ -1,7 +1,7 @@
 /** 認証不要の公開フロント — ページビュー計測対象 */
 export const PUBLIC_PAGE_LABELS: Record<string, string> = {
   "/": "ホーム",
-  "/sample": "Studio ショーケース",
+  "/sample": "SHOWCASE",
   "/login": "ログイン",
 };
 
