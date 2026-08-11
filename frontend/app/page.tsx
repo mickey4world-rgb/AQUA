@@ -94,13 +94,13 @@ export default function Home() {
 
           <h1 className="display-hero mt-8 text-white">
             <Reveal delayMs={70}>
-              <span className="block ink-gradient">
-                AQUA&apos;s Promising Research
+              <span className="block hero-ink-gradient">
+                AQUA: Decoding Tomorrow
               </span>
             </Reveal>
             <Reveal delayMs={160}>
               <span className="block mt-2 ink-soft">
-                and Challenges Leveraging AI
+                through AI Research and Core Challenges
               </span>
             </Reveal>
           </h1>
@@ -125,7 +125,7 @@ export default function Home() {
                 href="/sample"
                 className="inline-flex items-center gap-2.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-100 transition hover:border-cyan-400/35 hover:bg-cyan-500/15"
               >
-                Studio 紹介（Sample）
+                SHOWCASE
               </Link>
               <a
                 href="#index"
