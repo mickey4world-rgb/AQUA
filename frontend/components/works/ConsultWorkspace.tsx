@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ConsultPanel from "@/components/works/ConsultPanel";
+import ConsultVisualViewer from "@/components/works/ConsultVisualViewer";
 import WorkNotesPanel from "@/components/works/WorkNotesPanel";
+import type { ConsultVisualDocument } from "@/lib/types/consult-visual";
 import type { WorkNote } from "@/lib/types/works";
 
 export default function ConsultWorkspace() {
   const [notes, setNotes] = useState<WorkNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [visual, setVisual] = useState<ConsultVisualDocument | null>(null);
+  const [visualLoading, setVisualLoading] = useState(false);
+  const [lastReply, setLastReply] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -51,9 +56,25 @@ export default function ConsultWorkspace() {
     setNotes((prev) => prev.filter((note) => note.id !== id));
   }, []);
 
+  const handleVisualUpdate = useCallback(
+    (payload: {
+      visual: ConsultVisualDocument | null;
+      reply: string | null;
+      loading: boolean;
+    }) => {
+      setVisual(payload.visual);
+      setLastReply(payload.reply);
+      setVisualLoading(payload.loading);
+    },
+    [],
+  );
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <ConsultPanel onNoteSaved={handleSaved} />
+    <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <ConsultPanel onNoteSaved={handleSaved} onVisualUpdate={handleVisualUpdate} />
+        <ConsultVisualViewer visual={visual} reply={lastReply} loading={visualLoading} />
+      </div>
       <WorkNotesPanel
         notes={notes}
         loading={loading}

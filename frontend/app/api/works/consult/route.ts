@@ -48,6 +48,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       reply: result.reply,
+      visual: result.visual,
       model: result.model,
       freeTier: true,
     });

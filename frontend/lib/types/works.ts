@@ -59,8 +59,11 @@ export interface WorkNote extends WorkNoteDraft {
   updatedAt: string;
 }
 
+import type { ConsultVisualDocument } from "@/lib/types/consult-visual";
+
 export interface WorksConsultResponse {
   reply: string;
+  visual: ConsultVisualDocument | null;
   model: string;
   freeTier: boolean;
 }

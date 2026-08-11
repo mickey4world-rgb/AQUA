@@ -17,7 +17,7 @@ export default function WorksConsultPage() {
           </Link>
           <h1 className="display-section mt-4 text-white">AI 相談ボード</h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400">
-            毎日ちょっとした相談を気軽に。話がまとまったら保存して、あとから見返せます。
+            毎日ちょっとした相談を気軽に。回答は分かりやすい説明に絞り、右側のビューワーで AI が選んだ構成図・フローをリアルタイム表示します。
           </p>
         </Reveal>
 
