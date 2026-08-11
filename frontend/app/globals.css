@@ -1184,37 +1184,8 @@ body {
   }
 }
 
-/** ショーケース用 — 流れアニメーションなしのリンクのみ脈動 */
-.showcase-sankey-flow svg path:not(.showcase-sankey-link-flow) {
-  animation: showcase-link-pulse 3s ease-in-out infinite;
-}
-
-.showcase-sankey-link-flow {
-  stroke-dasharray: 10 14;
-  animation: showcase-sankey-stream 2.4s linear infinite;
-}
-
-@keyframes showcase-sankey-stream {
-  from {
-    stroke-dashoffset: 24;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
 .showcase-payee-detail {
   animation: showcase-fade-in 0.45s ease;
-}
-
-@keyframes showcase-link-pulse {
-  0%,
-  100% {
-    stroke-opacity: 0.45;
-  }
-  50% {
-    stroke-opacity: 0.85;
-  }
 }
 
 .showcase-typewriter {
