@@ -39,7 +39,7 @@ const SYSTEM_PROMPT = `あなたは民事訴訟の「訴訟記録を整理する
 - 引用するときは【資料名】と該当箇所（見出しや号証）を示す
 - 日本語・です/ます調。結論を先に、続けて根拠
 - 争点、事実の認否、時系列、証拠の対応関係、双方に有利・不利な事情を分けて書く
-- 800〜1600文字程度を目安。必要なら表形式の箇条書きを使う
+- 800〜1600文字程度を目安。必要な分量まで要点を漏らさず書き、途中で切らない
 
 ## 免責
 これは個人学習用の記録整理ツールです。実際の裁判・法律相談の代替にはなりません。`;
@@ -147,7 +147,7 @@ async function chatWithGemini(
       ...history,
       { role: "user", content: message },
     ],
-    maxOutputTokens: 1800,
+    maxOutputTokens: 6000,
     temperature: 0.3,
   });
 
@@ -198,7 +198,7 @@ async function chatWithOpenAi(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 1800,
+      max_completion_tokens: 6000,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
