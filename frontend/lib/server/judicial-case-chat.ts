@@ -10,7 +10,9 @@ import {
 } from "@/lib/server/azure-openai";
 import {
   generateWithGemini,
+  getGeminiModelCandidates,
   isGeminiConfigured,
+  isRetryableGeminiReason,
 } from "@/lib/server/gemini";
 import {
   canUseAiTokens,
@@ -45,8 +47,13 @@ const SYSTEM_PROMPT = `あなたは民事訴訟の「訴訟記録を整理する
 これは個人学習用の記録整理ツールです。実際の裁判・法律相談の代替にはなりません。`;
 
 export type JudicialCaseChatResult =
-  | { ok: true; reply: string; model: string; provider: JudicialAiProvider }
+  | { ok: true; reply: string; model: string; provider: JudicialAiProvider; notice?: string }
   | { ok: false; reason: string };
+
+function getJudicialGeminiModels(): string[] {
+  const dedicated = process.env.JUDICIAL_GEMINI_MODEL?.trim();
+  return dedicated ? getGeminiModelCandidates(dedicated) : getGeminiModelCandidates();
+}
 
 function isDocKind(value: unknown): value is JudicialDocKind {
   return typeof value === "string" && value in JUDICIAL_DOC_KIND_LABELS;
@@ -137,19 +144,22 @@ async function chatWithGemini(
     };
   }
 
-  const result = await generateWithGemini({
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `【今回の訴訟記録（選択された資料のみ）】\n${corpus}`,
-      },
-      ...history,
-      { role: "user", content: message },
-    ],
-    maxOutputTokens: 6000,
-    temperature: 0.3,
-  });
+  const result = await generateWithGemini(
+    {
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `【今回の訴訟記録（選択された資料のみ）】\n${corpus}`,
+        },
+        ...history,
+        { role: "user", content: message },
+      ],
+      maxOutputTokens: 6000,
+      temperature: 0.3,
+    },
+    { models: getJudicialGeminiModels() },
+  );
 
   if (!result.ok) {
     return { ok: false, reason: result.reason };
@@ -266,7 +276,24 @@ export async function sendJudicialCaseChat(
   if (provider === "openai") {
     return chatWithOpenAi(userId, corpus, history, message);
   }
-  return chatWithGemini(userId, corpus, history, message);
+
+  const geminiResult = await chatWithGemini(userId, corpus, history, message);
+  if (geminiResult.ok) return geminiResult;
+
+  if (isRetryableGeminiReason(geminiResult.reason) && isAzureOpenAiConfigured()) {
+    const quota = await canUseAiTokens(userId);
+    if (quota.allowed) {
+      const openAiResult = await chatWithOpenAi(userId, corpus, history, message);
+      if (openAiResult.ok) {
+        return {
+          ...openAiResult,
+          notice: "Gemini が混雑していたため、OpenAI で回答しました。",
+        };
+      }
+    }
+  }
+
+  return geminiResult;
 }
 
 export function getJudicialProvidersStatus() {

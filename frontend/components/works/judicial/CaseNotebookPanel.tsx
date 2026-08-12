@@ -318,6 +318,12 @@ export default function CaseNotebookPanel() {
         return;
       }
       setModel(typeof data.model === "string" ? data.model : null);
+      if (typeof data.provider === "string") {
+        setProvider(data.provider as JudicialAiProvider);
+      }
+      if (typeof data.notice === "string" && data.notice.trim()) {
+        setNotice(data.notice);
+      }
       setMessages([
         ...nextHistory,
         { role: "assistant", content: data.reply as string },

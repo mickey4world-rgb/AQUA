@@ -6,7 +6,9 @@
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 /** 思考モデル。maxOutputTokens には思考分（1000〜1500程度）を上乗せして渡すこと。 */
 const DEFAULT_MODEL = "gemini-flash-latest";
+const DEFAULT_FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash"];
 const REQUEST_TIMEOUT_MS = 45_000;
+const MAX_GEMINI_ATTEMPTS = 3;
 
 /**
  * Static Web Apps は East Asia でしか動かせず、Google はその地域からの呼び出しを
@@ -25,6 +27,45 @@ export function isGeminiConfigured(): boolean {
 
 export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+}
+
+export function getGeminiModelCandidates(preferred?: string): string[] {
+  const primary = preferred?.trim() || getGeminiModel();
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS ?? DEFAULT_FALLBACK_MODELS.join(","))
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([primary, ...fallbacks])];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isRetryableGeminiFailure(status: number, message?: string): boolean {
+  const msg = (message ?? "").toLowerCase();
+  if (status === 429 || status === 503 || status === 500 || status === 502) return true;
+  return (
+    msg.includes("high demand") ||
+    msg.includes("overloaded") ||
+    msg.includes("unavailable") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("try again later")
+  );
+}
+
+export function isRetryableGeminiReason(reason: string): boolean {
+  const msg = reason.toLowerCase();
+  return (
+    msg.includes("混雑") ||
+    msg.includes("high demand") ||
+    msg.includes("レート上限") ||
+    msg.includes("try again") ||
+    msg.includes("unavailable") ||
+    msg.includes("overloaded") ||
+    msg.includes("timeout") ||
+    msg.includes("タイムアウト")
+  );
 }
 
 export type GeminiMessage = {
@@ -73,7 +114,13 @@ function failureReason(
     if (body.error?.message?.includes("limit: 0")) {
       return `${model} はこの Google プロジェクトの無料枠対象外です。GEMINI_MODEL に無料枠のあるモデル（例: gemini-flash-latest）を指定してください。`;
     }
+    if (body.error?.message?.toLowerCase().includes("high demand")) {
+      return "Gemini が混雑しています。しばらく待ってから再度お試しください。";
+    }
     return "Gemini 無料枠のレート上限に達しました。1分ほど待ってから再度お試しください。";
+  }
+  if (status === 503 || body.error?.message?.toLowerCase().includes("high demand")) {
+    return "Gemini が混雑しています。自動で再試行しましたが応答できませんでした。";
   }
   if (status === 400 && body.error?.message?.includes("API key")) {
     return "GEMINI_API_KEY が正しくありません。Google AI Studio のキーを確認してください。";
@@ -89,20 +136,27 @@ function failureReason(
     : `Gemini API エラー（HTTP ${status}）`;
 }
 
-export async function generateWithGemini(
+export type GeminiRequestOptions = {
+  /** 試行するモデル順（未指定時は GEMINI_MODEL + フォールバック） */
+  models?: string[];
+};
+
+async function generateWithGeminiOnce(
+  model: string,
   request: GeminiRequest,
-): Promise<GeminiResult> {
+): Promise<
+  | ({
+      ok: true;
+      text: string;
+      model: string;
+      promptTokens: number;
+      completionTokens: number;
+    })
+  | { ok: false; reason: string; retryable: boolean }
+> {
   const relay = getRelay();
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!relay && !apiKey) {
-    return {
-      ok: false,
-      reason:
-        "Gemini が未設定です。Google AI Studio で発行した GEMINI_API_KEY を環境変数に設定してください。",
-    };
-  }
 
-  const model = getGeminiModel();
   const payload = {
     systemInstruction: { parts: [{ text: request.system }] },
     contents: request.messages.map((message) => ({
@@ -118,7 +172,6 @@ export async function generateWithGemini(
     },
   };
 
-  // 中継は Gemini の応答をそのまま返すため、以降の解析は経路によらず共通。
   const target: { url: string; headers: Record<string, string>; body: string } =
     relay
       ? {
@@ -152,7 +205,12 @@ export async function generateWithGemini(
     const body = (await response.json()) as GeminiApiResponse;
 
     if (!response.ok) {
-      return { ok: false, reason: failureReason(response.status, body, model) };
+      const reason = failureReason(response.status, body, model);
+      return {
+        ok: false,
+        reason,
+        retryable: isRetryableGeminiFailure(response.status, body.error?.message),
+      };
     }
 
     const text = (body.candidates?.[0]?.content?.parts ?? [])
@@ -161,13 +219,13 @@ export async function generateWithGemini(
       .trim();
 
     if (!text) {
-      // 思考トークンだけで maxOutputTokens を使い切ると本文が空で返る
       const truncated = body.candidates?.[0]?.finishReason === "MAX_TOKENS";
       return {
         ok: false,
         reason: truncated
           ? "回答が長くなりすぎて生成が打ち切られました。相談内容を短く区切って送ってください。"
           : "Gemini から応答がありませんでした。",
+        retryable: truncated,
       };
     }
 
@@ -180,7 +238,7 @@ export async function generateWithGemini(
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      return { ok: false, reason: "Gemini への接続がタイムアウトしました。" };
+      return { ok: false, reason: "Gemini への接続がタイムアウトしました。", retryable: true };
     }
     return {
       ok: false,
@@ -188,10 +246,44 @@ export async function generateWithGemini(
         error instanceof Error
           ? `Gemini への接続に失敗しました: ${error.message}`
           : "Gemini への接続に失敗しました",
+      retryable: true,
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function generateWithGemini(
+  request: GeminiRequest,
+  options?: GeminiRequestOptions,
+): Promise<GeminiResult> {
+  const relay = getRelay();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!relay && !apiKey) {
+    return {
+      ok: false,
+      reason:
+        "Gemini が未設定です。Google AI Studio で発行した GEMINI_API_KEY を環境変数に設定してください。",
+    };
+  }
+
+  const models = options?.models ?? getGeminiModelCandidates();
+  let lastReason = "Gemini から応答がありませんでした。";
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < MAX_GEMINI_ATTEMPTS; attempt += 1) {
+      const result = await generateWithGeminiOnce(model, request);
+      if (result.ok) return result;
+
+      lastReason = result.reason;
+      if (!result.retryable) break;
+      if (attempt < MAX_GEMINI_ATTEMPTS - 1) {
+        await sleep(900 * (attempt + 1));
+      }
+    }
+  }
+
+  return { ok: false, reason: lastReason };
 }
 
 /** モデルが JSON を ```json フェンスで包んで返すことがあるため剥がす */

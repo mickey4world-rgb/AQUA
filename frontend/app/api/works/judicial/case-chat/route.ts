@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       reply: result.reply,
       model: result.model,
       provider: result.provider,
+      notice: result.notice,
     });
   });
 }
