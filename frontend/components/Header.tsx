@@ -10,6 +10,7 @@ const navItems = [
   { href: "/stocks", label: "保有株", en: "Stocks" },
   { href: "/disney", label: "ディズニー", en: "Disney" },
   { href: "/council", label: "AI合議", en: "Council" },
+  { href: "/soluna", label: "Soluna", en: "Soluna" },
   { href: "/space", label: "宇宙", en: "Space" },
   { href: "/costs", label: "コスト", en: "Costs" },
   { href: "/settings", label: "設定", en: "Settings" },
@@ -22,6 +23,7 @@ export type HeaderVariant =
   | "portal"
   | "costs"
   | "council"
+  | "soluna"
   | "docs"
   | "space"
   | "works";
@@ -58,6 +60,11 @@ const THEMES: Record<Exclude<HeaderVariant, "default">, ThemeStyle> = {
     anchor: "/council",
     active: "text-violet-300",
     logo: "from-violet-300 to-emerald-300",
+  },
+  soluna: {
+    anchor: "/soluna",
+    active: "text-amber-200",
+    logo: "from-amber-300 via-orange-200 to-indigo-300",
   },
   docs: {
     anchor: "/works",

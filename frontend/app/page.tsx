@@ -45,6 +45,15 @@ const modules: ModuleIndexEntry[] = [
   },
   {
     index: "05",
+    title: "Soluna",
+    titleJa: "ソルーナ",
+    desc: "ソル（太陽）とルーナ（月）が育つ AI コンパニオン",
+    href: "/soluna",
+    tag: "Companion",
+    accent: "#fbbf24",
+  },
+  {
+    index: "06",
     title: "Space",
     titleJa: "宇宙分析",
     desc: "望遠鏡タイムライン・小惑星シミュレータ・鷹の目",
@@ -53,7 +62,7 @@ const modules: ModuleIndexEntry[] = [
     accent: "#a5b4fc",
   },
   {
-    index: "06",
+    index: "07",
     title: "Costs",
     titleJa: "コスト",
     desc: "トークン・API・Azure 実績コストの可視化",
@@ -75,7 +84,7 @@ const marqueeItems = [
 ];
 
 const stats = [
-  { label: "Modules", value: "06" },
+  { label: "Modules", value: "07" },
   { label: "Engines", value: "GPT / Gemini" },
   { label: "Region", value: "Japan East" },
 ];
@@ -152,7 +161,7 @@ export default function Home() {
           <Reveal>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p className="eyebrow">Index — 06 Modules</p>
+                <p className="eyebrow">Index — 07 Modules</p>
                 <h2 className="display-section mt-3 text-white">選ばれたモジュール</h2>
               </div>
               <p className="max-w-sm text-sm leading-relaxed text-slate-500">

@@ -3,6 +3,7 @@ export type AppKey =
   | "disney"
   | "costs"
   | "council"
+  | "soluna"
   | "docs"
   | "works"
   | "space"

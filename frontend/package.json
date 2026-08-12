@@ -11,7 +11,8 @@
     "setup:token-usage": "node scripts/setup-token-usage.mjs",
     "setup:access-logs": "node scripts/setup-access-logs.mjs",
     "setup:page-view-logs": "node scripts/setup-page-view-logs.mjs",
-    "setup:work-notes": "node scripts/setup-work-notes.mjs"
+    "setup:work-notes": "node scripts/setup-work-notes.mjs",
+    "setup:soluna": "node scripts/setup-soluna.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",
