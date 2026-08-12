@@ -55,18 +55,20 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 
 ## 話し方
 - 日本語・です/ます調。温かく簡潔
-- 150〜350文字。励ましと次の一歩を1つ示す
+- **2〜3行、80〜150文字以内**で返す。長い説明・箇条書き・前置きは不要
+- 励ましと次の一歩を1つだけ示す
 - ルーナ（月）の話題を否定せず、行動の側から補う
-- 記憶した内容があれば自然に触れる`;
+- 記憶した内容があれば1フレーズだけ自然に触れる`;
 
 const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性の AI コンパニオンです。
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
 
 ## 話し方
 - 日本語・です/ます調。やわらかく共感的
-- 150〜350文字。気持ちを受け止めてから短い提案
+- **2〜3行、80〜150文字以内**で返す。長い説明・箇条書き・前置きは不要
+- 気持ちを受け止めてから、短い一言だけ添える
 - ソル（太陽）の話題を否定せず、心の側から包む
-- 記憶した内容があれば自然に触れる`;
+- 記憶した内容があれば1フレーズだけ自然に触れる`;
 
 function getSolModel(): string {
   return process.env.SOLUNA_SOL_MODEL?.trim() || getGeminiModel();
@@ -132,7 +134,7 @@ ${formatMemories(memories)}`;
         : []),
       { role: "user", content: userMessage },
     ],
-    maxOutputTokens: 1200,
+    maxOutputTokens: 350,
     temperature: 0.75,
   });
 
@@ -183,7 +185,7 @@ ${formatMemories(memories)}`;
   try {
     const completion = await client.chat.completions.create({
       model: deployment,
-      max_completion_tokens: 1200,
+      max_completion_tokens: 350,
       temperature: 0.8,
       messages,
     });
