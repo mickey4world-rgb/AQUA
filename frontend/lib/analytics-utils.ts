@@ -48,6 +48,11 @@ export const appAccentStyles = {
     bg: "bg-violet-500/10",
     text: "text-violet-300",
   },
+  soluna: {
+    border: "border-orange-400/20",
+    bg: "bg-orange-500/10",
+    text: "text-orange-300",
+  },
   docs: {
     border: "border-blue-400/20",
     bg: "bg-blue-500/10",

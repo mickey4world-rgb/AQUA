@@ -9,6 +9,8 @@ export const COSMOS_CONTAINERS = {
   accessLogs: process.env.COSMOS_ACCESS_LOGS_CONTAINER ?? "AccessLogs",
   pageViewLogs: process.env.COSMOS_PAGE_VIEW_LOGS_CONTAINER ?? "PageViewLogs",
   workNotes: process.env.COSMOS_WORK_NOTES_CONTAINER ?? "WorkNotes",
+  solunaRecords: process.env.COSMOS_SOLUNA_CONTAINER ?? "SolunaRecords",
+  solunaTokens: process.env.COSMOS_SOLUNA_TOKENS_CONTAINER ?? "SolunaTokens",
 } as const;
 
 export function isCosmosConfigured(): boolean {

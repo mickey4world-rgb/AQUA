@@ -8,6 +8,7 @@ export type BackgroundTheme =
   | "disney"
   | "costs"
   | "council"
+  | "soluna"
   | "docs"
   | "space"
   | "works";
