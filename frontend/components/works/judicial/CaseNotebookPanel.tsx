@@ -621,7 +621,7 @@ export default function CaseNotebookPanel() {
           ))}
         </div>
 
-        <div className="relative mt-5 max-h-[26rem] flex-1 space-y-3 overflow-y-auto pr-1">
+        <div className="relative mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
           {messages.length === 0 && (
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-5">
               <p className="text-sm leading-relaxed text-slate-300">
@@ -636,7 +636,7 @@ export default function CaseNotebookPanel() {
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[94%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                className={`max-w-[94%] break-words whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                   message.role === "user"
                     ? "bg-gradient-to-r from-violet-500/80 to-fuchsia-500/70 text-white"
                     : "border border-violet-300/15 bg-violet-400/[0.06] text-slate-100"
