@@ -63,6 +63,12 @@ export async function POST(request: Request) {
     luna: result.data.luna.content,
     solStage: result.data.solStage.label,
     lunaStage: result.data.lunaStage.label,
+    solModel: result.data.sol.model,
+    lunaModel: result.data.luna.model,
+    solModelLabel: result.data.sol.modelLabel,
+    lunaModelLabel: result.data.luna.modelLabel,
+    costMode: result.data.costMode,
+    costReason: result.data.costReason,
   });
   logApiAccess(request, userId, response.status, startedAt);
   return response;

@@ -432,42 +432,66 @@ npm run build
 | `GEMINI_API_KEY` | Gemini 直叩き（日本ローカル） |
 | `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | Azure OpenAI |
 | `AZURE_OPENAI_DEPLOYMENT` | 既定デプロイ（例: `stock-advice`） |
-| `ANTHROPIC_API_KEY` | Claude（Soluna 自動ルーティング） |
-| `ANTHROPIC_MODEL` | Claude モデル（例: `claude-sonnet-4-20250514`） |
-| `SOLUNA_LUNA_DEPLOYMENT` | Soluna 用 Azure デプロイ（例: `council-gpt5`） |
+| `AZURE_FOUNDRY_CLAUDE_RESOURCE` | Foundry リソース名 |
+| `AZURE_FOUNDRY_CLAUDE_API_KEY` | Foundry Project API key |
+| `SOLUNA_CLAUDE_DEPLOYMENT` | Claude デプロイ名（Foundry で付けた名前） |
+| `SOLUNA_LUNA_DEPLOYMENT` | Soluna 用 Azure OpenAI デプロイ（例: `council-gpt5`） |
 | `SOLUNA_OPENAI_DEPLOYMENT_ADVANCED` | 知能 Lv.3 用 Azure 最新デプロイ（任意） |
 | `SOLUNA_GEMINI_MODEL_ADVANCED` | 知能 Lv.3 用 Gemini（任意） |
-| `ANTHROPIC_MODEL_ADVANCED` | 知能 Lv.3 用 Claude（任意） |
+| `SOLUNA_CLAUDE_DEPLOYMENT_ADVANCED` | 知能 Lv.3: `claude-opus-5` 等 |
+| `SOLUNA_CLAUDE_DEPLOYMENT_FABLE` | Lv.3 で Fable 5 を使う場合（`claude-fable-5`） |
+
+#### 知能 Lv. 別 推奨モデル（Azure 上でデプロイ → 環境変数に設定）
+
+| 知能 | 親密度 | Azure OpenAI | Foundry Claude |
+|---|---|---|---|
+| Lv.1 | 0–40 | `gpt-4o-mini` 等 | `claude-haiku-4-5` |
+| Lv.2 | 41–80 | **`council-gpt5`**（GPT-5 系） | `claude-sonnet-5` |
+| Lv.3 | 81–100 | **`council-gpt5`**（GPT-5.5 等） | **`claude-opus-5`** または `claude-fable-5` |
+
+> **Mythos 5**（`claude-mythos-5`）は Glasswing 等の **限定アクセス** 向け。一般 Soluna では Opus / Fable を推奨。  
+> 本番は既に `SOLUNA_OPENAI_DEPLOYMENT_ADVANCED=council-gpt5` 設定済み。
+
+> **Claude は Azure AI Foundry 経由を推奨**（Azure 請求・個人 Anthropic 契約不要）。  
+> 代替: `ANTHROPIC_API_KEY`（Anthropic 直 API）もフォールバック可。
 
 > 本番 SWA（East Asia）から Gemini を使う場合は `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` が必要です。  
 > Soluna の Azure OpenAI は **global リージョン**（`AZURE_OPENAI_ENDPOINT_GLOBAL` 等）を利用します。
 
 #### Soluna 本番環境変数（Azure Portal → SWA → 構成）
 
-最低限:
+**Claude（Azure AI Foundry — 推奨）**
+
+| 変数 | 取得場所 |
+|---|---|
+| `AZURE_FOUNDRY_CLAUDE_RESOURCE` | [ai.azure.com](https://ai.azure.com/) のリソース名 |
+| `AZURE_FOUNDRY_CLAUDE_API_KEY` | Foundry → Home → **Project API key** |
+| `SOLUNA_CLAUDE_DEPLOYMENT` | Foundry → Models → Claude のデプロイ名 |
+
+**その他**
 
 | 変数 | 例 |
 |---|---|
-| `ANTHROPIC_API_KEY` | Anthropic コンソールで発行 |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` |
 | `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` | Japan East 中継（既存） |
 | `SOLUNA_LUNA_DEPLOYMENT` | `council-gpt5` |
 
-任意（育成・最新モデル）:
+#### Azure Foundry で Claude をデプロイする手順
 
-| 変数 | 用途 |
-|---|---|
-| `SOLUNA_OPENAI_DEPLOYMENT_ADVANCED` | 親密度 81+ の Azure 最新系 |
-| `SOLUNA_GEMINI_MODEL_ADVANCED` | 親密度 81+ の Gemini |
-| `ANTHROPIC_MODEL_ADVANCED` | 親密度 81+ の Claude |
-| `AZURE_OPENAI_ENDPOINT_GLOBAL` | 海外リージョン Azure エンドポイント |
+1. [Azure AI Foundry Portal](https://ai.azure.com/) を開く
+2. プロジェクト / リソースを選択（または新規作成）
+3. **Build → Models → Deploy model → Claude**（例: Claude Sonnet 4.6）
+4. デプロイ名をメモ → `SOLUNA_CLAUDE_DEPLOYMENT`
+5. Home の **Project API key** → `AZURE_FOUNDRY_CLAUDE_API_KEY`
+6. リソース名 → `AZURE_FOUNDRY_CLAUDE_RESOURCE`
 
 ```powershell
-# Azure CLI で追加する例（API キーは実際の値に置換）
 az staticwebapp appsettings set `
   --name swa-personal-apps-prod `
-  --resource-group <your-rg> `
-  --setting-names ANTHROPIC_API_KEY=<secret> ANTHROPIC_MODEL=claude-sonnet-4-20250514
+  --resource-group rg-personal-apps-prod `
+  --setting-names `
+    AZURE_FOUNDRY_CLAUDE_RESOURCE=<resource-name> `
+    AZURE_FOUNDRY_CLAUDE_API_KEY=<foundry-api-key> `
+    SOLUNA_CLAUDE_DEPLOYMENT=claude-sonnet-4-6
 ```
 
 ### 7. Cosmos DB コンテナの初回作成

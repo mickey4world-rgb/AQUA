@@ -1,9 +1,22 @@
-import { getAnthropicModel, isAnthropicConfigured } from "@/lib/server/anthropic";
 import {
-  getAzureOpenAiDeployment,
+  formatClaudeProviderLabel,
+  getFoundryClaudeDeployment,
+  isAnthropicConfigured,
+  isAzureFoundryClaudeConfigured,
+} from "@/lib/server/anthropic";
+import {
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
-import { getGeminiModel, isGeminiConfigured } from "@/lib/server/gemini";
+import { isGeminiConfigured } from "@/lib/server/gemini";
+import {
+  applyCostModeToTier,
+  type SolunaCostMode,
+} from "@/lib/server/soluna-cost-policy";
+import {
+  costBiasForProvider,
+  formatModelUsedLabel,
+  resolveModelForProvider,
+} from "@/lib/server/soluna-model-registry";
 import type { SolunaCharacter } from "@/lib/types/soluna";
 
 export type SolunaProvider = "gemini" | "openai" | "claude";
@@ -14,6 +27,8 @@ export type SolunaGrowthTier = "budding" | "growing" | "mature";
 export type SolunaRouteAssignment = {
   provider: SolunaProvider;
   model: string;
+  modelDisplayName: string;
+  modelLabel: string;
   tier: SolunaGrowthTier;
   tierLevel: 1 | 2 | 3;
   reason: string;
@@ -66,90 +81,12 @@ export function getAvailableSolunaProviders(): SolunaProvider[] {
   return providers;
 }
 
-/** Soluna は海外リージョン Azure OpenAI 可 — 最新デプロイを優先 */
-function getOpenAiDeployment(tier: SolunaGrowthTier): string {
-  if (tier === "mature") {
-    return (
-      process.env.SOLUNA_OPENAI_DEPLOYMENT_ADVANCED?.trim() ||
-      process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL?.trim() ||
-      process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ||
-      process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ||
-      process.env.AZURE_OPENAI_DEPLOYMENT?.trim() ||
-      getAzureOpenAiDeployment()
-    );
-  }
-  if (tier === "budding") {
-    return (
-      process.env.SOLUNA_OPENAI_DEPLOYMENT_FAST?.trim() ||
-      process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ||
-      process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ||
-      process.env.AZURE_OPENAI_DEPLOYMENT?.trim() ||
-      getAzureOpenAiDeployment()
-    );
-  }
-  return (
-    process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ||
-    process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL?.trim() ||
-    process.env.AZURE_OPENAI_DEPLOYMENT?.trim() ||
-    getAzureOpenAiDeployment()
-  );
-}
-
-function getGeminiModelForTier(tier: SolunaGrowthTier): string {
-  if (tier === "mature") {
-    return (
-      process.env.SOLUNA_GEMINI_MODEL_ADVANCED?.trim() ||
-      process.env.SOLUNA_GEMINI_MODEL?.trim() ||
-      process.env.SOLUNA_SOL_MODEL?.trim() ||
-      getGeminiModel()
-    );
-  }
-  if (tier === "budding") {
-    return (
-      process.env.SOLUNA_GEMINI_MODEL_FAST?.trim() ||
-      process.env.SOLUNA_GEMINI_MODEL?.trim() ||
-      process.env.SOLUNA_SOL_MODEL?.trim() ||
-      getGeminiModel()
-    );
-  }
-  return (
-    process.env.SOLUNA_GEMINI_MODEL?.trim() ||
-    process.env.SOLUNA_SOL_MODEL?.trim() ||
-    getGeminiModel()
-  );
-}
-
-function getClaudeModelForTier(tier: SolunaGrowthTier): string {
-  if (tier === "mature") {
-    return (
-      process.env.ANTHROPIC_MODEL_ADVANCED?.trim() ||
-      process.env.ANTHROPIC_MODEL?.trim() ||
-      getAnthropicModel()
-    );
-  }
-  if (tier === "budding") {
-    return (
-      process.env.ANTHROPIC_MODEL_FAST?.trim() ||
-      process.env.ANTHROPIC_MODEL?.trim() ||
-      getAnthropicModel()
-    );
-  }
-  return process.env.ANTHROPIC_MODEL?.trim() || getAnthropicModel();
-}
-
 export function getModelForProvider(
   provider: SolunaProvider,
   tier: SolunaGrowthTier = "growing",
+  costMode: SolunaCostMode = "normal",
 ): string {
-  switch (provider) {
-    case "gemini":
-      return getGeminiModelForTier(tier);
-    case "openai":
-      return getOpenAiDeployment(tier);
-    case "claude":
-      return getClaudeModelForTier(tier);
-  }
+  return resolveModelForProvider(provider, tier, costMode).modelId;
 }
 
 export function formatSolunaProviderLabel(provider: SolunaProvider): string {
@@ -159,7 +96,7 @@ export function formatSolunaProviderLabel(provider: SolunaProvider): string {
     case "openai":
       return "Azure OpenAI";
     case "claude":
-      return "Claude";
+      return formatClaudeProviderLabel();
   }
 }
 
@@ -167,8 +104,9 @@ function scoreProvider(
   character: SolunaCharacter,
   provider: SolunaProvider,
   message: string,
+  costMode: SolunaCostMode,
 ): number {
-  let score = 0;
+  let score = costBiasForProvider(provider, costMode);
 
   if (character === "sol") {
     if (provider === "gemini" && SOL_GEMINI_HINTS.test(message)) score += 3;
@@ -202,14 +140,25 @@ function buildAssignment(
   provider: SolunaProvider,
   intimacy: number,
   baseReason: string,
+  costMode: SolunaCostMode,
 ): SolunaRouteAssignment {
-  const tier = resolveGrowthTier(intimacy);
+  const baseTier = resolveGrowthTier(intimacy);
+  const tier = applyCostModeToTier(baseTier, costMode);
+  const resolved = resolveModelForProvider(provider, tier, costMode);
+  // Foundry Claude は env のデプロイ名を優先
+  const model =
+    provider === "claude" && isAzureFoundryClaudeConfigured()
+      ? getFoundryClaudeDeployment(tier)
+      : resolved.modelId;
+
   return {
     provider,
-    model: getModelForProvider(provider, tier),
+    model,
+    modelDisplayName: resolved.displayName,
+    modelLabel: formatModelUsedLabel(provider, model, resolved.displayName),
     tier,
     tierLevel: TIER_LEVEL[tier],
-    reason: `${baseReason} · ${formatGrowthTierLabel(tier)}`,
+    reason: `${baseReason} · ${resolved.reason} · ${formatGrowthTierLabel(tier)}`,
   };
 }
 
@@ -218,6 +167,7 @@ function pickBestProvider(
   message: string,
   intimacy: number,
   available: SolunaProvider[],
+  costMode: SolunaCostMode,
   exclude?: SolunaProvider,
 ): SolunaRouteAssignment {
   const candidates = available.filter((provider) => provider !== exclude);
@@ -227,7 +177,7 @@ function pickBestProvider(
   let bestScore = -1;
 
   for (const provider of pool) {
-    const score = scoreProvider(character, provider, message);
+    const score = scoreProvider(character, provider, message, costMode);
     if (score > bestScore) {
       bestScore = score;
       best = provider;
@@ -236,15 +186,24 @@ function pickBestProvider(
 
   const reason =
     bestScore > 1 ? "質問内容に合わせて自動選択" : defaultReason(character, best);
-  return buildAssignment(character, best, intimacy, reason);
+  return buildAssignment(character, best, intimacy, reason, costMode);
 }
 
-/** 質問内容 + 親密度から Sol / Luna に異なるプロバイダを割り当て（即時） */
+export type SolunaRouteOptions = {
+  costMode?: SolunaCostMode;
+  costReason?: string;
+};
+
+/** 質問内容 + 親密度 + コスト状況から Sol / Luna に異なるプロバイダを割り当て */
 export function routeSolunaModels(
   message: string,
   solIntimacy: number,
   lunaIntimacy: number,
+  options: SolunaRouteOptions = {},
 ): SolunaRoutePlan {
+  const costMode = options.costMode ?? "normal";
+  const costNote =
+    costMode !== "normal" && options.costReason ? ` · ${options.costReason}` : "";
   const available = getAvailableSolunaProviders();
 
   if (available.length === 0) {
@@ -253,14 +212,18 @@ export function routeSolunaModels(
     return {
       sol: {
         provider: "gemini",
-        model: getModelForProvider("gemini", solTier),
+        model: getModelForProvider("gemini", solTier, costMode),
+        modelDisplayName: "Gemini",
+        modelLabel: formatModelUsedLabel("gemini", getModelForProvider("gemini", solTier, costMode)),
         tier: solTier,
         tierLevel: TIER_LEVEL[solTier],
         reason: "未設定",
       },
       luna: {
         provider: "openai",
-        model: getModelForProvider("openai", lunaTier),
+        model: getModelForProvider("openai", lunaTier, costMode),
+        modelDisplayName: "Azure OpenAI",
+        modelLabel: formatModelUsedLabel("openai", getModelForProvider("openai", lunaTier, costMode)),
         tier: lunaTier,
         tierLevel: TIER_LEVEL[lunaTier],
         reason: "未設定",
@@ -271,22 +234,35 @@ export function routeSolunaModels(
   if (available.length === 1) {
     const only = available[0];
     return {
-      sol: buildAssignment("sol", only, solIntimacy, "利用可能なモデル"),
-      luna: buildAssignment("luna", only, lunaIntimacy, "利用可能なモデル"),
+      sol: buildAssignment("sol", only, solIntimacy, `利用可能なモデル${costNote}`, costMode),
+      luna: buildAssignment("luna", only, lunaIntimacy, `利用可能なモデル${costNote}`, costMode),
     };
   }
 
-  const sol = pickBestProvider("sol", message, solIntimacy, available);
-  const luna = pickBestProvider("luna", message, lunaIntimacy, available, sol.provider);
+  const sol = pickBestProvider("sol", message, solIntimacy, available, costMode);
+  const luna = pickBestProvider("luna", message, lunaIntimacy, available, costMode, sol.provider);
 
   if (luna.provider === sol.provider) {
     const alternate = available.find((provider) => provider !== sol.provider);
     if (alternate) {
       return {
         sol,
-        luna: buildAssignment("luna", alternate, lunaIntimacy, defaultReason("luna", alternate)),
+        luna: buildAssignment(
+          "luna",
+          alternate,
+          lunaIntimacy,
+          `${defaultReason("luna", alternate)}${costNote}`,
+          costMode,
+        ),
       };
     }
+  }
+
+  if (costNote) {
+    return {
+      sol: { ...sol, reason: `${sol.reason}${costNote}` },
+      luna: { ...luna, reason: `${luna.reason}${costNote}` },
+    };
   }
 
   return { sol, luna };
@@ -296,9 +272,12 @@ export function listFallbackProviders(
   character: SolunaCharacter,
   message: string,
   exclude: SolunaProvider,
+  costMode: SolunaCostMode = "normal",
 ): SolunaProvider[] {
   const available = getAvailableSolunaProviders().filter((provider) => provider !== exclude);
   return available.sort(
-    (a, b) => scoreProvider(character, b, message) - scoreProvider(character, a, message),
+    (a, b) =>
+      scoreProvider(character, b, message, costMode) -
+      scoreProvider(character, a, message, costMode),
   );
 }

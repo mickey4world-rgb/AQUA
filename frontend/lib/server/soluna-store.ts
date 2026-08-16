@@ -184,6 +184,7 @@ export function createMessage(
   userId: string,
   role: SolunaMessage["role"],
   content: string,
+  meta?: Pick<SolunaMessage, "provider" | "model" | "modelLabel" | "routeReason">,
 ): SolunaMessage {
   return {
     id: `msg-${randomUUID()}`,
@@ -191,6 +192,7 @@ export function createMessage(
     role,
     content,
     createdAt: new Date().toISOString(),
+    ...meta,
   };
 }
 
