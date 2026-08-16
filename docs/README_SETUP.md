@@ -370,9 +370,12 @@ az account set --subscription "サブスクリプション名またはID"
 |---|---|
 | リソースグループ | `rg-personal-apps-prod` |
 | Static Web App | `swa-personal-apps-prod` |
+| 本番 URL | https://www.aquacore.net |
 | Azure OpenAI | `openai-personal-apps-prod` |
+| Cosmos DB | `cosmos-personal-apps-prod`（DB: `personal-apps`） |
+| Gemini 中継 Functions | `func-gemini-proxy-aqua`（Japan East） |
 
-> 詳細なアーキテクチャは [`docs/DESIGN.md`](./DESIGN.md) を参照してください。
+> 詳細なアーキテクチャ・API・データ設計は [`docs/DESIGN.md`](./DESIGN.md) を参照してください。
 
 ---
 
@@ -416,6 +419,42 @@ npm run build
 2. **File → Open Folder**
 3. clone した `ClaudeCodeWork` フォルダを選択
 
+### 6. 環境変数（ローカル開発）
+
+本番と同様の機能を試すには `frontend/.env.local` に秘密情報を設定します。  
+項目の一覧・意味は [`docs/DESIGN.md`](./DESIGN.md) の「データ設計」「AI 利用方針」を参照してください。
+
+最低限ローカルで必要になりやすい例:
+
+| 変数 | 用途 |
+|---|---|
+| `COSMOS_ENDPOINT` / `COSMOS_KEY` | Cosmos DB 接続 |
+| `GEMINI_API_KEY` | Gemini 直叩き（日本ローカル） |
+| `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | Azure OpenAI |
+| `AZURE_OPENAI_DEPLOYMENT` | 既定デプロイ（例: `stock-advice`） |
+
+> 本番 SWA（East Asia）から Gemini を使う場合は `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` が必要です。
+
+### 7. Cosmos DB コンテナの初回作成
+
+Cosmos アカウント作成後、機能ごとに **1 回だけ** セットアップスクリプトを実行します。  
+`frontend/` で `COSMOS_ENDPOINT` と `COSMOS_KEY` を設定したうえで:
+
+```powershell
+cd frontend
+npm run setup:token-usage      # TokenUsage
+npm run setup:access-logs      # AccessLogs
+npm run setup:page-view-logs   # PageViewLogs（公開ページ計測）
+npm run setup:work-notes       # WorkNotes（WORKS AI 相談メモ）
+npm run setup:soluna           # SolunaRecords + SolunaTokens
+```
+
+ユーザー初期データ:
+
+```powershell
+npm run seed:users
+```
+
 ---
 
 ## よくあるトラブル
@@ -441,6 +480,16 @@ npm run build
 - Node.js が **LTS** 版か確認（`node -v`）
 - プロジェクトルートではなく **`frontend/` ディレクトリ** で実行しているか確認
 
+### Soluna / WORKS 相談で「Cosmos DB が未設定」
+
+- 本番: `npm run setup:soluna` / `setup:work-notes` を実行済みか確認
+- SWA アプリ設定に `COSMOS_ENDPOINT` / `COSMOS_KEY` があるか確認
+
+### Gemini が「high demand」で失敗する
+
+- 一時的な混雑です。自動リトライ・代替モデル・OpenAI フォールバック（訴訟記録ノート等）が入っています
+- 数分後に再試行するか、UI で OpenAI を選択
+
 ---
 
 ## チェックリスト（コピー用）
@@ -455,6 +504,7 @@ npm run build
 - [ ] GitHub に clone / push できる（PAT または SSH）
 - [ ] `az login` が成功する
 - [ ] `frontend/` で `npm install` と `npm run dev` が動く
+- [ ] （本番運用時）Cosmos セットアップスクリプトを必要分実行した
 
 ---
 
@@ -467,4 +517,4 @@ npm run build
 
 ---
 
-*最終更新: 2026-08-05*
+*最終更新: 2026-08-14*

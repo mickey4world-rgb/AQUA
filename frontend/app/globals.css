@@ -51,6 +51,7 @@ body {
 [data-theme="disney"] { --scene-1: 217 70 239; --scene-2: 56 189 248; --scene-3: 129 140 248; }
 [data-theme="costs"] { --scene-1: 245 158 11; --scene-2: 249 115 22; --scene-3: 244 63 94; }
 [data-theme="council"] { --scene-1: 139 92 246; --scene-2: 16 185 129; --scene-3: 99 102 241; }
+[data-theme="soluna"] { --scene-1: 251 191 36; --scene-2: 129 140 248; --scene-3: 244 114 182; }
 [data-theme="docs"] { --scene-1: 37 99 235; --scene-2: 59 130 246; --scene-3: 99 102 241; }
 [data-theme="space"] { --scene-1: 99 102 241; --scene-2: 168 85 247; --scene-3: 56 89 200; }
 [data-theme="works"] { --scene-1: 16 185 129; --scene-2: 45 212 191; --scene-3: 34 211 238; }
@@ -86,6 +87,13 @@ body {
     radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.1) 0%, transparent 48%),
     radial-gradient(ellipse at 80% 42%, rgba(16, 185, 129, 0.07) 0%, transparent 52%),
     radial-gradient(ellipse at 20% 0%, #312e811c 0%, #090713 58%);
+}
+.bg-mesh-soluna {
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(251, 191, 36, 0.14) 0%, transparent 46%),
+    radial-gradient(ellipse at 88% 8%, rgba(129, 140, 248, 0.12) 0%, transparent 44%),
+    radial-gradient(ellipse at 50% 92%, rgba(244, 114, 182, 0.08) 0%, transparent 52%),
+    linear-gradient(180deg, #12101f 0%, #0a0c14 52%, #080a12 100%);
 }
 .bg-mesh-docs {
   background:
@@ -1521,6 +1529,140 @@ body {
   background: linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.65));
 }
 
+/* ── Soluna character avatars ── */
+@keyframes soluna-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes soluna-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes soluna-speak {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.08); }
+  70% { transform: scale(0.98); }
+}
+
+@keyframes soluna-rays-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes soluna-corona {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.05); }
+}
+
+@keyframes soluna-halo {
+  0%, 100% { opacity: 0.4; stroke-width: 1; }
+  50% { opacity: 0.75; stroke-width: 1.5; }
+}
+
+@keyframes soluna-sparkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+.soluna-avatar {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: soluna-float 4.5s ease-in-out infinite;
+  transition: box-shadow 0.6s ease, border-color 0.6s ease;
+}
+
+.soluna-avatar--thinking {
+  animation: soluna-pulse 1.1s ease-in-out infinite;
+}
+
+.soluna-avatar--speaking {
+  animation: soluna-speak 0.75s ease-in-out infinite;
+}
+
+.soluna-avatar__svg {
+  overflow: visible;
+}
+
+.soluna-avatar__sol-core {
+  fill: #fcd34d;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+}
+
+.soluna-avatar__sol-ray {
+  stroke: #fbbf24;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.soluna-avatar__sol-rays {
+  transform-origin: 32px 32px;
+  animation: soluna-rays-spin 18s linear infinite;
+}
+
+.soluna-avatar__sol-corona {
+  fill: none;
+  stroke: rgba(251, 191, 36, 0.35);
+  stroke-width: 1.5;
+  animation: soluna-corona 3s ease-in-out infinite;
+}
+
+.soluna-avatar__luna-body {
+  fill: #c7d2fe;
+  filter: drop-shadow(0 0 8px rgba(129, 140, 248, 0.55));
+}
+
+.soluna-avatar__luna-halo {
+  fill: none;
+  stroke: rgba(165, 180, 252, 0.45);
+  animation: soluna-halo 3.2s ease-in-out infinite;
+}
+
+.soluna-avatar__luna-spark {
+  fill: #e0e7ff;
+  animation: soluna-sparkle 2.4s ease-in-out infinite;
+}
+
+/* Sol growth stages */
+.soluna-avatar--sol-dawn .soluna-avatar__sol-core { fill: #fde68a; opacity: 0.75; }
+.soluna-avatar--sol-dawn .soluna-avatar__sol-ray { opacity: 0.45; stroke-width: 2; }
+.soluna-avatar--sol-dawn .soluna-avatar__sol-rays { animation-duration: 28s; }
+
+.soluna-avatar--sol-sunrise .soluna-avatar__sol-core { fill: #fbbf24; }
+.soluna-avatar--sol-sunrise .soluna-avatar__sol-rays { animation-duration: 22s; }
+
+.soluna-avatar--sol-noon .soluna-avatar__sol-core { fill: #f59e0b; }
+.soluna-avatar--sol-noon .soluna-avatar__sol-rays { animation-duration: 16s; }
+.soluna-avatar--sol-noon { box-shadow: 0 0 18px rgba(251, 191, 36, 0.25); }
+
+.soluna-avatar--sol-blaze .soluna-avatar__sol-core { fill: #ea580c; }
+.soluna-avatar--sol-blaze .soluna-avatar__sol-rays { animation-duration: 12s; }
+.soluna-avatar--sol-blaze { box-shadow: 0 0 22px rgba(249, 115, 22, 0.35); border-color: rgba(251, 146, 60, 0.35); }
+
+.soluna-avatar--sol-zenith .soluna-avatar__sol-core { fill: #fff7ed; }
+.soluna-avatar--sol-zenith .soluna-avatar__sol-rays { animation-duration: 9s; }
+.soluna-avatar--sol-zenith { box-shadow: 0 0 28px rgba(253, 186, 116, 0.45); border-color: rgba(253, 186, 116, 0.4); }
+.soluna-avatar--sol-zenith .soluna-avatar__sol-corona { stroke: rgba(255, 237, 213, 0.6); }
+
+/* Luna growth stages */
+.soluna-avatar--luna-new .soluna-avatar__luna-body { fill: #64748b; opacity: 0.7; }
+.soluna-avatar--luna-new .soluna-avatar__luna-halo { opacity: 0.2; }
+
+.soluna-avatar--luna-crescent .soluna-avatar__luna-body { fill: #94a3b8; }
+
+.soluna-avatar--luna-half .soluna-avatar__luna-body { fill: #a5b4fc; }
+.soluna-avatar--luna-half { box-shadow: 0 0 14px rgba(129, 140, 248, 0.2); }
+
+.soluna-avatar--luna-full .soluna-avatar__luna-body { fill: #c7d2fe; }
+.soluna-avatar--luna-full { box-shadow: 0 0 20px rgba(129, 140, 248, 0.3); border-color: rgba(165, 180, 252, 0.3); }
+
+.soluna-avatar--luna-super .soluna-avatar__luna-body { fill: #eef2ff; }
+.soluna-avatar--luna-super { box-shadow: 0 0 26px rgba(199, 210, 254, 0.45); border-color: rgba(199, 210, 254, 0.35); }
+.soluna-avatar--luna-super .soluna-avatar__luna-halo { stroke: rgba(224, 231, 255, 0.7); }
+.soluna-avatar--luna-super .soluna-avatar__luna-spark { animation-duration: 1.4s; }
+
 @media (prefers-reduced-motion: reduce) {
   .showcase-hero__film,
   .showcase-demo__glow,
@@ -1530,7 +1672,12 @@ body {
   .showcase-mickey-head,
   .showcase-orbit-stars,
   .showcase-earth,
-  .showcase-asteroid-orbit {
+  .showcase-asteroid-orbit,
+  .soluna-avatar,
+  .soluna-avatar__sol-rays,
+  .soluna-avatar__sol-corona,
+  .soluna-avatar__luna-halo,
+  .soluna-avatar__luna-spark {
     animation: none !important;
   }
 }

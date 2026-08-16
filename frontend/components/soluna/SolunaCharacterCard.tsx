@@ -1,20 +1,21 @@
 "use client";
 
+import SolunaCharacterAvatar, {
+  type SolunaAvatarMood,
+} from "@/components/soluna/SolunaCharacterAvatar";
 import { intimacyProgress } from "@/lib/soluna-utils";
 import type { SolunaCharacterState } from "@/lib/types/soluna";
 
 const ACCENTS = {
   sol: {
-    ring: "from-amber-300 via-orange-300 to-yellow-200",
     bar: "from-amber-400 to-orange-400",
-    glow: "shadow-amber-400/20",
+    glow: "shadow-amber-400/25",
     panel: "border-amber-300/20 bg-amber-400/[0.06]",
     text: "text-amber-100",
   },
   luna: {
-    ring: "from-indigo-300 via-violet-300 to-sky-200",
     bar: "from-indigo-400 to-violet-400",
-    glow: "shadow-indigo-400/20",
+    glow: "shadow-indigo-400/25",
     panel: "border-indigo-300/20 bg-indigo-400/[0.06]",
     text: "text-indigo-100",
   },
@@ -22,9 +23,10 @@ const ACCENTS = {
 
 type SolunaCharacterCardProps = {
   character: SolunaCharacterState;
+  mood?: SolunaAvatarMood;
 };
 
-export default function SolunaCharacterCard({ character }: SolunaCharacterCardProps) {
+export default function SolunaCharacterCard({ character, mood = "idle" }: SolunaCharacterCardProps) {
   const accent = ACCENTS[character.character];
   const progress = intimacyProgress(character.intimacy, character.stage);
 
@@ -32,11 +34,12 @@ export default function SolunaCharacterCard({ character }: SolunaCharacterCardPr
     <div className={`rounded-2xl border p-4 ${accent.panel} shadow-lg ${accent.glow}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-xl ${accent.ring}`}
-          >
-            {character.symbol}
-          </div>
+          <SolunaCharacterAvatar
+            character={character.character}
+            stage={character.stage}
+            mood={mood}
+            size="lg"
+          />
           <div>
             <p className="text-[10px] tracking-[0.22em] text-slate-400 uppercase">
               {character.provider === "gemini" ? "Gemini" : "Azure OpenAI"}
@@ -61,7 +64,7 @@ export default function SolunaCharacterCard({ character }: SolunaCharacterCardPr
           />
         </div>
         <p className="mt-2 text-[10px] text-slate-500">
-          記憶 {character.memories.length} 件 · 会話 {character.interactions} 回 · {character.model}
+          記憶 {character.memories.length} 件 · 会話 {character.interactions} 回
         </p>
       </div>
     </div>

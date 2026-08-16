@@ -89,6 +89,7 @@ export type GeminiResult =
       model: string;
       promptTokens: number;
       completionTokens: number;
+      finishReason?: string;
     }
   | { ok: false; reason: string };
 
@@ -151,6 +152,7 @@ async function generateWithGeminiOnce(
       model: string;
       promptTokens: number;
       completionTokens: number;
+      finishReason?: string;
     })
   | { ok: false; reason: string; retryable: boolean }
 > {
@@ -218,8 +220,10 @@ async function generateWithGeminiOnce(
       .join("")
       .trim();
 
+    const finishReason = body.candidates?.[0]?.finishReason;
+
     if (!text) {
-      const truncated = body.candidates?.[0]?.finishReason === "MAX_TOKENS";
+      const truncated = finishReason === "MAX_TOKENS";
       return {
         ok: false,
         reason: truncated
@@ -235,6 +239,7 @@ async function generateWithGeminiOnce(
       model,
       promptTokens: body.usageMetadata?.promptTokenCount ?? 0,
       completionTokens: body.usageMetadata?.candidatesTokenCount ?? 0,
+      finishReason,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
