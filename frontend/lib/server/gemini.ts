@@ -140,11 +140,16 @@ function failureReason(
 export type GeminiRequestOptions = {
   /** 試行するモデル順（未指定時は GEMINI_MODEL + フォールバック） */
   models?: string[];
+  /** 未指定時は 45 秒 */
+  timeoutMs?: number;
+  /** 未指定時は 3 */
+  maxAttempts?: number;
 };
 
 async function generateWithGeminiOnce(
   model: string,
   request: GeminiRequest,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<
   | ({
       ok: true;
@@ -194,7 +199,7 @@ async function generateWithGeminiOnce(
         };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(target.url, {
@@ -273,16 +278,18 @@ export async function generateWithGemini(
   }
 
   const models = options?.models ?? getGeminiModelCandidates();
+  const timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const maxAttempts = options?.maxAttempts ?? MAX_GEMINI_ATTEMPTS;
   let lastReason = "Gemini から応答がありませんでした。";
 
   for (const model of models) {
-    for (let attempt = 0; attempt < MAX_GEMINI_ATTEMPTS; attempt += 1) {
-      const result = await generateWithGeminiOnce(model, request);
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const result = await generateWithGeminiOnce(model, request, timeoutMs);
       if (result.ok) return result;
 
       lastReason = result.reason;
       if (!result.retryable) break;
-      if (attempt < MAX_GEMINI_ATTEMPTS - 1) {
+      if (attempt < maxAttempts - 1) {
         await sleep(900 * (attempt + 1));
       }
     }

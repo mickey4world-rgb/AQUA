@@ -3,6 +3,8 @@ import { sanitizeText } from "@/lib/server/security";
 import { isSolunaStorageConfigured } from "@/lib/server/soluna-store";
 import { sendSolunaChat } from "@/lib/server/soluna-chat";
 
+export const maxDuration = 60;
+
 type ChatRequestBody = {
   message?: string;
 };

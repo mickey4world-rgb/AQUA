@@ -121,6 +121,8 @@ export type AnthropicRequest = {
   temperature?: number;
   model?: string;
   tier?: "budding" | "growing" | "mature";
+  /** 未指定時は 45 秒 */
+  timeoutMs?: number;
 };
 
 export type AnthropicResult =
@@ -167,8 +169,9 @@ export async function generateWithAnthropic(
   }
 
   const model = resolveModel(request, backend);
+  const timeoutMs = request.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   const foundry = backend === "foundry" ? getFoundryConfig() : null;
   const directKey = trimEnv("ANTHROPIC_API_KEY");

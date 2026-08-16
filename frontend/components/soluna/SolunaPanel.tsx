@@ -115,9 +115,29 @@ export default function SolunaPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: trimmed }),
       });
-      const data = await res.json();
+
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        setError(
+          res.status === 504 || res.status === 408
+            ? "応答がタイムアウトしました。もう一度お試しください。"
+            : `通信エラーが発生しました（HTTP ${res.status}）`,
+        );
+        setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        return;
+      }
+
       if (!res.ok) {
-        setError(data.error ?? "送信に失敗しました");
+        const message =
+          typeof data === "object" &&
+          data !== null &&
+          "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "送信に失敗しました";
+        setError(message);
         setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
         return;
       }
