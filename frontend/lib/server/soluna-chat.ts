@@ -1,4 +1,8 @@
-import { generateWithAnthropic, isAnthropicConfigured } from "@/lib/server/anthropic";
+import {
+  generateWithAnthropic,
+  getClaudeBackend,
+  isAnthropicConfigured,
+} from "@/lib/server/anthropic";
 import {
   getAzureOpenAiClient,
   getAzureOpenAiDeployment,
@@ -22,6 +26,12 @@ import {
   type SolunaRouteAssignment,
   type SolunaRoutePlan,
 } from "@/lib/server/soluna-router";
+import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
+import {
+  formatModelUsedLabel,
+  resolveModelForProvider,
+} from "@/lib/server/soluna-model-registry";
+import { getFoundryClaudeDeployment, isAzureFoundryClaudeConfigured } from "@/lib/server/anthropic";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
   clampIntimacy,
@@ -90,6 +100,7 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 type CharacterChatSuccess = {
   content: string;
   model: string;
+  modelLabel: string;
   provider: SolunaProvider;
   reason: string;
 };
@@ -228,6 +239,7 @@ async function callProvider(
     return {
       content: result.text.trim(),
       model: result.model,
+      modelLabel: assignment.modelLabel,
       provider,
       reason: "",
     };
@@ -244,7 +256,8 @@ async function callProvider(
       messages: [{ role: "user", content: transcriptParts.join("\n\n") }],
       maxTokens: tier === "mature" ? 420 : CLAUDE_CHAT_MAX_TOKENS,
       temperature: character === "sol" ? 0.75 : 0.85,
-      model,
+      model: assignment.model,
+      tier: assignment.tier,
     });
 
     if (!result.ok) return { error: result.reason };
@@ -260,6 +273,7 @@ async function callProvider(
     return {
       content: result.text.trim(),
       model: result.model,
+      modelLabel: assignment.modelLabel,
       provider,
       reason: "",
     };
@@ -303,6 +317,7 @@ async function callProvider(
     return {
       content,
       model: completion.model ?? deployment,
+      modelLabel: assignment.modelLabel,
       provider,
       reason: "",
     };
@@ -316,6 +331,30 @@ async function callProvider(
   }
 }
 
+function buildFallbackAssignment(
+  character: SolunaCharacter,
+  provider: SolunaProvider,
+  tier: SolunaGrowthTier,
+  tierLevel: 1 | 2 | 3,
+  costMode: SolunaCostMode,
+): SolunaRouteAssignment {
+  const resolved = resolveModelForProvider(provider, tier, costMode);
+  const model =
+    provider === "claude" && isAzureFoundryClaudeConfigured()
+      ? getFoundryClaudeDeployment(tier)
+      : resolved.modelId;
+
+  return {
+    provider,
+    model,
+    modelDisplayName: resolved.displayName,
+    modelLabel: formatModelUsedLabel(provider, model, resolved.displayName),
+    tier,
+    tierLevel,
+    reason: "フォールバック",
+  };
+}
+
 async function chatWithCharacter(
   userId: string,
   character: SolunaCharacter,
@@ -325,6 +364,7 @@ async function chatWithCharacter(
   history: SolunaMessage[],
   intimacy: number,
   stageLabel: string,
+  costMode: SolunaCostMode,
   blockedProvider?: SolunaProvider,
 ): Promise<CharacterChatResult> {
   const persona = character === "sol" ? SOL_PERSONA : LUNA_PERSONA;
@@ -333,15 +373,17 @@ async function chatWithCharacter(
   const userMessages = buildUserMessages(history, userMessage);
 
   const tryOrder: SolunaRouteAssignment[] = [assignment];
-  for (const provider of listFallbackProviders(character, userMessage, assignment.provider)) {
+  for (const provider of listFallbackProviders(character, userMessage, assignment.provider, costMode)) {
     if (provider === blockedProvider) continue;
-    tryOrder.push({
-      provider,
-      model: getModelForProvider(provider, tier),
-      tier,
-      tierLevel: assignment.tierLevel,
-      reason: "フォールバック",
-    });
+    tryOrder.push(
+      buildFallbackAssignment(
+        character,
+        provider,
+        tier,
+        assignment.tierLevel,
+        costMode,
+      ),
+    );
   }
 
   let lastError = "応答を取得できませんでした。";
@@ -359,8 +401,16 @@ async function chatWithCharacter(
     );
 
     if (!("error" in result)) {
+      const modelLabel =
+        result.modelLabel ||
+        formatModelUsedLabel(
+          candidate.provider,
+          result.model,
+          candidate.modelDisplayName,
+        );
       return {
         ...result,
+        modelLabel,
         reason: candidate.reason || assignment.reason,
       };
     }
@@ -475,10 +525,15 @@ export async function sendSolunaChat(
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
+  const costAssessment = await assessSolunaCostMode(userId);
   const routePlan: SolunaRoutePlan = routeSolunaModels(
     trimmed,
     profile.solIntimacy,
     profile.lunaIntimacy,
+    {
+      costMode: costAssessment.mode,
+      costReason: costAssessment.reason,
+    },
   );
 
   const [solResult, lunaResult] = await Promise.all([
@@ -491,6 +546,7 @@ export async function sendSolunaChat(
       history,
       profile.solIntimacy,
       solStage.label,
+      costAssessment.mode,
       routePlan.luna.provider,
     ),
     chatWithCharacter(
@@ -502,6 +558,7 @@ export async function sendSolunaChat(
       history,
       profile.lunaIntimacy,
       lunaStage.label,
+      costAssessment.mode,
       routePlan.sol.provider,
     ),
   ]);
@@ -529,8 +586,24 @@ export async function sendSolunaChat(
 
   const batch = [
     createMessage(userId, "user", trimmed),
-    createMessage(userId, "sol", solContent),
-    createMessage(userId, "luna", lunaContent),
+    createMessage(userId, "sol", solContent, {
+      provider: "error" in solResult ? routePlan.sol.provider : solResult.provider,
+      model: "error" in solResult ? routePlan.sol.model : solResult.model,
+      modelLabel:
+        "error" in solResult
+          ? routePlan.sol.modelLabel
+          : solResult.modelLabel ?? routePlan.sol.modelLabel,
+      routeReason: "error" in solResult ? routePlan.sol.reason : solResult.reason,
+    }),
+    createMessage(userId, "luna", lunaContent, {
+      provider: "error" in lunaResult ? routePlan.luna.provider : lunaResult.provider,
+      model: "error" in lunaResult ? routePlan.luna.model : lunaResult.model,
+      modelLabel:
+        "error" in lunaResult
+          ? routePlan.luna.modelLabel
+          : lunaResult.modelLabel ?? routePlan.luna.modelLabel,
+      routeReason: "error" in lunaResult ? routePlan.luna.reason : lunaResult.reason,
+    }),
   ];
   await appendMessages(userId, batch);
   const messages = await listMessages(userId);
@@ -542,6 +615,10 @@ export async function sendSolunaChat(
         character: "sol",
         content: solContent,
         model: "error" in solResult ? routePlan.sol.model : solResult.model,
+        modelLabel:
+          "error" in solResult
+            ? routePlan.sol.modelLabel
+            : solResult.modelLabel ?? routePlan.sol.modelLabel,
         provider: "error" in solResult ? routePlan.sol.provider : solResult.provider,
         growthTier: routePlan.sol.tier,
         tierLevel: routePlan.sol.tierLevel,
@@ -551,6 +628,10 @@ export async function sendSolunaChat(
         character: "luna",
         content: lunaContent,
         model: "error" in lunaResult ? routePlan.luna.model : lunaResult.model,
+        modelLabel:
+          "error" in lunaResult
+            ? routePlan.luna.modelLabel
+            : lunaResult.modelLabel ?? routePlan.luna.modelLabel,
         provider: "error" in lunaResult ? routePlan.luna.provider : lunaResult.provider,
         growthTier: routePlan.luna.tier,
         tierLevel: routePlan.luna.tierLevel,
@@ -578,21 +659,31 @@ export async function sendSolunaChat(
       lunaStage: resolveGrowthStage("luna", nextProfile.lunaIntimacy),
       newMemories,
       messages,
+      costMode: costAssessment.mode,
+      costReason: costAssessment.mode !== "normal" ? costAssessment.reason : undefined,
     },
   };
 }
 
-export function getSolunaProvidersStatus() {
+export async function getSolunaProvidersStatus(userId?: string) {
   const available = getAvailableSolunaProviders();
-  const sampleRoute = routeSolunaModels("今日の目標を整理したい", 85, 72);
+  const costAssessment = userId ? await assessSolunaCostMode(userId) : null;
+  const sampleRoute = routeSolunaModels("今日の目標を整理したい", 85, 72, {
+    costMode: costAssessment?.mode ?? "normal",
+    costReason: costAssessment?.reason,
+  });
 
   return {
     available,
     autoRouting: available.length >= 2,
     globalRegion: true,
+    costMode: costAssessment?.mode ?? "normal",
+    costReason: costAssessment?.reason,
+    monthlyCostUsd: costAssessment?.monthlyCostUsd,
     sol: {
       provider: sampleRoute.sol.provider,
       model: sampleRoute.sol.model,
+      modelLabel: sampleRoute.sol.modelLabel,
       tier: sampleRoute.sol.tier,
       tierLevel: sampleRoute.sol.tierLevel,
       configured: isProviderConfigured(sampleRoute.sol.provider),
@@ -601,6 +692,7 @@ export function getSolunaProvidersStatus() {
     luna: {
       provider: sampleRoute.luna.provider,
       model: sampleRoute.luna.model,
+      modelLabel: sampleRoute.luna.modelLabel,
       tier: sampleRoute.luna.tier,
       tierLevel: sampleRoute.luna.tierLevel,
       configured: isProviderConfigured(sampleRoute.luna.provider),
@@ -614,6 +706,7 @@ export function getSolunaProvidersStatus() {
     },
     claude: {
       configured: isAnthropicConfigured(),
+      backend: getClaudeBackend(),
       model: getModelForProvider("claude", "growing"),
     },
   };

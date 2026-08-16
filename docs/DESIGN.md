@@ -265,7 +265,7 @@ sequenceDiagram
 | `SolunaTokens` | Apple Watch ショートカット用トークン | 同上 |
 
 環境変数例: SWA アプリ設定または `frontend/.env.local`（ローカル）。  
-主なキー: `COSMOS_*`, `GEMINI_*`, `AZURE_OPENAI_*`, `ANTHROPIC_*`, `SOLUNA_*`, `GEMINI_RELAY_*`。
+主なキー: `COSMOS_*`, `GEMINI_*`, `AZURE_OPENAI_*`, `AZURE_FOUNDRY_CLAUDE_*`, `SOLUNA_*`, `GEMINI_RELAY_*`。
 
 ### リポジトリ同梱データ（サーバ読み取り）
 
@@ -287,7 +287,7 @@ sequenceDiagram
 |---|---|---|
 | WORKS 相談 / まとめ | Gemini | 無料枠。JSON で回答＋図解 spec。本番は中継必須 |
 | 訴訟記録ノート | Gemini **または** Azure OpenAI | UI で切替。Gemini はリトライ・モデルフォールバック・OpenAI 自動切替 |
-| **Soluna** | Gemini / Azure OpenAI / Claude | 質問で自動ルーティング。親密度で知能 Lv.1〜3・モデル tier 切替。海外 Azure 可 |
+| **Soluna** | Gemini / Azure OpenAI / **Azure Claude (Foundry)** | 質問で自動ルーティング。親密度で知能 Lv.1〜3。Claude は Foundry 優先 |
 | 株アドバイス・Disney・Space 解説・Docs | Azure OpenAI | |
 | 合議（domestic） | Azure OpenAI Japan のみ | Gemini 不可 |
 | 合議（global） | Azure OpenAI + Gemini 探査派 | |

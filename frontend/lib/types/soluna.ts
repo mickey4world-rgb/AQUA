@@ -25,6 +25,10 @@ export interface SolunaMessage {
   role: "user" | "sol" | "luna";
   content: string;
   createdAt: string;
+  provider?: SolunaProvider;
+  model?: string;
+  modelLabel?: string;
+  routeReason?: string;
 }
 
 export interface SolunaProfile {
@@ -72,12 +76,15 @@ export interface SolunaStateResponse {
   messages: SolunaMessage[];
   shortcutToken: string;
   configured: boolean;
+  costMode?: "normal" | "economy" | "minimal";
+  costReason?: string;
 }
 
 export interface SolunaChatReply {
   character: SolunaCharacter;
   content: string;
   model: string;
+  modelLabel?: string;
   provider: SolunaProvider;
   growthTier?: SolunaGrowthTier;
   tierLevel?: 1 | 2 | 3;
@@ -111,6 +118,8 @@ export interface SolunaChatResponse {
   lunaStage: SolunaGrowthStage;
   newMemories: SolunaMemory[];
   messages: SolunaMessage[];
+  costMode?: "normal" | "economy" | "minimal";
+  costReason?: string;
 }
 
 export const SOLUNA_SOL_STAGES: SolunaGrowthStage[] = [

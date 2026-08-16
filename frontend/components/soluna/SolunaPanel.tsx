@@ -123,6 +123,9 @@ export default function SolunaPanel() {
       }
 
       const payload = data as SolunaChatResponse;
+      if (payload.costMode && payload.costMode !== "normal" && payload.costReason) {
+        setNotice(payload.costReason);
+      }
       setState((prev) =>
         prev
           ? {
@@ -144,7 +147,7 @@ export default function SolunaPanel() {
         provider: payload.sol.provider,
         growthTier: payload.sol.growthTier,
         tierLevel: payload.sol.tierLevel,
-        routeReason: payload.sol.routeReason,
+        routeReason: payload.sol.modelLabel ?? payload.sol.routeReason,
                 memories: [
                   ...payload.newMemories.filter((m) => m.character === "sol"),
                   ...prev.sol.memories,
@@ -159,12 +162,14 @@ export default function SolunaPanel() {
         provider: payload.luna.provider,
         growthTier: payload.luna.growthTier,
         tierLevel: payload.luna.tierLevel,
-        routeReason: payload.luna.routeReason,
+        routeReason: payload.luna.modelLabel ?? payload.luna.routeReason,
                 memories: [
                   ...payload.newMemories.filter((m) => m.character === "luna"),
                   ...prev.luna.memories,
                 ].slice(0, 24),
               },
+              costMode: payload.costMode,
+              costReason: payload.costReason,
             }
           : prev,
       );
@@ -317,6 +322,9 @@ export default function SolunaPanel() {
             <p className="mt-1 text-[11px] text-slate-500">
               直近のやりとりのみ表示 · モデル自動切替 · 育つほど知能 Lv.UP
             </p>
+            {state.costMode && state.costMode !== "normal" && state.costReason && (
+              <p className="mt-1 text-[11px] text-amber-200/80">{state.costReason}</p>
+            )}
           </div>
 
           {(sttSupported || ttsSupported) && (
@@ -400,6 +408,11 @@ export default function SolunaPanel() {
             const isSol = message.role === "sol";
             const character = isSol ? state.sol : state.luna;
             const mood = isSol ? solMood : lunaMood;
+            const modelBadge =
+              message.modelLabel ??
+              (message.provider && message.model
+                ? `${message.provider === "gemini" ? "Gemini" : message.provider === "openai" ? "Azure OpenAI" : "Azure Claude"} · ${message.model}`
+                : character.routeReason);
 
             return (
               <div key={message.id} className="flex min-w-0 items-start gap-2.5">
@@ -418,6 +431,11 @@ export default function SolunaPanel() {
                 >
                   <p className="mb-1 text-[10px] font-medium tracking-[0.18em] uppercase opacity-70">
                     {isSol ? "ソル" : "ルーナ"} · {character.stage.label}
+                    {modelBadge ? (
+                      <span className="ml-2 normal-case tracking-normal opacity-80">
+                        · {modelBadge}
+                      </span>
+                    ) : null}
                   </p>
                   <p className="whitespace-pre-wrap break-words">{message.content}</p>
                 </div>

@@ -13,7 +13,7 @@ function providerLabel(provider: SolunaProvider): string {
     case "openai":
       return "Azure OpenAI";
     case "claude":
-      return "Claude";
+      return "Azure Claude";
   }
 }
 
@@ -59,7 +59,7 @@ export default function SolunaCharacterCard({ character, mood = "idle" }: Soluna
           />
           <div>
             <p className="text-[10px] tracking-[0.22em] text-slate-400 uppercase">
-              {providerLabel(character.provider)} · {character.model}
+              {providerLabel(character.provider)} · {character.routeReason ?? character.model}
             </p>
             <h3 className="text-base font-semibold text-white">
               {character.nameJa}
@@ -84,7 +84,6 @@ export default function SolunaCharacterCard({ character, mood = "idle" }: Soluna
         </div>
         <p className="mt-2 text-[10px] text-slate-500">
           記憶 {character.memories.length} 件 · 会話 {character.interactions} 回
-          {character.routeReason ? ` · ${character.routeReason}` : ""}
         </p>
       </div>
     </div>

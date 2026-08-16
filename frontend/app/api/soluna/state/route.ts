@@ -21,7 +21,7 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
     getShortcutToken(userId),
   ]);
 
-  const providers = getSolunaProvidersStatus();
+  const providers = await getSolunaProvidersStatus(userId);
 
   return {
     profile,
@@ -37,7 +37,7 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
       provider: providers.sol.provider,
       growthTier: resolveGrowthTier(profile.solIntimacy),
       tierLevel: providers.sol.tierLevel,
-      routeReason: providers.autoRouting ? "質問と親密度で自動選択" : undefined,
+      routeReason: providers.sol.modelLabel ?? (providers.autoRouting ? "質問と親密度で自動選択" : undefined),
       memories: solMemories,
     },
     luna: {
@@ -52,12 +52,14 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
       provider: providers.luna.provider,
       growthTier: resolveGrowthTier(profile.lunaIntimacy),
       tierLevel: providers.luna.tierLevel,
-      routeReason: providers.autoRouting ? "質問と親密度で自動選択" : undefined,
+      routeReason: providers.luna.modelLabel ?? (providers.autoRouting ? "質問と親密度で自動選択" : undefined),
       memories: lunaMemories,
     },
     messages,
     shortcutToken,
     configured: isSolunaStorageConfigured(),
+    costMode: providers.costMode,
+    costReason: providers.costMode !== "normal" ? providers.costReason : undefined,
   };
 }
 
