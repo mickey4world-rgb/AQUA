@@ -38,6 +38,9 @@ export default function SolunaPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showShortcut, setShowShortcut] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatSeqRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const hasLoadedStateRef = useRef(false);
 
   const {
     voiceEnabled,
@@ -52,20 +55,44 @@ export default function SolunaPanel() {
   } = useSolunaVoice();
 
   const loadState = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
-    setError(null);
     try {
       const res = await fetch("/api/soluna/state");
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "状態の読み込みに失敗しました");
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        if (seq === loadSeqRef.current && !hasLoadedStateRef.current) {
+          setError("通信エラーが発生しました");
+        }
         return;
       }
+      if (seq !== loadSeqRef.current) return;
+      if (!res.ok) {
+        if (!hasLoadedStateRef.current) {
+          const message =
+            typeof data === "object" &&
+            data !== null &&
+            "error" in data &&
+            typeof (data as { error?: unknown }).error === "string"
+              ? (data as { error: string }).error
+              : "状態の読み込みに失敗しました";
+          setError(message);
+        }
+        return;
+      }
+      hasLoadedStateRef.current = true;
       setState(data as SolunaStateResponse);
+      setError(null);
     } catch {
-      setError("通信エラーが発生しました");
+      if (seq === loadSeqRef.current && !hasLoadedStateRef.current) {
+        setError("通信エラーが発生しました");
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -95,6 +122,9 @@ export default function SolunaPanel() {
     setInput("");
 
     const priorMessages = state.messages;
+    const seq = ++chatSeqRef.current;
+    let chatApplied = false;
+
     setState({
       ...state,
       messages: [
@@ -142,7 +172,17 @@ export default function SolunaPanel() {
         return;
       }
 
+      if (seq !== chatSeqRef.current) return;
+
       const payload = data as SolunaChatResponse;
+      if (!payload.messages || !payload.sol?.content || !payload.luna?.content) {
+        setError("応答形式が不正です。もう一度お試しください。");
+        setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        return;
+      }
+
+      const newMemories = payload.newMemories ?? [];
+
       if (payload.costMode && payload.costMode !== "normal" && payload.costReason) {
         setNotice(payload.costReason);
       }
@@ -163,13 +203,13 @@ export default function SolunaPanel() {
                 intimacy: payload.solIntimacy,
                 stage: payload.solStage,
                 interactions: prev.sol.interactions + 1,
-        model: payload.sol.model,
-        provider: payload.sol.provider,
-        growthTier: payload.sol.growthTier,
-        tierLevel: payload.sol.tierLevel,
-        routeReason: payload.sol.modelLabel ?? payload.sol.routeReason,
+                model: payload.sol.model,
+                provider: payload.sol.provider,
+                growthTier: payload.sol.growthTier,
+                tierLevel: payload.sol.tierLevel,
+                routeReason: payload.sol.modelLabel ?? payload.sol.routeReason,
                 memories: [
-                  ...payload.newMemories.filter((m) => m.character === "sol"),
+                  ...newMemories.filter((m) => m.character === "sol"),
                   ...prev.sol.memories,
                 ].slice(0, 24),
               },
@@ -178,13 +218,13 @@ export default function SolunaPanel() {
                 intimacy: payload.lunaIntimacy,
                 stage: payload.lunaStage,
                 interactions: prev.luna.interactions + 1,
-        model: payload.luna.model,
-        provider: payload.luna.provider,
-        growthTier: payload.luna.growthTier,
-        tierLevel: payload.luna.tierLevel,
-        routeReason: payload.luna.modelLabel ?? payload.luna.routeReason,
+                model: payload.luna.model,
+                provider: payload.luna.provider,
+                growthTier: payload.luna.growthTier,
+                tierLevel: payload.luna.tierLevel,
+                routeReason: payload.luna.modelLabel ?? payload.luna.routeReason,
                 memories: [
-                  ...payload.newMemories.filter((m) => m.character === "luna"),
+                  ...newMemories.filter((m) => m.character === "luna"),
                   ...prev.luna.memories,
                 ].slice(0, 24),
               },
@@ -193,16 +233,26 @@ export default function SolunaPanel() {
             }
           : prev,
       );
+      chatApplied = true;
+      setError(null);
 
-      speakLines([
-        { label: "ソル", text: payload.sol.content, character: "sol" },
-        { label: "ルーナ", text: payload.luna.content, character: "luna" },
-      ]);
-    } catch {
+      try {
+        speakLines([
+          { label: "ソル", text: payload.sol.content, character: "sol" },
+          { label: "ルーナ", text: payload.luna.content, character: "luna" },
+        ]);
+      } catch {
+        /* 音声読み上げ失敗はチャット成功扱いのまま */
+      }
+    } catch (error) {
+      if (seq !== chatSeqRef.current || chatApplied) return;
+      console.error("[soluna] chat failed", error);
       setError("通信エラーが発生しました");
       setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
     } finally {
-      setSending(false);
+      if (seq === chatSeqRef.current) {
+        setSending(false);
+      }
     }
   }
 
