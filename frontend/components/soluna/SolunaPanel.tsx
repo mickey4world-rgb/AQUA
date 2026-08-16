@@ -1,14 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import SolunaCharacterAvatar, {
+  type SolunaAvatarMood,
+} from "@/components/soluna/SolunaCharacterAvatar";
 import SolunaCharacterCard from "@/components/soluna/SolunaCharacterCard";
-import { SOLUNA_CHARACTER_META, type SolunaChatResponse, type SolunaStateResponse } from "@/lib/types/soluna";
+import { useSolunaVoice } from "@/lib/soluna-voice";
+import { getLatestExchange } from "@/lib/soluna-utils";
+import {
+  SOLUNA_CHARACTER_META,
+  type SolunaChatResponse,
+  type SolunaStateResponse,
+} from "@/lib/types/soluna";
 
 const STARTERS = [
   "今日の目標を一緒に整理したい",
   "少し疲れているから話を聞いてほしい",
   "最近うまくいったことを共有したい",
 ];
+
+function characterMood(
+  character: "sol" | "luna",
+  sending: boolean,
+  speakingAs: "sol" | "luna" | null,
+): SolunaAvatarMood {
+  if (sending) return "thinking";
+  if (speakingAs === character) return "speaking";
+  return "idle";
+}
 
 export default function SolunaPanel() {
   const [state, setState] = useState<SolunaStateResponse | null>(null);
@@ -19,6 +38,18 @@ export default function SolunaPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showShortcut, setShowShortcut] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const {
+    voiceEnabled,
+    setVoiceEnabled,
+    listening,
+    speakingAs,
+    startListening,
+    stopListening,
+    speakLines,
+    sttSupported,
+    ttsSupported,
+  } = useSolunaVoice();
 
   const loadState = useCallback(async () => {
     setLoading(true);
@@ -42,9 +73,17 @@ export default function SolunaPanel() {
     void loadState();
   }, [loadState]);
 
+  const displayMessages = useMemo(
+    () => (state ? getLatestExchange(state.messages) : []),
+    [state],
+  );
+
+  const hasOlderHistory =
+    state != null && state.messages.length > displayMessages.length;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [state?.messages, sending]);
+  }, [displayMessages, sending]);
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -101,24 +140,46 @@ export default function SolunaPanel() {
                 intimacy: payload.solIntimacy,
                 stage: payload.solStage,
                 interactions: prev.sol.interactions + 1,
-                memories: [...payload.newMemories.filter((m) => m.character === "sol"), ...prev.sol.memories].slice(0, 24),
+                memories: [
+                  ...payload.newMemories.filter((m) => m.character === "sol"),
+                  ...prev.sol.memories,
+                ].slice(0, 24),
               },
               luna: {
                 ...prev.luna,
                 intimacy: payload.lunaIntimacy,
                 stage: payload.lunaStage,
                 interactions: prev.luna.interactions + 1,
-                memories: [...payload.newMemories.filter((m) => m.character === "luna"), ...prev.luna.memories].slice(0, 24),
+                memories: [
+                  ...payload.newMemories.filter((m) => m.character === "luna"),
+                  ...prev.luna.memories,
+                ].slice(0, 24),
               },
             }
           : prev,
       );
+
+      speakLines([
+        { label: "ソル", text: payload.sol.content, character: "sol" },
+        { label: "ルーナ", text: payload.luna.content, character: "luna" },
+      ]);
     } catch {
       setError("通信エラーが発生しました");
       setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
     } finally {
       setSending(false);
     }
+  }
+
+  function handleMicClick() {
+    if (listening) {
+      stopListening();
+      return;
+    }
+    startListening(
+      (text) => void sendMessage(text),
+      (message) => setError(message),
+    );
   }
 
   async function rotateToken() {
@@ -171,12 +232,15 @@ export default function SolunaPanel() {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://your-aqua-app";
 
+  const solMood = characterMood("sol", sending, speakingAs);
+  const lunaMood = characterMood("luna", sending, speakingAs);
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <section className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <SolunaCharacterCard character={state.sol} />
-          <SolunaCharacterCard character={state.luna} />
+          <SolunaCharacterCard character={state.sol} mood={solMood} />
+          <SolunaCharacterCard character={state.luna} mood={lunaMood} />
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -191,19 +255,22 @@ export default function SolunaPanel() {
               </p>
               <h3 className="mt-1 text-sm font-semibold text-white">ショートカット連携</h3>
             </div>
-            <span className="text-xs text-slate-400">{showShortcut ? "閉じる" : "設定" }</span>
+            <span className="text-xs text-slate-400">{showShortcut ? "閉じる" : "設定"}</span>
           </button>
 
           {showShortcut && (
             <div className="mt-4 space-y-3 text-xs leading-relaxed text-slate-300">
               <p>
-                ショートカットから <strong className="text-white">認証なし</strong> で Soluna を呼び出せます。
-                2人（ソル・ルーナ）の返答を JSON で受け取ります。
+                ショートカットから <strong className="text-white">認証なし</strong> で Soluna
+                を呼び出せます。2人（ソル・ルーナ）の返答を JSON で受け取ります。
               </p>
               <div className="rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-[11px] text-slate-200">
                 POST {origin}/api/soluna/shortcut/chat
               </div>
-              <p>ヘッダー: <code className="text-cyan-200">X-Soluna-Token</code> または JSON の <code className="text-cyan-200">token</code></p>
+              <p>
+                ヘッダー: <code className="text-cyan-200">X-Soluna-Token</code> または JSON
+                の <code className="text-cyan-200">token</code>
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -221,8 +288,7 @@ export default function SolunaPanel() {
                 </button>
               </div>
               <p className="text-[10px] text-slate-500">
-                ショートカット例: 「テキストを要求」→「URL の内容を取得」POST、本文
-                {" "}
+                ショートカット例: 「テキストを要求」→「URL の内容を取得」POST、本文{" "}
                 <code>{`{"message":"{{入力}}","token":"..."}`}</code>
               </p>
             </div>
@@ -233,9 +299,46 @@ export default function SolunaPanel() {
       <section className="relative flex min-h-[34rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_0%,rgba(251,191,36,0.12),transparent_45%),radial-gradient(ellipse_at_90%_10%,rgba(129,140,248,0.12),transparent_42%)]" />
 
-        <div className="relative">
-          <p className="text-[10px] tracking-[0.28em] text-slate-400 uppercase">Soluna Chat</p>
-          <h3 className="mt-1 text-lg font-semibold text-white">2人が同時に答えます</h3>
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] tracking-[0.28em] text-slate-400 uppercase">Soluna Chat</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">2人が同時に答えます</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              表示は直近のやりとりのみ（記憶はサーバーに保持）
+            </p>
+          </div>
+
+          {(sttSupported || ttsSupported) && (
+            <div className="flex flex-wrap gap-2">
+              {ttsSupported && (
+                <button
+                  type="button"
+                  onClick={() => setVoiceEnabled((value) => !value)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] transition ${
+                    voiceEnabled
+                      ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
+                      : "border-white/10 text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  {voiceEnabled ? "🔊 音声返答 ON" : "🔇 音声返答 OFF"}
+                </button>
+              )}
+              {sttSupported && (
+                <button
+                  type="button"
+                  disabled={sending}
+                  onClick={handleMicClick}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${
+                    listening
+                      ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
+                      : "border-white/10 text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  {listening ? "⏹ 聞き取り中…" : "🎙 話す"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="relative mt-4 flex flex-wrap gap-2">
@@ -253,14 +356,20 @@ export default function SolunaPanel() {
         </div>
 
         <div className="relative mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-          {state.messages.length === 0 && (
+          {displayMessages.length === 0 && (
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-slate-300">
-              {SOLUNA_CHARACTER_META.sol.nameJa} と {SOLUNA_CHARACTER_META.luna.nameJa} に話しかけてみてください。
-              育てていくほど親密度が上がり、記憶も増えていきます。
+              {SOLUNA_CHARACTER_META.sol.nameJa} と {SOLUNA_CHARACTER_META.luna.nameJa}{" "}
+              に話しかけてみてください。育てていくほど親密度が上がり、姿も変わっていきます。
             </div>
           )}
 
-          {state.messages.map((message, index) => {
+          {hasOlderHistory && displayMessages.length > 0 && (
+            <p className="text-center text-[10px] text-slate-500">
+              前回のやりとりを表示中
+            </p>
+          )}
+
+          {displayMessages.map((message) => {
             if (message.role === "user") {
               return (
                 <div key={message.id} className="flex justify-end">
@@ -272,17 +381,26 @@ export default function SolunaPanel() {
             }
 
             const isSol = message.role === "sol";
+            const character = isSol ? state.sol : state.luna;
+            const mood = isSol ? solMood : lunaMood;
+
             return (
-              <div key={message.id} className="flex justify-start">
+              <div key={message.id} className="flex min-w-0 items-start gap-2.5">
+                <SolunaCharacterAvatar
+                  character={character.character}
+                  stage={character.stage}
+                  mood={mood}
+                  size="sm"
+                />
                 <div
-                  className={`max-w-[94%] rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
+                  className={`min-w-0 flex-1 rounded-2xl border px-4 py-3 text-sm leading-relaxed ${
                     isSol
                       ? "border-amber-300/20 bg-amber-400/[0.07] text-amber-50"
                       : "border-indigo-300/20 bg-indigo-400/[0.07] text-indigo-50"
                   }`}
                 >
                   <p className="mb-1 text-[10px] font-medium tracking-[0.18em] uppercase opacity-70">
-                    {isSol ? "☀ ソル" : "🌙 ルーナ"}
+                    {isSol ? "ソル" : "ルーナ"} · {character.stage.label}
                   </p>
                   <p className="whitespace-pre-wrap break-words">{message.content}</p>
                 </div>
@@ -292,11 +410,23 @@ export default function SolunaPanel() {
 
           {sending && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-amber-300/15 bg-amber-400/[0.05] px-4 py-3 text-xs text-amber-100/80">
-                ☀ ソルが考えています…
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-300/15 bg-amber-400/[0.05] px-4 py-3 text-xs text-amber-100/80">
+                <SolunaCharacterAvatar
+                  character="sol"
+                  stage={state.sol.stage}
+                  mood="thinking"
+                  size="sm"
+                />
+                ソルが考えています…
               </div>
-              <div className="rounded-2xl border border-indigo-300/15 bg-indigo-400/[0.05] px-4 py-3 text-xs text-indigo-100/80">
-                🌙 ルーナが考えています…
+              <div className="flex items-center gap-2 rounded-2xl border border-indigo-300/15 bg-indigo-400/[0.05] px-4 py-3 text-xs text-indigo-100/80">
+                <SolunaCharacterAvatar
+                  character="luna"
+                  stage={state.luna.stage}
+                  mood="thinking"
+                  size="sm"
+                />
+                ルーナが考えています…
               </div>
             </div>
           )}
@@ -327,7 +457,7 @@ export default function SolunaPanel() {
             rows={2}
             maxLength={2000}
             disabled={sending}
-            placeholder="Soluna に話しかける"
+            placeholder="Soluna に話しかける（🎙 ボタンで音声入力も可）"
             className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
           />
           <button

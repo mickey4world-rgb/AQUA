@@ -35,6 +35,10 @@ import type {
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY = 10;
+/** Gemini 思考モデル — maxOutputTokens は思考分も含むため可視テキスト分を上乗せ */
+const SOL_CHAT_MAX_OUTPUT_TOKENS = 2200;
+const LUNA_CHAT_MAX_COMPLETION_TOKENS = 350;
+const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 2200;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
   "goal",
@@ -126,17 +130,29 @@ async function chatWithSol(
 ${formatMemories(memories)}`;
 
   const transcript = buildTranscript(history);
-  const result = await generateWithGemini({
+  const messages: Array<{ role: "user"; content: string }> = [
+    ...(transcript
+      ? [{ role: "user" as const, content: `【これまでの会話】\n${transcript}` }]
+      : []),
+    { role: "user", content: userMessage },
+  ];
+  const request = {
     system,
-    messages: [
-      ...(transcript
-        ? [{ role: "user" as const, content: `【これまでの会話】\n${transcript}` }]
-        : []),
-      { role: "user", content: userMessage },
-    ],
-    maxOutputTokens: 350,
+    messages,
     temperature: 0.75,
+  };
+
+  let result = await generateWithGemini({
+    ...request,
+    maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
   });
+
+  if (result.ok && result.finishReason === "MAX_TOKENS") {
+    result = await generateWithGemini({
+      ...request,
+      maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
+    });
+  }
 
   if (!result.ok) return { error: result.reason };
 
@@ -185,7 +201,7 @@ ${formatMemories(memories)}`;
   try {
     const completion = await client.chat.completions.create({
       model: deployment,
-      max_completion_tokens: 350,
+      max_completion_tokens: LUNA_CHAT_MAX_COMPLETION_TOKENS,
       temperature: 0.8,
       messages,
     });
@@ -244,7 +260,7 @@ async function extractMemories(
         content: `既存:\n${formatMemories(existing)}\n\n発言:\n${userMessage}`,
       },
     ],
-    maxOutputTokens: 800,
+    maxOutputTokens: MEMORY_EXTRACT_MAX_OUTPUT_TOKENS,
     temperature: 0.2,
     responseMimeType: "application/json",
   });

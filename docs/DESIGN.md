@@ -1,7 +1,8 @@
 # システム設計書 — AQUA
 
-> 最終更新: 2026-08-09  
+> 最終更新: 2026-08-14  
 > 対象リポジトリ: ClaudeCodeWork（プロダクト名: **AQUA**）  
+> 本番 URL: https://www.aquacore.net  
 > プロジェクトルール: `.claudecode.json` を参照（制約の要約。実装の正は本設計書と `frontend/`）
 
 ---
@@ -39,14 +40,20 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 
 | ドメイン | ルート | 概要 |
 |---|---|---|
-| **Portal** | `/` | モジュール索引、動的背景（星・泡） |
-| **Works** | `/works/*` | AI 相談、司法ノート、行政お金の流れ、資料生成 |
+| **Portal** | `/` | モジュール索引（07 Modules）、動的背景、**SHOWCASE** 導線 |
+| **Showcase** | `/sample` | 認証不要の Studio デモ（6 モジュール体験） |
+| **Works** | `/works/*` | AI 相談（図解ビューワー）、司法ノート、行政お金の流れ、資料生成 |
 | **Stocks** | `/stocks` | 日米株ウォッチ + AI 売買アドバイス |
 | **Disney** | `/disney` | TDR 混雑・待ち時間・キャラクターチャット |
 | **Council** | `/council` | 複数 AI 合議（国内 / グローバル） |
+| **Soluna** | `/soluna` | ソル（太陽）＋ルーナ（月）の育成型 AI コンパニオン |
 | **Space** | `/space` | 望遠鏡タイムライン・小惑星 3D・鷹の目 |
-| **Costs** | `/costs` | トークン・機能別・Azure 実績コスト |
+| **Costs** | `/costs`, `/costs/access` | トークン・Azure 実績・**公開/内部アクセス分析** |
 | **Settings / Login** | `/settings`, `/login` | プロファイル・認証入口 |
+
+**認証不要（公開）**: `/`, `/sample`, `/login`  
+**認証必須**: 上記以外の業務ドメイン（`middleware.ts` 参照）  
+**例外**: `/api/soluna/shortcut/*` はショートカット用トークン認証（SWA ログイン不要）
 
 ---
 
@@ -62,7 +69,7 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 | **株価** | `yahoo-finance2` | サーバ側 lookup |
 | **3D / 地球** | Three.js + R3F、Cesium（鷹の目） | `satellite.js` |
 | **可視化** | d3-sankey（お金の流れ） | |
-| **資料** | pptxgenjs | WORKS / Docs 資料生成 |
+| **資料 / エクスポート** | pptxgenjs、jspdf、html2canvas | WORKS 相談 MD/PDF/PPTX、Docs 資料 |
 
 ### Azure リソース命名
 
@@ -70,7 +77,7 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 |---|---|
 | リソースグループ | `rg-personal-apps-prod` |
 | Static Web App | `swa-personal-apps-prod` |
-| Cosmos DB | `cosmos-personal-apps-prod`（想定） |
+| Cosmos DB | `cosmos-personal-apps-prod` | DB: `personal-apps` |
 | Gemini 中継 | `func-gemini-proxy-aqua`（Japan East） |
 
 > **注**: `.claudecode.json` は歴史的に「Backend = Azure Functions」と記述しているが、**現行の業務 API は Next.js Route Handlers**。Functions は主に Gemini 中継などの補助用途。
@@ -83,10 +90,26 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 
 | アプリ | パス | 状態 | 要点 |
 |---|---|---|---|
-| AI 相談ボード | `/works/consult` | 利用可 | Gemini、メモ保存（Cosmos `WorkNotes`）、コンパニオン |
-| 訴訟記録ノート | `/works/judicial/case-notebook` | 利用可 | NotebookLM 風。選択資料のみ Gemini/OpenAI へ。セッション内のみ保持 |
+| AI 相談ボード | `/works/consult` | 利用可 | Gemini。**AI 図解ビューワー**（構成図・フロー自動生成）、MD/PDF/PPTX 出力、メモ保存（`WorkNotes`） |
+| 訴訟記録ノート | `/works/judicial/case-notebook` | 利用可 | NotebookLM 風。選択資料のみ AI へ。Gemini/OpenAI 切替。**Gemini 混雑時は OpenAI 自動フォールバック** |
 | お金の流れ | `/works/admin/money-flow` | 利用可 | 行政事業レビュー支出のサンキー、支出先ドシエ |
 | 資料生成スタジオ | `/works/misc/docs`（`/docs` も可） | 利用可 | pptx 生成・プレビュー |
+
+### Showcase（`/sample` — 公開）
+
+認証不要。6 モジュール（サンキー、訴訟記録、AI 合議、保有株、ディズニー、小惑星 3D）のデモ UI。  
+トップの **SHOWCASE** ボタンおよび `/login` から導線。
+
+### Soluna（`/soluna`）
+
+| 項目 | 内容 |
+|---|---|
+| キャラ | **ソル（Sol / ☀）** — 目標・タスク・成功・趣味を記憶（Gemini） |
+| | **ルーナ（Luna / 🌙）** — 感情・悩み・体調・癒やしを記憶（Azure OpenAI、`SOLUNA_LUNA_DEPLOYMENT`） |
+| 育成 | 親密度 0–100、ステージ進行、会話・記憶の Cosmos 永続化 |
+| Apple Watch | `POST /api/soluna/shortcut/chat` + `X-Soluna-Token`（ログイン不要） |
+
+Cosmos: `SolunaRecords`（profile / memory / message）、`SolunaTokens`（ショートカット用）
 
 司法サンプル: `frontend/data/judicial/samples/*.md`  
 行政データ: `frontend/data/gyosei/*.json.gz` + `summary.json`
@@ -118,6 +141,7 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 ### Costs（`/costs`）
 
 - 機能別トークン・推定コスト、Azure Cost Management 実績（設定時）
+- **`/costs/access`**: 公開フロント（`/`, `/sample`, `/login`）の PV と内部 API アクセスをタブ分離表示
 
 ---
 
@@ -186,7 +210,9 @@ sequenceDiagram
 ```
 
 保護プレフィックス（`middleware.ts`）:  
-`/stocks`, `/disney`, `/costs`, `/council`, `/docs`, `/works`, `/space`, `/settings`
+`/stocks`, `/disney`, `/costs`, `/council`, `/soluna`, `/docs`, `/works`, `/space`, `/settings`
+
+公開ページの PV は `PublicPageTracker` → `POST /api/analytics/pageview` → Cosmos `PageViewLogs`。
 
 ### デプロイ
 
@@ -202,13 +228,15 @@ sequenceDiagram
 | 領域 | 主なエンドポイント | 役割 |
 |---|---|---|
 | **users** | `GET /api/users/me` | プロファイル |
+| **analytics** | `POST /api/analytics/pageview` | 公開ページ PV（認証不要） |
 | **stocks** | `/api/stocks/watches`, `lookup`, `[id]` | ウォッチ・検索・詳細 |
 | **disney** | `/api/disney/{chat,advice,waits,status,calendar}` | チャット・混雑 |
-| **council** | `/api/council/{ask,followup,config}` | 合議・設定 |
+| **council** | `/api/council/{ask,ask/step,followup,config}` | 合議・設定 |
 | **docs** | `POST /api/docs/generate` | pptx 生成 |
-| **works** | `/api/works/consult`, `summarize`, `notes`, `money-flow`, `money-flow/payee`, `judicial/case-chat` | 相談・メモ・行政・司法 |
+| **works** | `/api/works/consult`, `consult/export`, `summarize`, `notes`, `money-flow`, `money-flow/payee`, `judicial/case-chat` | 相談・図解エクスポート・メモ・行政・司法 |
+| **soluna** | `/api/soluna/{state,chat}`, `/api/soluna/shortcut/chat` | コンパニオン・Watch 用 |
 | **space** | `/api/space/apod`, `apod/summary`, `chat`, `neo`, `neo/image`, `eagle-eye/tracks` | 宇宙系 |
-| **costs** | `GET /api/costs/dashboard` | 利用ダッシュボード |
+| **costs** | `/api/costs/{dashboard,azure-infra,access-analytics,public-access-analytics}` | コスト・分析 |
 | **roles** | `/api/GetRoles` | SWA ロール補助 |
 
 共通パターン:
@@ -223,15 +251,19 @@ sequenceDiagram
 
 ### Cosmos コンテナ（現行）
 
-| コンテナ | 用途 |
-|---|---|
-| `Users` | ユーザー、月次トークン上限など |
-| `StockWatches` | 保有・監視銘柄 |
-| `TokenUsage` | AI トークン・推定コスト |
-| `AccessLogs` | API アクセス監査 |
-| `WorkNotes` | WORKS 相談メモ |
+| コンテナ | 用途 | セットアップ |
+|---|---|---|
+| `Users` | ユーザー、月次トークン上限など | `npm run seed:users` |
+| `StockWatches` | 保有・監視銘柄 | （初回 API 利用時） |
+| `TokenUsage` | AI トークン・推定コスト | `npm run setup:token-usage` |
+| `AccessLogs` | 内部 API アクセス監査 | `npm run setup:access-logs` |
+| `PageViewLogs` | 公開ページ PV（`/`, `/sample`, `/login`） | `npm run setup:page-view-logs` |
+| `WorkNotes` | WORKS AI 相談メモ | `npm run setup:work-notes` |
+| `SolunaRecords` | Soluna プロフィール・記憶・会話 | `npm run setup:soluna` |
+| `SolunaTokens` | Apple Watch ショートカット用トークン | 同上 |
 
-環境変数例は `frontend/.env.local.example`。
+環境変数例: SWA アプリ設定または `frontend/.env.local`（ローカル）。  
+主なキー: `COSMOS_*`, `GEMINI_*`, `AZURE_OPENAI_*`, `SOLUNA_LUNA_DEPLOYMENT`, `GEMINI_RELAY_*`。
 
 ### リポジトリ同梱データ（サーバ読み取り）
 
@@ -251,11 +283,18 @@ sequenceDiagram
 
 | 機能 | 既定プロバイダ | 備考 |
 |---|---|---|
-| WORKS 相談 / まとめ | Gemini | 無料枠。本番は中継必須 |
-| 訴訟記録ノート | Gemini **または** Azure OpenAI | UI で切替。OpenAI は月次上限対象 |
+| WORKS 相談 / まとめ | Gemini | 無料枠。JSON で回答＋図解 spec。本番は中継必須 |
+| 訴訟記録ノート | Gemini **または** Azure OpenAI | UI で切替。Gemini はリトライ・モデルフォールバック・OpenAI 自動切替 |
+| **Soluna ソル** | Gemini | 2〜3 行の簡潔返答 |
+| **Soluna ルーナ** | Azure OpenAI | `SOLUNA_LUNA_DEPLOYMENT`（本番: `council-gpt5` 等） |
 | 株アドバイス・Disney・Space 解説・Docs | Azure OpenAI | |
 | 合議（domestic） | Azure OpenAI Japan のみ | Gemini 不可 |
 | 合議（global） | Azure OpenAI + Gemini 探査派 | |
+
+### Gemini 耐障害
+
+- `generateWithGemini`: 混雑・503 等で **最大 3 回リトライ**、`gemini-2.0-flash` / `gemini-1.5-flash` へフォールバック
+- 環境変数 `GEMINI_FALLBACK_MODELS` で代替モデル列を上書き可
 
 ### リージョンと Gemini
 
@@ -308,7 +347,7 @@ ClaudeCodeWork/
 ├── tools/                    # データ変換・調査スクリプト
 └── frontend/                 # AQUA 本体
     ├── app/                  # ページ + API Routes
-    ├── components/           # UI（works / space / council / …）
+    ├── components/           # UI（works / space / council / soluna / showcase / …）
     ├── data/                 # gyosei / judicial samples
     ├── lib/
     │   ├── server/           # Cosmos, AI, ドメインロジック
@@ -326,9 +365,9 @@ ClaudeCodeWork/
 | 優先 | 候補 | メモ |
 |---|---|---|
 | 中 | 訴訟ノート PDF 入力 | v1 は txt/md のみ |
-| 中 | 株アラートの定期実行 | 現状はオンデマンド中心。タイマは別途 |
+| 中 | Soluna Watch ネイティブ連携 | 現状は iPhone ショートカット + トークン API |
+| 中 | 株アラートの定期実行 | 現状はオンデマンド中心 |
 | 低 | Disney 予定の Cosmos 永続 | 現状はライブ API + チャット中心 |
-| 低 | `.claudecode.json` の backend 記述更新 | Functions 中心表記を Route Handlers 実態に合わせる |
 | 継続 | 行政パネルの追加アプリ | ハッカソンアイデア等 |
 
 ---
@@ -338,4 +377,5 @@ ClaudeCodeWork/
 | 日付 | 内容 |
 |---|---|
 | 2026-07-31 | 初版（株・Disney・コスト中心、Functions 前提） |
-| 2026-08-09 | AQUA 現行に再進化。Works/司法/行政/合議/Space、Next.js API、Gemini 中継、実コンテナ構成を反映 |
+| 2026-08-09 | AQUA 現行に再進化。Works/司法/行政/合議/Space、Next.js API、Gemini 中継 |
+| 2026-08-14 | Soluna、Showcase（`/sample`）、WORKS 図解ビューワー、公開 PV 分析、Cosmos コンテナ追加、Gemini 耐障害、Apple Watch ショートカット API |
