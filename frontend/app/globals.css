@@ -264,6 +264,192 @@ body {
   animation-delay: -22s;
 }
 
+/* ── ホーム右上: オーロラ（カーテン状） ── */
+@keyframes aq-aurora-curtain-sway {
+  0%, 100% {
+    transform: perspective(820px) rotateY(-10deg) rotateZ(-2deg) skewX(0deg) scaleX(1);
+    opacity: 0.58;
+  }
+  18% {
+    transform: perspective(820px) rotateY(14deg) rotateZ(3.5deg) skewX(5deg) scaleX(1.1);
+    opacity: 0.88;
+  }
+  42% {
+    transform: perspective(820px) rotateY(-6deg) rotateZ(-3deg) skewX(-4deg) scaleX(0.94);
+    opacity: 0.68;
+  }
+  68% {
+    transform: perspective(820px) rotateY(16deg) rotateZ(4deg) skewX(6deg) scaleX(1.08);
+    opacity: 0.82;
+  }
+  86% {
+    transform: perspective(820px) rotateY(2deg) rotateZ(1deg) skewX(1deg) scaleX(1.02);
+    opacity: 0.72;
+  }
+}
+
+@keyframes aq-aurora-shimmer {
+  0%, 100% { transform: translate3d(2%, 0, 0) skewX(-2deg); opacity: 0.22; }
+  50% { transform: translate3d(-5%, 4%, 0) skewX(3deg); opacity: 0.46; }
+}
+
+@keyframes aq-aurora-glow {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.55; }
+  50% { transform: translate3d(-3%, 2%, 0) scale(1.06); opacity: 0.82; }
+}
+
+.aq-aurora {
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 5;
+  width: min(680px, 68vw);
+  height: min(540px, 58vh);
+  overflow: hidden;
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 82% at 92% 8%,
+    #000 14%,
+    rgba(0, 0, 0, 0.78) 46%,
+    transparent 76%
+  );
+  mask-image: radial-gradient(
+    ellipse 90% 82% at 92% 8%,
+    #000 14%,
+    rgba(0, 0, 0, 0.78) 46%,
+    transparent 76%
+  );
+}
+
+.aq-aurora__glow {
+  position: absolute;
+  top: -14%;
+  right: -8%;
+  width: 72%;
+  height: 58%;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 58% 36%, rgba(52, 211, 238, 0.36), transparent 58%),
+    radial-gradient(circle at 72% 22%, rgba(110, 231, 183, 0.3), transparent 52%),
+    radial-gradient(circle at 40% 48%, rgba(129, 140, 248, 0.24), transparent 54%);
+  filter: blur(44px);
+  animation: aq-aurora-glow 18s ease-in-out infinite;
+}
+
+.aq-aurora__rail {
+  position: absolute;
+  inset: 0;
+  transform-origin: 100% 0%;
+}
+
+.aq-aurora__fold {
+  position: absolute;
+  top: -4%;
+  height: 112%;
+  transform-origin: 50% 0%;
+  border-radius: 0 0 46% 42% / 0 0 18% 16%;
+  filter: blur(11px);
+  mix-blend-mode: screen;
+  animation: aq-aurora-curtain-sway ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aq-aurora__fold--1 {
+  background: linear-gradient(
+    180deg,
+    rgba(56, 189, 248, 0.72) 0%,
+    rgba(34, 211, 238, 0.52) 28%,
+    rgba(110, 231, 183, 0.28) 58%,
+    rgba(129, 140, 248, 0.12) 82%,
+    transparent 100%
+  );
+}
+.aq-aurora__fold--2 {
+  background: linear-gradient(
+    180deg,
+    rgba(110, 231, 183, 0.62) 0%,
+    rgba(52, 211, 238, 0.48) 32%,
+    rgba(167, 243, 208, 0.26) 62%,
+    rgba(56, 189, 248, 0.1) 86%,
+    transparent 100%
+  );
+}
+.aq-aurora__fold--3 {
+  background: linear-gradient(
+    180deg,
+    rgba(129, 140, 248, 0.58) 0%,
+    rgba(34, 211, 238, 0.44) 30%,
+    rgba(165, 243, 252, 0.24) 64%,
+    rgba(110, 231, 183, 0.1) 88%,
+    transparent 100%
+  );
+}
+.aq-aurora__fold--4 {
+  background: linear-gradient(
+    180deg,
+    rgba(34, 211, 238, 0.66) 0%,
+    rgba(167, 139, 250, 0.4) 34%,
+    rgba(56, 189, 248, 0.22) 66%,
+    rgba(129, 140, 248, 0.08) 90%,
+    transparent 100%
+  );
+}
+
+.aq-aurora__fold--lite {
+  filter: blur(16px);
+  opacity: 0.86;
+}
+
+.aq-aurora__shimmer {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      92deg,
+      transparent 0 18px,
+      rgba(224, 242, 254, 0.12) 18px 20px,
+      transparent 20px 54px
+    );
+  filter: blur(6px);
+  mix-blend-mode: screen;
+  transform-origin: 100% 0%;
+  animation: aq-aurora-shimmer 16s ease-in-out infinite;
+  opacity: 0.38;
+}
+
+.aq-aurora__veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    208deg,
+    rgba(10, 26, 51, 0) 0%,
+    rgba(10, 26, 51, 0.06) 34%,
+    rgba(10, 26, 51, 0.38) 100%
+  );
+}
+
+.aq-aurora--static .aq-aurora__glow {
+  animation: none;
+  opacity: 0.62;
+}
+
+.aq-aurora--static .aq-aurora__fold {
+  opacity: 0.72;
+  transform: perspective(820px) rotateY(4deg);
+}
+
+@media (max-width: 768px) {
+  .aq-aurora {
+    width: min(460px, 82vw);
+    height: min(360px, 42vh);
+    opacity: 0.9;
+  }
+
+  .aq-aurora__fold {
+    filter: blur(14px);
+  }
+}
+
 /* ── 水: 下半分にたゆたう水面と、その上を走る光の帯 ── */
 @keyframes aq-water-drift {
   0%, 100% { transform: translate3d(-2%, 0, 0) scaleY(1); }
@@ -1065,6 +1251,9 @@ body {
   .aq-meteor,
   .aq-bubble,
   .aq-bubble--glint::after,
+  .aq-aurora__glow,
+  .aq-aurora__fold,
+  .aq-aurora__shimmer,
   .home-pulse-dot,
   .marquee__track,
   .scroll-cue,
