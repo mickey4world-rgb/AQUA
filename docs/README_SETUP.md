@@ -460,6 +460,8 @@ npm run build
 
 #### Soluna 本番環境変数（Azure Portal → SWA → 構成）
 
+モデル自動判断の仕組み（ルーティング・コスト調整・プロンプト設計）: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)
+
 **Claude（Azure AI Foundry — 推奨）**
 
 | 変数 | 取得場所 |

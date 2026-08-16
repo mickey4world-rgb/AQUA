@@ -7,6 +7,7 @@ import CouncilShowcaseDemo from "@/components/showcase/demos/CouncilShowcaseDemo
 import DisneyShowcaseDemo from "@/components/showcase/demos/DisneyShowcaseDemo";
 import JudicialShowcaseDemo from "@/components/showcase/demos/JudicialShowcaseDemo";
 import SankeyShowcaseDemo from "@/components/showcase/demos/SankeyShowcaseDemo";
+import SolunaShowcaseDemo from "@/components/showcase/demos/SolunaShowcaseDemo";
 import StocksShowcaseDemo from "@/components/showcase/demos/StocksShowcaseDemo";
 import { SHOWCASE_SECTIONS, type ShowcaseSectionMeta } from "@/lib/showcase-data";
 
@@ -17,6 +18,7 @@ const DEMO_MAP = {
   stocks: StocksShowcaseDemo,
   disney: DisneyShowcaseDemo,
   asteroid: AsteroidShowcaseDemo,
+  soluna: SolunaShowcaseDemo,
 } as const;
 
 function ShowcaseSection({
@@ -106,7 +108,7 @@ export default function StudioShowcase() {
             <span className="mt-2 block ink-soft">in Motion</span>
           </h1>
           <p className="mt-8 max-w-2xl text-[15px] leading-7 text-slate-400">
-            認証なしで、AQUA STUDIO の6つのモジュールを体感できます。
+            認証なしで、AQUA STUDIO の{SHOWCASE_SECTIONS.length}つのモジュールを体感できます。
             スクロールで流れるように、動く画面をご覧ください。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">

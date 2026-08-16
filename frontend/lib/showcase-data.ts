@@ -78,6 +78,17 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     href: "/space",
     tag: "Cosmos",
   },
+  {
+    id: "soluna",
+    index: "07",
+    title: "Soluna",
+    titleJa: "ソルーナ",
+    description:
+      "ソル（☀）とルーナ（🌙）が同時に伴走。性格・記憶はそのまま、問い合わせと成長に合わせて OpenAI / Claude / Gemini の最新モデルを自動選択するフレームワークです。",
+    accent: "#fbbf24",
+    href: "/soluna",
+    tag: "Companion",
+  },
 ];
 
 export const SHOWCASE_SANKEY_NODES: MoneyFlowNode[] = [
@@ -342,4 +353,65 @@ export const SHOWCASE_DISNEY_ATTRACTIONS = [
   { name: "美女と野獣", wait: 55, park: "TDL" },
   { name: "ソarin", wait: 40, park: "TDS" },
   { name: "タワー・オブ・テラー", wait: 90, park: "TDS" },
+];
+
+export type ShowcaseSolunaScenario = {
+  question: string;
+  solReply: string;
+  lunaReply: string;
+  solModelLabel: string;
+  lunaModelLabel: string;
+  solTierLevel: 1 | 2 | 3;
+  lunaTierLevel: 1 | 2 | 3;
+  solStageIndex: number;
+  lunaStageIndex: number;
+  solSpeaking: boolean;
+  lunaSpeaking: boolean;
+  tags: string[];
+};
+
+/** デモ用 — 実際のルーティング結果のイメージ */
+export const SHOWCASE_SOLUNA_SCENARIOS: ShowcaseSolunaScenario[] = [
+  {
+    question: "今日の目標を一緒に整理したい",
+    solReply: "いいですね。いま一番大事な目標を1つだけ教えてください。小さな一歩から一緒に進めましょう。",
+    lunaReply: "目標を考えるとき、心が少し前向きになっているのを感じます。無理のないペースで大丈夫ですよ。",
+    solModelLabel: "Gemini · Gemini Flash",
+    lunaModelLabel: "Azure OpenAI · GPT-5 系 (council-gpt5)",
+    solTierLevel: 2,
+    lunaTierLevel: 2,
+    solStageIndex: 2,
+    lunaStageIndex: 2,
+    solSpeaking: true,
+    lunaSpeaking: true,
+    tags: ["目標・行動 → Gemini", "別プロバイダ強制", "記憶・性格は固定"],
+  },
+  {
+    question: "少し疲れているから話を聞いてほしい",
+    solReply: "お疲れさまです。今日は休息も大切な一歩です。ゆっくりできる時間を少し確保してみませんか。",
+    lunaReply: "疲れているんですね。よく頑張ってこられました。今の気持ちを、そのまま言葉にしてもらえますか。",
+    solModelLabel: "Azure OpenAI · GPT-5 系 (council-gpt5)",
+    lunaModelLabel: "Azure Claude · Claude Sonnet 5 (claude-sonnet-5)",
+    solTierLevel: 2,
+    lunaTierLevel: 2,
+    solStageIndex: 2,
+    lunaStageIndex: 3,
+    solSpeaking: true,
+    lunaSpeaking: true,
+    tags: ["感情・共感 → Claude", "ソル≠ルーナ プロバイダ", "自動モデル表示"],
+  },
+  {
+    question: "なぜこの選択が正しいのか、深く整理したい",
+    solReply: "本質は「何を守りたいか」だと思います。選択肢ごとのトレードオフを、優先順位から一緒に並べ替えましょう。",
+    lunaReply: "深く考えたい気持ち、大切に受け止めます。正しさだけでなく、あなたらしさも一緒に見ていきましょう。",
+    solModelLabel: "Azure Claude · Claude Opus 5 (claude-opus-5)",
+    lunaModelLabel: "Gemini · Gemini Flash",
+    solTierLevel: 3,
+    lunaTierLevel: 3,
+    solStageIndex: 4,
+    lunaStageIndex: 4,
+    solSpeaking: true,
+    lunaSpeaking: false,
+    tags: ["知能 Lv.3 · 親密度 81+", "深い整理 → Claude", "最新モデル優先"],
+  },
 ];
