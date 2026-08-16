@@ -45,6 +45,10 @@ export interface SolunaGrowthStage {
   max: number;
 }
 
+export type SolunaGrowthTier = "budding" | "growing" | "mature";
+
+export type SolunaProvider = "gemini" | "openai" | "claude";
+
 export interface SolunaCharacterState {
   character: SolunaCharacter;
   name: string;
@@ -54,7 +58,10 @@ export interface SolunaCharacterState {
   interactions: number;
   stage: SolunaGrowthStage;
   model: string;
-  provider: "gemini" | "openai";
+  provider: SolunaProvider;
+  growthTier?: SolunaGrowthTier;
+  tierLevel?: 1 | 2 | 3;
+  routeReason?: string;
   memories: SolunaMemory[];
 }
 
@@ -71,11 +78,33 @@ export interface SolunaChatReply {
   character: SolunaCharacter;
   content: string;
   model: string;
+  provider: SolunaProvider;
+  growthTier?: SolunaGrowthTier;
+  tierLevel?: 1 | 2 | 3;
+  routeReason?: string;
+}
+
+export interface SolunaRoutePlanSnapshot {
+  sol: {
+    provider: SolunaProvider;
+    model: string;
+    tier?: SolunaGrowthTier;
+    tierLevel?: 1 | 2 | 3;
+    reason: string;
+  };
+  luna: {
+    provider: SolunaProvider;
+    model: string;
+    tier?: SolunaGrowthTier;
+    tierLevel?: 1 | 2 | 3;
+    reason: string;
+  };
 }
 
 export interface SolunaChatResponse {
   sol: SolunaChatReply;
   luna: SolunaChatReply;
+  routePlan: SolunaRoutePlanSnapshot;
   solIntimacy: number;
   lunaIntimacy: number;
   solStage: SolunaGrowthStage;

@@ -1,3 +1,9 @@
+import { generateWithAnthropic, isAnthropicConfigured } from "@/lib/server/anthropic";
+import {
+  getAzureOpenAiClient,
+  getAzureOpenAiDeployment,
+  isAzureOpenAiConfigured,
+} from "@/lib/server/azure-openai";
 import {
   generateWithGemini,
   getGeminiModel,
@@ -5,10 +11,17 @@ import {
   stripJsonFence,
 } from "@/lib/server/gemini";
 import {
-  getAzureOpenAiClient,
-  getAzureOpenAiDeployment,
-  isAzureOpenAiConfigured,
-} from "@/lib/server/azure-openai";
+  formatSolunaProviderLabel,
+  getAvailableSolunaProviders,
+  getModelForProvider,
+  listFallbackProviders,
+  resolveGrowthTier,
+  routeSolunaModels,
+  type SolunaGrowthTier,
+  type SolunaProvider,
+  type SolunaRouteAssignment,
+  type SolunaRoutePlan,
+} from "@/lib/server/soluna-router";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
   clampIntimacy,
@@ -35,9 +48,9 @@ import type {
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY = 10;
-/** Gemini 思考モデル — maxOutputTokens は思考分も含むため可視テキスト分を上乗せ */
 const SOL_CHAT_MAX_OUTPUT_TOKENS = 2200;
-const LUNA_CHAT_MAX_COMPLETION_TOKENS = 350;
+const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 350;
+const CLAUDE_CHAT_MAX_TOKENS = 350;
 const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 2200;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
@@ -74,16 +87,24 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる`;
 
-function getSolModel(): string {
-  return process.env.SOLUNA_SOL_MODEL?.trim() || getGeminiModel();
-}
+type CharacterChatSuccess = {
+  content: string;
+  model: string;
+  provider: SolunaProvider;
+  reason: string;
+};
 
-function getLunaDeployment(): string {
-  return (
-    process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ||
-    process.env.AZURE_OPENAI_DEPLOYMENT?.trim() ||
-    getAzureOpenAiDeployment()
-  );
+type CharacterChatResult = CharacterChatSuccess | { error: string };
+
+function isProviderConfigured(provider: SolunaProvider): boolean {
+  switch (provider) {
+    case "gemini":
+      return isGeminiConfigured();
+    case "openai":
+      return isAzureOpenAiConfigured();
+    case "claude":
+      return isAnthropicConfigured();
+  }
 }
 
 function formatMemories(memories: SolunaMemory[]): string {
@@ -109,110 +130,169 @@ function buildTranscript(messages: SolunaMessage[]): string {
     .join("\n");
 }
 
-async function chatWithSol(
-  userId: string,
-  userMessage: string,
-  memories: SolunaMemory[],
-  history: SolunaMessage[],
+function enhancePersonaForTier(persona: string, tier: SolunaGrowthTier): string {
+  if (tier === "mature") {
+    return `${persona}
+
+## 成長（知能 Lv.3）
+長い付き合いで信頼が築けました。記憶を活かし、より深い洞察と的確な言葉選びで伴走してください。`;
+  }
+  if (tier === "growing") {
+    return `${persona}
+
+## 成長（知能 Lv.2）
+会話を重ね、理解が深まっています。記憶とのつながりを意識して返してください。`;
+  }
+  return persona;
+}
+
+function buildSystemPrompt(
+  character: SolunaCharacter,
+  persona: string,
   intimacy: number,
   stageLabel: string,
-): Promise<{ content: string; model: string } | { error: string }> {
-  if (!isGeminiConfigured()) {
-    return { error: "ソル用 Gemini が未設定です。" };
-  }
-
-  const system = `${SOL_PERSONA}
+  memories: SolunaMemory[],
+  tier: SolunaGrowthTier,
+): string {
+  return `${enhancePersonaForTier(persona, tier)}
 
 ## 育成状態
 親密度: ${intimacy}/100（${stageLabel}）
 
-## ソルが覚えていること
+## ${character === "sol" ? "ソル" : "ルーナ"}が覚えていること
 ${formatMemories(memories)}`;
+}
 
+function buildUserMessages(
+  history: SolunaMessage[],
+  userMessage: string,
+): Array<{ role: "user"; content: string }> {
   const transcript = buildTranscript(history);
-  const messages: Array<{ role: "user"; content: string }> = [
+  return [
     ...(transcript
       ? [{ role: "user" as const, content: `【これまでの会話】\n${transcript}` }]
       : []),
     { role: "user", content: userMessage },
   ];
-  const request = {
-    system,
-    messages,
-    temperature: 0.75,
-  };
-
-  let result = await generateWithGemini({
-    ...request,
-    maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
-  });
-
-  if (result.ok && result.finishReason === "MAX_TOKENS") {
-    result = await generateWithGemini({
-      ...request,
-      maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
-    });
-  }
-
-  if (!result.ok) return { error: result.reason };
-
-  await recordTokenUsage({
-    userId,
-    feature: "soluna-sol-chat",
-    model: result.model,
-    promptTokens: result.promptTokens,
-    completionTokens: result.completionTokens,
-  });
-
-  return { content: result.text.trim(), model: result.model };
 }
 
-async function chatWithLuna(
+async function callProvider(
   userId: string,
-  userMessage: string,
-  memories: SolunaMemory[],
-  history: SolunaMessage[],
-  intimacy: number,
-  stageLabel: string,
-): Promise<{ content: string; model: string } | { error: string }> {
-  if (!isAzureOpenAiConfigured()) {
-    return { error: "ルーナ用 Azure OpenAI が未設定です。" };
+  character: SolunaCharacter,
+  assignment: SolunaRouteAssignment,
+  system: string,
+  userMessages: Array<{ role: "user"; content: string }>,
+): Promise<CharacterChatResult> {
+  const feature = character === "sol" ? "soluna-sol-chat" : "soluna-luna-chat";
+  const { provider, model, tier } = assignment;
+
+  if (provider === "gemini") {
+    if (!isGeminiConfigured()) {
+      return { error: "Gemini が未設定です。" };
+    }
+
+    const request = {
+      system,
+      messages: userMessages,
+      temperature: character === "sol" ? 0.75 : 0.8,
+    };
+
+    let result = await generateWithGemini(
+      {
+        ...request,
+        maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
+      },
+      { models: [model] },
+    );
+
+    if (result.ok && result.finishReason === "MAX_TOKENS") {
+      result = await generateWithGemini(
+        {
+          ...request,
+          maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
+        },
+        { models: [model] },
+      );
+    }
+
+    if (!result.ok) return { error: result.reason };
+
+    await recordTokenUsage({
+      userId,
+      feature,
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+    });
+
+    return {
+      content: result.text.trim(),
+      model: result.model,
+      provider,
+      reason: "",
+    };
   }
 
-  const deployment = getLunaDeployment();
-  const client = getAzureOpenAiClient();
-  const system = `${LUNA_PERSONA}
+  if (provider === "claude") {
+    if (!isAnthropicConfigured()) {
+      return { error: "Claude が未設定です。" };
+    }
 
-## 育成状態
-親密度: ${intimacy}/100（${stageLabel}）
+    const transcriptParts = userMessages.map((message) => message.content);
+    const result = await generateWithAnthropic({
+      system,
+      messages: [{ role: "user", content: transcriptParts.join("\n\n") }],
+      maxTokens: tier === "mature" ? 420 : CLAUDE_CHAT_MAX_TOKENS,
+      temperature: character === "sol" ? 0.75 : 0.85,
+      model,
+    });
 
-## ルーナが覚えていること
-${formatMemories(memories)}`;
+    if (!result.ok) return { error: result.reason };
 
-  const transcript = buildTranscript(history);
-  const messages = [
-    { role: "system" as const, content: system },
-    ...(transcript
-      ? [{ role: "user" as const, content: `【これまでの会話】\n${transcript}` }]
-      : []),
-    { role: "user" as const, content: userMessage },
-  ];
+    await recordTokenUsage({
+      userId,
+      feature,
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+    });
+
+    return {
+      content: result.text.trim(),
+      model: result.model,
+      provider,
+      reason: "",
+    };
+  }
+
+  if (!isAzureOpenAiConfigured()) {
+    return { error: "Azure OpenAI が未設定です。" };
+  }
+
+  const deployment = model;
+  const client = getAzureOpenAiClient(deployment, "global");
 
   try {
     const completion = await client.chat.completions.create({
       model: deployment,
-      max_completion_tokens: LUNA_CHAT_MAX_COMPLETION_TOKENS,
-      temperature: 0.8,
-      messages,
+      max_completion_tokens: tier === "mature" ? 420 : OPENAI_CHAT_MAX_COMPLETION_TOKENS,
+      temperature: character === "sol" ? 0.75 : 0.8,
+      messages: [
+        { role: "system", content: system },
+        ...userMessages.map((message) => ({
+          role: "user" as const,
+          content: message.content,
+        })),
+      ],
     });
 
     const content = completion.choices[0]?.message?.content?.trim();
-    if (!content) return { error: "ルーナから応答がありませんでした。" };
+    if (!content) return { error: "Azure OpenAI から応答がありませんでした。" };
 
     if (completion.usage) {
       await recordTokenUsage({
         userId,
-        feature: "soluna-luna-chat",
+        feature,
         model: completion.model ?? deployment,
         promptTokens: completion.usage.prompt_tokens ?? 0,
         completionTokens: completion.usage.completion_tokens ?? 0,
@@ -220,15 +300,75 @@ ${formatMemories(memories)}`;
       });
     }
 
-    return { content, model: completion.model ?? deployment };
+    return {
+      content,
+      model: completion.model ?? deployment,
+      provider,
+      reason: "",
+    };
   } catch (error) {
     return {
       error:
         error instanceof Error
-          ? `ルーナ応答エラー: ${error.message}`
-          : "ルーナ応答エラー",
+          ? `Azure OpenAI 応答エラー: ${error.message}`
+          : "Azure OpenAI 応答エラー",
     };
   }
+}
+
+async function chatWithCharacter(
+  userId: string,
+  character: SolunaCharacter,
+  assignment: SolunaRouteAssignment,
+  userMessage: string,
+  memories: SolunaMemory[],
+  history: SolunaMessage[],
+  intimacy: number,
+  stageLabel: string,
+  blockedProvider?: SolunaProvider,
+): Promise<CharacterChatResult> {
+  const persona = character === "sol" ? SOL_PERSONA : LUNA_PERSONA;
+  const tier = assignment.tier ?? resolveGrowthTier(intimacy);
+  const system = buildSystemPrompt(character, persona, intimacy, stageLabel, memories, tier);
+  const userMessages = buildUserMessages(history, userMessage);
+
+  const tryOrder: SolunaRouteAssignment[] = [assignment];
+  for (const provider of listFallbackProviders(character, userMessage, assignment.provider)) {
+    if (provider === blockedProvider) continue;
+    tryOrder.push({
+      provider,
+      model: getModelForProvider(provider, tier),
+      tier,
+      tierLevel: assignment.tierLevel,
+      reason: "フォールバック",
+    });
+  }
+
+  let lastError = "応答を取得できませんでした。";
+
+  for (const candidate of tryOrder) {
+    if (!isProviderConfigured(candidate.provider)) continue;
+    if (candidate.provider === blockedProvider) continue;
+
+    const result = await callProvider(
+      userId,
+      character,
+      candidate,
+      system,
+      userMessages,
+    );
+
+    if (!("error" in result)) {
+      return {
+        ...result,
+        reason: candidate.reason || assignment.reason,
+      };
+    }
+
+    lastError = result.error;
+  }
+
+  return { error: lastError };
 }
 
 type ExtractedMemory = {
@@ -288,7 +428,11 @@ async function extractMemories(
       if (!raw || typeof raw.content !== "string" || !raw.content.trim()) continue;
       const character = raw.character === "luna" ? "luna" : "sol";
       const categorySet = character === "sol" ? SOL_CATEGORIES : LUNA_CATEGORIES;
-      const category = categorySet.has(raw.category) ? raw.category : character === "sol" ? "goal" : "emotion";
+      const category = categorySet.has(raw.category)
+        ? raw.category
+        : character === "sol"
+          ? "goal"
+          : "emotion";
       const key = `${character}:${raw.content.trim()}`;
       if (dedupe.has(key)) continue;
       dedupe.add(key);
@@ -315,6 +459,13 @@ export async function sendSolunaChat(
     return { ok: false, reason: `メッセージは ${MAX_MESSAGE_CHARS} 文字以内です。` };
   }
 
+  if (getAvailableSolunaProviders().length === 0) {
+    return {
+      ok: false,
+      reason: "AI プロバイダが未設定です。Gemini / Azure OpenAI / Claude のいずれかを設定してください。",
+    };
+  }
+
   const profile = await getOrCreateProfile(userId);
   const [solMemories, lunaMemories, history] = await Promise.all([
     listMemories(userId, "sol"),
@@ -324,10 +475,35 @@ export async function sendSolunaChat(
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
+  const routePlan: SolunaRoutePlan = routeSolunaModels(
+    trimmed,
+    profile.solIntimacy,
+    profile.lunaIntimacy,
+  );
 
   const [solResult, lunaResult] = await Promise.all([
-    chatWithSol(userId, trimmed, solMemories, history, profile.solIntimacy, solStage.label),
-    chatWithLuna(userId, trimmed, lunaMemories, history, profile.lunaIntimacy, lunaStage.label),
+    chatWithCharacter(
+      userId,
+      "sol",
+      routePlan.sol,
+      trimmed,
+      solMemories,
+      history,
+      profile.solIntimacy,
+      solStage.label,
+      routePlan.luna.provider,
+    ),
+    chatWithCharacter(
+      userId,
+      "luna",
+      routePlan.luna,
+      trimmed,
+      lunaMemories,
+      history,
+      profile.lunaIntimacy,
+      lunaStage.label,
+      routePlan.sol.provider,
+    ),
   ]);
 
   if ("error" in solResult && "error" in lunaResult) {
@@ -365,12 +541,36 @@ export async function sendSolunaChat(
       sol: {
         character: "sol",
         content: solContent,
-        model: "error" in solResult ? getSolModel() : solResult.model,
+        model: "error" in solResult ? routePlan.sol.model : solResult.model,
+        provider: "error" in solResult ? routePlan.sol.provider : solResult.provider,
+        growthTier: routePlan.sol.tier,
+        tierLevel: routePlan.sol.tierLevel,
+        routeReason: "error" in solResult ? routePlan.sol.reason : solResult.reason,
       },
       luna: {
         character: "luna",
         content: lunaContent,
-        model: "error" in lunaResult ? getLunaDeployment() : lunaResult.model,
+        model: "error" in lunaResult ? routePlan.luna.model : lunaResult.model,
+        provider: "error" in lunaResult ? routePlan.luna.provider : lunaResult.provider,
+        growthTier: routePlan.luna.tier,
+        tierLevel: routePlan.luna.tierLevel,
+        routeReason: "error" in lunaResult ? routePlan.luna.reason : lunaResult.reason,
+      },
+      routePlan: {
+        sol: {
+          provider: routePlan.sol.provider,
+          model: routePlan.sol.model,
+          tier: routePlan.sol.tier,
+          tierLevel: routePlan.sol.tierLevel,
+          reason: routePlan.sol.reason,
+        },
+        luna: {
+          provider: routePlan.luna.provider,
+          model: routePlan.luna.model,
+          tier: routePlan.luna.tier,
+          tierLevel: routePlan.luna.tierLevel,
+          reason: routePlan.luna.reason,
+        },
       },
       solIntimacy: nextProfile.solIntimacy,
       lunaIntimacy: nextProfile.lunaIntimacy,
@@ -383,12 +583,38 @@ export async function sendSolunaChat(
 }
 
 export function getSolunaProvidersStatus() {
+  const available = getAvailableSolunaProviders();
+  const sampleRoute = routeSolunaModels("今日の目標を整理したい", 85, 72);
+
   return {
-    sol: { provider: "gemini" as const, model: getSolModel(), configured: isGeminiConfigured() },
+    available,
+    autoRouting: available.length >= 2,
+    globalRegion: true,
+    sol: {
+      provider: sampleRoute.sol.provider,
+      model: sampleRoute.sol.model,
+      tier: sampleRoute.sol.tier,
+      tierLevel: sampleRoute.sol.tierLevel,
+      configured: isProviderConfigured(sampleRoute.sol.provider),
+      label: formatSolunaProviderLabel(sampleRoute.sol.provider),
+    },
     luna: {
-      provider: "openai" as const,
-      model: getLunaDeployment(),
+      provider: sampleRoute.luna.provider,
+      model: sampleRoute.luna.model,
+      tier: sampleRoute.luna.tier,
+      tierLevel: sampleRoute.luna.tierLevel,
+      configured: isProviderConfigured(sampleRoute.luna.provider),
+      label: formatSolunaProviderLabel(sampleRoute.luna.provider),
+    },
+    gemini: { configured: isGeminiConfigured(), model: getGeminiModel() },
+    openai: {
       configured: isAzureOpenAiConfigured(),
+      model: getModelForProvider("openai", "growing"),
+      deployment: getAzureOpenAiDeployment(),
+    },
+    claude: {
+      configured: isAnthropicConfigured(),
+      model: getModelForProvider("claude", "growing"),
     },
   };
 }

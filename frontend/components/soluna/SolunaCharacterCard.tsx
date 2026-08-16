@@ -4,7 +4,24 @@ import SolunaCharacterAvatar, {
   type SolunaAvatarMood,
 } from "@/components/soluna/SolunaCharacterAvatar";
 import { intimacyProgress } from "@/lib/soluna-utils";
-import type { SolunaCharacterState } from "@/lib/types/soluna";
+import type { SolunaCharacterState, SolunaProvider } from "@/lib/types/soluna";
+
+function providerLabel(provider: SolunaProvider): string {
+  switch (provider) {
+    case "gemini":
+      return "Gemini";
+    case "openai":
+      return "Azure OpenAI";
+    case "claude":
+      return "Claude";
+  }
+}
+
+function tierBadge(level?: 1 | 2 | 3): string {
+  if (level === 3) return "知能 Lv.3";
+  if (level === 2) return "知能 Lv.2";
+  return "知能 Lv.1";
+}
 
 const ACCENTS = {
   sol: {
@@ -42,7 +59,7 @@ export default function SolunaCharacterCard({ character, mood = "idle" }: Soluna
           />
           <div>
             <p className="text-[10px] tracking-[0.22em] text-slate-400 uppercase">
-              {character.provider === "gemini" ? "Gemini" : "Azure OpenAI"}
+              {providerLabel(character.provider)} · {character.model}
             </p>
             <h3 className="text-base font-semibold text-white">
               {character.nameJa}
@@ -52,7 +69,9 @@ export default function SolunaCharacterCard({ character, mood = "idle" }: Soluna
         </div>
         <div className="text-right">
           <p className={`text-xs font-medium ${accent.text}`}>{character.stage.label}</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">{character.intimacy}/100</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            {character.intimacy}/100 · {tierBadge(character.tierLevel)}
+          </p>
         </div>
       </div>
 
@@ -65,6 +84,7 @@ export default function SolunaCharacterCard({ character, mood = "idle" }: Soluna
         </div>
         <p className="mt-2 text-[10px] text-slate-500">
           記憶 {character.memories.length} 件 · 会話 {character.interactions} 回
+          {character.routeReason ? ` · ${character.routeReason}` : ""}
         </p>
       </div>
     </div>

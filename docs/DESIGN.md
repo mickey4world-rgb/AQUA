@@ -104,9 +104,11 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 
 | 項目 | 内容 |
 |---|---|
-| キャラ | **ソル（Sol / ☀）** — 目標・タスク・成功・趣味を記憶（Gemini） |
-| | **ルーナ（Luna / 🌙）** — 感情・悩み・体調・癒やしを記憶（Azure OpenAI、`SOLUNA_LUNA_DEPLOYMENT`） |
-| 育成 | 親密度 0–100、ステージ進行、会話・記憶の Cosmos 永続化 |
+| キャラ | **ソル（Sol / ☀）** — 目標・タスク・成功・趣味を記憶 |
+| | **ルーナ（Luna / 🌙）** — 感情・悩み・体調・癒やしを記憶 |
+| AI | **Gemini / Azure OpenAI / Claude** を質問内容で自動切替（ソルとルーナは必ず別モデル） |
+| 育成 | 親密度 0–100 → ステージ進行 + **知能 Lv.1〜3**（高親密度ほど最新・高性能モデル） |
+| リージョン | **海外リージョン可**（Soluna の Azure OpenAI は global エンドポイント） |
 | Apple Watch | `POST /api/soluna/shortcut/chat` + `X-Soluna-Token`（ログイン不要） |
 
 Cosmos: `SolunaRecords`（profile / memory / message）、`SolunaTokens`（ショートカット用）
@@ -263,7 +265,7 @@ sequenceDiagram
 | `SolunaTokens` | Apple Watch ショートカット用トークン | 同上 |
 
 環境変数例: SWA アプリ設定または `frontend/.env.local`（ローカル）。  
-主なキー: `COSMOS_*`, `GEMINI_*`, `AZURE_OPENAI_*`, `SOLUNA_LUNA_DEPLOYMENT`, `GEMINI_RELAY_*`。
+主なキー: `COSMOS_*`, `GEMINI_*`, `AZURE_OPENAI_*`, `ANTHROPIC_*`, `SOLUNA_*`, `GEMINI_RELAY_*`。
 
 ### リポジトリ同梱データ（サーバ読み取り）
 
@@ -285,8 +287,7 @@ sequenceDiagram
 |---|---|---|
 | WORKS 相談 / まとめ | Gemini | 無料枠。JSON で回答＋図解 spec。本番は中継必須 |
 | 訴訟記録ノート | Gemini **または** Azure OpenAI | UI で切替。Gemini はリトライ・モデルフォールバック・OpenAI 自動切替 |
-| **Soluna ソル** | Gemini | 2〜3 行の簡潔返答 |
-| **Soluna ルーナ** | Azure OpenAI | `SOLUNA_LUNA_DEPLOYMENT`（本番: `council-gpt5` 等） |
+| **Soluna** | Gemini / Azure OpenAI / Claude | 質問で自動ルーティング。親密度で知能 Lv.1〜3・モデル tier 切替。海外 Azure 可 |
 | 株アドバイス・Disney・Space 解説・Docs | Azure OpenAI | |
 | 合議（domestic） | Azure OpenAI Japan のみ | Gemini 不可 |
 | 合議（global） | Azure OpenAI + Gemini 探査派 | |
