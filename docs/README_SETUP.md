@@ -432,8 +432,43 @@ npm run build
 | `GEMINI_API_KEY` | Gemini 直叩き（日本ローカル） |
 | `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | Azure OpenAI |
 | `AZURE_OPENAI_DEPLOYMENT` | 既定デプロイ（例: `stock-advice`） |
+| `ANTHROPIC_API_KEY` | Claude（Soluna 自動ルーティング） |
+| `ANTHROPIC_MODEL` | Claude モデル（例: `claude-sonnet-4-20250514`） |
+| `SOLUNA_LUNA_DEPLOYMENT` | Soluna 用 Azure デプロイ（例: `council-gpt5`） |
+| `SOLUNA_OPENAI_DEPLOYMENT_ADVANCED` | 知能 Lv.3 用 Azure 最新デプロイ（任意） |
+| `SOLUNA_GEMINI_MODEL_ADVANCED` | 知能 Lv.3 用 Gemini（任意） |
+| `ANTHROPIC_MODEL_ADVANCED` | 知能 Lv.3 用 Claude（任意） |
 
-> 本番 SWA（East Asia）から Gemini を使う場合は `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` が必要です。
+> 本番 SWA（East Asia）から Gemini を使う場合は `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` が必要です。  
+> Soluna の Azure OpenAI は **global リージョン**（`AZURE_OPENAI_ENDPOINT_GLOBAL` 等）を利用します。
+
+#### Soluna 本番環境変数（Azure Portal → SWA → 構成）
+
+最低限:
+
+| 変数 | 例 |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic コンソールで発行 |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` |
+| `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` | Japan East 中継（既存） |
+| `SOLUNA_LUNA_DEPLOYMENT` | `council-gpt5` |
+
+任意（育成・最新モデル）:
+
+| 変数 | 用途 |
+|---|---|
+| `SOLUNA_OPENAI_DEPLOYMENT_ADVANCED` | 親密度 81+ の Azure 最新系 |
+| `SOLUNA_GEMINI_MODEL_ADVANCED` | 親密度 81+ の Gemini |
+| `ANTHROPIC_MODEL_ADVANCED` | 親密度 81+ の Claude |
+| `AZURE_OPENAI_ENDPOINT_GLOBAL` | 海外リージョン Azure エンドポイント |
+
+```powershell
+# Azure CLI で追加する例（API キーは実際の値に置換）
+az staticwebapp appsettings set `
+  --name swa-personal-apps-prod `
+  --resource-group <your-rg> `
+  --setting-names ANTHROPIC_API_KEY=<secret> ANTHROPIC_MODEL=claude-sonnet-4-20250514
+```
 
 ### 7. Cosmos DB コンテナの初回作成
 
@@ -517,4 +552,4 @@ npm run seed:users
 
 ---
 
-*最終更新: 2026-08-14*
+*最終更新: 2026-08-16*

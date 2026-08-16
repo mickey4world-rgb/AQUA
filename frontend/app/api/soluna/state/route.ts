@@ -8,6 +8,7 @@ import {
   rotateShortcutToken,
 } from "@/lib/server/soluna-store";
 import { getSolunaProvidersStatus } from "@/lib/server/soluna-chat";
+import { resolveGrowthTier } from "@/lib/server/soluna-router";
 import { resolveGrowthStage } from "@/lib/soluna-utils";
 import type { SolunaStateResponse } from "@/lib/types/soluna";
 
@@ -33,7 +34,10 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
       interactions: profile.solInteractions,
       stage: resolveGrowthStage("sol", profile.solIntimacy),
       model: providers.sol.model,
-      provider: "gemini",
+      provider: providers.sol.provider,
+      growthTier: resolveGrowthTier(profile.solIntimacy),
+      tierLevel: providers.sol.tierLevel,
+      routeReason: providers.autoRouting ? "質問と親密度で自動選択" : undefined,
       memories: solMemories,
     },
     luna: {
@@ -45,7 +49,10 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
       interactions: profile.lunaInteractions,
       stage: resolveGrowthStage("luna", profile.lunaIntimacy),
       model: providers.luna.model,
-      provider: "openai",
+      provider: providers.luna.provider,
+      growthTier: resolveGrowthTier(profile.lunaIntimacy),
+      tierLevel: providers.luna.tierLevel,
+      routeReason: providers.autoRouting ? "質問と親密度で自動選択" : undefined,
       memories: lunaMemories,
     },
     messages,

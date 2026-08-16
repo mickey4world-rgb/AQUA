@@ -140,6 +140,11 @@ export default function SolunaPanel() {
                 intimacy: payload.solIntimacy,
                 stage: payload.solStage,
                 interactions: prev.sol.interactions + 1,
+        model: payload.sol.model,
+        provider: payload.sol.provider,
+        growthTier: payload.sol.growthTier,
+        tierLevel: payload.sol.tierLevel,
+        routeReason: payload.sol.routeReason,
                 memories: [
                   ...payload.newMemories.filter((m) => m.character === "sol"),
                   ...prev.sol.memories,
@@ -150,6 +155,11 @@ export default function SolunaPanel() {
                 intimacy: payload.lunaIntimacy,
                 stage: payload.lunaStage,
                 interactions: prev.luna.interactions + 1,
+        model: payload.luna.model,
+        provider: payload.luna.provider,
+        growthTier: payload.luna.growthTier,
+        tierLevel: payload.luna.tierLevel,
+        routeReason: payload.luna.routeReason,
                 memories: [
                   ...payload.newMemories.filter((m) => m.character === "luna"),
                   ...prev.luna.memories,
@@ -176,7 +186,8 @@ export default function SolunaPanel() {
       stopListening();
       return;
     }
-    startListening(
+    setError(null);
+    void startListening(
       (text) => void sendMessage(text),
       (message) => setError(message),
     );
@@ -304,7 +315,7 @@ export default function SolunaPanel() {
             <p className="text-[10px] tracking-[0.28em] text-slate-400 uppercase">Soluna Chat</p>
             <h3 className="mt-1 text-lg font-semibold text-white">2人が同時に答えます</h3>
             <p className="mt-1 text-[11px] text-slate-500">
-              表示は直近のやりとりのみ（記憶はサーバーに保持）
+              直近のやりとりのみ表示 · モデル自動切替 · 育つほど知能 Lv.UP
             </p>
           </div>
 
@@ -340,6 +351,12 @@ export default function SolunaPanel() {
             </div>
           )}
         </div>
+
+        {listening && (
+          <p className="relative mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+            マイクに向かって話してください…
+          </p>
+        )}
 
         <div className="relative mt-4 flex flex-wrap gap-2">
           {STARTERS.map((starter) => (
