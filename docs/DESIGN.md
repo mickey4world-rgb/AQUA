@@ -97,8 +97,10 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 
 ### Showcase（`/sample` — 公開）
 
-認証不要。6 モジュール（サンキー、訴訟記録、AI 合議、保有株、ディズニー、小惑星 3D）のデモ UI。  
+認証不要。7 モジュール（サンキー、訴訟記録、AI 合議、保有株、ディズニー、小惑星 3D、**Soluna**）のデモ UI。  
 トップの **SHOWCASE** ボタンおよび `/login` から導線。
+
+Soluna のモデル自動判断の詳細: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)
 
 ### Soluna（`/soluna`）
 
