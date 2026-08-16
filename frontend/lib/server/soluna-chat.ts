@@ -58,10 +58,14 @@ import type {
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY = 10;
-const SOL_CHAT_MAX_OUTPUT_TOKENS = 2200;
+/** 短い返答向け — 思考モデルのトークン消費を抑える */
+const SOL_CHAT_MAX_OUTPUT_TOKENS = 900;
 const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 350;
 const CLAUDE_CHAT_MAX_TOKENS = 350;
-const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 2200;
+const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 900;
+/** SWA の API 制限（約 45 秒）内に収める */
+const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
+const MAX_PROVIDER_ATTEMPTS = 2;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
   "goal",
@@ -106,6 +110,23 @@ type CharacterChatSuccess = {
 };
 
 type CharacterChatResult = CharacterChatSuccess | { error: string };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label}がタイムアウトしました`));
+    }, timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
 
 function isProviderConfigured(provider: SolunaProvider): boolean {
   switch (provider) {
@@ -213,7 +234,7 @@ async function callProvider(
         ...request,
         maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
       },
-      { models: [model] },
+      { models: [model], timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS, maxAttempts: 1 },
     );
 
     if (result.ok && result.finishReason === "MAX_TOKENS") {
@@ -222,7 +243,7 @@ async function callProvider(
           ...request,
           maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
         },
-        { models: [model] },
+        { models: [model], timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS, maxAttempts: 1 },
       );
     }
 
@@ -258,6 +279,7 @@ async function callProvider(
       temperature: character === "sol" ? 0.75 : 0.85,
       model: assignment.model,
       tier: assignment.tier,
+      timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS,
     });
 
     if (!result.ok) return { error: result.reason };
@@ -287,18 +309,22 @@ async function callProvider(
   const client = getAzureOpenAiClient(deployment, "global");
 
   try {
-    const completion = await client.chat.completions.create({
-      model: deployment,
-      max_completion_tokens: tier === "mature" ? 420 : OPENAI_CHAT_MAX_COMPLETION_TOKENS,
-      temperature: character === "sol" ? 0.75 : 0.8,
-      messages: [
-        { role: "system", content: system },
-        ...userMessages.map((message) => ({
-          role: "user" as const,
-          content: message.content,
-        })),
-      ],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: deployment,
+        max_completion_tokens: tier === "mature" ? 420 : OPENAI_CHAT_MAX_COMPLETION_TOKENS,
+        temperature: character === "sol" ? 0.75 : 0.8,
+        messages: [
+          { role: "system", content: system },
+          ...userMessages.map((message) => ({
+            role: "user" as const,
+            content: message.content,
+          })),
+        ],
+      }),
+      SOLUNA_PROVIDER_TIMEOUT_MS,
+      "Azure OpenAI",
+    );
 
     const content = completion.choices[0]?.message?.content?.trim();
     if (!content) return { error: "Azure OpenAI から応答がありませんでした。" };
@@ -325,7 +351,9 @@ async function callProvider(
     return {
       error:
         error instanceof Error
-          ? `Azure OpenAI 応答エラー: ${error.message}`
+          ? error.message.includes("タイムアウト")
+            ? error.message
+            : `Azure OpenAI 応答エラー: ${error.message}`
           : "Azure OpenAI 応答エラー",
     };
   }
@@ -386,12 +414,14 @@ async function chatWithCharacter(
     );
   }
 
+  const candidates = tryOrder
+    .filter((candidate) => isProviderConfigured(candidate.provider))
+    .filter((candidate) => candidate.provider !== blockedProvider)
+    .slice(0, MAX_PROVIDER_ATTEMPTS);
+
   let lastError = "応答を取得できませんでした。";
 
-  for (const candidate of tryOrder) {
-    if (!isProviderConfigured(candidate.provider)) continue;
-    if (candidate.provider === blockedProvider) continue;
-
+  for (const candidate of candidates) {
     const result = await callProvider(
       userId,
       character,
@@ -434,8 +464,9 @@ async function extractMemories(
 ): Promise<SolunaMemory[]> {
   if (!isGeminiConfigured()) return [];
 
-  const result = await generateWithGemini({
-    system: `ユーザーの発言から、ソル（目標/タスク/成功/趣味）とルーナ（感情/悩み/体調/癒やし）が覚えるべき事実だけを抽出してください。
+  const result = await generateWithGemini(
+    {
+      system: `ユーザーの発言から、ソル（目標/タスク/成功/趣味）とルーナ（感情/悩み/体調/癒やし）が覚えるべき事実だけを抽出してください。
 既存記憶と重複するものは除外。JSON のみ返す。
 
 {
@@ -444,16 +475,21 @@ async function extractMemories(
     { "character": "luna", "category": "emotion", "content": "30文字以内" }
   ]
 }`,
-    messages: [
-      {
-        role: "user",
-        content: `既存:\n${formatMemories(existing)}\n\n発言:\n${userMessage}`,
-      },
-    ],
-    maxOutputTokens: MEMORY_EXTRACT_MAX_OUTPUT_TOKENS,
-    temperature: 0.2,
-    responseMimeType: "application/json",
-  });
+      messages: [
+        {
+          role: "user",
+          content: `既存:\n${formatMemories(existing)}\n\n発言:\n${userMessage}`,
+        },
+      ],
+      maxOutputTokens: MEMORY_EXTRACT_MAX_OUTPUT_TOKENS,
+      temperature: 0.2,
+      responseMimeType: "application/json",
+    },
+    {
+      timeoutMs: 12_000,
+      maxAttempts: 1,
+    },
+  );
 
   if (!result.ok) return [];
 
@@ -493,6 +529,24 @@ async function extractMemories(
   } catch {
     return [];
   }
+}
+
+/** 記憶抽出は応答を遅らせないようバックグラウンド実行 */
+function scheduleMemoryExtraction(
+  userId: string,
+  userMessage: string,
+  existing: SolunaMemory[],
+): void {
+  void (async () => {
+    try {
+      const newMemories = await extractMemories(userId, userMessage, existing);
+      if (newMemories.length > 0) {
+        await upsertMemories(userId, newMemories);
+      }
+    } catch (error) {
+      console.error("[soluna] memory extract failed", error);
+    }
+  })();
 }
 
 export type SolunaChatResult =
@@ -581,8 +635,8 @@ export async function sendSolunaChat(
     lunaInteractions: profile.lunaInteractions + 1,
   });
 
-  const newMemories = await extractMemories(userId, trimmed, [...solMemories, ...lunaMemories]);
-  await upsertMemories(userId, newMemories);
+  const newMemories: SolunaMemory[] = [];
+  scheduleMemoryExtraction(userId, trimmed, [...solMemories, ...lunaMemories]);
 
   const batch = [
     createMessage(userId, "user", trimmed),
