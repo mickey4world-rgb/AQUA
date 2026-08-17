@@ -10,23 +10,44 @@ jobs:
   run_system_briefing:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Soluna system briefing
+      - name: Fetch news briefing
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BODY='{"force": true}'
+            BODY='{"force": true, "step": "news"}'
           else
-            BODY='{}'
+            BODY='{"step": "news"}'
           fi
-          HTTP_CODE=$(curl -sS -o /tmp/soluna-briefing.json -w "%{http_code}" \
+          HTTP_CODE=$(curl -sS -o /tmp/soluna-news.json -w "%{http_code}" \
             -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
             -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
             -H "Content-Type: application/json" \
             -d "${BODY}")
-          cat /tmp/soluna-briefing.json
+          cat /tmp/soluna-news.json
+          echo ""
+          echo "HTTP ${HTTP_CODE}"
+          test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
+
+      - name: Run system chat
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BODY='{"force": true, "step": "chat"}'
+          else
+            BODY='{"step": "chat"}'
+          fi
+          HTTP_CODE=$(curl -sS -o /tmp/soluna-chat.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "${BODY}")
+          cat /tmp/soluna-chat.json
           echo ""
           echo "HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300

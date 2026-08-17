@@ -34,7 +34,7 @@ import {
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import type { SolunaNewsBriefing, SolunaSystemMessage, SolunaSystemStateResponse } from "@/lib/types/soluna";
 
-const SYSTEM_TIMEOUT_MS = 25_000;
+const SYSTEM_TIMEOUT_MS = 18_000;
 const SYSTEM_USER_ID = "__system__";
 
 const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオンです。
@@ -203,6 +203,7 @@ export type RunSystemChatResult =
 export async function runDailySystemChat(options?: {
   force?: boolean;
   briefing?: SolunaNewsBriefing;
+  skipFollowUp?: boolean;
 }): Promise<RunSystemChatResult> {
   const models = resolveSystemModels();
   if (!models) {
@@ -286,34 +287,38 @@ ${formatSystemTranscript([...prior, ...created])}
   });
   created.push(lunaMessage);
 
-  const solFollowPrompt = `${briefingBlock}
+  if (!options?.skipFollowUp) {
+    const solFollowPrompt = `${briefingBlock}
 
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
 ルーナの返答を受けて、予測と提案を短くまとめてください。`;
 
-  const solFollow = await callClaudeSystem(
-    buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
-    solFollowPrompt,
-    models.solModel,
-  );
-  if (solFollow.ok) {
-    created.push(
-      createSystemMessage("sol", solFollow.text, {
-        provider: SOL_SYSTEM_PROVIDER,
-        model: solFollow.model,
-        modelLabel: `Azure Claude · ${solFollow.model}`,
-        briefingId: briefing.id,
-      }),
+    const solFollow = await callClaudeSystem(
+      buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
+      solFollowPrompt,
+      models.solModel,
     );
+    if (solFollow.ok) {
+      created.push(
+        createSystemMessage("sol", solFollow.text, {
+          provider: SOL_SYSTEM_PROVIDER,
+          model: solFollow.model,
+          modelLabel: `Azure Claude · ${solFollow.model}`,
+          briefingId: briefing.id,
+        }),
+      );
+    }
   }
 
   await appendSystemMessages(created);
 
   const updatedPersonality = applyPostChatPersonalityUpdates(personality, created);
   await saveSystemPersonality(updatedPersonality);
-  await extractAndSaveEpisodes(created, briefing.id);
+  if (!options?.skipFollowUp) {
+    await extractAndSaveEpisodes(created, briefing.id);
+  }
   await markSystemRunAt(new Date().toISOString());
 
   return { ok: true, messages: created, briefing };

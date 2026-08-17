@@ -22,11 +22,54 @@ export async function POST(request: Request) {
   }
 
   let force = false;
+  let step: "news" | "chat" | "full" = "full";
   try {
-    const body = (await request.json()) as { force?: boolean };
+    const body = (await request.json()) as { force?: boolean; step?: string };
     force = body.force === true;
+    if (body.step === "news" || body.step === "chat" || body.step === "full") {
+      step = body.step;
+    }
   } catch {
     /* empty body ok */
+  }
+
+  if (step === "news") {
+    const personality = await import("@/lib/server/soluna-system-personality").then((m) =>
+      m.getOrInitSystemPersonality({ rotateInterests: force }),
+    );
+    const { fetchGlobalNewsBriefing } = await import("@/lib/server/soluna-news");
+    const news = await fetchGlobalNewsBriefing({
+      force,
+      interestKeywords: [...personality.sol.interests, ...personality.luna.interests],
+    });
+    if (!news.ok) {
+      const status = news.reason.includes("すでに") ? 200 : 422;
+      return Response.json({ ok: false, step: "news", error: news.reason }, { status });
+    }
+    return Response.json({
+      ok: true,
+      step: "news",
+      briefingId: news.briefing.id,
+      summary: news.briefing.summary,
+    });
+  }
+
+  if (step === "chat") {
+    const { runDailySystemChat } = await import("@/lib/server/soluna-system-chat");
+    const chat = await runDailySystemChat({ force, skipFollowUp: true });
+    if (!chat.ok) {
+      const status = chat.skipped ? 200 : 422;
+      return Response.json(
+        { ok: false, step: "chat", skipped: chat.skipped ?? false, error: chat.reason },
+        { status },
+      );
+    }
+    return Response.json({
+      ok: true,
+      step: "chat",
+      briefingId: chat.briefing.id,
+      messageCount: chat.messages.length,
+    });
   }
 
   const result = await runFullSystemBriefingPipeline({ force });
