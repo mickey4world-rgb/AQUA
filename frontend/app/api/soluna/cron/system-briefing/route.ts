@@ -1,5 +1,9 @@
 import { runFullSystemBriefingPipeline } from "@/lib/server/soluna-system-chat";
-import { isSolunaSystemStorageConfigured } from "@/lib/server/soluna-system-store";
+import {
+  isSolunaSystemStorageConfigured,
+  saveBriefing,
+} from "@/lib/server/soluna-system-store";
+import type { SolunaNewsBriefing } from "@/lib/types/soluna";
 
 export const maxDuration = 120;
 
@@ -22,15 +26,45 @@ export async function POST(request: Request) {
   }
 
   let force = false;
-  let step: "news" | "chat" | "full" = "full";
+  let step: "news" | "chat" | "full" | "ingest" = "full";
+  let ingestBriefing: SolunaNewsBriefing | null = null;
   try {
-    const body = (await request.json()) as { force?: boolean; step?: string };
+    const body = (await request.json()) as {
+      force?: boolean;
+      step?: string;
+      briefing?: SolunaNewsBriefing;
+    };
     force = body.force === true;
-    if (body.step === "news" || body.step === "chat" || body.step === "full") {
+    if (
+      body.step === "news" ||
+      body.step === "chat" ||
+      body.step === "full" ||
+      body.step === "ingest"
+    ) {
       step = body.step;
+    }
+    if (body.step === "ingest" && body.briefing) {
+      ingestBriefing = body.briefing;
     }
   } catch {
     /* empty body ok */
+  }
+
+  if (step === "ingest") {
+    if (
+      !ingestBriefing?.id ||
+      !Array.isArray(ingestBriefing.items) ||
+      ingestBriefing.items.length === 0
+    ) {
+      return Response.json({ ok: false, step: "ingest", error: "Invalid briefing payload." }, { status: 400 });
+    }
+    await saveBriefing(ingestBriefing);
+    return Response.json({
+      ok: true,
+      step: "ingest",
+      briefingId: ingestBriefing.id,
+      summary: ingestBriefing.summary,
+    });
   }
 
   if (step === "news") {
