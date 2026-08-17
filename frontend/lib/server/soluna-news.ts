@@ -16,7 +16,7 @@ const NEWS_TIMEOUT_MS = 25_000;
 /** Google Search grounding が使えるモデルを優先（gemini-flash-latest エイリアスは非対応のことがある） */
 function getGroundingModelCandidates(): string[] {
   const env = process.env.SOLUNA_NEWS_GEMINI_MODEL?.trim();
-  const defaults = ["gemini-2.0-flash", "gemini-2.5-flash"];
+  const defaults = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
   return env ? [...new Set([env, ...defaults])] : defaults;
 }
 
