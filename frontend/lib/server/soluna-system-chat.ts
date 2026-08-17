@@ -145,7 +145,6 @@ async function callOpenAiSystem(
     const completion = await client.chat.completions.create({
       model: deployment,
       max_completion_tokens: 480,
-      temperature: 0.8,
       messages: [
         { role: "system", content: system },
         { role: "user", content: userPrompt },
