@@ -65,6 +65,14 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/soluna/cron/*",
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/soluna/shortcut/*",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/*",
       "allowedRoles": ["anonymous", "authenticated"]
     }
