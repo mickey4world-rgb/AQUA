@@ -72,7 +72,7 @@ function normalizeItems(raw, keywords) {
 }
 
 async function fetchGroundedNews() {
-  const { system, userPrompt } = buildNewsPrompts();
+  const { system, userPrompt } = buildNewsPrompts(true);
 
   const body = {
     systemInstruction: { parts: [{ text: system }] },
@@ -85,7 +85,7 @@ async function fetchGroundedNews() {
 }
 
 async function fetchNewsWithoutGrounding() {
-  const { system, userPrompt } = buildNewsPrompts();
+  const { system, userPrompt } = buildNewsPrompts(false);
 
   const body = {
     systemInstruction: { parts: [{ text: system }] },
@@ -117,9 +117,12 @@ async function fetchNewsWithoutGrounding() {
   throw new Error(lastReason);
 }
 
-function buildNewsPrompts() {
-  const system = `あなたはニュースキュレーターです。Google 検索で最新情報を調べ、指定キーワードごとに重要なニュースを選びます。
-事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`;
+function buildNewsPrompts(grounded) {
+  const system = grounded
+    ? `あなたはニュースキュレーターです。Google 検索で最新情報を調べ、指定キーワードごとに重要なニュースを選びます。
+事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`
+    : `あなたはニュースキュレーターです。指定キーワードについて、一般に知られている最新の公開情報を要約します。
+不確かな情報は含めず、推測は summary に含めない。JSON のみ返してください。`;
   const userPrompt = `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${KEYWORDS.join("、")}
 
 JSON 形式:
