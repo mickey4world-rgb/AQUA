@@ -22,7 +22,8 @@ function isRetryableRelayError(message) {
     msg.includes("unavailable") ||
     msg.includes("try again") ||
     msg.includes("resource exhausted") ||
-    msg.includes("timed out")
+    msg.includes("timed out") ||
+    msg.includes("結果が空")
   );
 }
 
@@ -91,8 +92,7 @@ async function fetchNewsWithoutGrounding() {
     contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     generationConfig: {
       temperature: 0.35,
-      maxOutputTokens: 1500,
-      responseMimeType: "application/json",
+      maxOutputTokens: 4096,
     },
   };
 
@@ -157,9 +157,12 @@ async function callRelay(modelName, body) {
       throw new Error(payload?.error?.message ?? `Gemini relay HTTP ${response.status}`);
     }
 
-    const text =
-      payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-    if (!text.trim()) throw new Error("ニュース検索の結果が空でした。");
+    const candidate = payload.candidates?.[0];
+    const text = candidate?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+    if (!text.trim()) {
+      const finishReason = candidate?.finishReason ?? "unknown";
+      throw new Error(`ニュース検索の結果が空でした（${finishReason}）。`);
+    }
     return text.trim();
   } finally {
     clearTimeout(timeout);
