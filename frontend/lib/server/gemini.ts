@@ -6,7 +6,7 @@
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 /** 思考モデル。maxOutputTokens には思考分（1000〜1500程度）を上乗せして渡すこと。 */
 const DEFAULT_MODEL = "gemini-flash-latest";
-const DEFAULT_FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash"];
+const DEFAULT_FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-flash-latest"];
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_GEMINI_ATTEMPTS = 3;
 
