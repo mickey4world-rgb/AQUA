@@ -1,7 +1,7 @@
 const { app } = require("@azure/functions");
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const UPSTREAM_TIMEOUT_MS = 50_000;
+const UPSTREAM_TIMEOUT_MS = 120_000;
 
 app.http("gemini", {
   route: "gemini",

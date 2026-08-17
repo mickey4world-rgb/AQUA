@@ -3,7 +3,8 @@
  * SWA の 45 秒制限を避け、Gemini Grounding を中継 Functions 経由で実行する。
  */
 const KEYWORDS = ["AI 最新動向", "世界経済"];
-const GROUNDING_TIMEOUT_MS = 120_000;
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-flash-latest";
+const RELAY_TIMEOUT_MS = 110_000;
 
 const relayUrl = process.env.GEMINI_RELAY_URL?.trim();
 const relayKey = process.env.GEMINI_RELAY_KEY?.trim();
@@ -70,12 +71,12 @@ async function fetchNewsWithoutGrounding() {
     contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     generationConfig: {
       temperature: 0.35,
-      maxOutputTokens: 3000,
+      maxOutputTokens: 1500,
       responseMimeType: "application/json",
     },
   };
 
-  return callRelay(model, body);
+  return callRelay(FALLBACK_MODEL, body);
 }
 
 function buildNewsPrompts() {
@@ -100,7 +101,7 @@ JSON 形式:
 
 async function callRelay(modelName, body) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GROUNDING_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
 
   try {
     const response = await fetch(relayUrl, {
