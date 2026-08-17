@@ -1,6 +1,5 @@
 import {
   generateWithGemini,
-  getGeminiModel,
   isGeminiConfigured,
   stripJsonFence,
 } from "@/lib/server/gemini";
@@ -14,21 +13,24 @@ import type { SolunaNewsBriefing, SolunaNewsItem } from "@/lib/types/soluna";
 
 const NEWS_TIMEOUT_MS = 40_000;
 
+/** Google Search grounding が使えるモデルを優先（gemini-flash-latest エイリアスは非対応のことがある） */
+function getGroundingModelCandidates(): string[] {
+  const env = process.env.SOLUNA_NEWS_GEMINI_MODEL?.trim();
+  const defaults = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-flash-latest"];
+  return env ? [...new Set([env, ...defaults])] : defaults;
+}
+
 function getRelay(): { url: string; key: string } | null {
   const url = process.env.GEMINI_RELAY_URL?.trim();
   const key = process.env.GEMINI_RELAY_KEY?.trim();
   return url && key ? { url, key } : null;
 }
 
-async function generateWithGrounding(
+async function generateWithGroundingOnce(
+  model: string,
   system: string,
   userPrompt: string,
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  if (!isGeminiConfigured()) {
-    return { ok: false, reason: "Gemini が未設定です。" };
-  }
-
-  const model = getGeminiModel();
   const relay = getRelay();
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -98,6 +100,25 @@ async function generateWithGrounding(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function generateWithGrounding(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  if (!isGeminiConfigured()) {
+    return { ok: false, reason: "Gemini が未設定です。" };
+  }
+
+  let lastReason = "ニュース検索に失敗しました。";
+  for (const model of getGroundingModelCandidates()) {
+    const result = await generateWithGroundingOnce(model, system, userPrompt);
+    if (result.ok) return result;
+    lastReason = result.reason;
+    console.warn(`[soluna-news] grounding failed for ${model}:`, result.reason);
+  }
+
+  return { ok: false, reason: lastReason };
 }
 
 async function generateNewsWithoutGrounding(
