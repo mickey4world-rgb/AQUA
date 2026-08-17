@@ -156,34 +156,6 @@ function normalizeItems(raw: unknown, keywords: readonly string[]): SolunaNewsIt
   return result;
 }
 
-async function generateNewsWithoutGrounding(
-  system: string,
-  userPrompt: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const result = await generateWithGemini(
-    {
-      system,
-      messages: [{ role: "user", content: userPrompt }],
-      maxOutputTokens: 3000,
-      temperature: 0.35,
-      responseMimeType: "application/json",
-    },
-    { timeoutMs: NEWS_TIMEOUT_MS, maxAttempts: 2 },
-  );
-  if (!result.ok) return result;
-  return { ok: true, text: result.text, model: result.model };
-}
-
-async function fetchNewsContent(
-  system: string,
-  userPrompt: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const grounded = await generateWithGrounding(system, userPrompt);
-  if (grounded.ok) return grounded;
-  console.warn("[soluna-news] grounding failed, fallback:", grounded.reason);
-  return generateNewsWithoutGrounding(system, userPrompt);
-}
-
 export function formatBriefingForPrompt(briefing: SolunaNewsBriefing): string {
   const lines = briefing.items.map(
     (item, index) =>
