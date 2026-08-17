@@ -50,6 +50,35 @@ function normalizeItems(raw, keywords) {
 }
 
 async function fetchGroundedNews() {
+  const { system, userPrompt } = buildNewsPrompts();
+
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { temperature: 0.25, maxOutputTokens: 4096 },
+  };
+
+  return callRelay(model, body);
+}
+
+async function fetchNewsWithoutGrounding() {
+  const { system, userPrompt } = buildNewsPrompts();
+
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    generationConfig: {
+      temperature: 0.35,
+      maxOutputTokens: 3000,
+      responseMimeType: "application/json",
+    },
+  };
+
+  return callRelay(model, body);
+}
+
+function buildNewsPrompts() {
   const system = `あなたはニュースキュレーターです。Google 検索で最新情報を調べ、指定キーワードごとに重要なニュースを選びます。
 事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`;
   const userPrompt = `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${KEYWORDS.join("、")}
@@ -66,14 +95,10 @@ JSON 形式:
     }
   ]
 }`;
+  return { system, userPrompt };
+}
 
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    tools: [{ google_search: {} }],
-    generationConfig: { temperature: 0.25, maxOutputTokens: 4096 },
-  };
-
+async function callRelay(modelName, body) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GROUNDING_TIMEOUT_MS);
 
@@ -85,7 +110,7 @@ JSON 形式:
         "x-functions-key": relayKey,
       },
       signal: controller.signal,
-      body: JSON.stringify({ model, body }),
+      body: JSON.stringify({ model: modelName, body }),
     });
 
     const payload = await response.json();
@@ -118,7 +143,14 @@ async function ingestBriefing(briefing) {
   if (!response.ok) process.exit(1);
 }
 
-const rawText = await fetchGroundedNews();
+let rawText;
+try {
+  rawText = await fetchGroundedNews();
+} catch (error) {
+  const reason = error instanceof Error ? error.message : String(error);
+  console.warn("[fetch-soluna-news] grounding failed, fallback:", reason);
+  rawText = await fetchNewsWithoutGrounding();
+}
 const parsed = JSON.parse(stripJsonFence(rawText));
 const items = normalizeItems(parsed, KEYWORDS);
 if (items.length === 0) {
