@@ -141,15 +141,34 @@ async function callOpenAiSystem(
   deployment: string,
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
   const client = getAzureOpenAiClient(deployment, "global");
+  const reasoning = /gpt-5|gpt5|o1|o3|o4|reason/i.test(deployment);
+  const messages = reasoning
+    ? [{ role: "user" as const, content: `${system}\n\n${userPrompt}` }]
+    : [
+        { role: "system" as const, content: system },
+        { role: "user" as const, content: userPrompt },
+      ];
+
   try {
-    const completion = await client.chat.completions.create({
+    const requestBody = {
       model: deployment,
-      max_completion_tokens: 480,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userPrompt },
-      ],
-    });
+      max_completion_tokens: reasoning ? 2400 : 480,
+      messages,
+      ...(reasoning ? { reasoning_effort: "low" as const } : {}),
+    };
+
+    let completion;
+    try {
+      completion = await client.chat.completions.create(requestBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (reasoning && /reasoning_effort|unknown|unsupported|invalid/i.test(message)) {
+        const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
+        completion = await client.chat.completions.create(fallbackBody);
+      } else {
+        throw error;
+      }
+    }
 
     const text = completion.choices[0]?.message?.content?.trim() ?? "";
     if (!text) return { ok: false, reason: "OpenAI から空の応答が返りました。" };
