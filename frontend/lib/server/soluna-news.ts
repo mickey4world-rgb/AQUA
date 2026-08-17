@@ -1,4 +1,9 @@
-import { getGeminiModel, isGeminiConfigured, stripJsonFence } from "@/lib/server/gemini";
+import {
+  generateWithGemini,
+  getGeminiModel,
+  isGeminiConfigured,
+  stripJsonFence,
+} from "@/lib/server/gemini";
 import { SOLUNA_SYSTEM_KEYWORDS } from "@/lib/server/soluna-system-config";
 import {
   briefingDocIdForDate,
@@ -34,7 +39,6 @@ async function generateWithGrounding(
     generationConfig: {
       temperature: 0.25,
       maxOutputTokens: 4096,
-      responseMimeType: "application/json",
     },
   };
 
@@ -96,6 +100,34 @@ async function generateWithGrounding(
   }
 }
 
+async function generateNewsWithoutGrounding(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const result = await generateWithGemini(
+    {
+      system,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 3000,
+      temperature: 0.35,
+      responseMimeType: "application/json",
+    },
+    { timeoutMs: NEWS_TIMEOUT_MS, maxAttempts: 2 },
+  );
+  if (!result.ok) return result;
+  return { ok: true, text: result.text, model: result.model };
+}
+
+async function fetchNewsContent(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const grounded = await generateWithGrounding(system, userPrompt);
+  if (grounded.ok) return grounded;
+  console.warn("[soluna-news] grounding failed, fallback:", grounded.reason);
+  return generateNewsWithoutGrounding(system, userPrompt);
+}
+
 function normalizeItems(raw: unknown, keywords: readonly string[]): SolunaNewsItem[] {
   if (!raw || typeof raw !== "object") return [];
   const items = (raw as { items?: unknown }).items;
@@ -122,6 +154,34 @@ function normalizeItems(raw: unknown, keywords: readonly string[]): SolunaNewsIt
   }
 
   return result;
+}
+
+async function generateNewsWithoutGrounding(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const result = await generateWithGemini(
+    {
+      system,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 3000,
+      temperature: 0.35,
+      responseMimeType: "application/json",
+    },
+    { timeoutMs: NEWS_TIMEOUT_MS, maxAttempts: 2 },
+  );
+  if (!result.ok) return result;
+  return { ok: true, text: result.text, model: result.model };
+}
+
+async function fetchNewsContent(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const grounded = await generateWithGrounding(system, userPrompt);
+  if (grounded.ok) return grounded;
+  console.warn("[soluna-news] grounding failed, fallback:", grounded.reason);
+  return generateNewsWithoutGrounding(system, userPrompt);
 }
 
 export function formatBriefingForPrompt(briefing: SolunaNewsBriefing): string {
@@ -151,7 +211,7 @@ export async function fetchGlobalNewsBriefing(options?: {
     ...(options?.interestKeywords ?? []).slice(0, 4),
   ];
   const uniqueKeywords = [...new Set(keywords)];
-  const result = await generateWithGrounding(
+  const result = await fetchNewsContent(
     `あなたはニュースキュレーターです。Google 検索で最新情報を調べ、指定キーワードごとに重要なニュースを選びます。
 事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`,
     `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${uniqueKeywords.join("、")}
