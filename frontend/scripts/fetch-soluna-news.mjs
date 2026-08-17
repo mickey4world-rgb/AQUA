@@ -4,7 +4,27 @@
  */
 const KEYWORDS = ["AI 最新動向", "世界経済"];
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-flash-latest";
+const FALLBACK_MODELS = [
+  FALLBACK_MODEL,
+  process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash",
+].filter((value, index, array) => array.indexOf(value) === index);
 const RELAY_TIMEOUT_MS = 110_000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableRelayError(message) {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("high demand") ||
+    msg.includes("overloaded") ||
+    msg.includes("unavailable") ||
+    msg.includes("try again") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("timed out")
+  );
+}
 
 const relayUrl = process.env.GEMINI_RELAY_URL?.trim();
 const relayKey = process.env.GEMINI_RELAY_KEY?.trim();
@@ -76,7 +96,25 @@ async function fetchNewsWithoutGrounding() {
     },
   };
 
-  return callRelay(FALLBACK_MODEL, body);
+  let lastReason = "ニュース取得に失敗しました。";
+  for (const modelName of FALLBACK_MODELS) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await callRelay(modelName, body);
+      } catch (error) {
+        lastReason = error instanceof Error ? error.message : String(error);
+        if (isRetryableRelayError(lastReason) && attempt < 2) {
+          console.warn(`[fetch-soluna-news] retry ${modelName} attempt ${attempt + 1}:`, lastReason);
+          await sleep(2000 * (attempt + 1));
+          continue;
+        }
+        console.warn(`[fetch-soluna-news] fallback model ${modelName} failed:`, lastReason);
+        break;
+      }
+    }
+  }
+
+  throw new Error(lastReason);
 }
 
 function buildNewsPrompts() {
