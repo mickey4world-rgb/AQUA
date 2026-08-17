@@ -19,16 +19,86 @@ export interface SolunaMemory {
   createdAt: string;
 }
 
+export type SolunaMessageRole = "user" | "sol" | "luna";
+
 export interface SolunaMessage {
   id: string;
   userId: string;
-  role: "user" | "sol" | "luna";
+  role: SolunaMessageRole;
   content: string;
   createdAt: string;
   provider?: SolunaProvider;
   model?: string;
   modelLabel?: string;
   routeReason?: string;
+}
+
+export type SolunaSystemMessageRole = "sol" | "luna" | "system";
+
+export interface SolunaNewsItem {
+  title: string;
+  summary: string;
+  sourceUrl?: string;
+  keyword: string;
+}
+
+export interface SolunaNewsBriefing {
+  id: string;
+  keywords: string[];
+  items: SolunaNewsItem[];
+  fetchedAt: string;
+  summary: string;
+}
+
+export interface SolunaSystemMessage {
+  id: string;
+  role: SolunaSystemMessageRole;
+  content: string;
+  createdAt: string;
+  provider?: "openai" | "claude";
+  model?: string;
+  modelLabel?: string;
+  briefingId?: string;
+}
+
+export interface SolunaCharacterMood {
+  happiness: number;
+  energy: number;
+}
+
+export interface SolunaSystemCharacterPersonality {
+  character: "sol" | "luna";
+  mood: SolunaCharacterMood;
+  /** 今週の隠れた関心事（2件） */
+  interests: string[];
+  interestsRotatedAt: string;
+}
+
+export interface SolunaSystemEpisode {
+  id: string;
+  character: "sol" | "luna" | "pair";
+  highlight: string;
+  summary: string;
+  topics: string[];
+  createdAt: string;
+  briefingId?: string;
+}
+
+export interface SolunaSystemPersonalityState {
+  pairIntimacy: number;
+  sol: SolunaSystemCharacterPersonality;
+  luna: SolunaSystemCharacterPersonality;
+  updatedAt: string;
+}
+
+export interface SolunaSystemStateResponse {
+  briefing: SolunaNewsBriefing | null;
+  messages: SolunaSystemMessage[];
+  keywords: string[];
+  lastRunAt: string | null;
+  configured: boolean;
+  personality: SolunaSystemPersonalityState | null;
+  recentEpisodes: SolunaSystemEpisode[];
 }
 
 export interface SolunaProfile {

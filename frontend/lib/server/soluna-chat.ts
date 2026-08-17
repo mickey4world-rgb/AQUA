@@ -27,6 +27,8 @@ import {
   type SolunaRoutePlan,
 } from "@/lib/server/soluna-router";
 import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
+import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
+import { buildHumanChatBriefingSection } from "@/lib/server/soluna-system-chat";
 import {
   formatModelUsedLabel,
   resolveModelForProvider,
@@ -185,14 +187,18 @@ function buildSystemPrompt(
   stageLabel: string,
   memories: SolunaMemory[],
   tier: SolunaGrowthTier,
+  briefingSection?: string,
 ): string {
+  const briefingBlock = briefingSection?.trim()
+    ? `\n\n${briefingSection.trim()}`
+    : "";
   return `${enhancePersonaForTier(persona, tier)}
 
 ## 育成状態
 親密度: ${intimacy}/100（${stageLabel}）
 
 ## ${character === "sol" ? "ソル" : "ルーナ"}が覚えていること
-${formatMemories(memories)}`;
+${formatMemories(memories)}${briefingBlock}`;
 }
 
 function buildUserMessages(
@@ -394,10 +400,19 @@ async function chatWithCharacter(
   stageLabel: string,
   costMode: SolunaCostMode,
   blockedProvider?: SolunaProvider,
+  briefingSection?: string,
 ): Promise<CharacterChatResult> {
   const persona = character === "sol" ? SOL_PERSONA : LUNA_PERSONA;
   const tier = assignment.tier ?? resolveGrowthTier(intimacy);
-  const system = buildSystemPrompt(character, persona, intimacy, stageLabel, memories, tier);
+  const system = buildSystemPrompt(
+    character,
+    persona,
+    intimacy,
+    stageLabel,
+    memories,
+    tier,
+    briefingSection,
+  );
   const userMessages = buildUserMessages(history, userMessage);
 
   const tryOrder: SolunaRouteAssignment[] = [assignment];
@@ -571,11 +586,13 @@ export async function sendSolunaChat(
   }
 
   const profile = await getOrCreateProfile(userId);
-  const [solMemories, lunaMemories, history] = await Promise.all([
+  const [solMemories, lunaMemories, history, briefing] = await Promise.all([
     listMemories(userId, "sol"),
     listMemories(userId, "luna"),
     listMessages(userId),
+    getBriefingForHumanChat(),
   ]);
+  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed);
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
@@ -602,6 +619,7 @@ export async function sendSolunaChat(
       solStage.label,
       costAssessment.mode,
       routePlan.luna.provider,
+      briefingSection,
     ),
     chatWithCharacter(
       userId,
@@ -614,6 +632,7 @@ export async function sendSolunaChat(
       lunaStage.label,
       costAssessment.mode,
       routePlan.sol.provider,
+      briefingSection,
     ),
   ]);
 

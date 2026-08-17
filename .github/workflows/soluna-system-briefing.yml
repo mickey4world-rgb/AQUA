@@ -1,0 +1,22 @@
+name: Soluna System Briefing
+
+on:
+  schedule:
+    # 毎日 9:00 JST = 0:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  run_system_briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Soluna system briefing
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          curl -fsS -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
