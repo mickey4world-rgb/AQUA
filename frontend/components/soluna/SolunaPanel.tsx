@@ -5,6 +5,7 @@ import SolunaCharacterAvatar, {
   type SolunaAvatarMood,
 } from "@/components/soluna/SolunaCharacterAvatar";
 import SolunaCharacterCard from "@/components/soluna/SolunaCharacterCard";
+import SolunaSystemChatPanel from "@/components/soluna/SolunaSystemChatPanel";
 import { useSolunaVoice } from "@/lib/soluna-voice";
 import { getLatestExchange } from "@/lib/soluna-utils";
 import {
@@ -37,6 +38,7 @@ export default function SolunaPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showShortcut, setShowShortcut] = useState(false);
+  const [chatMode, setChatMode] = useState<"human" | "system">("human");
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatSeqRef = useRef(0);
   const loadSeqRef = useRef(0);
@@ -383,6 +385,35 @@ export default function SolunaPanel() {
       </section>
 
       <section className="relative flex min-h-[34rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
+        <div className="relative mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setChatMode("human")}
+            className={`rounded-full px-4 py-1.5 text-[11px] font-medium transition ${
+              chatMode === "human"
+                ? "bg-gradient-to-r from-amber-300/90 to-indigo-300/90 text-slate-950"
+                : "border border-white/10 text-slate-300 hover:bg-white/5"
+            }`}
+          >
+            あなたとの会話
+          </button>
+          <button
+            type="button"
+            onClick={() => setChatMode("system")}
+            className={`rounded-full px-4 py-1.5 text-[11px] font-medium transition ${
+              chatMode === "system"
+                ? "bg-violet-400/25 text-violet-100 border border-violet-300/30"
+                : "border border-white/10 text-slate-300 hover:bg-white/5"
+            }`}
+          >
+            システム会話（全員共通）
+          </button>
+        </div>
+
+        {chatMode === "system" ? (
+          <SolunaSystemChatPanel embedded />
+        ) : (
+          <>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_0%,rgba(251,191,36,0.12),transparent_45%),radial-gradient(ellipse_at_90%_10%,rgba(129,140,248,0.12),transparent_42%)]" />
 
         <div className="relative flex flex-wrap items-start justify-between gap-3">
@@ -573,6 +604,8 @@ export default function SolunaPanel() {
             {sending ? "返信中…" : "送信"}
           </button>
         </form>
+          </>
+        )}
       </section>
     </div>
   );
