@@ -406,7 +406,7 @@ export default function SolunaPanel() {
                 : "border border-white/10 text-slate-300 hover:bg-white/5"
             }`}
           >
-            システム会話（全員共通）
+            ニュース討伐（全員共通）
           </button>
         </div>
 

@@ -9,6 +9,7 @@ import {
   getLatestBriefing,
   saveBriefing,
 } from "@/lib/server/soluna-system-store";
+import { enrichBriefingWithMonsters, formatEncounterForPrompt, monsterizeNewsItem } from "@/lib/soluna-monsters";
 import type { SolunaNewsBriefing, SolunaNewsItem } from "@/lib/types/soluna";
 
 const NEWS_TIMEOUT_MS = 25_000;
@@ -171,20 +172,23 @@ function normalizeItems(raw: unknown, keywords: readonly string[]): SolunaNewsIt
         ? row.sourceUrl
         : undefined;
     if (!title || !summary) continue;
-    result.push({ title, summary, keyword, sourceUrl });
+    result.push(
+      monsterizeNewsItem(
+        { title, summary, keyword, sourceUrl },
+        {
+          monsterName: typeof row.monsterName === "string" ? row.monsterName : undefined,
+          rank: typeof row.rank === "number" ? row.rank : undefined,
+          species: typeof row.species === "string" ? row.species : undefined,
+        },
+      ),
+    );
   }
 
   return result;
 }
 
 export function formatBriefingForPrompt(briefing: SolunaNewsBriefing): string {
-  const lines = briefing.items.map(
-    (item, index) =>
-      `${index + 1}. [${item.keyword}] ${item.title}\n   ${item.summary}${
-        item.sourceUrl ? `\n   出典: ${item.sourceUrl}` : ""
-      }`,
-  );
-  return `## 本日のニュースブリーフィング（${briefing.fetchedAt.slice(0, 10)}）\n${briefing.summary}\n\n${lines.join("\n\n")}`;
+  return formatEncounterForPrompt(enrichBriefingWithMonsters(briefing));
 }
 
 export async function fetchGlobalNewsBriefing(options?: {
@@ -209,6 +213,8 @@ export async function fetchGlobalNewsBriefing(options?: {
 事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`,
     `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${uniqueKeywords.join("、")}
 
+各記事は討伐対象のモンスターとして命名する。monsterName はゲーム風（例: 暴走規制竜レギュラ）だが、元ニュースの意味が残ること。rank は議論の難しさ 1〜5。
+
 JSON 形式:
 {
   "summary": "全体を2〜3文で要約",
@@ -217,7 +223,10 @@ JSON 形式:
       "keyword": "AI 最新動向",
       "title": "見出し",
       "summary": "80文字以内の要点",
-      "sourceUrl": "https://..."
+      "sourceUrl": "https://...",
+      "monsterName": "暴走規制竜レギュラ",
+      "species": "dragon",
+      "rank": 4
     }
   ]
 }`,

@@ -19,7 +19,7 @@ export default function SolunaPage() {
             AI 合議とは別の、フレンドリーな育成型コンパニオン。
             <span className="text-amber-100/90"> ソル（太陽）</span> と
             <span className="text-indigo-100/90"> ルーナ（月）</span> が、あなたの言葉にそれぞれ答えます。
-            話せば話すほど親密度が上がり、2人の記憶が育っていきます。
+            毎朝の最新ニュースはモンスターになって現れ、2人の議論で討伐します。
           </p>
         </div>
 
