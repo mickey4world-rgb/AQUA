@@ -155,6 +155,52 @@ export interface SolunaSystemPersonalityState {
   updatedAt: string;
 }
 
+export type SolunaJobStatus = "done" | "queued" | "skipped" | "waiting-spec" | "error";
+
+export interface SolunaNoteArticle {
+  id: string;
+  briefingId: string;
+  createdAt: string;
+  title: string;
+  freeBody: string;
+  paidBody: string;
+  priceYen: number;
+  published: boolean;
+  noteUrl?: string;
+  noteKey?: string;
+  error?: string;
+}
+
+export interface SolunaBoincRun {
+  id: string;
+  briefingId: string;
+  createdAt: string;
+  minutes: number;
+  itemCount: number;
+  status: SolunaJobStatus;
+  solComment: string;
+  lunaComment: string;
+}
+
+export interface SolunaAssetLedger {
+  principalYen: number;
+  medalUnits: number;
+  cryptoYen: number;
+  goldYen: number;
+  status: SolunaJobStatus;
+  solComment: string;
+  lunaComment: string;
+  updatedAt: string;
+}
+
+export interface SolunaJobsState {
+  noteConfigured: boolean;
+  creatorUrl?: string;
+  latestNote: SolunaNoteArticle | null;
+  latestBoinc: SolunaBoincRun | null;
+  assets: SolunaAssetLedger | null;
+}
+
 export interface SolunaSystemStateResponse {
   briefing: SolunaNewsBriefing | null;
   messages: SolunaSystemMessage[];
@@ -165,6 +211,7 @@ export interface SolunaSystemStateResponse {
   recentEpisodes: SolunaSystemEpisode[];
   hunter: SolunaHunterState | null;
   latestBattle: SolunaBattleResult | null;
+  jobs: SolunaJobsState | null;
 }
 
 export interface SolunaProfile {

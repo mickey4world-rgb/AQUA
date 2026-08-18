@@ -4,8 +4,11 @@ import { SOLUNA_SYSTEM_USER_ID } from "@/lib/server/soluna-system-config";
 import { defaultHunterState, withLevelProgress } from "@/lib/server/soluna-battle";
 import { enrichBriefingWithMonsters } from "@/lib/soluna-monsters";
 import type {
+  SolunaAssetLedger,
+  SolunaBoincRun,
   SolunaHunterState,
   SolunaNewsBriefing,
+  SolunaNoteArticle,
   SolunaSystemEpisode,
   SolunaSystemMessage,
   SolunaSystemPersonalityState,
@@ -36,6 +39,13 @@ type StoredMeta = {
   docType: "systemMeta";
   lastRunAt: string | null;
   updatedAt: string;
+};
+type StoredNote = SolunaNoteArticle & { userId: string; docType: "systemNoteArticle" };
+type StoredBoinc = SolunaBoincRun & { userId: string; docType: "systemBoincRun" };
+type StoredAssets = SolunaAssetLedger & {
+  id: "system-assets";
+  userId: string;
+  docType: "systemAssets";
 };
 
 function recordsContainer() {
@@ -244,4 +254,70 @@ export function createSystemEpisode(
     createdAt: new Date().toISOString(),
     briefingId,
   };
+}
+
+export async function saveSystemNoteArticle(article: SolunaNoteArticle): Promise<void> {
+  await recordsContainer().items.upsert({
+    ...article,
+    userId: SOLUNA_SYSTEM_USER_ID,
+    docType: "systemNoteArticle",
+  } satisfies StoredNote);
+}
+
+export async function getLatestNoteArticle(): Promise<SolunaNoteArticle | null> {
+  const { resources } = await recordsContainer().items
+    .query<StoredNote>({
+      query:
+        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemNoteArticle' ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1",
+      parameters: [{ name: "@userId", value: SOLUNA_SYSTEM_USER_ID }],
+    })
+    .fetchAll();
+  const resource = resources[0];
+  if (!resource) return null;
+  const { userId: _userId, docType: _docType, ...article } = resource;
+  return article;
+}
+
+export async function saveSystemBoincRun(run: SolunaBoincRun): Promise<void> {
+  await recordsContainer().items.upsert({
+    ...run,
+    userId: SOLUNA_SYSTEM_USER_ID,
+    docType: "systemBoincRun",
+  } satisfies StoredBoinc);
+}
+
+export async function getLatestBoincRun(): Promise<SolunaBoincRun | null> {
+  const { resources } = await recordsContainer().items
+    .query<StoredBoinc>({
+      query:
+        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemBoincRun' ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1",
+      parameters: [{ name: "@userId", value: SOLUNA_SYSTEM_USER_ID }],
+    })
+    .fetchAll();
+  const resource = resources[0];
+  if (!resource) return null;
+  const { userId: _userId, docType: _docType, ...run } = resource;
+  return run;
+}
+
+export async function saveSystemAssets(assets: SolunaAssetLedger): Promise<void> {
+  await recordsContainer().items.upsert({
+    id: "system-assets",
+    userId: SOLUNA_SYSTEM_USER_ID,
+    docType: "systemAssets",
+    ...assets,
+  } satisfies StoredAssets);
+}
+
+export async function getSystemAssets(): Promise<SolunaAssetLedger | null> {
+  try {
+    const { resource } = await recordsContainer()
+      .item("system-assets", SOLUNA_SYSTEM_USER_ID)
+      .read<StoredAssets>();
+    if (!resource) return null;
+    const { id: _id, userId: _userId, docType: _docType, ...assets } = resource;
+    return assets;
+  } catch {
+    return null;
+  }
 }

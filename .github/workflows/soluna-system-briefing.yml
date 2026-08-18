@@ -41,3 +41,24 @@ jobs:
           echo ""
           echo "HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
+
+      - name: Run autonomous jobs (Note / BOINC / assets)
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BODY='{"force": true, "step": "jobs"}'
+          else
+            BODY='{"step": "jobs"}'
+          fi
+          HTTP_CODE=$(curl -sS -o /tmp/soluna-jobs.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "${BODY}")
+          cat /tmp/soluna-jobs.json
+          echo ""
+          echo "HTTP ${HTTP_CODE}"
+          test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300

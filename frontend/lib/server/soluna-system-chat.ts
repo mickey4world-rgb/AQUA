@@ -203,13 +203,14 @@ export function isSolunaSystemChatConfigured(): boolean {
 }
 
 export async function buildSystemState(): Promise<SolunaSystemStateResponse> {
-  const [briefing, messages, lastRunAt, personality, recentEpisodes, hunter] = await Promise.all([
+  const [briefing, messages, lastRunAt, personality, recentEpisodes, hunter, jobs] = await Promise.all([
     getLatestBriefing(),
     listSystemMessages(),
     getSystemLastRunAt(),
     getOrInitSystemPersonality(),
     listSystemEpisodes(6),
     getSystemHunter(),
+    import("@/lib/server/soluna-jobs").then((mod) => mod.buildJobsState()),
   ]);
 
   return {
@@ -222,6 +223,7 @@ export async function buildSystemState(): Promise<SolunaSystemStateResponse> {
     recentEpisodes,
     hunter,
     latestBattle: hunter.battles.length > 0 ? hunter.battles[hunter.battles.length - 1] : null,
+    jobs,
   };
 }
 

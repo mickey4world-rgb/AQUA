@@ -27,6 +27,10 @@ const ITEM_POOL = [
 
 const ESCAPE_ITEM = { name: "逃げ足の鱗", flavor: "取り逃した怪物の残香。リベンジの手がかり" };
 
+export function medalUnitScore(medals: SolunaHunterState["medals"]): number {
+  return medals.bronze + medals.silver * 2 + medals.gold * 4 + medals.rainbow * 8;
+}
+
 export function defaultHunterState(): SolunaHunterState {
   return {
     level: 1,

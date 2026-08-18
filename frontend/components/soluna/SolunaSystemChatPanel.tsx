@@ -6,6 +6,7 @@ import { SOLUNA_CHARACTER_META } from "@/lib/types/soluna";
 import type {
   SolunaBattleResult,
   SolunaHunterState,
+  SolunaJobsState,
   SolunaMedalKind,
   SolunaNewsBriefing,
   SolunaSystemMessage,
@@ -197,6 +198,105 @@ function PastHuntList({ battles }: { battles: SolunaBattleResult[] }) {
   );
 }
 
+function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
+  const note = jobs.latestNote;
+  const boinc = jobs.latestBoinc;
+  const assets = jobs.assets;
+
+  return (
+    <section className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-500/[0.06] px-4 py-4">
+      <p className="text-[10px] tracking-[0.18em] text-cyan-200/80 uppercase">Autonomous Jobs</p>
+      <h4 className="mt-1 text-base font-semibold text-white">2人の仕事</h4>
+      <p className="mt-1 text-[12px] leading-relaxed text-slate-400">
+        討伐のあと、ソルとルーナが勝手に回す3つの仕事です。有料購読が周囲に回るほど、社会貢献の燃料が増えます。
+      </p>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <article className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[11px] font-medium text-cyan-100">① Note 公開</p>
+          {note ? (
+            <>
+              <p className="mt-2 text-[13px] font-semibold text-white">{note.title}</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                {note.published ? "有料記事として投稿済み" : "原稿保存（未投稿）"}
+                {note.priceYen > 0 ? ` · ${note.priceYen}円` : " · 無料"}
+              </p>
+              {note.noteUrl && (
+                <a
+                  href={note.noteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block text-[12px] text-cyan-200 underline"
+                >
+                  note.com で読む
+                </a>
+              )}
+              {note.error && <p className="mt-2 text-[11px] text-amber-200/80">{note.error}</p>}
+              <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">
+                {note.freeBody}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-[12px] text-slate-400">
+              まだ投稿はありません。朝の討伐後に自動で原稿を作ります。
+              {!jobs.noteConfigured && " NOTE_COOKIE を設定すると note.com へ公開します。"}
+            </p>
+          )}
+          {jobs.creatorUrl && !note?.noteUrl && (
+            <a
+              href={jobs.creatorUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-block text-[12px] text-cyan-200 underline"
+            >
+              Note アカウント
+            </a>
+          )}
+        </article>
+
+        <article className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[11px] font-medium text-cyan-100">② 社会貢献 · BOINC</p>
+          {boinc ? (
+            <>
+              <p className="mt-2 text-[13px] text-white">
+                アイテム {boinc.itemCount} 個 → 宇宙分析 {boinc.minutes} 分
+              </p>
+              <p className="mt-1 text-[11px] text-amber-200/80">接続待ち（詳細は別途）</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">ソル：{boinc.solComment}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">ルーナ：{boinc.lunaComment}</p>
+            </>
+          ) : (
+            <p className="mt-2 text-[12px] text-slate-400">
+              熱いバトルのアイテム数で実施時間を決めます。実行手順はこれから接続します。
+            </p>
+          )}
+        </article>
+
+        <article className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[11px] font-medium text-cyan-100">③ 資産運用</p>
+          {assets ? (
+            <>
+              <p className="mt-2 text-[13px] text-white">
+                元手 {assets.principalYen.toLocaleString("ja-JP")} 円 · メダル単位 {assets.medalUnits}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                仮想通貨 {assets.cryptoYen.toLocaleString("ja-JP")} 円 / 金 {assets.goldYen.toLocaleString("ja-JP")} 円
+              </p>
+              <p className="mt-1 text-[11px] text-amber-200/80">接続待ち（詳細は別途）</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">ソル：{assets.solComment}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">ルーナ：{assets.lunaComment}</p>
+            </>
+          ) : (
+            <p className="mt-2 text-[12px] text-slate-400">
+              仮想通貨と金、初期 10 万円。投資額はメダル数に見立てて報告します。
+            </p>
+          )}
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function PersonalityPanel({ personality }: { personality: SolunaSystemPersonalityState }) {
   return (
     <div className="mt-4 grid gap-3 rounded-xl border border-violet-300/15 bg-black/20 p-3 sm:grid-cols-2">
@@ -350,6 +450,7 @@ export default function SolunaSystemChatPanel({ embedded = false }: SolunaSystem
       </section>
 
       <PastHuntList battles={pastBattles} />
+      {state.jobs && <JobsDesk jobs={state.jobs} />}
       {state.personality && <PersonalityPanel personality={state.personality} />}
     </div>
   );
