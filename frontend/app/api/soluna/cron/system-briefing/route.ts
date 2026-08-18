@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   let force = false;
-  let step: "news" | "chat" | "full" | "ingest" = "full";
+  let step: "news" | "chat" | "full" | "ingest" | "jobs" = "full";
   let ingestBriefing: SolunaNewsBriefing | null = null;
   try {
     const body = (await request.json()) as {
@@ -39,7 +39,8 @@ export async function POST(request: Request) {
       body.step === "news" ||
       body.step === "chat" ||
       body.step === "full" ||
-      body.step === "ingest"
+      body.step === "ingest" ||
+      body.step === "jobs"
     ) {
       step = body.step;
     }
@@ -103,6 +104,20 @@ export async function POST(request: Request) {
       step: "chat",
       briefingId: chat.briefing.id,
       messageCount: chat.messages.length,
+    });
+  }
+
+  if (step === "jobs") {
+    const { runDailyAutonomousJobs } = await import("@/lib/server/soluna-jobs");
+    const jobs = await runDailyAutonomousJobs({ force });
+    return Response.json({
+      ok: true,
+      step: "jobs",
+      notePublished: jobs.latestNote?.published ?? false,
+      noteUrl: jobs.latestNote?.noteUrl ?? null,
+      noteError: jobs.latestNote?.error ?? null,
+      boincMinutes: jobs.latestBoinc?.minutes ?? 0,
+      medalUnits: jobs.assets?.medalUnits ?? 0,
     });
   }
 
