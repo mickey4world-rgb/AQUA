@@ -110,6 +110,22 @@ function medalFor(rank: number, heat: number, outcome: SolunaBattleOutcome): Sol
   return "bronze";
 }
 
+function buildOutcomeWhy(outcome: SolunaBattleOutcome, heat: number, depth: number): string {
+  if (outcome === "escape") {
+    if (heat < 0.22) {
+      return "2人の話がかみ合わず、ニュースの核心まで届きませんでした。";
+    }
+    return "論点は出ましたが、結論が一つにまとまらず、取り逃がしました。";
+  }
+  if (heat >= 0.7 && depth >= 0.55) {
+    return "議論が白熱し、「何が起きたか／なぜ大事か／次に何を見るか」まで言語化できました。";
+  }
+  if (heat >= 0.5) {
+    return "ニュースの要点は押さえられました。もう一段、利害の急所まで掘れたら完璧です。";
+  }
+  return "大きな筋は共有できました。細部のたとえは少なめですが、討伐は成立しています。";
+}
+
 function buildImpression(
   outcome: SolunaBattleOutcome,
   heat: number,
@@ -118,23 +134,23 @@ function buildImpression(
 ): string {
   const sol = messages.find((message) => message.role === "sol")?.content ?? "";
   const luna = messages.find((message) => message.role === "luna")?.content ?? "";
-  const solBite = sol.replace(/\s+/g, " ").slice(0, 42);
-  const lunaBite = luna.replace(/\s+/g, " ").slice(0, 42);
+  const solBite = sol.replace(/\s+/g, " ").slice(0, 36);
+  const lunaBite = luna.replace(/\s+/g, " ").slice(0, 36);
 
   if (outcome === "escape") {
-    if (heat < 0.2) {
-      return "議論の火がつかず、モンスターは霧の向こうへ逃げた。今日は偵察勝ち、明日が本番だ。";
+    if (heat < 0.22) {
+      return "たとえも結論も途中で止まり、読者が置いてきぼりになる展開でした。";
     }
-    return `白熱しきれず取り逃した。ソルは「${solBite}…」、ルーナは「${lunaBite}…」まで迫ったのに。`;
+    return `ソルは「${solBite}…」、ルーナは「${lunaBite}…」まで迫りましたが、一本に結べませんでした。`;
   }
 
   if (heat >= 0.7 && depth >= 0.55) {
-    return `議論が噛み合って急所まで届いた。ソルの攻め「${solBite}…」と、ルーナの守りが一つの物語になった。`;
+    return "ソルのたとえとルーナの補強がかみ合い、ニュースが立体になりました。";
   }
   if (heat >= 0.5) {
-    return "意見がぶつかったおかげで、ニュースの芯が立体になった。読み応えのある一戦。";
+    return "意見がぶつかったおかげで、ニュースの芯が分かりやすくなりました。";
   }
-  return "息は揃った。もう一声掘れたら完璧だったが、十分に倒しきった。";
+  return "落ち着いた解説戦。読みやすい一方、もう一声のたとえがあると続きが欲しくなります。";
 }
 
 function buildNextMove(briefing: SolunaNewsBriefing, outcome: SolunaBattleOutcome): string {
@@ -164,22 +180,20 @@ function formatRecap(result: SolunaBattleResult): string {
     gold: "金メダル",
     rainbow: "虹メダル",
   };
-  const outcomeLine =
-    result.outcome === "victory"
-      ? `討伐成功！ Lv.${result.bossRank} ${result.bossName} を倒した`
-      : `取り逃がした… Lv.${result.bossRank} ${result.bossName} は霧へ消えた`;
+  const resultLabel = result.outcome === "victory" ? "討伐成功" : "取り逃がし";
   const lootBits = [
-    result.loot.medal ? medalLabel[result.loot.medal] : null,
-    result.loot.itemName,
-    `EXP +${result.loot.xpGained}`,
-  ].filter(Boolean);
+    result.loot.medal ? medalLabel[result.loot.medal] : "メダルなし",
+    result.loot.itemName ?? "アイテムなし",
+    `経験値 +${result.loot.xpGained}`,
+  ];
 
-  return `⚔️ ${outcomeLine}
-ハンター Lv.${result.levelAfter}（累計 EXP ${result.xpAfter}）
+  return `【バトル結果】${resultLabel}
+相手: Lv.${result.bossRank} ${result.bossName}
+ニュース: ${result.newsPlain}
+なぜ: ${result.outcomeWhy}
 入手: ${lootBits.join(" ／ ")}
-
-感想: ${result.impression}
-次の一手: ${result.nextMove}`;
+次に見ること: ${result.nextMove}
+感想: ${result.impression}`;
 }
 
 export function resolveDailyBattle(
@@ -242,6 +256,9 @@ export function resolveDailyBattle(
     depth: Number(depth.toFixed(2)),
     bossName: boss.monster?.name ?? boss.title,
     bossRank: rank,
+    newsTitle: boss.title,
+    newsPlain: boss.summary,
+    outcomeWhy: buildOutcomeWhy(outcome, heat, depth),
     impression: buildImpression(outcome, heat, depth, messages),
     nextMove: buildNextMove(enriched, outcome),
     loot,
