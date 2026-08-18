@@ -96,6 +96,9 @@ export interface SolunaBattleResult {
   depth: number;
   bossName: string;
   bossRank: SolunaMonsterRank;
+  newsTitle?: string;
+  newsPlain?: string;
+  outcomeWhy?: string;
   impression: string;
   nextMove: string;
   loot: SolunaBattleLoot;
