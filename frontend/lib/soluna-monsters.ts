@@ -109,10 +109,10 @@ export function monsterizeNewsItem(
 
   const seedMatch = pickSeed(item.title, item.summary, item.keyword);
   const hash = hashSeed(`${item.keyword}:${item.title}`);
+  const requestedSpecies = extras?.species;
   const species =
-    (extras?.species as SolunaMonsterSpecies | undefined) &&
-    extras.species in SPECIES_LABEL
-      ? (extras.species as SolunaMonsterSpecies)
+    requestedSpecies && requestedSpecies in SPECIES_LABEL
+      ? (requestedSpecies as SolunaMonsterSpecies)
       : (seedMatch?.species ?? defaultSpecies(item.keyword, hash));
   const rank = extras?.rank
     ? clampRank(extras.rank)
