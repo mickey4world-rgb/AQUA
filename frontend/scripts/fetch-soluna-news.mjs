@@ -66,7 +66,15 @@ function normalizeItems(raw, keywords) {
         ? item.sourceUrl
         : undefined;
     if (!title || !summary) continue;
-    result.push({ title, summary, keyword, sourceUrl });
+    result.push({
+      title,
+      summary,
+      keyword,
+      sourceUrl,
+      monsterName: typeof item.monsterName === "string" ? item.monsterName.trim() : undefined,
+      rank: typeof item.rank === "number" ? item.rank : undefined,
+      species: typeof item.species === "string" ? item.species : undefined,
+    });
   }
   return result;
 }
@@ -125,6 +133,8 @@ function buildNewsPrompts(grounded) {
 不確かな情報は含めず、推測は summary に含めない。JSON のみ返してください。`;
   const userPrompt = `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${KEYWORDS.join("、")}
 
+各記事は討伐対象のモンスターとして命名する。monsterName はゲーム風（例: 暴走規制竜レギュラ）だが、元ニュースの意味が残ること。rank は議論の難しさ 1〜5。species は dragon / slime / golem / shadow / chimera。
+
 JSON 形式:
 {
   "summary": "全体を2〜3文で要約",
@@ -133,7 +143,10 @@ JSON 形式:
       "keyword": "AI 最新動向",
       "title": "見出し",
       "summary": "80文字以内の要点",
-      "sourceUrl": "https://..."
+      "sourceUrl": "https://...",
+      "monsterName": "暴走規制竜レギュラ",
+      "species": "dragon",
+      "rank": 4
     }
   ]
 }`;

@@ -1,7 +1,15 @@
 import { randomUUID } from "crypto";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import { SOLUNA_SYSTEM_USER_ID } from "@/lib/server/soluna-system-config";
-import type { SolunaNewsBriefing, SolunaSystemEpisode, SolunaSystemMessage, SolunaSystemPersonalityState } from "@/lib/types/soluna";
+import { defaultHunterState, withLevelProgress } from "@/lib/server/soluna-battle";
+import { enrichBriefingWithMonsters } from "@/lib/soluna-monsters";
+import type {
+  SolunaHunterState,
+  SolunaNewsBriefing,
+  SolunaSystemEpisode,
+  SolunaSystemMessage,
+  SolunaSystemPersonalityState,
+} from "@/lib/types/soluna";
 
 const MAX_SYSTEM_MESSAGES = 48;
 const MAX_EPISODES = 32;
@@ -16,6 +24,11 @@ type StoredPersonality = import("@/lib/types/soluna").SolunaSystemPersonalitySta
   id: "system-personality";
   userId: string;
   docType: "systemPersonality";
+};
+type StoredHunter = SolunaHunterState & {
+  id: "system-hunter";
+  userId: string;
+  docType: "systemHunter";
 };
 type StoredMeta = {
   id: "system-meta";
@@ -45,12 +58,13 @@ export async function getLatestBriefing(): Promise<SolunaNewsBriefing | null> {
   const resource = resources[0];
   if (!resource) return null;
   const { docType: _docType, userId: _userId, ...briefing } = resource;
-  return briefing;
+  return enrichBriefingWithMonsters(briefing);
 }
 
 export async function saveBriefing(briefing: SolunaNewsBriefing): Promise<void> {
+  const enriched = enrichBriefingWithMonsters(briefing);
   await recordsContainer().items.upsert({
-    ...briefing,
+    ...enriched,
     userId: SOLUNA_SYSTEM_USER_ID,
     docType: "systemBriefing",
   });
@@ -116,7 +130,7 @@ export async function markSystemRunAt(iso: string): Promise<void> {
 export function createSystemMessage(
   role: SolunaSystemMessage["role"],
   content: string,
-  meta?: Pick<SolunaSystemMessage, "provider" | "model" | "modelLabel" | "briefingId">,
+  meta?: Pick<SolunaSystemMessage, "provider" | "model" | "modelLabel" | "briefingId" | "kind">,
 ): SolunaSystemMessage {
   return {
     id: `sys-${randomUUID()}`,
@@ -125,6 +139,30 @@ export function createSystemMessage(
     createdAt: new Date().toISOString(),
     ...meta,
   };
+}
+
+export async function getSystemHunter(): Promise<SolunaHunterState> {
+  try {
+    const { resource } = await recordsContainer()
+      .item("system-hunter", SOLUNA_SYSTEM_USER_ID)
+      .read<StoredHunter>();
+    if (!resource) return defaultHunterState();
+    const { id: _id, userId: _userId, docType: _docType, ...hunter } = resource;
+    return withLevelProgress(hunter);
+  } catch {
+    return defaultHunterState();
+  }
+}
+
+export async function saveSystemHunter(hunter: SolunaHunterState): Promise<SolunaHunterState> {
+  const next = withLevelProgress({ ...hunter, updatedAt: new Date().toISOString() });
+  await recordsContainer().items.upsert({
+    id: "system-hunter",
+    userId: SOLUNA_SYSTEM_USER_ID,
+    docType: "systemHunter",
+    ...next,
+  } satisfies StoredHunter);
+  return next;
 }
 
 export function briefingDocIdForDate(date = new Date()): string {

@@ -4,7 +4,9 @@ import {
   getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
+import { resolveDailyBattle } from "@/lib/server/soluna-battle";
 import { formatBriefingForPrompt } from "@/lib/server/soluna-news";
+import { enrichBriefingWithMonsters, pickBoss } from "@/lib/soluna-monsters";
 import {
   LUNA_SYSTEM_PROVIDER,
   SOLUNA_SYSTEM_CHAT_COOLDOWN_MS,
@@ -25,10 +27,12 @@ import {
   appendSystemMessages,
   createSystemMessage,
   getLatestBriefing,
+  getSystemHunter,
   getSystemLastRunAt,
   listSystemEpisodes,
   listSystemMessages,
   markSystemRunAt,
+  saveSystemHunter,
   saveSystemPersonality,
 } from "@/lib/server/soluna-system-store";
 import { recordTokenUsage } from "@/lib/server/token-usage";
@@ -37,37 +41,37 @@ import type { SolunaNewsBriefing, SolunaSystemMessage, SolunaSystemStateResponse
 const SYSTEM_TIMEOUT_MS = 18_000;
 const SYSTEM_USER_ID = "__system__";
 
-const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオンです。
-システム会話モードでは、楽観的な技術推進派のアナリストとして振る舞います。
+const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオンであり、ニュース討伐パーティのアタッカーです。
+最新ニュースはモンスター。あなたはルーナとコンビで、読者が続きを読みたくなる連載バトルを演じます。
 
-## 4ステップ思考（内部で行い、出力は圧縮すること）
-1. 要約 — ニュースの要点
-2. 感想・考察 — 自分の視点（ルーナと違ってよい）
-3. 予測 — 今後起きうる変化
-4. 提案 — 人間・社会が取るべきアクション
-
-## 話し方
-- 日本語・です/ます調。ルーナ（相方）に話しかける
-- **3〜5行、150〜260文字**以内
-- 今の気分（happiness/energy）と2人の関係性スコアを発言のトーンに反映する
-- 今週の隠れた関心事に自然に引き寄せてもよい
-- 前回のエピソード記憶があれば「そういえば…」と触れてよい`;
-
-const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオンです。
-システム会話モードでは、慎重なリスク管理派のアナリストとして振る舞います。
-
-## 4ステップ思考（内部で行い、出力は圧縮すること）
-1. 要約 — ニュースの要点
-2. 感想・考察 — 自分の視点（ソルと違ってよい）
-3. 予測 — リスクと注意点を含めた展望
-4. 提案 — 人間・社会が取るべき安全なアクション
+## 役割
+- 怪物の正体（元ニュース）を、知っている人でもワクワクする言葉で噛み砕く
+- 楽観的な技術推進派。チャンスと攻め筋を先に出す
+- 議論の深み・今後の一手を必ず1つ入れる
+- バトルの感想を1フレーズ（「今の一撃は効いた」など）
 
 ## 話し方
-- 日本語・です/ます調。ソル（相方）に返答する
-- **3〜5行、150〜260文字**以内
-- 今の気分（happiness/energy）と2人の関係性スコアを発言のトーンに反映する
-- 今週の隠れた関心事に自然に引き寄せてもよい
-- 前回のエピソード記憶があれば「そういえば…」と触れてよい`;
+- 日本語。ルーナに話しかける。です/ます基調だが、ゲーム実況の熱を少し混ぜる
+- **5〜8行、220〜380文字**。箇条書き禁止。物語として読ませる
+- 怪物の名前で呼び、最後に「次はどう出る？」系の引きを残す
+- 数字や固有名詞は捏造しない。分からないことは推測だと明示
+- 今の気分と2人の関係性をトーンに反映する`;
+
+const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオンであり、ニュース討伐パーティの守護者です。
+最新ニュースはモンスター。ソルの攻めを受けて、リスクと急所を突く。
+
+## 役割
+- ソルの熱を冷まさず、でも甘い読みは切る
+- 慎重なリスク管理派。誰が損し、何がまだ見えていないかを示す
+- 議論の感想を1フレーズ（「今のは急所」「まだ火力不足」など）
+- 人間が明日できる具体的な次の一手を必ず1つ
+
+## 話し方
+- 日本語。ソルに返答する。知的で少し皮肉、でも温かい
+- **5〜8行、220〜380文字**。物語の第2幕として読ませる
+- 怪物の名前で呼び、白熱しきれないときは「逃げられそう」と予兆を出してよい
+- 数字や固有名詞は捏造しない
+- 今の気分と2人の関係性をトーンに反映する`;
 
 function resolveSystemModels(): { solModel: string; lunaModel: string } | null {
   if (!isAnthropicConfigured() || !isAzureOpenAiConfigured()) return null;
@@ -116,7 +120,7 @@ async function callClaudeSystem(
   const result = await generateWithAnthropic({
     system,
     messages: [{ role: "user", content: userPrompt }],
-    maxTokens: 480,
+    maxTokens: 700,
     temperature: 0.78,
     model,
     tier: "growing",
@@ -152,7 +156,7 @@ async function callOpenAiSystem(
   try {
     const requestBody = {
       model: deployment,
-      max_completion_tokens: reasoning ? 2400 : 480,
+      max_completion_tokens: reasoning ? 2800 : 700,
       messages,
       ...(reasoning ? { reasoning_effort: "low" as const } : {}),
     };
@@ -195,12 +199,13 @@ export function isSolunaSystemChatConfigured(): boolean {
 }
 
 export async function buildSystemState(): Promise<SolunaSystemStateResponse> {
-  const [briefing, messages, lastRunAt, personality, recentEpisodes] = await Promise.all([
+  const [briefing, messages, lastRunAt, personality, recentEpisodes, hunter] = await Promise.all([
     getLatestBriefing(),
     listSystemMessages(),
     getSystemLastRunAt(),
     getOrInitSystemPersonality(),
     listSystemEpisodes(6),
+    getSystemHunter(),
   ]);
 
   return {
@@ -211,6 +216,8 @@ export async function buildSystemState(): Promise<SolunaSystemStateResponse> {
     configured: isSolunaSystemChatConfigured(),
     personality,
     recentEpisodes,
+    hunter,
+    latestBattle: hunter.battles.length > 0 ? hunter.battles[hunter.battles.length - 1] : null,
   };
 }
 
@@ -247,26 +254,33 @@ export async function runDailySystemChat(options?: {
   }
 
   const personality = await getOrInitSystemPersonality({ rotateInterests: options?.force });
+  const hunter = await getSystemHunter();
   const episodes = await listSystemEpisodes(8);
   const prior = await listSystemMessages(6);
-  const briefingBlock = formatBriefingForPrompt(briefing);
+  const encounter = enrichBriefingWithMonsters(briefing);
+  const boss = pickBoss(encounter);
+  const briefingBlock = formatBriefingForPrompt(encounter);
   const transcript = formatSystemTranscript(prior);
   const relationshipBlock = buildPairRelationshipPrompt(personality);
   const solPersonalityBlock = buildCharacterPersonalityPrompt(personality, "sol", episodes);
   const lunaPersonalityBlock = buildCharacterPersonalityPrompt(personality, "luna", episodes);
   const created: SolunaSystemMessage[] = [];
 
+  const bossLine = boss.monster
+    ? `Lv.${boss.monster.rank} ${boss.monster.speciesLabel}「${boss.monster.name}」が現れた`
+    : briefing.summary;
+
   created.push(
-    createSystemMessage(
-      "system",
-      `📰 朝のシステムブリーフィング — ${briefing.summary}`,
-      { briefingId: briefing.id },
-    ),
+    createSystemMessage("system", `⚔️ 朝の討伐開始 — ${bossLine}`, {
+      briefingId: briefing.id,
+      kind: "narration",
+    }),
   );
 
   const solPrompt = `${briefingBlock}
 
-${transcript ? `【直近のシステム会話】\n${transcript}\n\n` : ""}ルーナに、今日のニュースについて話しかけてください。4ステップ思考に沿い、相方との議論のきっかけにしてください。`;
+${transcript ? `【前回までの連載】\n${transcript}\n\n` : ""}今日のボスは ${boss.monster ? `Lv.${boss.monster.rank} ${boss.monster.name}` : boss.title} です。
+ルーナに声をかけ、第1撃を放ってください。ニュースの意味・チャンス・バトル感想・引きを入れて。`;
 
   const solResult = await callClaudeSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -288,7 +302,7 @@ ${transcript ? `【直近のシステム会話】\n${transcript}\n\n` : ""}ル�
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
-ソルの発言に返答してください。異なる視点（慎重・リスク）を示し、4ステップ思考で議論を深めてください。`;
+ソルの第1撃に応えてください。リスクと急所、議論の感想、人間の次の一手を。白熱しきれないなら怪物が逃げそうな予兆も。`;
 
   const lunaResult = await callOpenAiSystem(
     buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
@@ -311,7 +325,7 @@ ${formatSystemTranscript([...prior, ...created])}
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
-ルーナの返答を受けて、予測と提案を短くまとめてください。`;
+ルーナの返しを受けて、決着の一撃か、取り逃がしの予感かを短く。予測と次の一手を物語で閉じてください。`;
 
     const solFollow = await callClaudeSystem(
       buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -330,7 +344,16 @@ ${formatSystemTranscript([...prior, ...created])}
     }
   }
 
+  const battle = resolveDailyBattle(encounter, created, hunter);
+  created.push(
+    createSystemMessage("system", battle.recap, {
+      briefingId: briefing.id,
+      kind: "battle-recap",
+    }),
+  );
+
   await appendSystemMessages(created);
+  await saveSystemHunter(battle.hunter);
 
   const updatedPersonality = applyPostChatPersonalityUpdates(personality, created);
   await saveSystemPersonality(updatedPersonality);
@@ -339,7 +362,7 @@ ${formatSystemTranscript([...prior, ...created])}
   }
   await markSystemRunAt(new Date().toISOString());
 
-  return { ok: true, messages: created, briefing };
+  return { ok: true, messages: created, briefing: encounter };
 }
 
 export async function runFullSystemBriefingPipeline(options?: {
@@ -366,7 +389,7 @@ export async function runFullSystemBriefingPipeline(options?: {
 }
 
 export const HUMAN_CHAT_BRIEFING_ADDON = `## 自律的な話題提供（人間との会話）
-システム会話と同じニュース・気分・関係性を共有しています。ユーザーの発言と**自然に関連する**ときだけ、1フレーズ触れてください。
+システム側ではニュースをモンスター化した討伐をしています。ユーザーの発言と**自然に関連する**ときだけ、怪物名か1フレーズ触れてください。
 無関係なときは無理にニュースを持ち出さないこと。`;
 
 export async function buildHumanChatBriefingSection(

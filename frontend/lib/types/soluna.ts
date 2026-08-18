@@ -35,11 +35,27 @@ export interface SolunaMessage {
 
 export type SolunaSystemMessageRole = "sol" | "luna" | "system";
 
+export type SolunaMonsterSpecies = "dragon" | "slime" | "golem" | "shadow" | "chimera";
+export type SolunaMonsterRank = 1 | 2 | 3 | 4 | 5;
+export type SolunaBattleOutcome = "victory" | "escape";
+export type SolunaMedalKind = "bronze" | "silver" | "gold" | "rainbow";
+
+export interface SolunaNewsMonster {
+  name: string;
+  species: SolunaMonsterSpecies;
+  speciesLabel: string;
+  rank: SolunaMonsterRank;
+  hp: number;
+  hpMax: number;
+  weakness: string;
+}
+
 export interface SolunaNewsItem {
   title: string;
   summary: string;
   sourceUrl?: string;
   keyword: string;
+  monster?: SolunaNewsMonster;
 }
 
 export interface SolunaNewsBriefing {
@@ -50,6 +66,8 @@ export interface SolunaNewsBriefing {
   summary: string;
 }
 
+export type SolunaSystemMessageKind = "narration" | "battle-recap";
+
 export interface SolunaSystemMessage {
   id: string;
   role: SolunaSystemMessageRole;
@@ -59,6 +77,49 @@ export interface SolunaSystemMessage {
   model?: string;
   modelLabel?: string;
   briefingId?: string;
+  kind?: SolunaSystemMessageKind;
+}
+
+export interface SolunaBattleLoot {
+  medal: SolunaMedalKind | null;
+  itemName: string | null;
+  itemFlavor: string | null;
+  xpGained: number;
+}
+
+export interface SolunaBattleResult {
+  id: string;
+  briefingId: string;
+  createdAt: string;
+  outcome: SolunaBattleOutcome;
+  heat: number;
+  depth: number;
+  bossName: string;
+  bossRank: SolunaMonsterRank;
+  impression: string;
+  nextMove: string;
+  loot: SolunaBattleLoot;
+  levelAfter: number;
+  xpAfter: number;
+}
+
+export interface SolunaHunterInventoryItem {
+  id: string;
+  name: string;
+  flavor: string;
+  acquiredAt: string;
+  briefingId?: string;
+}
+
+export interface SolunaHunterState {
+  level: number;
+  xp: number;
+  xpIntoLevel: number;
+  xpForNext: number;
+  medals: Record<SolunaMedalKind, number>;
+  inventory: SolunaHunterInventoryItem[];
+  battles: SolunaBattleResult[];
+  updatedAt: string;
 }
 
 export interface SolunaCharacterMood {
@@ -99,6 +160,8 @@ export interface SolunaSystemStateResponse {
   configured: boolean;
   personality: SolunaSystemPersonalityState | null;
   recentEpisodes: SolunaSystemEpisode[];
+  hunter: SolunaHunterState | null;
+  latestBattle: SolunaBattleResult | null;
 }
 
 export interface SolunaProfile {
