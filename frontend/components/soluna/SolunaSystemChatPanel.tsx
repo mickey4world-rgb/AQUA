@@ -299,22 +299,87 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         </article>
 
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] font-medium text-cyan-100">③ 資産運用</p>
+          <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · bitFlyer BTC</p>
           {assets ? (
             <>
-              <p className="mt-2 text-[13px] text-white">
-                元手 {assets.principalYen.toLocaleString("ja-JP")} 円 · メダル単位 {assets.medalUnits}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                仮想通貨 {assets.cryptoYen.toLocaleString("ja-JP")} 円 / 金 {assets.goldYen.toLocaleString("ja-JP")} 円
-              </p>
-              <p className="mt-1 text-[11px] text-amber-200/80">接続待ち（詳細は別途）</p>
-              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">ソル：{assets.solComment}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">ルーナ：{assets.lunaComment}</p>
+              {/* 総資産サマリー */}
+              <div className="mt-2 flex flex-wrap gap-3">
+                <div>
+                  <p className="text-[10px] text-slate-400">総資産</p>
+                  <p className="text-[15px] font-bold text-white">
+                    {assets.totalYen.toLocaleString("ja-JP")} 円
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">現金</p>
+                  <p className="text-[13px] text-slate-200">{assets.cashYen.toLocaleString("ja-JP")} 円</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">BTC保有</p>
+                  <p className="text-[13px] text-slate-200">{assets.btcHeld.toFixed(4)} BTC</p>
+                </div>
+                {assets.btcPriceYen > 0 && (
+                  <div>
+                    <p className="text-[10px] text-slate-400">BTC価格</p>
+                    <p className="text-[13px] text-slate-200">{assets.btcPriceYen.toLocaleString("ja-JP")} 円</p>
+                  </div>
+                )}
+              </div>
+
+              {/* 月次目標ゲージ */}
+              <div className="mt-2">
+                <div className="flex justify-between text-[10px] text-slate-400">
+                  <span>今月実現損益 {assets.monthlyRealizedPnlYen.toLocaleString("ja-JP")} 円</span>
+                  <span>目標 {assets.monthlyTargetYen.toLocaleString("ja-JP")} 円</span>
+                </div>
+                <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full transition-all ${assets.sleepMode ? "bg-emerald-400" : "bg-amber-400"}`}
+                    style={{
+                      width: `${Math.min(100, Math.round((assets.monthlyRealizedPnlYen / Math.max(1, assets.monthlyTargetYen)) * 100))}%`,
+                    }}
+                  />
+                </div>
+                {assets.sleepMode && (
+                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">🌙 月次目標達成 · おやすみモード</p>
+                )}
+              </div>
+
+              {/* 直近取引 */}
+              {assets.trades.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-[10px] text-slate-400">直近の取引</p>
+                  <div className="mt-1 space-y-1">
+                    {assets.trades.slice(-3).reverse().map((t) => (
+                      <div key={t.id} className="flex items-center gap-2 text-[11px]">
+                        <span className={`font-semibold ${t.side === "BUY" ? "text-blue-300" : "text-rose-300"}`}>
+                          {t.side}
+                        </span>
+                        <span className="text-slate-300">{t.sizeJpy.toLocaleString()}円</span>
+                        <span className="text-slate-400">@ {t.priceBtc.toLocaleString()}円</span>
+                        {t.realizedPnlJpy !== undefined && (
+                          <span className={t.realizedPnlJpy >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                            {t.realizedPnlJpy >= 0 ? "+" : ""}{t.realizedPnlJpy.toLocaleString()}円
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {assets.status === "waiting-spec" && (
+                <p className="mt-2 text-[11px] text-amber-200/80">
+                  ⏳ 入金待ち / API キー未設定
+                </p>
+              )}
+
+              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">⚔️ {assets.solComment}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">📖 {assets.lunaComment}</p>
             </>
           ) : (
             <p className="mt-2 text-[12px] text-slate-400">
-              仮想通貨と金、初期 10 万円。投資額はメダル数に見立てて報告します。
+              初期 10 万円で BTC 自動運用（bitFlyer）。ドルコスト平均法・月利 2% 目標。BITFLYER_API_KEY を SWA 環境変数に設定すると有効になります。
             </p>
           )}
         </article>
