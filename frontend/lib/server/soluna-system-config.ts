@@ -6,8 +6,11 @@ export const SOLUNA_SYSTEM_USER_ID = "__system__";
 /** 毎朝のシステム会話で検索する共通キーワード */
 export const SOLUNA_SYSTEM_KEYWORDS = ["AI 最新動向", "世界経済"] as const;
 
-/** 1日1回のシステム会話（JST 9:00 想定） */
-export const SOLUNA_SYSTEM_CHAT_COOLDOWN_MS = 23 * 60 * 60 * 1000;
+/** JST での今日の日付文字列を返す（例: "2026-08-19"） */
+export function jstDateString(date = new Date()): string {
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
 
 export const SOL_SYSTEM_PROVIDER = "claude" as const;
 export const LUNA_SYSTEM_PROVIDER = "openai" as const;
