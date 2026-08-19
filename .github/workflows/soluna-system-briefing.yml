@@ -12,7 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch news briefing (Gemini Grounding via relay)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps (scripts only)
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Fetch news briefing (Gemini → RSS fallback)
+        id: fetch_news
+        continue-on-error: true
         env:
           GEMINI_RELAY_URL: ${{ secrets.GEMINI_RELAY_URL }}
           GEMINI_RELAY_KEY: ${{ secrets.GEMINI_RELAY_KEY }}
@@ -20,6 +33,10 @@ jobs:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: node frontend/scripts/fetch-soluna-news.mjs
+
+      - name: Warn if news fetch failed
+        if: steps.fetch_news.outcome == 'failure'
+        run: echo "::warning::ニュース取得が失敗しました。前日のブリーフィングでシステムチャットを続行します。"
 
       - name: Run system chat
         env:
