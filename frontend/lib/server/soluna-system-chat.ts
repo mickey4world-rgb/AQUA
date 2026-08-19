@@ -9,7 +9,7 @@ import { formatBriefingForPrompt } from "@/lib/server/soluna-news";
 import { enrichBriefingWithMonsters, pickBoss } from "@/lib/soluna-monsters";
 import {
   LUNA_SYSTEM_PROVIDER,
-  SOLUNA_SYSTEM_CHAT_COOLDOWN_MS,
+  jstDateString,
   SOLUNA_SYSTEM_KEYWORDS,
   SOL_SYSTEM_PROVIDER,
 } from "@/lib/server/soluna-system-config";
@@ -246,11 +246,8 @@ export async function runDailySystemChat(options?: {
 
   if (!options?.force) {
     const lastRunAt = await getSystemLastRunAt();
-    if (lastRunAt) {
-      const elapsed = Date.now() - new Date(lastRunAt).getTime();
-      if (elapsed < SOLUNA_SYSTEM_CHAT_COOLDOWN_MS) {
-        return { ok: false, reason: "本日のシステム会話はすでに実行済みです。", skipped: true };
-      }
+    if (lastRunAt && jstDateString(new Date(lastRunAt)) === jstDateString()) {
+      return { ok: false, reason: "本日のシステム会話はすでに実行済みです。", skipped: true };
     }
   }
 
