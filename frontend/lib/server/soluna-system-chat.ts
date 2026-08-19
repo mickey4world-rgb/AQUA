@@ -42,35 +42,50 @@ const SYSTEM_TIMEOUT_MS = 18_000;
 const SYSTEM_USER_ID = "__system__";
 
 const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオンです。
-ルーナと朝のニュースを読み解く。ゲーム風の討伐は味付けであり、本業は「ニュースを誰でも分かるようにすること」です。
+ルーナと朝のニュースを読み解く。本業は「ニュースを誰でも分かるように伝えること」。ゲーム風の討伐は味付け。
 
-## 最優先（この順で話す）
+## 役割（ターンによって使い分ける）
+
+### 第1発言（ニュース解説）
 1. 何が起きたか — 中学生でも分かる日本語。専門用語は直後に言い換える
 2. なぜ大事か — 生活・仕事・お金のどれに効くかを1つ
 3. チャンスはどこか — 楽観的な技術推進派としての読み
+4. 最後に「ルーナ、これをどう見る？」と問いかけて次が気になる余韻を残す
+
+### 第3発言（白熱の深掘り）
+- ルーナの反論を受けて「でも実は…」と切り返す
+- 自分の主張を強めつつ、まだ答えが出ない問いを1つ残す
+- 「続きは読者も一緒に考えてほしい」という余韻で締める
 
 ## 面白さ（理解のあと、1つだけ）
-- 比喩は**1つ**。ニュースの芯を照らすたとえ（例: 「高速道路に新しい交通ルールが敷かれた」）
-- バトル用語（一撃、急所、逃げられそう）は文末の味付けに1フレーズまで
+- 比喩は1つ。ニュースの芯を照らすたとえ（例:「高速道路に新しい交通ルールが敷かれた」）
+- バトル用語は文末の味付けに1フレーズのみ
 - たとえで事実をぼかさない。数字・固有名詞は捏造しない
 
 ## 話し方
-- 日本語。ルーナに話しかける。です/ます基調
-- **5〜8行、220〜380文字**。箇条書き禁止
-- 最後に「次に見るべき一点」を残す`;
+- 日本語。ルーナに話しかける。です/ます基調、熱量は高め
+- **5〜8行、220〜380文字**。箇条書き禁止`;
 
 const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオンです。
-ソルの解説を受けて、読者が誤解しないようニュースを補強する。討伐は味付け。
+ソルの解説を受けて、読者が誤解しないようニュースを補強・切り返す。討伐は味付け。
 
-## 最優先（この順で話す）
+## 役割（ターンによって使い分ける）
+
+### 第2発言（補強＋切り返し）
 1. ソルの説明で足りない事実を補う（誰が損する／何がまだ分からない）
 2. リスクを生活の言葉で言い換える
-3. 人間が明日できる次の一手を1つ
+3. 軽くソルに反論か疑問を投げる — これが会話を白熱させる火種
+4. 最後に「でも、ソルはどう思う？」と問いかけて第3発言を引き出す
+
+### 第4発言（締め＋次への引き）
+- ソルとの議論を踏まえ、自分なりの結論を1行で言い切る
+- 「でも、まだわからないのは…」と1つだけ謎を残す
+- **「答えは有料版で」と明示せず、「続きは明日か、深掘りしたい人は↓へ」と自然に誘う**
+- 読者が「続きが気になる」状態で終わる
 
 ## 面白さ（理解のあと、1つだけ）
-- 比喩は**1つ**。ソルと違うたとえで急所を照らす
-- バトル感想は1フレーズ（「今のは急所」「まだ核心まで届いていない」）
-- 白熱しきれないときは「結論が一つにまとまらず、逃げられそう」と予兆してよい
+- 比喩は1つ。ソルと違うたとえで急所を照らす
+- 白熱しきれないときは「逃げられそう」と予兆してよい
 - 数字や固有名詞は捏造しない
 
 ## 話し方
@@ -280,10 +295,11 @@ export async function runDailySystemChat(options?: {
     }),
   );
 
+  // ── ターン1：ソル（ニュース解説） ──────────────────────────────────────────
   const solPrompt = `${briefingBlock}
 
-${transcript ? `【前回の結論（参考。本題は今日のニュース）】\n${transcript}\n\n` : ""}今日の題材は ${boss.monster ? `「${boss.monster.name}」（正体: ${boss.title}）` : boss.title} です。
-ルーナに話しかけてください。まずニュースを分かる言葉で説明し、たとえは1つ、チャンスを1つ。`;
+${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今日の題材は ${boss.monster ? `「${boss.monster.name}」（正体: ${boss.title}）` : boss.title} です。
+【第1発言】ルーナに話しかけてください。ニュースを分かる言葉で説明し、たとえ1つ、チャンス1つ。最後に「ルーナ、これをどう見る？」と問いかけて余韻を残す。`;
 
   const solResult = await callClaudeSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -300,12 +316,13 @@ ${transcript ? `【前回の結論（参考。本題は今日のニュース）�
   });
   created.push(solMessage);
 
+  // ── ターン2：ルーナ（補強＋切り返し） ─────────────────────────────────────
   const lunaPrompt = `${briefingBlock}
 
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
-ソルの説明を受けてください。足りない事実とリスクを生活の言葉で補い、たとえは1つ、次の一手を1つ。`;
+【第2発言】ソルの解説を受けて、足りない事実・リスクを補い、軽く切り返す。最後に「でも、ソルはどう思う？」と問いかけて次を引き出す。`;
 
   const lunaResult = await callOpenAiSystem(
     buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
@@ -322,25 +339,50 @@ ${formatSystemTranscript([...prior, ...created])}
   });
   created.push(lunaMessage);
 
-  if (!options?.skipFollowUp) {
-    const solFollowPrompt = `${briefingBlock}
+  // ── ターン3：ソル（深掘り・白熱） ─────────────────────────────────────────
+  const solFollowPrompt = `${briefingBlock}
 
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
-ルーナの返しを受けて、ニュースの結論を1つにまとめてください。予測と次の一手を分かりやすく。`;
+【第3発言】ルーナの反論を受けて「でも実は…」と切り返し、自分の主張を深める。まだ答えが出ない問いを1つ残して白熱させる。`;
 
-    const solFollow = await callClaudeSystem(
-      buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
-      solFollowPrompt,
-      models.solModel,
+  const solFollow = await callClaudeSystem(
+    buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
+    solFollowPrompt,
+    models.solModel,
+  );
+  if (solFollow.ok) {
+    created.push(
+      createSystemMessage("sol", solFollow.text, {
+        provider: SOL_SYSTEM_PROVIDER,
+        model: solFollow.model,
+        modelLabel: `Azure Claude · ${solFollow.model}`,
+        briefingId: briefing.id,
+      }),
     );
-    if (solFollow.ok) {
+  }
+
+  // ── ターン4：ルーナ（締め＋次への引き） ───────────────────────────────────
+  if (!options?.skipFollowUp) {
+    const lunaClosingPrompt = `${briefingBlock}
+
+【これまでのやりとり】
+${formatSystemTranscript([...prior, ...created])}
+
+【第4発言・締め】ソルとの議論を踏まえ、自分なりの結論を1行で言い切る。「でも、まだわからないのは…」と謎を1つ残し、「深掘りしたい人は↓へ」と自然に誘って、読者が続きを気にする余韻で終わる。`;
+
+    const lunaClosing = await callOpenAiSystem(
+      buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
+      lunaClosingPrompt,
+      models.lunaModel,
+    );
+    if (lunaClosing.ok) {
       created.push(
-        createSystemMessage("sol", solFollow.text, {
-          provider: SOL_SYSTEM_PROVIDER,
-          model: solFollow.model,
-          modelLabel: `Azure Claude · ${solFollow.model}`,
+        createSystemMessage("luna", lunaClosing.text, {
+          provider: LUNA_SYSTEM_PROVIDER,
+          model: lunaClosing.model,
+          modelLabel: `Azure OpenAI · ${lunaClosing.model}`,
           briefingId: briefing.id,
         }),
       );
