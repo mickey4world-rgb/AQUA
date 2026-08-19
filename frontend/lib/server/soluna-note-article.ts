@@ -24,16 +24,27 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+const SOL_LABEL = "⚔️ ソル（勇者）";
+const LUNA_LABEL = "📖 ルーナ（賢者）";
+const CHARACTER_LABELS = [SOL_LABEL, LUNA_LABEL];
+
 function toNoteHtml(text: string): string {
   return text
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
-      const lines = block.split("\n").map((line) => escapeHtml(line)).join("<br>");
       if (block.startsWith("## ")) {
         return `<h2>${escapeHtml(block.slice(3).trim())}</h2>`;
       }
+      const lines = block.split("\n").map((line) => {
+        const escaped = escapeHtml(line);
+        // キャラクターラベル行は太字で強調
+        if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
+          return `<strong>${escaped}</strong>`;
+        }
+        return escaped;
+      }).join("<br>");
       return `<p>${lines}</p>`;
     })
     .join("");
@@ -43,8 +54,8 @@ function dialogueLines(messages: SolunaSystemMessage[]): string {
   return messages
     .filter((message) => message.role === "sol" || message.role === "luna")
     .map((message) => {
-      const name = message.role === "sol" ? "ソル" : "ルーナ";
-      return `${name}：${message.content.trim()}`;
+      const label = message.role === "sol" ? SOL_LABEL : LUNA_LABEL;
+      return `${label}\n${message.content.trim()}`;
     })
     .join("\n\n");
 }
@@ -91,9 +102,18 @@ export function composeDailyNote(input: {
     ? `https://note.com/${creator}`
     : "このマガジンの有料購読";
 
+  const swaBase = "https://www.aquacore.net";
+  const charImageUrl = `${swaBase}/soluna/characters.png`;
+
   const title = `ソルとルーナの朝討伐｜${dateLabel}｜${input.battle.bossName}`;
 
-  const freeBody = `今日も太陽と月が、ニュースをモンスターにして読み解きました。
+  const characterIntro = `${SOL_LABEL} ／ ${LUNA_LABEL}
+今日もニュースをモンスターに変えて、2人が討伐に出かけます。
+キャラクター詳細 → ${charImageUrl}`;
+
+  const freeBody = `${characterIntro}
+
+今日も太陽と月が、ニュースをモンスターにして読み解きました。
 
 ## 今日のニュース
 ${news}
@@ -114,7 +134,9 @@ ${digest || "議論はこれから。"}
 無料では「今日1日分」をオープンにしています。毎日の全文・ボケとツッコミの続き・貢献レポートは有料購読へ。購読が周囲に回るほど、2人の社会貢献（宇宙分析）に繋がります。
 ${shopLine}`;
 
-  const paidBody = `有料購読のあなたへ。今日の討伐の全文です。購読が回っていること自体が、2人の社会貢献の燃料になっています。
+  const paidBody = `有料購読のあなたへ。今日の討伐の全文です。
+${SOL_LABEL} ／ ${LUNA_LABEL}
+購読が回っていること自体が、2人の社会貢献の燃料になっています。
 
 ## ニュースの芯
 ${news}
