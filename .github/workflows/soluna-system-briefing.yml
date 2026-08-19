@@ -79,3 +79,68 @@ jobs:
           echo ""
           echo "HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
+
+      - name: Extract BOINC plan from jobs response
+        id: boinc_plan
+        run: |
+          MINUTES=$(python3 -c "import json; d=json.load(open('/tmp/soluna-jobs.json')); print(d.get('boincMinutes',0))" 2>/dev/null || echo "0")
+          BRIEFING_ID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-chat.json')); print(d.get('briefingId',''))" 2>/dev/null || echo "")
+          echo "boinc_minutes=${MINUTES}" >> "$GITHUB_OUTPUT"
+          echo "briefing_id=${BRIEFING_ID}" >> "$GITHUB_OUTPUT"
+          echo "BOINC 計画: ${MINUTES} 分, briefingId: ${BRIEFING_ID}"
+
+      - name: Run BOINC social contribution
+        if: steps.boinc_plan.outputs.boinc_minutes != '0' && steps.boinc_plan.outputs.briefing_id != ''
+        env:
+          BOINC_ACCOUNT_KEY: ${{ secrets.BOINC_ACCOUNT_KEY }}
+          BOINC_PROJECT_URL: ${{ vars.BOINC_PROJECT_URL }}
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          RUN_MINUTES: ${{ steps.boinc_plan.outputs.boinc_minutes }}
+          BRIEFING_ID: ${{ steps.boinc_plan.outputs.briefing_id }}
+        run: |
+          if [ -z "${BOINC_ACCOUNT_KEY}" ]; then
+            echo "::warning::BOINC_ACCOUNT_KEY 未設定のためスキップ。GitHub Secrets に追加すると社会貢献が有効になります。"
+            exit 0
+          fi
+
+          echo "=== BOINC 社会貢献 開始 ==="
+          echo "実行予定: ${RUN_MINUTES} 分 / briefingId: ${BRIEFING_ID}"
+
+          sudo apt-get install -y --no-install-recommends boinc-client -qq
+          sudo systemctl start boinc-client || true
+          sleep 3
+
+          PROJECT_URL="${BOINC_PROJECT_URL:-https://www.worldcommunitygrid.org}"
+          boinccmd --project_attach "${PROJECT_URL}" "${BOINC_ACCOUNT_KEY}" || true
+          sleep 10
+
+          START_TIME=$(date +%s)
+          DEADLINE=$(( START_TIME + RUN_MINUTES * 60 ))
+          boinccmd --run_benchmarks || true
+
+          while [ $(date +%s) -lt $DEADLINE ]; do
+            boinccmd --get_tasks 2>/dev/null | grep -E "fraction_done|state" | head -5 || true
+            sleep 60
+          done
+
+          ACTUAL_MIN=$(( ($(date +%s) - START_TIME) / 60 ))
+          TASKS=$(boinccmd --get_tasks 2>/dev/null | grep -c "state: uploaded" || echo "0")
+          CREDIT=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=user_total_credit: )\S+" | head -1 || echo "0")
+          PROJECT_NAME=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=project_name: ).+" | head -1 || echo "World Community Grid")
+
+          boinccmd --project "${PROJECT_URL}" detach || true
+          sudo systemctl stop boinc-client || true
+
+          echo "=== BOINC 結果 ==="
+          echo "実績: ${ACTUAL_MIN} 分, タスク ${TASKS} 件, クレジット ${CREDIT} cobblestones"
+          echo "プロジェクト: ${PROJECT_NAME} (${PROJECT_URL})"
+
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS -o /tmp/boinc-report.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/boinc-report" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "{\"briefingId\":\"${BRIEFING_ID}\",\"creditGranted\":${CREDIT},\"tasksCompleted\":${TASKS},\"projectName\":\"${PROJECT_NAME}\",\"projectUrl\":\"${PROJECT_URL}\",\"runMinutesActual\":${ACTUAL_MIN}}")
+          cat /tmp/boinc-report.json
+          echo "HTTP ${HTTP_CODE}"
