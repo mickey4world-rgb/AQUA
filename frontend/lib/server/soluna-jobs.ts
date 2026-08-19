@@ -1,4 +1,5 @@
 import { medalUnitScore } from "@/lib/server/soluna-battle";
+import { runDailyAssetTrade, inferNewsSentiment } from "@/lib/server/soluna-asset-trade";
 import { composeDailyNote, createNoteArticleRecord } from "@/lib/server/soluna-note-article";
 import { isNotePublishConfigured, noteCreatorUrl, publishNoteArticle } from "@/lib/server/soluna-note-publish";
 import {
@@ -20,8 +21,6 @@ import type {
   SolunaSystemMessage,
 } from "@/lib/types/soluna";
 
-const ASSET_PRINCIPAL_YEN = 100_000;
-
 export function boincMinutesFromItems(itemCount: number, victory: boolean): number {
   return Math.max(8, itemCount * 15 + (victory ? 25 : 0));
 }
@@ -40,20 +39,6 @@ function buildBoincRun(briefingId: string, itemCount: number, victory: boolean):
   };
 }
 
-function buildAssets(medalUnits: number): SolunaAssetLedger {
-  const cryptoYen = Math.round(ASSET_PRINCIPAL_YEN * 0.55);
-  const goldYen = ASSET_PRINCIPAL_YEN - cryptoYen;
-  return {
-    principalYen: ASSET_PRINCIPAL_YEN,
-    medalUnits,
-    cryptoYen,
-    goldYen,
-    status: "waiting-spec",
-    solComment: `元手10万円。今日のメダル ${medalUnits} 単位を、仮想通貨枠の『攻めの投資額』に見立てる。`,
-    lunaComment: `金は守り。メダルを全部突っ込むのは禁止。詳細な売買ルールはこれから接続するわ。`,
-    updatedAt: new Date().toISOString(),
-  };
-}
 
 export async function buildJobsState(): Promise<SolunaJobsState> {
   const [latestNote, latestBoinc, assets] = await Promise.all([
@@ -131,7 +116,40 @@ export async function runDailyAutonomousJobs(options?: {
     };
   }
 
-  const assets = buildAssets(medalUnitScore(hunter.medals));
+  const existingAssets = await getSystemAssets();
+  const sentiment = inferNewsSentiment(briefing.summary ?? "");
+  let assets: SolunaAssetLedger;
+  try {
+    assets = await runDailyAssetTrade({
+      ledger: existingAssets,
+      hunter,
+      newsSummary: briefing.summary ?? "",
+      briefingId: briefing.id,
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "資産運用エラー";
+    console.error("[soluna-jobs] asset trade error:", errMsg);
+    assets = existingAssets ?? {
+      principalYen: 100_000,
+      lastMonthTotalYen: 100_000,
+      monthlyTargetYen: 2_000,
+      monthlyRealizedPnlYen: 0,
+      sleepMode: false,
+      btcHeld: 0,
+      cashYen: 100_000,
+      totalYen: 100_000,
+      btcPriceYen: 0,
+      trades: [],
+      monthlySummaries: [],
+      medalUnits: medalUnitScore(hunter.medals),
+      status: "waiting-spec" as const,
+      solComment: `エラーが発生した: ${errMsg}`,
+      lunaComment: "API キーか残高を確認して。",
+      updatedAt: new Date().toISOString(),
+    };
+    void sentiment; // suppress unused warning
+  }
+
   await saveSystemNoteArticle(article);
   await saveSystemBoincRun(boinc);
   await saveSystemAssets(assets);

@@ -191,11 +191,53 @@ export interface SolunaBoincRun {
   };
 }
 
+/** bitFlyer での1回の取引記録 */
+export interface SolunaTradeRecord {
+  id: string;
+  createdAt: string;
+  side: "BUY" | "SELL";
+  product: "BTC_JPY";
+  sizeJpy: number;       // 取引金額（円）
+  priceBtc: number;      // 取引時の BTC 価格（円/BTC）
+  realizedPnlJpy?: number; // 実現損益（SELL 時のみ）
+  reason: string;        // "dca" | "take-profit" | "stop-loss"
+  briefingId: string;
+}
+
+/** 月次の資産サマリー */
+export interface SolunaMonthlyAssetSummary {
+  /** "2026-08" 形式 */
+  month: string;
+  openingBalanceYen: number;   // 月初総資産
+  targetProfitYen: number;     // 月利益目標（月初残高 × 2%）
+  realizedPnlYen: number;      // 当月累計実現損益
+  goalReached: boolean;        // 目標達成フラグ → おやすみモード
+  goalReachedAt?: string;      // 達成日時
+}
+
 export interface SolunaAssetLedger {
   principalYen: number;
+  /** 先月末総資産（初回は principalYen） */
+  lastMonthTotalYen: number;
+  /** 今月利益目標 = lastMonthTotalYen × 0.02 */
+  monthlyTargetYen: number;
+  /** 当月累計実現損益 */
+  monthlyRealizedPnlYen: number;
+  /** おやすみモード（目標 ≥ monthlyTargetYen） */
+  sleepMode: boolean;
+  /** 現在の BTC 保有量（BTC 単位） */
+  btcHeld: number;
+  /** 現在の現金残高（円） */
+  cashYen: number;
+  /** 総資産（現金 + BTC 時価） */
+  totalYen: number;
+  /** 最新 BTC 価格 */
+  btcPriceYen: number;
+  /** 当月取引履歴 */
+  trades: SolunaTradeRecord[];
+  /** 月次サマリー履歴 */
+  monthlySummaries: SolunaMonthlyAssetSummary[];
   medalUnits: number;
-  cryptoYen: number;
-  goldYen: number;
   status: SolunaJobStatus;
   solComment: string;
   lunaComment: string;
