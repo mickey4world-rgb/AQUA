@@ -22,6 +22,7 @@ type NoteApiJson = {
     key?: string;
     note_url?: string;
     noteUrl?: string;
+    uuid?: string;
   };
   error?: { message?: string };
 };
@@ -53,12 +54,78 @@ async function noteFetch(path: string, init: RequestInit): Promise<NoteApiJson> 
   return payload;
 }
 
+/**
+ * note.com に画像をアップロードして uuid を返す。
+ * 同じ画像を毎回アップロードしないよう、呼び出し元で uuid をキャッシュする。
+ */
+async function uploadNoteImage(imageBuffer: Buffer, mimeType: string): Promise<string> {
+  const cookie = noteCookie();
+  if (!cookie) throw new Error("NOTE_COOKIE が未設定です。");
+
+  const boundary = `----NoteUpload${Date.now()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="header.png"\r\nContent-Type: ${mimeType}\r\n\r\n`),
+    imageBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+
+  const response = await fetch("https://note.com/api/v1/images", {
+    method: "POST",
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "X-Requested-With": "XMLHttpRequest",
+      Origin: "https://editor.note.com",
+      Referer: "https://editor.note.com/",
+      Cookie: cookie,
+    },
+    body,
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as NoteApiJson;
+  if (!response.ok) {
+    throw new Error(payload.error?.message ?? `note 画像アップロード HTTP ${response.status}`);
+  }
+  const uuid = payload.data?.uuid;
+  if (!uuid) throw new Error("note 画像の uuid を取得できませんでした。");
+  return uuid;
+}
+
+/**
+ * NOTE_EYECATCH_UUID 環境変数があればそれを使い、なければ画像をアップロードして取得する。
+ * アップロードした uuid は自動でログ出力するので、次回から環境変数に設定できる。
+ */
+async function getEyecatchUuid(): Promise<string | null> {
+  // 環境変数にキャッシュ済みの uuid があればそのまま使う
+  const cached = process.env.NOTE_EYECATCH_UUID?.trim();
+  if (cached) return cached;
+
+  // SWA の public ディレクトリから画像を読み込む
+  // Next.js の process.cwd() は frontend/ なので public/soluna/characters.png を参照
+  try {
+    const { readFile } = await import("fs/promises");
+    const { join } = await import("path");
+    const imagePath = join(process.cwd(), "public", "soluna", "characters.png");
+    const imageBuffer = await readFile(imagePath);
+    const uuid = await uploadNoteImage(imageBuffer, "image/png");
+    console.log(`[note-publish] 画像アップロード完了。uuid=${uuid}`);
+    console.log(`[note-publish] SWA 環境変数 NOTE_EYECATCH_UUID=${uuid} を設定すると次回から再アップロードをスキップできます。`);
+    return uuid;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[note-publish] ヘッダー画像アップロードをスキップ: ${msg}`);
+    return null;
+  }
+}
+
 export async function publishNoteArticle(input: {
   title: string;
   freeHtml: string;
   paidHtml: string;
   priceYen: number;
 }): Promise<{ noteKey: string; noteUrl: string }> {
+  // ヘッダー画像の uuid を取得（失敗しても記事投稿は続行）
+  const eyecatchUuid = await getEyecatchUuid();
+
   const created = await noteFetch("/v1/text_notes", {
     method: "POST",
     body: JSON.stringify({
@@ -85,6 +152,7 @@ export async function publishNoteArticle(input: {
       body_length: combinedLength,
       index: false,
       is_lead_form: false,
+      ...(eyecatchUuid ? { eyecatch_image_uuid: eyecatchUuid } : {}),
     }),
   });
 
@@ -97,6 +165,7 @@ export async function publishNoteArticle(input: {
       body_length: combinedLength,
       status: "published",
       price: input.priceYen,
+      ...(eyecatchUuid ? { eyecatch_image_uuid: eyecatchUuid } : {}),
     }),
   });
 
