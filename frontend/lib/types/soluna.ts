@@ -180,6 +180,15 @@ export interface SolunaBoincRun {
   status: SolunaJobStatus;
   solComment: string;
   lunaComment: string;
+  /** 実行後に GHA から POST される実績値 */
+  result?: {
+    creditGranted: number;     // BOINC クレジット（cobblestones）
+    tasksCompleted: number;    // 完了タスク数
+    projectName: string;       // 接続したプロジェクト名
+    projectUrl: string;        // プロジェクトURL
+    finishedAt: string;        // ISO 文字列
+    runMinutesActual: number;  // 実際に実行した分数
+  };
 }
 
 export interface SolunaAssetLedger {

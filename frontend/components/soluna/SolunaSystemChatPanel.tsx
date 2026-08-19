@@ -261,13 +261,39 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
               <p className="mt-2 text-[13px] text-white">
                 アイテム {boinc.itemCount} 個 → 宇宙分析 {boinc.minutes} 分
               </p>
-              <p className="mt-1 text-[11px] text-amber-200/80">接続待ち（詳細は別途）</p>
-              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">ソル：{boinc.solComment}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">ルーナ：{boinc.lunaComment}</p>
+              {boinc.result ? (
+                <div className="mt-2 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-2">
+                  <p className="text-[11px] font-semibold text-emerald-300">✅ 実行完了</p>
+                  <p className="mt-1 text-[11px] text-emerald-100/90">
+                    実績: {boinc.result.runMinutesActual} 分 / タスク {boinc.result.tasksCompleted} 件
+                  </p>
+                  <p className="text-[12px] font-bold text-amber-300">
+                    🌟 {boinc.result.creditGranted} cobblestones
+                  </p>
+                  <a
+                    href={boinc.result.projectUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-block text-[11px] text-cyan-300 underline"
+                  >
+                    {boinc.result.projectName}
+                  </a>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    完了: {new Date(boinc.result.finishedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1 text-[11px] text-amber-200/80">
+                  {boinc.status === "done" ? "完了" : "GitHub Actions で実行中 / 待機中"}
+                </p>
+              )}
+              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">⚔️ {boinc.solComment}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">📖 {boinc.lunaComment}</p>
             </>
           ) : (
             <p className="mt-2 text-[12px] text-slate-400">
-              熱いバトルのアイテム数で実施時間を決めます。実行手順はこれから接続します。
+              熱いバトルのアイテム数で実施時間を決め、GitHub Actions の無料ランナーで実行します（コスト0）。
+              BOINC_ACCOUNT_KEY を GitHub Secrets に設定すると有効になります。
             </p>
           )}
         </article>

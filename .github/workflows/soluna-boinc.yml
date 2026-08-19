@@ -1,0 +1,139 @@
+name: Soluna BOINC Social Contribution
+
+# soluna-system-briefing.yml から workflow_call で呼ばれる、または単独実行
+on:
+  workflow_call:
+    inputs:
+      briefing_id:
+        required: true
+        type: string
+      run_minutes:
+        required: true
+        type: number
+  workflow_dispatch:
+    inputs:
+      briefing_id:
+        description: "対象 briefingId (例: briefing-2026-08-19)"
+        required: true
+        type: string
+      run_minutes:
+        description: "実行する分数 (例: 15)"
+        required: false
+        default: "15"
+        type: string
+
+jobs:
+  boinc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120   # 最長 2 時間（無料枠内）
+
+    steps:
+      - name: Install BOINC client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends boinc-client boinc-manager
+          sudo systemctl start boinc-client || true
+          sleep 3
+          echo "BOINC client ready"
+
+      - name: Attach to World Community Grid (BOINC project)
+        env:
+          BOINC_ACCOUNT_KEY: ${{ secrets.BOINC_ACCOUNT_KEY }}
+          BOINC_PROJECT_URL: ${{ vars.BOINC_PROJECT_URL || 'https://www.worldcommunitygrid.org' }}
+        run: |
+          if [ -z "${BOINC_ACCOUNT_KEY}" ]; then
+            echo "::error::BOINC_ACCOUNT_KEY が未設定です。GitHub Secrets に追加してください。"
+            exit 1
+          fi
+          # BOINC に接続して認証
+          boinccmd --project_attach "${BOINC_PROJECT_URL}" "${BOINC_ACCOUNT_KEY}" || true
+          sleep 5
+          boinccmd --get_project_status
+
+      - name: Run BOINC for specified minutes
+        id: run_boinc
+        env:
+          RUN_MINUTES: ${{ inputs.run_minutes || '15' }}
+        run: |
+          echo "BOINC 実行開始: ${RUN_MINUTES} 分"
+          START_TIME=$(date +%s)
+
+          # 全プロジェクトを非一時停止にして計算開始
+          boinccmd --run_benchmarks || true
+          boinccmd --project https://www.worldcommunitygrid.org resume || true
+          sleep 10
+
+          # 指定時間だけ待機しながら進捗を記録
+          DEADLINE=$(( START_TIME + RUN_MINUTES * 60 ))
+          while [ $(date +%s) -lt $DEADLINE ]; do
+            boinccmd --get_tasks 2>/dev/null | grep -E "name|state|fraction_done|received_credit" || true
+            sleep 30
+          done
+
+          echo "BOINC 実行完了"
+          END_TIME=$(date +%s)
+          ACTUAL_MINUTES=$(( (END_TIME - START_TIME) / 60 ))
+          echo "actual_minutes=${ACTUAL_MINUTES}" >> "$GITHUB_OUTPUT"
+
+      - name: Collect BOINC results
+        id: collect
+        run: |
+          # タスク結果を収集
+          TASKS_OUTPUT=$(boinccmd --get_tasks 2>/dev/null || echo "")
+          COMPLETED=$(echo "$TASKS_OUTPUT" | grep -c "state: uploaded\|state: download_failed\|state: computation_error" || echo "0")
+          CREDIT=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=user_total_credit: )\S+" | head -1 || echo "0")
+          PROJECT_NAME=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=project_name: ).+" | head -1 || echo "World Community Grid")
+          PROJECT_URL=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=master_url: )\S+" | head -1 || echo "https://www.worldcommunitygrid.org")
+
+          echo "completed_tasks=${COMPLETED}" >> "$GITHUB_OUTPUT"
+          echo "credit=${CREDIT}" >> "$GITHUB_OUTPUT"
+          echo "project_name=${PROJECT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "project_url=${PROJECT_URL}" >> "$GITHUB_OUTPUT"
+
+          echo "=== BOINC Summary ==="
+          echo "Completed tasks: ${COMPLETED}"
+          echo "Credit earned: ${CREDIT} cobblestones"
+          echo "Project: ${PROJECT_NAME}"
+
+      - name: Detach BOINC project (cleanup)
+        if: always()
+        run: |
+          boinccmd --project https://www.worldcommunitygrid.org detach || true
+          sudo systemctl stop boinc-client || true
+          echo "クリーンアップ完了（VM はこの後破棄されます）"
+
+      - name: Report results to SWA
+        if: always()
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          BRIEFING_ID="${{ inputs.briefing_id }}"
+          CREDIT="${{ steps.collect.outputs.credit || '0' }}"
+          TASKS="${{ steps.collect.outputs.completed_tasks || '0' }}"
+          PROJECT="${{ steps.collect.outputs.project_name || 'World Community Grid' }}"
+          PROJECT_URL="${{ steps.collect.outputs.project_url || 'https://www.worldcommunitygrid.org' }}"
+          ACTUAL_MIN="${{ steps.run_boinc.outputs.actual_minutes || inputs.run_minutes || '0' }}"
+
+          PAYLOAD=$(cat <<JSON
+          {
+            "briefingId": "${BRIEFING_ID}",
+            "creditGranted": ${CREDIT},
+            "tasksCompleted": ${TASKS},
+            "projectName": "${PROJECT}",
+            "projectUrl": "${PROJECT_URL}",
+            "runMinutesActual": ${ACTUAL_MIN}
+          }
+          JSON
+          )
+
+          HTTP_CODE=$(curl -sS -o /tmp/boinc-report.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/boinc-report" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}")
+
+          cat /tmp/boinc-report.json
+          echo ""
+          echo "HTTP ${HTTP_CODE}"
