@@ -43,10 +43,11 @@ export async function POST(request: Request) {
       sleepMode: assets.sleepMode,
       battleMode: assets.battleMode,
       totalYen: assets.totalYen,
+      btcPriceYen: assets.btcPriceYen,
       monthlyRealizedPnlYen: assets.monthlyRealizedPnlYen,
       monthlyTargetYen: assets.monthlyTargetYen,
       lastTrade: assets.trades[assets.trades.length - 1] ?? null,
-      solComment: assets.solComment,
+      marketNote: assets.solComment,
       lunaComment: assets.lunaComment,
       updatedAt: assets.updatedAt,
     });

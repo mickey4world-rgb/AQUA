@@ -344,7 +344,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
           <p className="mt-1 text-[10px] text-slate-500">
-            朝の開始時刻なし · 2時間ごとに裏で監視・売買（月目標まで）
+            朝の開始時刻なし · 1時間ごとに板・約定を見て利益見込みで売買
           </p>
           {assets ? (
             <>
