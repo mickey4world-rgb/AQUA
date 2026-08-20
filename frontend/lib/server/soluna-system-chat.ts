@@ -7,7 +7,12 @@ import {
 import { resolveDailyBattle } from "@/lib/server/soluna-battle";
 import { formatBriefingForPrompt } from "@/lib/server/soluna-news";
 import { formatBattleModePromptAddon } from "@/lib/server/soluna-asset-rpg";
-import { enrichBriefingWithMonsters, pickBoss } from "@/lib/soluna-monsters";
+import {
+  formatJourneyForPrompt,
+  inferAreaFromBriefing,
+  pickNextDestination,
+} from "@/lib/server/soluna-journey";
+import { enrichBriefingWithMonsters, pickBoss, pickTrashMobs } from "@/lib/soluna-monsters";
 import {
   LUNA_SYSTEM_PROVIDER,
   jstDateString,
@@ -286,7 +291,11 @@ export async function runDailySystemChat(options?: {
   const prior = await listSystemMessages(6);
   const encounter = enrichBriefingWithMonsters(briefing);
   const boss = pickBoss(encounter);
-  const briefingBlock = `${formatBriefingForPrompt(encounter)}\n\n${guildBuffBlock}`;
+  const trash = pickTrashMobs(encounter, 2);
+  const area = inferAreaFromBriefing(encounter);
+  const nextArea = pickNextDestination(area, encounter);
+  const journeyBlock = formatJourneyForPrompt(area, nextArea, boss, trash);
+  const briefingBlock = `${formatBriefingForPrompt(encounter)}\n\n${journeyBlock}\n\n${guildBuffBlock}`;
   const transcript = formatSystemTranscript(prior);
   const relationshipBlock = buildPairRelationshipPrompt(personality);
   const solPersonalityBlock = buildCharacterPersonalityPrompt(personality, "sol", episodes);
@@ -307,7 +316,7 @@ export async function runDailySystemChat(options?: {
   created.push(
     createSystemMessage(
       "system",
-      `⚔️ 朝の討伐開始 — ${bossLine}${buffNarration ? `\n${buffNarration}` : ""}`,
+      `🗺️ 冒険日誌 — 『${area.name}』（${area.regionLabel}）\n⚔️ 朝の討伐開始 — ${bossLine}${trash.length ? ` ほか小物 ${trash.length} 体` : ""}${buffNarration ? `\n${buffNarration}` : ""}`,
       {
         briefingId: briefing.id,
         kind: "narration",

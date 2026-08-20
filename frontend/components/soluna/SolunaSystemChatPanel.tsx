@@ -80,46 +80,61 @@ function MonsterBoard({
   battle: SolunaBattleResult | null;
 }) {
   return (
-    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-      {briefing.items.map((item) => {
-        const monster = item.monster;
-        const isBoss = Boolean(
-          monster && battle && battle.briefingId === briefing.id && monster.name === battle.bossName,
-        );
-        const defeated = isBoss && battle?.outcome === "victory";
-        const escaped = isBoss && battle?.outcome === "escape";
-        const hpPct = defeated ? 0 : escaped ? 38 : 100;
-        return (
-          <article
-            key={`${item.keyword}-${item.title}`}
-            className={`rounded-xl border px-3 py-2.5 ${
-              defeated
-                ? "border-amber-300/25 bg-amber-500/[0.08]"
-                : escaped
-                  ? "border-slate-400/20 bg-slate-500/10"
-                  : "border-rose-300/20 bg-rose-500/[0.07]"
-            }`}
-          >
-            <p className="text-[10px] tracking-[0.16em] text-rose-200/70 uppercase">
-              {monster ? `Lv.${monster.rank} ${monster.speciesLabel}` : item.keyword}
-              {defeated ? " · 討伐済" : escaped ? " · 逃走" : ""}
-            </p>
-            <h4 className="mt-0.5 text-sm font-semibold text-rose-50">
-              {monster?.name ?? item.title}
-            </h4>
-            {monster && (
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-black/30">
-                <div
-                  className={`h-full rounded-full ${defeated ? "bg-amber-300" : "bg-rose-400"}`}
-                  style={{ width: `${hpPct}%` }}
-                />
-              </div>
-            )}
-            <p className="mt-2 text-[12px] leading-relaxed text-slate-200">{item.summary}</p>
-            <p className="mt-1 text-[11px] text-slate-400">ニュース: {item.title}</p>
-          </article>
-        );
-      })}
+    <div className="mt-3 space-y-2">
+      {battle?.journey && battle.briefingId === briefing.id && (
+        <p className="rounded-lg border border-emerald-300/20 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+          🗺️ 現在地『{battle.journey.areaName}』（{battle.journey.regionLabel}）→ 次は『
+          {battle.journey.nextAreaName}』
+          {battle.wins !== undefined
+            ? ` · 本日 ${battle.wins}勝${battle.losses ?? 0}敗`
+            : ""}
+        </p>
+      )}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {briefing.items.map((item) => {
+          const monster = item.monster;
+          const isBoss = Boolean(
+            monster && battle && battle.briefingId === briefing.id && monster.name === battle.bossName,
+          );
+          const enc = battle?.encounters?.find((row) => row.monsterName === monster?.name);
+          const defeated =
+            (isBoss && battle?.outcome === "victory") || enc?.outcome === "victory";
+          const escaped =
+            (isBoss && battle?.outcome === "escape") || enc?.outcome === "escape";
+          const hpPct = defeated ? 0 : escaped ? 38 : 100;
+          return (
+            <article
+              key={`${item.keyword}-${item.title}`}
+              className={`rounded-xl border px-3 py-2.5 ${
+                defeated
+                  ? "border-amber-300/25 bg-amber-500/[0.08]"
+                  : escaped
+                    ? "border-slate-400/20 bg-slate-500/10"
+                    : "border-rose-300/20 bg-rose-500/[0.07]"
+              }`}
+            >
+              <p className="text-[10px] tracking-[0.16em] text-rose-200/70 uppercase">
+                {isBoss ? "大ボス · " : enc ? "小物 · " : ""}
+                {monster ? `Lv.${monster.rank} ${monster.speciesLabel}` : item.keyword}
+                {defeated ? " · 討伐済" : escaped ? " · 逃走" : ""}
+              </p>
+              <h4 className="mt-0.5 text-sm font-semibold text-rose-50">
+                {monster?.name ?? item.title}
+              </h4>
+              {monster && (
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-black/30">
+                  <div
+                    className={`h-full rounded-full ${defeated ? "bg-amber-300" : "bg-rose-400"}`}
+                    style={{ width: `${hpPct}%` }}
+                  />
+                </div>
+              )}
+              <p className="mt-2 text-[12px] leading-relaxed text-slate-200">{item.summary}</p>
+              <p className="mt-1 text-[11px] text-slate-400">ニュース: {item.title}</p>
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -151,7 +166,18 @@ function BattleRecapCard({ battle }: { battle: SolunaBattleResult }) {
         {victory ? "討伐成功" : "取り逃がし"}
       </p>
       <dl className="mt-3 divide-y divide-white/8">
-        <RecapRow label="相手">
+        {battle.journey && (
+          <RecapRow label="舞台">
+            『{battle.journey.areaName}』（{battle.journey.regionLabel}）→ 次『
+            {battle.journey.nextAreaName}』
+          </RecapRow>
+        )}
+        {battle.wins !== undefined && (
+          <RecapRow label="複数戦">
+            {battle.wins}勝{battle.losses ?? 0}敗 / 物語ゴールド +{battle.goldFlavorTotal ?? 0}
+          </RecapRow>
+        )}
+        <RecapRow label="大ボス">
           Lv.{battle.bossRank} {battle.bossName}
         </RecapRow>
         <RecapRow label="ニュース">

@@ -186,4 +186,14 @@ export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
   return [...items].sort((a, b) => (b.monster?.rank ?? 1) - (a.monster?.rank ?? 1))[0];
 }
 
+/** 大ボス以外からランク低めを最大 max 体（小物〜中ボス） */
+export function pickTrashMobs(briefing: SolunaNewsBriefing, max = 2): SolunaNewsItem[] {
+  const enriched = enrichBriefingWithMonsters(briefing);
+  const boss = pickBoss(enriched);
+  return enriched.items
+    .filter((item) => item.title !== boss.title)
+    .sort((a, b) => (a.monster?.rank ?? 1) - (b.monster?.rank ?? 1))
+    .slice(0, max);
+}
+
 export const SOLUNA_SPECIES_LABEL = SPECIES_LABEL;

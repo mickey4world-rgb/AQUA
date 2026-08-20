@@ -87,6 +87,27 @@ export interface SolunaBattleLoot {
   xpGained: number;
 }
 
+export interface SolunaEncounterResult {
+  role: "trash" | "mid" | "boss";
+  monsterName: string;
+  rank: SolunaMonsterRank;
+  newsTitle: string;
+  newsPlain: string;
+  outcome: SolunaBattleOutcome;
+  xpGained: number;
+  /** 物語上のゴールド（小物討伐の微量利益など） */
+  goldFlavor: number;
+  lootName?: string | null;
+}
+
+export interface SolunaJourneySnapshot {
+  areaId: string;
+  areaName: string;
+  regionLabel: string;
+  nextAreaId: string;
+  nextAreaName: string;
+}
+
 export interface SolunaBattleResult {
   id: string;
   briefingId: string;
@@ -104,6 +125,14 @@ export interface SolunaBattleResult {
   loot: SolunaBattleLoot;
   levelAfter: number;
   xpAfter: number;
+  /** 小物＋大ボスの複数戦 */
+  encounters?: SolunaEncounterResult[];
+  /** 小物勝利数 / 敗北数 */
+  wins?: number;
+  losses?: number;
+  /** 本日の物語ゴールド合計 */
+  goldFlavorTotal?: number;
+  journey?: SolunaJourneySnapshot;
 }
 
 export interface SolunaHunterInventoryItem {
@@ -122,6 +151,8 @@ export interface SolunaHunterState {
   medals: Record<SolunaMedalKind, number>;
   inventory: SolunaHunterInventoryItem[];
   battles: SolunaBattleResult[];
+  /** 旅の現在地（エリア ID） */
+  currentAreaId?: string;
   updatedAt: string;
 }
 
