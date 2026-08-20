@@ -454,7 +454,9 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
 
               {assets.status === "waiting-spec" && (
                 <p className="mt-2 text-[11px] text-amber-200/80">
-                  ⏳ 魔力充填待ち / API キー未設定
+                  {jobs.bitFlyerConfigured
+                    ? "⏳ キー設定済み。口座同期待ち（Actions の Asset Trade を1回実行するか、毎時クロンを待つ）"
+                    : "⏳ 魔力充填待ち / BITFLYER_API_KEY と BITFLYER_API_SECRET を SWA に設定してください"}
                 </p>
               )}
 

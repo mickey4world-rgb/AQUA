@@ -1,5 +1,5 @@
 import { medalUnitScore } from "@/lib/server/soluna-battle";
-import { runDailyAssetTrade } from "@/lib/server/soluna-asset-trade";
+import { isBitFlyerEnabled, runDailyAssetTrade } from "@/lib/server/soluna-asset-trade";
 import { composeDailyNote, createNoteArticleRecord } from "@/lib/server/soluna-note-article";
 import { isNotePublishConfigured, noteCreatorUrl, publishNoteArticle } from "@/lib/server/soluna-note-publish";
 import { advanceSettlement } from "@/lib/server/soluna-settlement";
@@ -42,6 +42,15 @@ function buildBoincRun(briefingId: string, itemCount: number, victory: boolean):
   };
 }
 
+function withBitFlyerFlag(
+  state: Omit<SolunaJobsState, "bitFlyerConfigured">,
+): SolunaJobsState {
+  return {
+    ...state,
+    bitFlyerConfigured: isBitFlyerEnabled(),
+  };
+}
+
 export async function buildJobsState(): Promise<SolunaJobsState> {
   const [latestNote, latestBoinc, assets, settlement] = await Promise.all([
     getLatestNoteArticle(),
@@ -49,14 +58,14 @@ export async function buildJobsState(): Promise<SolunaJobsState> {
     getSystemAssets(),
     getSystemSettlement(),
   ]);
-  return {
+  return withBitFlyerFlag({
     noteConfigured: isNotePublishConfigured(),
     creatorUrl: noteCreatorUrl(),
     latestNote,
     latestBoinc,
     assets,
     settlement,
-  };
+  });
 }
 
 export async function runDailyAutonomousJobs(options?: {
@@ -175,12 +184,12 @@ export async function runDailyAutonomousJobs(options?: {
   await saveSystemAssets(assets);
   await saveSystemSettlement(settlement);
 
-  return {
+  return withBitFlyerFlag({
     noteConfigured: isNotePublishConfigured(),
     creatorUrl: noteCreatorUrl(),
     latestNote: article,
     latestBoinc: boinc,
     assets,
     settlement,
-  };
+  });
 }
