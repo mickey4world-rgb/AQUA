@@ -299,9 +299,19 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         </article>
 
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 聖なる魔力タンク</p>
+          <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
           {assets ? (
             <>
+              {assets.battleMode === "attack" && (
+                <p className="mt-2 text-[11px] font-semibold text-amber-300">
+                  🌟 前日利益バフ発動中（魔力増幅＋20%）
+                </p>
+              )}
+              {assets.battleMode === "defense" && assets.status === "done" && (
+                <p className="mt-2 text-[11px] font-semibold text-sky-300">
+                  🛡️ 防御モード · 黄金の守護巨兵で足元固め
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap gap-3">
                 <div>
                   <p className="text-[10px] text-slate-400">総魔力（評価額）</p>
@@ -319,12 +329,17 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                   )}
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400">未召喚魔力</p>
-                  <p className="text-[13px] text-slate-200">{assets.cashYen.toLocaleString("ja-JP")} MP</p>
+                  <p className="text-[10px] text-slate-400">🤖 黄金の守護巨兵</p>
+                  <p className="text-[13px] text-slate-200">
+                    Lv.{(assets.cashYen / 10000).toFixed(1)} · {assets.cashYen.toLocaleString("ja-JP")} MP
+                  </p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400">🐉 烈火の竜</p>
-                  <p className="text-[13px] text-slate-200">{assets.btcHeld.toFixed(4)} BTC</p>
+                  <p className="text-[10px] text-slate-400">🐉 雷轟の蒼竜</p>
+                  <p className="text-[13px] text-slate-200">
+                    Lv.{(((assets.btcHeld * (assets.btcPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
+                    {assets.btcHeld.toFixed(4)} BTC
+                  </p>
                 </div>
                 {(assets.ethHeld ?? 0) > 0 && (
                   <div>
@@ -386,7 +401,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
             </>
           ) : (
             <p className="mt-2 text-[12px] text-slate-400">
-              聖なる魔力タンク 100,000 MP（元本10万円）。烈火の竜（BTC）をドルコスト平均で召喚。BITFLYER_API_KEY 設定後に自動遠征します。
+              聖なる魔力タンク 100,000 MP。雷轟の蒼竜（BTC）育成＆黄金の守護巨兵（現金防衛）。前日利益でバフ発動。
             </p>
           )}
         </article>
