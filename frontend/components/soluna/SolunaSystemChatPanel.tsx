@@ -45,17 +45,20 @@ function MoodBar({ label, value, color }: { label: string; value: number; color:
 }
 
 function HunterHud({ hunter }: { hunter: SolunaHunterState }) {
-  const xpPct = Math.round((hunter.xpIntoLevel / Math.max(1, hunter.xpForNext)) * 100);
+  const xpInto = hunter.xpIntoLevel ?? 0;
+  const xpNext = Math.max(1, hunter.xpForNext ?? 1);
+  const xpPct = Math.round((xpInto / xpNext) * 100);
+  const medals = hunter.medals ?? { bronze: 0, silver: 0, gold: 0, rainbow: 0 };
 
   return (
     <div className="mt-3 rounded-xl border border-amber-300/20 bg-gradient-to-r from-amber-500/10 to-indigo-500/10 p-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-[10px] tracking-[0.18em] text-amber-200/70 uppercase">Party</p>
-          <p className="text-lg font-semibold text-white">ハンター Lv.{hunter.level}</p>
+          <p className="text-lg font-semibold text-white">ハンター Lv.{hunter.level ?? 1}</p>
         </div>
         <p className="font-mono text-[11px] text-amber-100/80">
-          EXP {hunter.xpIntoLevel}/{hunter.xpForNext}
+          EXP {xpInto}/{xpNext}
         </p>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/30">
@@ -64,7 +67,7 @@ function HunterHud({ hunter }: { hunter: SolunaHunterState }) {
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-200">
         {(Object.keys(MEDAL_LABEL) as SolunaMedalKind[]).map((kind) => (
           <span key={kind} className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5">
-            {MEDAL_LABEL[kind]} {hunter.medals[kind]}
+            {MEDAL_LABEL[kind]} {medals[kind] ?? 0}
           </span>
         ))}
       </div>
@@ -91,7 +94,7 @@ function MonsterBoard({
         </p>
       )}
       <div className="grid gap-2 sm:grid-cols-2">
-        {briefing.items.map((item) => {
+        {(briefing.items ?? []).map((item) => {
           const monster = item.monster;
           const isBoss = Boolean(
             monster && battle && battle.briefingId === briefing.id && monster.name === battle.bossName,
@@ -150,9 +153,10 @@ function RecapRow({ label, children }: { label: string; children: ReactNode }) {
 
 function BattleRecapCard({ battle }: { battle: SolunaBattleResult }) {
   const victory = battle.outcome === "victory";
-  const medal = battle.loot.medal ? `${MEDAL_LABEL[battle.loot.medal]}メダル` : "なし";
-  const item = battle.loot.itemName
-    ? `${battle.loot.itemName}${battle.loot.itemFlavor ? `（${battle.loot.itemFlavor}）` : ""}`
+  const loot = battle.loot ?? { medal: null, itemName: null, itemFlavor: null, xpGained: 0 };
+  const medal = loot.medal ? `${MEDAL_LABEL[loot.medal]}メダル` : "なし";
+  const item = loot.itemName
+    ? `${loot.itemName}${loot.itemFlavor ? `（${loot.itemFlavor}）` : ""}`
     : "なし";
 
   return (
@@ -186,15 +190,15 @@ function BattleRecapCard({ battle }: { battle: SolunaBattleResult }) {
             <span className="mt-1 block text-[11px] text-slate-400">{battle.newsTitle}</span>
           ) : null}
         </RecapRow>
-        <RecapRow label="なぜこうなった">{battle.outcomeWhy || battle.impression}</RecapRow>
-        <RecapRow label="2人の感想">{battle.impression}</RecapRow>
+        <RecapRow label="なぜこうなった">{battle.outcomeWhy || battle.impression || "—"}</RecapRow>
+        <RecapRow label="2人の感想">{battle.impression || "—"}</RecapRow>
         <RecapRow label="入手">
-          {medal} ／ {item} ／ 経験値 +{battle.loot.xpGained}
+          {medal} ／ {item} ／ 経験値 +{loot.xpGained ?? 0}
           <span className="mt-1 block text-[11px] text-slate-400">
-            ハンター Lv.{battle.levelAfter}
+            ハンター Lv.{battle.levelAfter ?? "—"}
           </span>
         </RecapRow>
-        <RecapRow label="次に見ること">{battle.nextMove}</RecapRow>
+        <RecapRow label="次に見ること">{battle.nextMove || "—"}</RecapRow>
       </dl>
     </section>
   );
@@ -214,8 +218,8 @@ function PastHuntList({ battles }: { battles: SolunaBattleResult[] }) {
               {battle.outcome === "victory" ? "討伐" : "逃走"} · Lv.{battle.bossRank} {battle.bossName}
             </span>
             <span className="text-[11px] text-slate-500">
-              {battle.loot.medal ? `${MEDAL_LABEL[battle.loot.medal]} · ` : ""}
-              EXP +{battle.loot.xpGained}
+              {battle.loot?.medal ? `${MEDAL_LABEL[battle.loot.medal]} · ` : ""}
+              EXP +{battle.loot?.xpGained ?? 0}
             </span>
           </li>
         ))}
@@ -304,7 +308,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
               <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-300">
                 {settlement.latestEvent.topic}
               </p>
-              {settlement.facilities.length > 0 && (
+              {Array.isArray(settlement.facilities) && settlement.facilities.length > 0 && (
                 <ul className="mt-2 space-y-0.5 text-[10px] text-slate-400">
                   {settlement.facilities.slice(-3).map((f) => (
                     <li key={f.id}>
@@ -362,13 +366,13 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                 <div>
                   <p className="text-[10px] text-slate-400">総魔力（評価額）</p>
                   <p className="text-[15px] font-bold text-white">
-                    {assets.totalYen.toLocaleString("ja-JP")} MP
+                    {(assets.totalYen ?? 0).toLocaleString("ja-JP")} MP
                   </p>
                   {typeof assets.previousTotalYen === "number" && (
                     <p className="text-[10px] text-slate-400">
                       前日比{" "}
                       {(() => {
-                        const d = Math.round(assets.totalYen - assets.previousTotalYen);
+                        const d = Math.round((assets.totalYen ?? 0) - assets.previousTotalYen);
                         return `${d >= 0 ? "+" : ""}${d.toLocaleString("ja-JP")} MP`;
                       })()}
                     </p>
@@ -377,34 +381,46 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                 <div>
                   <p className="text-[10px] text-slate-400">🤖 黄金の守護巨兵</p>
                   <p className="text-[13px] text-slate-200">
-                    Lv.{(assets.cashYen / 10000).toFixed(1)} · {assets.cashYen.toLocaleString("ja-JP")} MP
+                    Lv.{(((assets.cashYen ?? 0) / 10000) || 0).toFixed(1)} ·{" "}
+                    {(assets.cashYen ?? 0).toLocaleString("ja-JP")} MP
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400">🐉 雷轟の蒼竜</p>
                   <p className="text-[13px] text-slate-200">
-                    Lv.{(((assets.btcHeld * (assets.btcPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
-                    {assets.btcHeld.toFixed(4)} BTC
+                    Lv.{((((assets.btcHeld ?? 0) * (assets.btcPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
+                    {(assets.btcHeld ?? 0).toFixed(4)} BTC
                   </p>
                 </div>
                 {(assets.ethHeld ?? 0) > 0 && (
                   <div>
                     <p className="text-[10px] text-slate-400">🦅 蒼穹の不死鳥</p>
-                    <p className="text-[13px] text-slate-200">{assets.ethHeld.toFixed(4)} ETH</p>
+                    <p className="text-[13px] text-slate-200">{(assets.ethHeld ?? 0).toFixed(4)} ETH</p>
                   </div>
                 )}
               </div>
 
               <div className="mt-2">
                 <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>討伐報酬 {assets.monthlyRealizedPnlYen.toLocaleString("ja-JP")} ゴールド</span>
-                  <span>目標 {assets.monthlyTargetYen.toLocaleString("ja-JP")} ゴールド</span>
+                  <span>
+                    討伐報酬 {(assets.monthlyRealizedPnlYen ?? 0).toLocaleString("ja-JP")} ゴールド
+                  </span>
+                  <span>
+                    目標 {(assets.monthlyTargetYen ?? 0).toLocaleString("ja-JP")} ゴールド
+                  </span>
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
                   <div
                     className={`h-full rounded-full transition-all ${assets.sleepMode ? "bg-emerald-400" : "bg-amber-400"}`}
                     style={{
-                      width: `${Math.min(100, Math.round((assets.monthlyRealizedPnlYen / Math.max(1, assets.monthlyTargetYen)) * 100))}%`,
+                      width: `${Math.min(
+                        100,
+                        Math.round(
+                          ((assets.monthlyRealizedPnlYen ?? 0) /
+                            Math.max(1, assets.monthlyTargetYen ?? 1)) *
+                            100,
+                        ),
+                      )}%`,
                     }}
                   />
                 </div>
@@ -413,7 +429,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                 )}
               </div>
 
-              {assets.trades.length > 0 && (
+              {Array.isArray(assets.trades) && assets.trades.length > 0 && (
                 <div className="mt-2">
                   <p className="text-[10px] text-slate-400">直近の召喚／解呪</p>
                   <div className="mt-1 space-y-1">
@@ -422,8 +438,8 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                         <span className={`font-semibold ${t.side === "BUY" ? "text-blue-300" : "text-rose-300"}`}>
                           {t.side === "BUY" ? "召喚" : "解呪"}
                         </span>
-                        <span className="text-slate-300">{t.sizeJpy.toLocaleString()} MP</span>
-                        <span className="text-slate-400">@ {t.priceBtc.toLocaleString()}</span>
+                        <span className="text-slate-300">{(t.sizeJpy ?? 0).toLocaleString()} MP</span>
+                        <span className="text-slate-400">@ {(t.priceBtc ?? 0).toLocaleString()}</span>
                         {t.realizedPnlJpy !== undefined && (
                           <span className={t.realizedPnlJpy >= 0 ? "text-emerald-300" : "text-rose-300"}>
                             {t.realizedPnlJpy >= 0 ? "+" : ""}
@@ -457,20 +473,22 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
 }
 
 function PersonalityPanel({ personality }: { personality: SolunaSystemPersonalityState }) {
+  const solMood = personality.sol?.mood ?? { happiness: 0.5, energy: 0.5 };
+  const lunaMood = personality.luna?.mood ?? { happiness: 0.5, energy: 0.5 };
   return (
     <div className="mt-4 grid gap-3 rounded-xl border border-violet-300/15 bg-black/20 p-3 sm:grid-cols-2">
       <div>
         <p className="text-[10px] tracking-[0.18em] text-amber-200/70 uppercase">ソル · 気分</p>
         <div className="mt-2 flex gap-3">
-          <MoodBar label="happiness" value={personality.sol.mood.happiness} color="bg-amber-300" />
-          <MoodBar label="energy" value={personality.sol.mood.energy} color="bg-orange-300" />
+          <MoodBar label="happiness" value={solMood.happiness ?? 0.5} color="bg-amber-300" />
+          <MoodBar label="energy" value={solMood.energy ?? 0.5} color="bg-orange-300" />
         </div>
       </div>
       <div>
         <p className="text-[10px] tracking-[0.18em] text-indigo-200/70 uppercase">ルーナ · 気分</p>
         <div className="mt-2 flex gap-3">
-          <MoodBar label="happiness" value={personality.luna.mood.happiness} color="bg-indigo-300" />
-          <MoodBar label="energy" value={personality.luna.mood.energy} color="bg-violet-300" />
+          <MoodBar label="happiness" value={lunaMood.happiness ?? 0.5} color="bg-indigo-300" />
+          <MoodBar label="energy" value={lunaMood.energy ?? 0.5} color="bg-violet-300" />
         </div>
       </div>
     </div>
