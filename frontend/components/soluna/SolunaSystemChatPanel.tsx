@@ -228,13 +228,20 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
   const note = jobs.latestNote;
   const boinc = jobs.latestBoinc;
   const assets = jobs.assets;
+  const settlement = jobs.settlement;
+  const levelJa =
+    settlement?.settlementLevel === "city"
+      ? "都市"
+      : settlement?.settlementLevel === "town"
+        ? "町"
+        : "村";
 
   return (
     <section className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-500/[0.06] px-4 py-4">
       <p className="text-[10px] tracking-[0.18em] text-cyan-200/80 uppercase">Autonomous Jobs</p>
       <h4 className="mt-1 text-base font-semibold text-white">2人の仕事</h4>
       <p className="mt-1 text-[12px] leading-relaxed text-slate-400">
-        討伐のあと、ソルとルーナが勝手に回す3つの仕事です。有料購読が周囲に回るほど、社会貢献の燃料が増えます。
+        討伐のあと、ソルとルーナが勝手に回す3つの仕事です。有料購読が回るほど、拠点都市の開拓が進みます。
       </p>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
@@ -281,51 +288,64 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         </article>
 
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="text-[11px] font-medium text-cyan-100">② 社会貢献 · BOINC</p>
-          {boinc ? (
+          <p className="text-[11px] font-medium text-cyan-100">② 拠点開拓 · 街づくり</p>
+          {settlement?.latestEvent ? (
+            <>
+              <p className="mt-2 text-[13px] font-semibold text-white">
+                {settlement.settlementName}（{levelJa}）
+              </p>
+              <p className="mt-1 text-[11px] text-slate-300">
+                本日 {settlement.latestEvent.todayMinutes} 分 / 累積 {settlement.cumulativeMinutes} 分 ·
+                スロット {settlement.analysisSlots}
+              </p>
+              <p className="mt-2 text-[12px] leading-relaxed text-emerald-100/90">
+                {settlement.latestEvent.headline}
+              </p>
+              <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-300">
+                {settlement.latestEvent.topic}
+              </p>
+              {settlement.facilities.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-[10px] text-slate-400">
+                  {settlement.facilities.slice(-3).map((f) => (
+                    <li key={f.id}>
+                      · {f.name}（{f.levelLabel}）
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">
+                ⚔️ {settlement.latestEvent.solComment}
+              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">
+                📖 {settlement.latestEvent.lunaComment}
+              </p>
+            </>
+          ) : boinc ? (
             <>
               <p className="mt-2 text-[13px] text-white">
-                アイテム {boinc.itemCount} 個 → 宇宙分析 {boinc.minutes} 分
+                宇宙分析 {boinc.minutes} 分 → 開拓パワー待機中
               </p>
-              {boinc.result ? (
-                <div className="mt-2 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-2">
-                  <p className="text-[11px] font-semibold text-emerald-300">✅ 実行完了</p>
-                  <p className="mt-1 text-[11px] text-emerald-100/90">
-                    実績: {boinc.result.runMinutesActual} 分 / タスク {boinc.result.tasksCompleted} 件
-                  </p>
-                  <p className="text-[12px] font-bold text-amber-300">
-                    🌟 {boinc.result.creditGranted} cobblestones
-                  </p>
-                  <a
-                    href={boinc.result.projectUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 inline-block text-[11px] text-cyan-300 underline"
-                  >
-                    {boinc.result.projectName}
-                  </a>
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    完了: {new Date(boinc.result.finishedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
-                  </p>
-                </div>
-              ) : (
-                <p className="mt-1 text-[11px] text-amber-200/80">
-                  {boinc.status === "done" ? "完了" : "GitHub Actions で実行中 / 待機中"}
-                </p>
-              )}
-              <p className="mt-2 text-[12px] leading-relaxed text-amber-50/90">⚔️ {boinc.solComment}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-indigo-50/90">📖 {boinc.lunaComment}</p>
+              <p className="mt-1 text-[11px] text-amber-200/80">
+                {boinc.status === "done" ? "BOINC 完了" : "GitHub Actions で実行中 / 待機中"}
+              </p>
             </>
           ) : (
             <p className="mt-2 text-[12px] text-slate-400">
-              熱いバトルのアイテム数で実施時間を決め、GitHub Actions の無料ランナーで実行します（コスト0）。
-              BOINC_ACCOUNT_KEY を GitHub Secrets に設定すると有効になります。
+              BOINC の解析分が街の施設建設に変わります。最初の目標は魔導風車【エウルス】。
+            </p>
+          )}
+          {boinc?.result && (
+            <p className="mt-2 text-[10px] text-slate-500">
+              裏ログ: {boinc.result.runMinutesActual}分 / {boinc.result.creditGranted} cobblestones
             </p>
           )}
         </article>
 
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
+          <p className="mt-1 text-[10px] text-slate-500">
+            朝の開始時刻なし · 2時間ごとに裏で監視・売買（月目標まで）
+          </p>
           {assets ? (
             <>
               {assets.battleMode === "attack" && (

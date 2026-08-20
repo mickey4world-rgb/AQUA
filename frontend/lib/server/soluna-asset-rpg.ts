@@ -134,7 +134,7 @@ ${RPG_MP_TANK}: ${PRINCIPAL_MP.toLocaleString("ja-JP")} MP
 総魔力: 計測待機中（入金・API接続後に自動更新）
 
 ⚔️ ソル「魔力タンクへの充填を待っている。届き次第、${RPG_BTC_NAME} を召喚する！」
-📖 ルーナ「入金と API が揃えば、毎日ここで育成報告するわ。」`;
+📖 ルーナ「入金と API が揃えば、目標達成まで裏で常時育成するわ。」`;
   }
 
   const snap = buildGuildRpgSnapshot(assets);

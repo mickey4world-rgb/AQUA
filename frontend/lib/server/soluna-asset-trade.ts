@@ -6,6 +6,7 @@
  *   2. 利確: 購入価格から +3〜5% で売却
  *   3. 損切り: 購入価格から -3% で売却
  *   4. おやすみモード: 当月実現損益が目標（月初残高×2%）に達したら新規購入停止
+ *   5. 裏稼働: 朝のブリーフィング時刻に縛らず、定期クロンで目標達成まで監視・売買
  */
 
 import crypto from "crypto";
@@ -26,6 +27,10 @@ const TAKE_PROFIT_RATE = 0.04;        // 利確ライン: +4%
 const STOP_LOSS_RATE = -0.03;         // 損切りライン: -3%
 const MONTHLY_TARGET_RATE = 0.02;     // 月利目標: 2%
 const MIN_BTC_ORDER = 0.0001;         // bitFlyer 最小注文量 (BTC)
+/** 裏稼働の DCA 間隔（連打で現金を溶かすのを防ぐ） */
+const BUY_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+/** JST 1日あたりの新規召喚（BUY）上限 */
+const MAX_DAILY_BUY_YEN = 20_000;
 
 // ── bitFlyer API ──────────────────────────────────────────────────────────────
 
@@ -207,10 +212,26 @@ type TradeDecision =
   | { action: "SELL"; reason: string }
   | { action: "HOLD"; reason: string };
 
+function jstDayKey(date = new Date()): string {
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function lastBuyTrade(ledger: SolunaAssetLedger): SolunaTradeRecord | null {
+  const buys = ledger.trades.filter((t) => t.side === "BUY");
+  return buys.length > 0 ? buys[buys.length - 1]! : null;
+}
+
+function boughtYenOnJstDay(ledger: SolunaAssetLedger, dayKey: string): number {
+  return ledger.trades
+    .filter((t) => t.side === "BUY" && jstDayKey(new Date(t.createdAt)) === dayKey)
+    .reduce((sum, t) => sum + t.sizeJpy, 0);
+}
+
 /**
  * ニュースセンチメント・戦況バフ・保有状況から売買を判断する
  * attack（前日利益）→ 強気ホールド／買い増し
  * defense（前日マイナス）→ 静観・ゴーレム固め
+ * 利確・損切りはクールダウン無し。DCA のみ間隔・日次上限あり。
  */
 function decideTrade(
   ledger: SolunaAssetLedger,
@@ -245,30 +266,51 @@ function decideTrade(
     }
   }
 
-  // 防御モード: 新規召喚せずゴーレム固め
-  if (battleMode === "defense") {
-    if (newsSentiment === "positive" && ledger.cashYen >= MAX_TRADE_YEN) {
-      // 強い好材料のみ、最小限の反撃買い
+  const lastBuy = lastBuyTrade(ledger);
+  if (lastBuy) {
+    const elapsed = Date.now() - new Date(lastBuy.createdAt).getTime();
+    if (elapsed < BUY_COOLDOWN_MS) {
+      const remainH = ((BUY_COOLDOWN_MS - elapsed) / 3_600_000).toFixed(1);
       return {
-        action: "BUY",
-        reason: `防御モードの反撃召喚: 好材料のみ ${Math.min(5_000, ledger.cashYen).toLocaleString()}円分`,
-        amountJpy: Math.min(5_000, ledger.cashYen),
+        action: "HOLD",
+        reason: `DCA クールダウン中（あと約 ${remainH} 時間）。利確・損切りは常時監視中`,
       };
     }
-    return { action: "HOLD", reason: "防御モード：黄金の守護巨兵で足元固め（静観）" };
+  }
+
+  const todayBought = boughtYenOnJstDay(ledger, jstDayKey());
+  const dailyBuyRoom = MAX_DAILY_BUY_YEN - todayBought;
+  if (dailyBuyRoom < 1000) {
+    return {
+      action: "HOLD",
+      reason: `本日の召喚枠（上限 ${MAX_DAILY_BUY_YEN.toLocaleString()}円）を使い切り。利確・損切りは裏で監視継続`,
+    };
+  }
+
+  // 防御モード: 新規召喚せずゴーレム固め
+  if (battleMode === "defense") {
+    if (newsSentiment === "positive" && ledger.cashYen >= 1000) {
+      const amountJpy = Math.min(5_000, ledger.cashYen, dailyBuyRoom);
+      return {
+        action: "BUY",
+        reason: `防御モードの反撃召喚: 好材料のみ ${amountJpy.toLocaleString()}円分`,
+        amountJpy,
+      };
+    }
+    return { action: "HOLD", reason: "防御モード：黄金の守護巨兵で足元固め（裏で監視継続）" };
   }
 
   // 攻撃バフモード: ネガティブ以外はドルコストで蒼竜を育成
   if (newsSentiment !== "negative" && ledger.cashYen >= 1000) {
-    const tradeYen = Math.min(MAX_TRADE_YEN, ledger.cashYen);
+    const tradeYen = Math.min(MAX_TRADE_YEN, ledger.cashYen, dailyBuyRoom);
     return {
       action: "BUY",
-      reason: `バフ発動中の蒼竜育成（DCA）: ${tradeYen.toLocaleString()}円分`,
+      reason: `裏稼働 DCA: 蒼竜育成 ${tradeYen.toLocaleString()}円分`,
       amountJpy: tradeYen,
     };
   }
 
-  return { action: "HOLD", reason: "攻撃モードだが材料不足のため強気ホールド" };
+  return { action: "HOLD", reason: "材料待ち。裏で価格監視を継続中" };
 }
 
 /**
@@ -404,21 +446,24 @@ export async function runDailyAssetTrade(input: {
     updatedBalance.cashYen + updatedBalance.btcHeld * btcPrice + updatedBalance.ethHeld * ethPrice,
   );
 
+  const buyAmount =
+    decision.action === "BUY" ? decision.amountJpy : 0;
+
   const solComments: Record<string, string> = {
-    BUY: `バフの余熱で ${decision.amountJpy?.toLocaleString()} MP を雷轟の蒼竜にエサやり！ゴールドを魔力結晶に変えて育成するぜ！`,
+    BUY: `バフの余熱で ${buyAmount.toLocaleString()} MP を雷轟の蒼竜にエサやり！裏稼働でゴールドを魔力結晶に変えるぜ！`,
     SELL: `${decision.reason.startsWith("利確") ? "利確ドロップ成功" : "損切りで盾構え"}！蒼竜を解呪して ${Math.round(monthlyPnl).toLocaleString()} ゴールドを金庫へ。`,
     HOLD:
       battleMode === "attack"
-        ? `攻撃バフ中だが今日は強気ホールド。蒼竜のライトニングを温存する！`
-        : `防御モード。黄金の守護巨兵の足元を固めて反撃を待つ。`,
+        ? `攻撃バフ中だが今回はホールド。蒼竜のライトニングを温存しつつ、裏で監視継続！`
+        : `防御モード。黄金の守護巨兵の足元を固めて、裏で反撃タイミングを待つ。`,
   };
   const lunaComments: Record<string, string> = {
     BUY: `獲得ゴールドを蒼竜に食べさせたわ。レベルアップの兆しよ。未召喚魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
     SELL: `${decision.reason.startsWith("利確") ? "純金ゴールドのドロップ成功" : "小さな損失で金剛の盾"}。次の召喚タイミングを見計らうわ。`,
     HOLD:
       battleMode === "defense"
-        ? `昨日は敵の急襲で魔力を削られた可能性あり。焦らずゴーレムで守りましょう。`
-        : `${sleepMode ? "おやすみモード中。今月のゴールドは守りきる。" : "条件を見て、明日また育成チャンスを狙うわ。"}`,
+        ? `昨日は敵の急襲で魔力を削られた可能性あり。焦らずゴーレムで守り、裏で価格を見張るわ。`
+        : `${sleepMode ? "おやすみモード中。今月のゴールドは守りきる。" : "朝の開始時刻は関係ないわ。目標達成まで裏で売買チャンスを拾い続ける。"}`,
   };
 
   const closingDayChange = updatedTotal - previousTotalYen;
@@ -445,4 +490,33 @@ export async function runDailyAssetTrade(input: {
     lunaComment: lunaComments[decision.action],
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * 裏稼働用: ストアから台帳・最新ニュースを読み、売買判断して保存する。
+ * 朝ジョブと独立して、いつでも呼ばれてよい。
+ */
+export async function runAssetTradeTick(options?: {
+  forceBriefingId?: string;
+}): Promise<SolunaAssetLedger> {
+  const { getLatestBriefing, getSystemAssets, getSystemHunter, saveSystemAssets } = await import(
+    "@/lib/server/soluna-system-store"
+  );
+  const [ledger, hunter, briefing] = await Promise.all([
+    getSystemAssets(),
+    getSystemHunter(),
+    getLatestBriefing(),
+  ]);
+  const tickId =
+    options?.forceBriefingId ??
+    briefing?.id ??
+    `tick-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const updated = await runDailyAssetTrade({
+    ledger,
+    hunter,
+    newsSummary: briefing?.summary ?? "",
+    briefingId: tickId,
+  });
+  await saveSystemAssets(updated);
+  return updated;
 }

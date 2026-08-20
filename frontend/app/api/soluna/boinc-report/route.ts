@@ -3,7 +3,12 @@
  * POST /api/soluna/boinc-report
  * Authorization: Bearer ${SOLUNA_CRON_SECRET}
  */
-import { getLatestBoincRun, saveSystemBoincRun } from "@/lib/server/soluna-system-store";
+import {
+  getLatestBoincRun,
+  getSystemSettlement,
+  saveSystemBoincRun,
+  saveSystemSettlement,
+} from "@/lib/server/soluna-system-store";
 
 function authorizeCron(request: Request): boolean {
   const secret = process.env.SOLUNA_CRON_SECRET?.trim();
@@ -48,8 +53,8 @@ export async function POST(request: Request) {
   const updated = {
     ...existing,
     status: "done" as const,
-    solComment: `${body.tasksCompleted} タスク完了！クレジット ${creditRounded} cobblestones を獲得。${body.projectName} への貢献が宇宙に届いた。`,
-    lunaComment: `実績: ${body.runMinutesActual} 分稼働、${body.tasksCompleted} タスク、${creditRounded} cobblestones。数字はログに残ったわ。次回も続けて。`,
+    solComment: `${body.tasksCompleted} タスク完了！クレジット ${creditRounded} cobblestones。街の開拓パワーが実測で届いた！`,
+    lunaComment: `実績: ${body.runMinutesActual} 分稼働、${body.tasksCompleted} タスク、${creditRounded} cobblestones。拠点の礎に残したわ。`,
     result: {
       creditGranted: creditRounded,
       tasksCompleted: body.tasksCompleted,
@@ -61,6 +66,26 @@ export async function POST(request: Request) {
   };
 
   await saveSystemBoincRun(updated);
+
+  // 予定分数と実績の差分だけ累積を補正（二重加算しない）
+  const settlement = await getSystemSettlement();
+  if (settlement?.latestEvent?.briefingId === body.briefingId) {
+    const planned = settlement.latestEvent.todayMinutes;
+    const delta = body.runMinutesActual - planned;
+    if (delta !== 0) {
+      const patched = {
+        ...settlement,
+        cumulativeMinutes: Math.max(0, settlement.cumulativeMinutes + delta),
+        latestEvent: {
+          ...settlement.latestEvent,
+          todayMinutes: body.runMinutesActual,
+          cumulativeMinutes: Math.max(0, settlement.latestEvent.cumulativeMinutes + delta),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      await saveSystemSettlement(patched);
+    }
+  }
 
   return Response.json({
     ok: true,

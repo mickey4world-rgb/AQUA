@@ -222,6 +222,44 @@ export interface SolunaBoincRun {
   };
 }
 
+export type SolunaSettlementLevel = "village" | "town" | "city";
+export type SolunaSettlementEventKind = "progress" | "build" | "merge" | "slot";
+
+export interface SolunaSettlementFacility {
+  id: string;
+  name: string;
+  location: string;
+  builtAt: string;
+  briefingId: string;
+  levelLabel: string; // 村レベル / 町レベル など
+}
+
+export interface SolunaSettlementDayEvent {
+  kind: SolunaSettlementEventKind;
+  briefingId: string;
+  createdAt: string;
+  todayMinutes: number;
+  cumulativeMinutes: number;
+  headline: string;
+  topic: string;
+  solComment: string;
+  lunaComment: string;
+  unlockedFacilityIds: string[];
+  settlementLevel: SolunaSettlementLevel;
+  analysisSlots: number;
+}
+
+/** BOINC パワーで育つ拠点都市アクアピア */
+export interface SolunaSettlementState {
+  cumulativeMinutes: number;
+  settlementLevel: SolunaSettlementLevel;
+  settlementName: string;
+  facilities: SolunaSettlementFacility[];
+  analysisSlots: number;
+  latestEvent: SolunaSettlementDayEvent | null;
+  updatedAt: string;
+}
+
 /** bitFlyer での1回の取引記録 */
 export interface SolunaTradeRecord {
   id: string;
@@ -297,6 +335,7 @@ export interface SolunaJobsState {
   latestNote: SolunaNoteArticle | null;
   latestBoinc: SolunaBoincRun | null;
   assets: SolunaAssetLedger | null;
+  settlement: SolunaSettlementState | null;
 }
 
 export interface SolunaSystemStateResponse {
