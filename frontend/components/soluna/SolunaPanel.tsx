@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import SolunaCharacterAvatar, {
   type SolunaAvatarMood,
 } from "@/components/soluna/SolunaCharacterAvatar";
@@ -13,6 +13,43 @@ import {
   type SolunaChatResponse,
   type SolunaStateResponse,
 } from "@/lib/types/soluna";
+
+class NewsBattleErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  state = { hasError: false, message: "" };
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      message: error?.message || "ニュース討伐画面の表示に失敗しました。",
+    };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("[soluna] news battle panel crashed:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-6 text-sm text-rose-50">
+          <p className="font-medium">ニュース討伐を開けませんでした</p>
+          <p className="mt-2 text-[12px] text-rose-100/80">{this.state.message}</p>
+          <button
+            type="button"
+            className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-[12px] text-white"
+            onClick={() => this.setState({ hasError: false, message: "" })}
+          >
+            再試行
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const STARTERS = [
   "今日の目標を一緒に整理したい",
@@ -411,7 +448,9 @@ export default function SolunaPanel() {
         </div>
 
         {chatMode === "system" ? (
-          <SolunaSystemChatPanel embedded />
+          <NewsBattleErrorBoundary>
+            <SolunaSystemChatPanel embedded />
+          </NewsBattleErrorBoundary>
         ) : (
           <>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_0%,rgba(251,191,36,0.12),transparent_45%),radial-gradient(ellipse_at_90%_10%,rgba(129,140,248,0.12),transparent_42%)]" />

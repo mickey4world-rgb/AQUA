@@ -11,7 +11,20 @@ export async function GET(request: Request) {
       );
     }
 
-    const state = await buildSystemState();
-    return Response.json(state);
+    try {
+      const state = await buildSystemState();
+      return Response.json(state);
+    } catch (error) {
+      console.error("[api/soluna/system]", error);
+      return Response.json(
+        {
+          error:
+            error instanceof Error
+              ? `討伐ログの読み込みに失敗しました: ${error.message}`
+              : "討伐ログの読み込みに失敗しました。",
+        },
+        { status: 500 },
+      );
+    }
   });
 }
