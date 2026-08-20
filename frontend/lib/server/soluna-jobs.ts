@@ -1,5 +1,5 @@
 import { medalUnitScore } from "@/lib/server/soluna-battle";
-import { runDailyAssetTrade, inferNewsSentiment } from "@/lib/server/soluna-asset-trade";
+import { runDailyAssetTrade } from "@/lib/server/soluna-asset-trade";
 import { composeDailyNote, createNoteArticleRecord } from "@/lib/server/soluna-note-article";
 import { isNotePublishConfigured, noteCreatorUrl, publishNoteArticle } from "@/lib/server/soluna-note-publish";
 import {
@@ -79,45 +79,9 @@ export async function runDailyAutonomousJobs(options?: {
     (await listSystemMessages()).filter((message) => message.briefingId === briefing.id);
   const todayItems = hunter.inventory.filter((item) => item.briefingId === briefing.id).length;
   const boinc = buildBoincRun(briefing.id, todayItems, battle.outcome === "victory");
-  const composed = composeDailyNote({
-    briefing,
-    battle,
-    hunter,
-    messages,
-    boincMinutes: boinc.minutes,
-  });
 
-  let article = createNoteArticleRecord(composed, briefing.id);
-  if (isNotePublishConfigured()) {
-    try {
-      const published = await publishNoteArticle({
-        title: composed.title,
-        freeHtml: composed.freeHtml,
-        paidHtml: composed.paidHtml,
-        priceYen: composed.priceYen,
-      });
-      article = {
-        ...article,
-        published: true,
-        noteKey: published.noteKey,
-        noteUrl: published.noteUrl,
-      };
-    } catch (error) {
-      article = {
-        ...article,
-        published: false,
-        error: error instanceof Error ? error.message : "note.com への投稿に失敗しました。",
-      };
-    }
-  } else {
-    article = {
-      ...article,
-      error: "NOTE_COOKIE 未設定のため、アプリ内に原稿だけ保存しました。",
-    };
-  }
-
+  // 資産運用を先に実行し、Note の有料パートに財務報告を載せる
   const existingAssets = await getSystemAssets();
-  const sentiment = inferNewsSentiment(briefing.summary ?? "");
   let assets: SolunaAssetLedger;
   try {
     assets = await runDailyAssetTrade({
@@ -147,7 +111,45 @@ export async function runDailyAutonomousJobs(options?: {
       lunaComment: "API キーか残高を確認して。",
       updatedAt: new Date().toISOString(),
     };
-    void sentiment; // suppress unused warning
+  }
+
+  const composed = composeDailyNote({
+    briefing,
+    battle,
+    hunter,
+    messages,
+    boincMinutes: boinc.minutes,
+    assets,
+    boinc,
+  });
+
+  let article = createNoteArticleRecord(composed, briefing.id);
+  if (isNotePublishConfigured()) {
+    try {
+      const published = await publishNoteArticle({
+        title: composed.title,
+        freeHtml: composed.freeHtml,
+        paidHtml: composed.paidHtml,
+        priceYen: composed.priceYen,
+      });
+      article = {
+        ...article,
+        published: true,
+        noteKey: published.noteKey,
+        noteUrl: published.noteUrl,
+      };
+    } catch (error) {
+      article = {
+        ...article,
+        published: false,
+        error: error instanceof Error ? error.message : "note.com への投稿に失敗しました。",
+      };
+    }
+  } else {
+    article = {
+      ...article,
+      error: "NOTE_COOKIE 未設定のため、アプリ内に原稿だけ保存しました。",
+    };
   }
 
   await saveSystemNoteArticle(article);

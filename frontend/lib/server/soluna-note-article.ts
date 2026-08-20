@@ -1,5 +1,7 @@
 import type {
+  SolunaAssetLedger,
   SolunaBattleResult,
+  SolunaBoincRun,
   SolunaHunterState,
   SolunaNewsBriefing,
   SolunaNoteArticle,
@@ -37,14 +39,16 @@ function toNoteHtml(text: string): string {
       if (block.startsWith("## ")) {
         return `<h2>${escapeHtml(block.slice(3).trim())}</h2>`;
       }
-      const lines = block.split("\n").map((line) => {
-        const escaped = escapeHtml(line);
-        // キャラクターラベル行は太字で強調
-        if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
-          return `<strong>${escaped}</strong>`;
-        }
-        return escaped;
-      }).join("<br>");
+      const lines = block
+        .split("\n")
+        .map((line) => {
+          const escaped = escapeHtml(line);
+          if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
+            return `<strong>${escaped}</strong>`;
+          }
+          return escaped;
+        })
+        .join("<br>");
       return `<p>${lines}</p>`;
     })
     .join("");
@@ -62,7 +66,22 @@ function dialogueLines(messages: SolunaSystemMessage[]): string {
 
 function medalReport(hunter: SolunaHunterState): string {
   const { medals } = hunter;
-  return `銅${medals.bronze} / 銀${medals.silver} / 金${medals.gold} / 虹${medals.rainbow}（投資単位 ${medalUnitScore(medals)}）`;
+  return `銅${medals.bronze}枚 / 銀${medals.silver}枚 / 金${medals.gold}枚 / 虹${medals.rainbow}枚（AI総投資単位 ${medalUnitScore(medals)}）`;
+}
+
+function latestTradeLine(assets: SolunaAssetLedger | null | undefined): string {
+  if (!assets) return "入金待ち / API 接続準備中。";
+  const latest = assets.trades[assets.trades.length - 1];
+  if (!latest) {
+    return assets.status === "waiting-spec"
+      ? "メダルなしのため現状維持（取引待機）。"
+      : "本日は取引なし（現状維持）。";
+  }
+  const pnl =
+    latest.realizedPnlJpy !== undefined
+      ? ` / 損益 ${latest.realizedPnlJpy >= 0 ? "+" : ""}${latest.realizedPnlJpy.toLocaleString("ja-JP")}円`
+      : "";
+  return `${latest.side} ${latest.sizeJpy.toLocaleString("ja-JP")}円 @ ${latest.priceBtc.toLocaleString("ja-JP")}円${pnl}`;
 }
 
 export function notePriceYen(): number {
@@ -76,71 +95,138 @@ export function composeDailyNote(input: {
   hunter: SolunaHunterState;
   messages: SolunaSystemMessage[];
   boincMinutes: number;
-}): { title: string; freeBody: string; paidBody: string; freeHtml: string; paidHtml: string; priceYen: number } {
+  assets?: SolunaAssetLedger | null;
+  boinc?: SolunaBoincRun | null;
+}): {
+  title: string;
+  freeBody: string;
+  paidBody: string;
+  freeHtml: string;
+  paidHtml: string;
+  priceYen: number;
+} {
   const dateLabel = jstDateLabel(new Date(input.battle.createdAt));
   const boss = `Lv.${input.battle.bossRank} ${input.battle.bossName}`;
-  const resultLabel = input.battle.outcome === "victory" ? "討伐成功 🏆" : "取り逃がし 💨";
+  const escaped = input.battle.outcome === "escape";
+  const resultLabel = escaped ? "取り逃がし 💨" : "討伐成功 🏆";
   const news = input.battle.newsPlain || input.briefing.summary;
   const item = input.battle.loot.itemName
     ? `${input.battle.loot.itemName}${input.battle.loot.itemFlavor ? `（${input.battle.loot.itemFlavor}）` : ""}`
     : "今回はアイテムなし";
   const medal =
-    input.battle.loot.medal === "rainbow" ? "🌈 虹メダル"
-    : input.battle.loot.medal === "gold" ? "🥇 金メダル"
-    : input.battle.loot.medal === "silver" ? "🥈 銀メダル"
-    : input.battle.loot.medal === "bronze" ? "🥉 銅メダル"
-    : "メダルなし";
-  const todayItems = input.hunter.inventory.filter((row) => row.briefingId === input.briefing.id).length;
+    input.battle.loot.medal === "rainbow"
+      ? "🌈 虹メダル"
+      : input.battle.loot.medal === "gold"
+        ? "🥇 金メダル"
+        : input.battle.loot.medal === "silver"
+          ? "🥈 銀メダル"
+          : input.battle.loot.medal === "bronze"
+            ? "🥉 銅メダル"
+            : "メダルなし";
 
-  // 全発言を取得し、無料用（冒頭1往復）と有料用（全文）を分割
   const allMessages = input.messages.filter((m) => m.role === "sol" || m.role === "luna");
-  const freeMessages = allMessages.slice(0, 2);   // Sol第1発言・Luna第2発言
-  const paidMessages = allMessages.slice(2);       // Sol第3・Luna第4（白熱部分）
-
-  const freeDialogue = dialogueLines(freeMessages);
-  const paidDialogue = dialogueLines(paidMessages);
-  const fullDialogue = dialogueLines(allMessages);
+  // 無料: ソル第1＋ルーナ第2（引き）。有料: 第3・第4（白熱）
+  const freeDialogue = dialogueLines(allMessages.slice(0, 2));
+  const paidDialogue = dialogueLines(allMessages.slice(2));
 
   const creator = process.env.NOTE_CREATOR_URLNAME?.trim();
   const shopLine = creator ? `https://note.com/${creator}` : "このマガジンの有料購読";
-
-  const swaBase = "https://www.aquacore.net";
-  const charImageUrl = `${swaBase}/soluna/characters.png`;
+  const charImageUrl = "https://www.aquacore.net/soluna/characters.png";
+  const assets = input.assets ?? null;
+  const boincMinutes = input.boinc?.result?.runMinutesActual ?? input.boincMinutes;
+  const boincCredit = input.boinc?.result?.creditGranted;
+  const medalUnits = medalUnitScore(input.hunter.medals);
 
   const title = `⚔️ ${input.battle.bossName}を追え｜${dateLabel}｜ソルとルーナの朝討伐`;
 
-  const characterIntro = `${SOL_LABEL} ／ ${LUNA_LABEL}
-今日もニュースをモンスターに変えて、2人が討伐に挑みます。
-→ キャラクター紹介: ${charImageUrl}`;
+  // 取り逃がし時は「リベンジ価値」を無料エリアで明示
+  const escapeHook = escaped
+    ? `
+## 取り逃がしたからこそ手に入るもの
+負けた記事ではありません。${boss}に逃げられたからこそ、有料エリアでは次が読めます。
 
-  // ── 無料部分：ニュース解説 ＋ 冒頭1往復 ＋ 「続きは有料」の引き ─────────
-  const freeBody = `${characterIntro}
+・リベンジ戦略: 次に同じ系統のモンスターが来たときの弱点（市場の見通し・防衛策）
+・逃げ足の鱗: 今日の失敗ログから読み解く、ポートフォリオ防衛の一手
+・反省会の白熱: 2人のドタバタ掛け合い（ボケ＆ツッコミ）全文`
+    : `
+## 討伐成功の先にあるもの
+有料エリアでは、激闘の続きと収穫の使い道まで読めます。
+
+・激闘の裏側: 白熱した第2ラウンド全文
+・戦利品の使い道: メダル運用と宇宙分析への変換レポート
+・次の狩り場: 明日狙うべきニュースの急所`;
+
+  const paywallTeaser = escaped
+    ? `${LUNA_LABEL}
+でもソル、この ${input.battle.bossName} を放置すると、私たちのサイフ（ポートフォリオ）に直撃する大問題が発生するわよ…！
+討伐には失敗したけれど、奴の『逃げ足の鱗』から次の防衛策が見えてきたわ。続きは有料で。`
+    : `${LUNA_LABEL}
+討伐はできた。でも収穫の使い道と、次に来るモンスターの弱点は、まだ話していないわ。
+続きが気になるなら↓へ。`;
+
+  const freeBody = `${SOL_LABEL} ／ ${LUNA_LABEL}
+今日もニュースをモンスターに変えて、2人が討伐に挑みます。
+→ キャラクター紹介: ${charImageUrl}
 
 ## 今日のニュース
 ${news}
 ${input.battle.newsTitle ? `\n出典: ${input.battle.newsTitle}` : ""}
 
-今日の相手は ${boss}。ソルとルーナがこのニュースに切り込みます。
+相手は ${boss}。結果は【${resultLabel}】です。
 
-## 2人の語り出し
+## 2人の掛け合い（ダイジェスト）
 
 ${freeDialogue || "（本日は偵察戦から始まります）"}
 
+${paywallTeaser}
+
+---
+✂️ （ここから有料） ✂️
 ---
 
-白熱した議論の続き、バトルの結末（${resultLabel}）、2人の仕事の進捗は有料版で読めます。
+【有料エリアの先にあるもの】
+・激闘の続き: 2人のドタバタ反省会 / 白熱バトル全文
+・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
+・ギルド財務報告: 所持メダルと資産運用の現在地
+・社会貢献: 購読の熱量が宇宙分析（BOINC）に変わるレポート
 
-${SOL_LABEL}「議論はまだ終わっていない。続きが気になるなら↓へ。」
-${LUNA_LABEL}「…答えが出たかどうか、自分の目で確かめてみて。」
+${escapeHook}
 
 → 続きを読む: ${shopLine}`;
 
-  // ── 有料部分：白熱全文 ＋ バトル結果 ＋ 仕事3つの進捗 ────────────────────
-  const paidBody = `有料購読のあなたへ。白熱した続きと、今日の全仕事レポートです。
+  const portfolioBlock = assets
+    ? `総資産 ${assets.totalYen.toLocaleString("ja-JP")} 円 / 現金 ${assets.cashYen.toLocaleString("ja-JP")} 円 / BTC ${assets.btcHeld.toFixed(4)}
+月次目標 ${assets.monthlyTargetYen.toLocaleString("ja-JP")} 円に対し、実現損益 ${assets.monthlyRealizedPnlYen.toLocaleString("ja-JP")} 円${assets.sleepMode ? "（🌙 おやすみモード）" : ""}
+今回の運用アクション: ${latestTradeLine(assets)}`
+    : `元手 10万円スタート。メダル ${medalUnits} 単位を今日の投資判断の燃料に。
+今回の運用アクション: ${latestTradeLine(null)}`;
 
-## 白熱の続き — ここからが本番
+  const boincBlock = input.boinc?.result
+    ? `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分
+クレジット: ${boincCredit} cobblestones（${input.boinc.result.projectName}）
+タスク完了: ${input.boinc.result.tasksCompleted} 件`
+    : `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分（実行キュー投入）
+有料購読の輪が回るほど、宇宙分析の稼働時間が伸びます。`;
+
+  const paidBody = `有料購読のあなたへ。白熱の続きと、今日のギルド全仕事レポートです。
+
+## 2人の掛け合い（有料限定・激闘の裏側）
 
 ${paidDialogue || "（本日は2ターンで決着がつきました）"}
+
+${
+  escaped
+    ? `${SOL_LABEL}
+くっそー！${input.battle.bossName} に逃げられちまった！でも次の一手は、もう見えている。
+
+${LUNA_LABEL}
+焦らないで。奴が落とした『逃げ足の鱗』を分析すれば、次に同じニュース（モンスター）が来た時の弱点が丸裸になるわ。`
+    : `${SOL_LABEL}
+今日の討伐は決まった。収穫はギルドの燃料にするぞ！
+
+${LUNA_LABEL}
+勝ち逃げも大事。ここで欲張らず、財務報告と宇宙分析に回しましょう。`
+}
 
 ---
 
@@ -151,7 +237,7 @@ ${input.battle.outcomeWhy || input.battle.impression}
 
 ${input.battle.impression}
 
-## 次に見るべきポイント
+## ${escaped ? "リベンジ戦略（次に見るべきポイント）" : "次に見るべきポイント"}
 ${input.battle.nextMove}
 
 ## 今日の収穫
@@ -163,25 +249,20 @@ ${input.battle.nextMove}
 
 ---
 
-## 🌌 仕事① 宇宙分析（BOINC）進捗
+## 📊 ソル＆ルーナ・ギルド財務報告
 
-今日取得したアイテム ${todayItems} 個を熱量に変換 → 宇宙分析 ${input.boincMinutes} 分分を GitHub Actions で実行。
+${portfolioBlock}
+現在の所持メダル: ${medalReport(input.hunter)}
 
-${SOL_LABEL}「星の計算は、討伐の余熱で回す。アイテムが多い日ほど、宇宙に届く計算量が増える。」
-${LUNA_LABEL}「${input.boincMinutes} 分、ちゃんとログを残して。貢献は気分じゃなく積み上げよ。」
+${SOL_LABEL}「${assets?.solComment ?? "今日のニュースと相場を読んで判断する。"}」
+${LUNA_LABEL}「${assets?.lunaComment ?? "欲張らないのがルール。目標に届いたらおやすみモードよ。"}」
 
-## 📈 仕事② 資産運用（bitFlyer BTC）進捗
+## 🌍 本日の社会貢献（BOINC宇宙分析レポート）
 
-元手 10万円から開始。メダル ${medalUnitScore(input.hunter.medals)} 単位を今日の投資判断の燃料に。
-毎回の取引は最大1万円。月利2%を目標にドルコスト平均法で積み上げる。
+${boincBlock}
 
-${SOL_LABEL}「今日のニュースセンチメントと相場を読んで判断した。結果は明日の残高で語る。」
-${LUNA_LABEL}「欲張らないのがルール。目標に届いたらおやすみモードに入る。勝ち逃げが一番かしこい。」
-
-## 📝 仕事③ Note 公開
-
-この記事自体が仕事③。有料購読が回るほど宇宙分析の稼働時間が伸びる仕組み。
-ソルとルーナが毎朝自動で書いて、自動で投稿しています。
+${SOL_LABEL}「みんなの応援（購読）が、僕たちの戦う力と宇宙を解き明かすエネルギーになるんだ。」
+${LUNA_LABEL}「${boincMinutes} 分、ちゃんとログを残して。貢献は気分じゃなく積み上げよ。」
 
 毎日自動で、ここまでをお届けします。明日もまた、ニュースをモンスターに変えて討伐に出かけます。`;
 
