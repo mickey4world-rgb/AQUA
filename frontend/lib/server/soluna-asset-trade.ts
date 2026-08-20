@@ -24,7 +24,6 @@ const MAX_TRADE_YEN = 10_000;         // 1回の最大取引額
 const TAKE_PROFIT_RATE = 0.04;        // 利確ライン: +4%
 const STOP_LOSS_RATE = -0.03;         // 損切りライン: -3%
 const MONTHLY_TARGET_RATE = 0.02;     // 月利目標: 2%
-const SLEEP_MODE_THRESHOLD = 0.003;   // おやすみモード閾値: 月初残高×0.3%（実際は monthlyTargetYen を使用）
 const MIN_BTC_ORDER = 0.0001;         // bitFlyer 最小注文量 (BTC)
 
 // ── bitFlyer API ──────────────────────────────────────────────────────────────
@@ -81,15 +80,30 @@ export async function getBtcPrice(): Promise<number> {
   return ticker.ltp;
 }
 
+export async function getEthPrice(): Promise<number> {
+  try {
+    const ticker = await bitFlyerFetch<BfTicker>("GET", "/v1/ticker?product_code=ETH_JPY");
+    return ticker.ltp;
+  } catch {
+    return 0;
+  }
+}
+
 type BfBalance = { currency_code: string; amount: number; available: number };
 
-export async function getBitFlyerBalance(): Promise<{ cashYen: number; btcHeld: number }> {
+export async function getBitFlyerBalance(): Promise<{
+  cashYen: number;
+  btcHeld: number;
+  ethHeld: number;
+}> {
   const balances = await bitFlyerFetch<BfBalance[]>("GET", "/v1/me/getbalance");
   const jpy = balances.find((b) => b.currency_code === "JPY");
   const btc = balances.find((b) => b.currency_code === "BTC");
+  const eth = balances.find((b) => b.currency_code === "ETH");
   return {
     cashYen: jpy?.available ?? 0,
     btcHeld: btc?.available ?? 0,
+    ethHeld: eth?.available ?? 0,
   };
 }
 
@@ -119,7 +133,6 @@ function jstMonthStr(date = new Date()): string {
 
 function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
   const now = new Date().toISOString();
-  const month = jstMonthStr();
   const targetYen = Math.round(ASSET_PRINCIPAL_YEN * MONTHLY_TARGET_RATE);
   return {
     principalYen: ASSET_PRINCIPAL_YEN,
@@ -128,14 +141,17 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     monthlyRealizedPnlYen: 0,
     sleepMode: false,
     btcHeld: 0,
+    ethHeld: 0,
     cashYen: ASSET_PRINCIPAL_YEN,
     totalYen: ASSET_PRINCIPAL_YEN,
+    previousTotalYen: ASSET_PRINCIPAL_YEN,
     btcPriceYen: 0,
+    ethPriceYen: 0,
     trades: [],
     monthlySummaries: [],
     medalUnits,
     status: "waiting-spec",
-    solComment: "入金待ちだ。資金が届いたら即スタートする。",
+    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、烈火の竜を召喚する！",
     lunaComment: "入金確認まで待機。ルールは決まった、あとは実行するだけ。",
     updatedAt: now,
   };
@@ -275,11 +291,32 @@ export async function runDailyAssetTrade(input: {
   }
 
   // 実際の残高・価格を取得
-  const [balance, btcPrice] = await Promise.all([getBitFlyerBalance(), getBtcPrice()]);
-  const totalYen = Math.round(balance.cashYen + balance.btcHeld * btcPrice);
+  const [balance, btcPrice, ethPrice] = await Promise.all([
+    getBitFlyerBalance(),
+    getBtcPrice(),
+    getEthPrice(),
+  ]);
+  const totalYen = Math.round(
+    balance.cashYen + balance.btcHeld * btcPrice + balance.ethHeld * ethPrice,
+  );
 
-  let ledger = input.ledger ?? buildInitialLedger(medalUnits);
-  ledger = rolloverMonthIfNeeded({ ...ledger, totalYen, btcPriceYen: btcPrice, ...balance });
+  let ledger = input.ledger
+    ? {
+        ...buildInitialLedger(medalUnits),
+        ...input.ledger,
+        ethHeld: input.ledger.ethHeld ?? 0,
+        ethPriceYen: input.ledger.ethPriceYen ?? 0,
+        previousTotalYen: input.ledger.previousTotalYen ?? input.ledger.totalYen ?? ASSET_PRINCIPAL_YEN,
+      }
+    : buildInitialLedger(medalUnits);
+  const previousTotalYen = ledger.totalYen || ASSET_PRINCIPAL_YEN;
+  ledger = rolloverMonthIfNeeded({
+    ...ledger,
+    totalYen,
+    btcPriceYen: btcPrice,
+    ethPriceYen: ethPrice,
+    ...balance,
+  });
   ledger = { ...ledger, medalUnits };
 
   const sentiment = inferNewsSentiment(input.newsSummary);
@@ -303,12 +340,10 @@ export async function runDailyAssetTrade(input: {
       reason: "dca",
       briefingId: input.briefingId,
     };
-    newTrades = [...newTrades.slice(-29), trade]; // 直近30件
-    // 残高を再取得
+    newTrades = [...newTrades.slice(-29), trade];
     updatedBalance = await getBitFlyerBalance();
   } else if (decision.action === "SELL" && ledger.btcHeld > MIN_BTC_ORDER) {
     const sellValueJpy = Math.round(ledger.btcHeld * btcPrice);
-    // 平均取得原価を計算して損益確定
     const buyTrades = newTrades.filter((t) => t.side === "BUY");
     const avgBuyPrice =
       buyTrades.length > 0
@@ -335,26 +370,30 @@ export async function runDailyAssetTrade(input: {
     updatedBalance = await getBitFlyerBalance();
   }
 
-  // おやすみモード判定
   const sleepMode = monthlyPnl >= ledger.monthlyTargetYen;
-  const updatedTotal = Math.round(updatedBalance.cashYen + updatedBalance.btcHeld * btcPrice);
+  const updatedTotal = Math.round(
+    updatedBalance.cashYen + updatedBalance.btcHeld * btcPrice + updatedBalance.ethHeld * ethPrice,
+  );
 
   const solComments: Record<string, string> = {
-    BUY: `${decision.amountJpy?.toLocaleString()}円分 BTC を ${btcPrice.toLocaleString()}円で分散購入。ニュース: ${sentiment}。`,
-    SELL: `${decision.reason}。利益確定完了。今月累計 ${monthlyPnl.toLocaleString()}円。`,
-    HOLD: `今日は動かない。${decision.reason}。BTC: ${btcPrice.toLocaleString()}円。`,
+    BUY: `${decision.amountJpy?.toLocaleString()} MP を消費して【烈火の竜】を追加召喚！ニュースの風は ${sentiment}。`,
+    SELL: `${decision.reason.startsWith("利確") ? "利確" : "損切り"}！烈火の竜を解呪して ${Math.round(monthlyPnl).toLocaleString()} ゴールドを金庫へ。`,
+    HOLD: `今日は召喚を温存。${decision.reason}。戦況を見極める！`,
   };
   const lunaComments: Record<string, string> = {
-    BUY: `最大 ${MAX_TRADE_YEN.toLocaleString()}円ルール守って購入。現金残 ${updatedBalance.cashYen.toLocaleString()}円。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
-    SELL: `${decision.reason.startsWith("利確") ? "利確成功" : "損切り実行"}。次のエントリーを待つわ。`,
-    HOLD: `${sleepMode ? "おやすみモード中。今月の利益は守りきる。" : "条件未達。翌日に備えて。"}`,
+    BUY: `1回 ${MAX_TRADE_YEN.toLocaleString()} MP までのルール守ってね。未召喚魔力は ${Math.round(updatedBalance.cashYen).toLocaleString()} MP 残っているわ。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
+    SELL: `${decision.reason.startsWith("利確") ? "純金ゴールドのドロップ成功" : "小さな損失で盾を構えた"}。次の召喚タイミングを見計らうわ。`,
+    HOLD: `${sleepMode ? "おやすみモード中。今月のゴールドは守りきる。" : "条件未達。翌日に備えて魔力を温存しましょう。"}`,
   };
 
   return {
     ...ledger,
     cashYen: updatedBalance.cashYen,
     btcHeld: updatedBalance.btcHeld,
+    ethHeld: updatedBalance.ethHeld,
     btcPriceYen: btcPrice,
+    ethPriceYen: ethPrice,
+    previousTotalYen,
     totalYen: updatedTotal,
     monthlyRealizedPnlYen: monthlyPnl,
     sleepMode,
