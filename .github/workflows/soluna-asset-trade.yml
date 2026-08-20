@@ -3,8 +3,8 @@ name: Soluna Asset Trade (background)
 # 朝のブリーフィングに縛らず、月次目標に向けて裏で売買判断する
 on:
   schedule:
-    # 2時間ごと（UTC）= JST でも同間隔で裏稼働
-    - cron: "15 */2 * * *"
+    # 1時間ごと（UTC）= 市場変化に追従して利益チャンスを拾う
+    - cron: "20 * * * *"
   workflow_dispatch:
 
 jobs:
