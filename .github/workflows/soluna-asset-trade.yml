@@ -1,0 +1,28 @@
+name: Soluna Asset Trade (background)
+
+# 朝のブリーフィングに縛らず、月次目標に向けて裏で売買判断する
+on:
+  schedule:
+    # 2時間ごと（UTC）= JST でも同間隔で裏稼働
+    - cron: "15 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  run_asset_trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run background asset trade tick
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS -o /tmp/soluna-asset.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/asset-trade" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          cat /tmp/soluna-asset.json
+          echo ""
+          echo "HTTP ${HTTP_CODE}"
+          test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300

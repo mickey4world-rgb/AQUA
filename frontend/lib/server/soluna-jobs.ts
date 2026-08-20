@@ -2,16 +2,19 @@ import { medalUnitScore } from "@/lib/server/soluna-battle";
 import { runDailyAssetTrade } from "@/lib/server/soluna-asset-trade";
 import { composeDailyNote, createNoteArticleRecord } from "@/lib/server/soluna-note-article";
 import { isNotePublishConfigured, noteCreatorUrl, publishNoteArticle } from "@/lib/server/soluna-note-publish";
+import { advanceSettlement } from "@/lib/server/soluna-settlement";
 import {
   getLatestBoincRun,
   getLatestNoteArticle,
   getSystemAssets,
   getSystemHunter,
+  getSystemSettlement,
   getLatestBriefing,
   listSystemMessages,
   saveSystemAssets,
   saveSystemBoincRun,
   saveSystemNoteArticle,
+  saveSystemSettlement,
 } from "@/lib/server/soluna-system-store";
 import type {
   SolunaAssetLedger,
@@ -34,17 +37,17 @@ function buildBoincRun(briefingId: string, itemCount: number, victory: boolean):
     minutes,
     itemCount,
     status: "waiting-spec",
-    solComment: `アイテム ${itemCount} 個の余熱で、宇宙分析を ${minutes} 分ぶん回すよ。星の計算は討伐の続きだ。`,
-    lunaComment: `時間は気分で決めないこと。${minutes} 分、ログを残してから回して。接続手順はこれからね。`,
+    solComment: `アイテム ${itemCount} 個の余熱で、宇宙分析を ${minutes} 分ぶん回すよ。街の開拓パワーになる！`,
+    lunaComment: `時間は気分で決めないこと。${minutes} 分、ログを残してから回して。拠点の礎になるわ。`,
   };
 }
 
-
 export async function buildJobsState(): Promise<SolunaJobsState> {
-  const [latestNote, latestBoinc, assets] = await Promise.all([
+  const [latestNote, latestBoinc, assets, settlement] = await Promise.all([
     getLatestNoteArticle(),
     getLatestBoincRun(),
     getSystemAssets(),
+    getSystemSettlement(),
   ]);
   return {
     noteConfigured: isNotePublishConfigured(),
@@ -52,6 +55,7 @@ export async function buildJobsState(): Promise<SolunaJobsState> {
     latestNote,
     latestBoinc,
     assets,
+    settlement,
   };
 }
 
@@ -119,6 +123,13 @@ export async function runDailyAutonomousJobs(options?: {
     };
   }
 
+  // BOINC 分数で拠点都市を進める（同日の再実行で二重加算しない）
+  const prevSettlement = await getSystemSettlement();
+  const settlement =
+    prevSettlement?.latestEvent?.briefingId === briefing.id
+      ? prevSettlement
+      : advanceSettlement(prevSettlement, boinc.minutes, briefing.id);
+
   const composed = composeDailyNote({
     briefing,
     battle,
@@ -127,6 +138,7 @@ export async function runDailyAutonomousJobs(options?: {
     boincMinutes: boinc.minutes,
     assets,
     boinc,
+    settlement,
   });
 
   let article = createNoteArticleRecord(composed, briefing.id);
@@ -161,6 +173,7 @@ export async function runDailyAutonomousJobs(options?: {
   await saveSystemNoteArticle(article);
   await saveSystemBoincRun(boinc);
   await saveSystemAssets(assets);
+  await saveSystemSettlement(settlement);
 
   return {
     noteConfigured: isNotePublishConfigured(),
@@ -168,5 +181,6 @@ export async function runDailyAutonomousJobs(options?: {
     latestNote: article,
     latestBoinc: boinc,
     assets,
+    settlement,
   };
 }

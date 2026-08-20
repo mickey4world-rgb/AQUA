@@ -9,6 +9,7 @@ import type {
   SolunaHunterState,
   SolunaNewsBriefing,
   SolunaNoteArticle,
+  SolunaSettlementState,
   SolunaSystemEpisode,
   SolunaSystemMessage,
   SolunaSystemPersonalityState,
@@ -42,6 +43,11 @@ type StoredMeta = {
 };
 type StoredNote = SolunaNoteArticle & { userId: string; docType: "systemNoteArticle" };
 type StoredBoinc = SolunaBoincRun & { userId: string; docType: "systemBoincRun" };
+type StoredSettlement = SolunaSettlementState & {
+  id: "system-settlement";
+  userId: string;
+  docType: "systemSettlement";
+};
 type StoredAssets = SolunaAssetLedger & {
   id: "system-assets";
   userId: string;
@@ -317,6 +323,28 @@ export async function getSystemAssets(): Promise<SolunaAssetLedger | null> {
     if (!resource) return null;
     const { id: _id, userId: _userId, docType: _docType, ...assets } = resource;
     return assets;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSystemSettlement(settlement: SolunaSettlementState): Promise<void> {
+  await recordsContainer().items.upsert({
+    id: "system-settlement",
+    userId: SOLUNA_SYSTEM_USER_ID,
+    docType: "systemSettlement",
+    ...settlement,
+  } satisfies StoredSettlement);
+}
+
+export async function getSystemSettlement(): Promise<SolunaSettlementState | null> {
+  try {
+    const { resource } = await recordsContainer()
+      .item("system-settlement", SOLUNA_SYSTEM_USER_ID)
+      .read<StoredSettlement>();
+    if (!resource) return null;
+    const { id: _id, userId: _userId, docType: _docType, ...settlement } = resource;
+    return settlement;
   } catch {
     return null;
   }

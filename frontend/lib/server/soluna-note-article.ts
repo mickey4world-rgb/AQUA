@@ -5,11 +5,13 @@ import type {
   SolunaHunterState,
   SolunaNewsBriefing,
   SolunaNoteArticle,
+  SolunaSettlementState,
   SolunaSystemMessage,
 } from "@/lib/types/soluna";
 import { medalUnitScore } from "@/lib/server/soluna-battle";
 import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
 import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
+import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 
 function jstDateLabel(date = new Date()): string {
   return date.toLocaleDateString("ja-JP", {
@@ -84,6 +86,7 @@ export function composeDailyNote(input: {
   boincMinutes: number;
   assets?: SolunaAssetLedger | null;
   boinc?: SolunaBoincRun | null;
+  settlement?: SolunaSettlementState | null;
 }): {
   title: string;
   freeBody: string;
@@ -185,20 +188,14 @@ ${paywallTeaser}
 ・激闘の続き: 小物戦の裏側＆大ボス戦の白熱全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
 ・召喚獣育成ステータス: 聖なる魔力タンク（MP）とレベルアップ報告
-・社会貢献: 購読の熱量が宇宙分析（BOINC）に変わるレポート
+・拠点都市開拓: 購読パワーが街を育てる「街づくりレポート」
 
 ${escapeHook}
 
 → 続きを読む: ${shopLine}`;
 
-  const boincBlock = input.boinc?.result
-    ? `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分
-クレジット: ${boincCredit} cobblestones（${input.boinc.result.projectName}）
-タスク完了: ${input.boinc.result.tasksCompleted} 件`
-    : `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分（実行キュー投入）
-有料購読の輪が回るほど、宇宙分析の稼働時間が伸びます。`;
-
   const guildFinance = formatGuildFinanceRpgReport(assets);
+  const settlementDiary = formatSettlementDiary(input.settlement);
 
   const paidBody = `有料購読のあなたへ。白熱の続きと、今日のギルド全仕事レポートです。
 
@@ -217,7 +214,7 @@ ${LUNA_LABEL}
 今日の討伐は決まった。収穫はギルドの燃料にするぞ！
 
 ${LUNA_LABEL}
-勝ち逃げも大事。ここで欲張らず、財務報告と宇宙分析に回しましょう。`
+勝ち逃げも大事。ここで欲張らず、財務報告と拠点開拓に回しましょう。`
 }
 
 ---
@@ -243,12 +240,15 @@ ${input.battle.nextMove}
 
 ---
 
-## 🌍 本日の社会貢献（BOINC宇宙分析レポート）
+${settlementDiary}
 
-${boincBlock}
-
-${SOL_LABEL}「みんなの応援（購読）が、僕たちの戦う力と宇宙を解き明かすエネルギーになるんだ。」
-${LUNA_LABEL}「${boincMinutes} 分、ちゃんとログを残して。貢献は気分じゃなく積み上げよ。」
+${
+  input.boinc?.result
+    ? `
+（裏ログ）解析エンジン実績: ${boincMinutes} 分 / ${boincCredit} cobblestones / ${input.boinc.result.projectName}`
+    : `
+（裏ログ）解析エンジン: BOINC宇宙分析 ${boincMinutes} 分をキュー投入`
+}
 
 ---
 
