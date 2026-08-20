@@ -331,6 +331,8 @@ export interface SolunaAssetLedger {
 
 export interface SolunaJobsState {
   noteConfigured: boolean;
+  /** bitFlyer API キーが SWA 環境変数に載っているか */
+  bitFlyerConfigured: boolean;
   creatorUrl?: string;
   latestNote: SolunaNoteArticle | null;
   latestBoinc: SolunaBoincRun | null;
