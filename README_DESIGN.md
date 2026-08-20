@@ -2,7 +2,7 @@
 
 > **プロジェクト名**: AQUA Information（ClaudeCodeWork / [mickey4world-rgb/AQUA](https://github.com/mickey4world-rgb/AQUA)）  
 > **本番 URL**: https://www.aquacore.net  
-> **最終更新**: 2026-08-07  
+> **最終更新**: 2026-08-21  
 > **対象読者**: プロダクトオーナー・開発者・運用担当（非エンジニアでも全体像を把握できることを目的とする）
 
 ---
@@ -423,10 +423,12 @@ sequenceDiagram
 | ファイル | 内容 |
 |---|---|
 | [`docs/README_SETUP.md`](docs/README_SETUP.md) | 新 PC への環境構築手順 |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | 初期詳細設計（一部、Functions 前提の記述あり） |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | 現行設計の差分更新付き設計書 |
+| [`docs/SOLUNA_MODEL_ROUTING.md`](docs/SOLUNA_MODEL_ROUTING.md) | Soluna モデル自動ルーティング |
+| [`docs/SOLUNA_AUTONOMOUS.md`](docs/SOLUNA_AUTONOMOUS.md) | Soluna 自律運用（討伐・Note・街・BOINC・bitFlyer） |
 | [`.claudecode.json`](.claudecode.json) | プロジェクト固定ルール（リージョン・コスト・命名） |
 | [`frontend/staticwebapp.config.json`](frontend/staticwebapp.config.json) | 認証ルート・セキュリティヘッダー |
 
 ---
 
-*本書は Claude Code が構築した AQUA Personal Apps の現行実装（2026-08-07 デプロイ `07a4de1` 時点）に基づいて作成されています。*
+*本書は Claude Code が構築した AQUA Personal Apps の現行実装に基づいて作成されています。Soluna 自律運用の最新差分は 2026-08-21 時点の [`docs/SOLUNA_AUTONOMOUS.md`](docs/SOLUNA_AUTONOMOUS.md) を参照。*

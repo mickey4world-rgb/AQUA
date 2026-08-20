@@ -460,7 +460,8 @@ npm run build
 
 #### Soluna 本番環境変数（Azure Portal → SWA → 構成）
 
-モデル自動判断の仕組み（ルーティング・コスト調整・プロンプト設計）: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)
+モデル自動判断の仕組み（ルーティング・コスト調整・プロンプト設計）: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)  
+朝の討伐・Note・街づくり・BOINC・bitFlyer: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
 **Claude（Azure AI Foundry — 推奨）**
 
@@ -469,6 +470,31 @@ npm run build
 | `AZURE_FOUNDRY_CLAUDE_RESOURCE` | [ai.azure.com](https://ai.azure.com/) のリソース名 |
 | `AZURE_FOUNDRY_CLAUDE_API_KEY` | Foundry → Home → **Project API key** |
 | `SOLUNA_CLAUDE_DEPLOYMENT` | Foundry → Models → Claude のデプロイ名 |
+| `SOLUNA_CLAUDE_DEPLOYMENT_FAST` / `_ADVANCED` / `_FABLE` | （任意）ソルの即時フェイルオーバー用 |
+
+**Note.com 自動投稿**
+
+| 変数 | 内容 |
+|---|---|
+| `NOTE_COOKIE` | note.com ログイン Cookie |
+| `NOTE_CREATOR_URLNAME` | 例: `aqua_studio` |
+| `NOTE_PRICE_YEN` | 有料価格（例: `100`） |
+| `NOTE_EYECATCH_UUID` | （任意）ヘッダー画像 UUID |
+
+**bitFlyer 資産運用（裏稼働）**
+
+| 変数 | 内容 |
+|---|---|
+| `BITFLYER_API_KEY` | Lightning API Key（照会＋注文） |
+| `BITFLYER_API_SECRET` | API Secret |
+
+キー設定後、GitHub Actions **Soluna Asset Trade** を1回手動実行すると口座と同期されます。
+
+**Cron 共通**
+
+| 変数 | 内容 |
+|---|---|
+| `SOLUNA_CRON_SECRET` | Briefing / Asset Trade / BOINC report の Bearer 秘密 |
 
 **その他**
 
@@ -476,6 +502,22 @@ npm run build
 |---|---|
 | `GEMINI_RELAY_URL` / `GEMINI_RELAY_KEY` | Japan East 中継（既存） |
 | `SOLUNA_LUNA_DEPLOYMENT` | `council-gpt5` |
+
+#### GitHub Actions（Soluna 用）
+
+| 場所 | キー | 用途 |
+|---|---|---|
+| Secrets | `SOLUNA_CRON_SECRET` | 本番 API 呼び出し |
+| Secrets | `BOINC_ACCOUNT_KEY` | BOINC プロジェクト接続 |
+| Secrets | `GEMINI_RELAY_*` | ニュース取得スクリプト |
+| Vars | `PRODUCTION_URL` | 例: `https://www.aquacore.net` |
+| Vars | `BOINC_PROJECT_URL` | （任意）既定 WCG |
+
+ワークフロー:
+
+- `soluna-system-briefing.yml` … 朝 6/7/8/9 時 JST 目標
+- `soluna-asset-trade.yml` … 毎時（市場監視・売買）
+- `soluna-boinc.yml` … 単独 / call 用（Briefing 内でも実行）
 
 #### Azure Foundry で Claude をデプロイする手順
 
@@ -546,6 +588,17 @@ npm run seed:users
 - 本番: `npm run setup:soluna` / `setup:work-notes` を実行済みか確認
 - SWA アプリ設定に `COSMOS_ENDPOINT` / `COSMOS_KEY` があるか確認
 
+### Soluna「魔力充填待ち / API キー未設定」
+
+- SWA に `BITFLYER_API_KEY` / `BITFLYER_API_SECRET` があるか（**適用**済みか）
+- キー設定直後は台帳が古いまま残ることがある → Actions **Soluna Asset Trade** を手動1回
+- 詳細: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md) §6
+
+### Soluna 朝のニュースが遅い / BOINC 実績が UI に出ない
+
+- schedule 遅延は GHA 仕様。6/7/8/9 時の複数枠で取りこぼしを軽減
+- BOINC は RPC 権限と report JSON を `run-soluna-boinc.sh` で正規化済み。失敗時は Actions ログの `boinc-report` を確認
+
 ### Gemini が「high demand」で失敗する
 
 - 一時的な混雑です。自動リトライ・代替モデル・OpenAI フォールバック（訴訟記録ノート等）が入っています
@@ -574,8 +627,10 @@ npm run seed:users
 | ファイル | 内容 |
 |---|---|
 | [`docs/DESIGN.md`](./DESIGN.md) | システム設計・アーキテクチャ |
+| [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md) | Soluna モデル自動ルーティング |
+| [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md) | Soluna 自律運用（討伐・Note・街・BOINC・bitFlyer） |
 | [`frontend/README.md`](../frontend/README.md) | Next.js フロントエンドの概要 |
 
 ---
 
-*最終更新: 2026-08-16*
+*最終更新: 2026-08-21*

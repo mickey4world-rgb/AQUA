@@ -181,14 +181,18 @@ OpenAI Chat Completions と Gemini の system + user 形式は、そのまま So
 
 ---
 
-## 5. フォールバック
+## 5. フォールバック（2026-08 更新）
 
 1 プロバイダが失敗した場合:
 
-1. 当初の assignment を試行
-2. `listFallbackProviders` でスコア順の代替プロバイダを試行
-3. 相手キャラのプロバイダは **blocked**（2人同じ API に依存しない）
-4. 成功したモデル名を `modelLabel` として UI / メッセージに保存
+1. 当初の assignment を試行（ソルはタイムアウトを短めにして早期切替）
+2. **ソルのみ**: Claude 内の代替デプロイ（FAST / 通常 / ADVANCED 等）を即試行
+3. `listFallbackProviders` でスコア順の代替プロバイダを試行
+4. 初期割当では相手キャラのプロバイダを避けるが、**ソルは失敗時に相手プロバイダも解禁**（会話継続優先）
+5. それでも失敗したらソル緊急リトライ（制限なしでもう一周）
+6. 成功したモデル名を `modelLabel` / `routeReason`（フェイルオーバー理由付き）として保存
+
+自律ジョブ（ニュース討伐・Note・街づくり・BOINC・bitFlyer）は本ドキュメントの対象外です → [`SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
 ---
 
