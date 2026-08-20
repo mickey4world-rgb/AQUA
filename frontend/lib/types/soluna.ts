@@ -221,18 +221,24 @@ export interface SolunaAssetLedger {
   lastMonthTotalYen: number;
   /** 今月利益目標 = lastMonthTotalYen × 0.02 */
   monthlyTargetYen: number;
-  /** 当月累計実現損益 */
+  /** 当月累計実現損益（＝討伐報酬ゴールド） */
   monthlyRealizedPnlYen: number;
   /** おやすみモード（目標 ≥ monthlyTargetYen） */
   sleepMode: boolean;
-  /** 現在の BTC 保有量（BTC 単位） */
+  /** 現在の BTC 保有量（烈火の竜） */
   btcHeld: number;
-  /** 現在の現金残高（円） */
+  /** 現在の ETH 保有量（蒼穹の不死鳥）— 保有表示用 */
+  ethHeld: number;
+  /** 現在の現金残高（円）＝未召喚の魔力 */
   cashYen: number;
-  /** 総資産（現金 + BTC 時価） */
+  /** 総資産（現金 + BTC/ETH 時価）＝総魔力 MP */
   totalYen: number;
+  /** 前回記録時の総資産（前日比用） */
+  previousTotalYen: number;
   /** 最新 BTC 価格 */
   btcPriceYen: number;
+  /** 最新 ETH 価格 */
+  ethPriceYen: number;
   /** 当月取引履歴 */
   trades: SolunaTradeRecord[];
   /** 月次サマリー履歴 */

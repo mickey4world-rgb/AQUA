@@ -8,6 +8,7 @@ import type {
   SolunaSystemMessage,
 } from "@/lib/types/soluna";
 import { medalUnitScore } from "@/lib/server/soluna-battle";
+import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
 
 function jstDateLabel(date = new Date()): string {
   return date.toLocaleDateString("ja-JP", {
@@ -69,21 +70,6 @@ function medalReport(hunter: SolunaHunterState): string {
   return `銅${medals.bronze}枚 / 銀${medals.silver}枚 / 金${medals.gold}枚 / 虹${medals.rainbow}枚（AI総投資単位 ${medalUnitScore(medals)}）`;
 }
 
-function latestTradeLine(assets: SolunaAssetLedger | null | undefined): string {
-  if (!assets) return "入金待ち / API 接続準備中。";
-  const latest = assets.trades[assets.trades.length - 1];
-  if (!latest) {
-    return assets.status === "waiting-spec"
-      ? "メダルなしのため現状維持（取引待機）。"
-      : "本日は取引なし（現状維持）。";
-  }
-  const pnl =
-    latest.realizedPnlJpy !== undefined
-      ? ` / 損益 ${latest.realizedPnlJpy >= 0 ? "+" : ""}${latest.realizedPnlJpy.toLocaleString("ja-JP")}円`
-      : "";
-  return `${latest.side} ${latest.sizeJpy.toLocaleString("ja-JP")}円 @ ${latest.priceBtc.toLocaleString("ja-JP")}円${pnl}`;
-}
-
 export function notePriceYen(): number {
   const raw = Number(process.env.NOTE_PRICE_YEN ?? "100");
   return Number.isFinite(raw) && raw >= 0 ? raw : 100;
@@ -135,7 +121,6 @@ export function composeDailyNote(input: {
   const assets = input.assets ?? null;
   const boincMinutes = input.boinc?.result?.runMinutesActual ?? input.boincMinutes;
   const boincCredit = input.boinc?.result?.creditGranted;
-  const medalUnits = medalUnitScore(input.hunter.medals);
 
   const title = `⚔️ ${input.battle.bossName}を追え｜${dateLabel}｜ソルとルーナの朝討伐`;
 
@@ -187,19 +172,12 @@ ${paywallTeaser}
 【有料エリアの先にあるもの】
 ・激闘の続き: 2人のドタバタ反省会 / 白熱バトル全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
-・ギルド財務報告: 所持メダルと資産運用の現在地
+・ギルド財務報告: 聖なる魔力タンク（MP）と召喚獣の戦況
 ・社会貢献: 購読の熱量が宇宙分析（BOINC）に変わるレポート
 
 ${escapeHook}
 
 → 続きを読む: ${shopLine}`;
-
-  const portfolioBlock = assets
-    ? `総資産 ${assets.totalYen.toLocaleString("ja-JP")} 円 / 現金 ${assets.cashYen.toLocaleString("ja-JP")} 円 / BTC ${assets.btcHeld.toFixed(4)}
-月次目標 ${assets.monthlyTargetYen.toLocaleString("ja-JP")} 円に対し、実現損益 ${assets.monthlyRealizedPnlYen.toLocaleString("ja-JP")} 円${assets.sleepMode ? "（🌙 おやすみモード）" : ""}
-今回の運用アクション: ${latestTradeLine(assets)}`
-    : `元手 10万円スタート。メダル ${medalUnits} 単位を今日の投資判断の燃料に。
-今回の運用アクション: ${latestTradeLine(null)}`;
 
   const boincBlock = input.boinc?.result
     ? `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分
@@ -207,6 +185,8 @@ ${escapeHook}
 タスク完了: ${input.boinc.result.tasksCompleted} 件`
     : `本日の提供熱量: BOINC分析時間 ${boincMinutes} 分（実行キュー投入）
 有料購読の輪が回るほど、宇宙分析の稼働時間が伸びます。`;
+
+  const guildFinance = formatGuildFinanceRpgReport(assets);
 
   const paidBody = `有料購読のあなたへ。白熱の続きと、今日のギルド全仕事レポートです。
 
@@ -249,20 +229,16 @@ ${input.battle.nextMove}
 
 ---
 
-## 📊 ソル＆ルーナ・ギルド財務報告
-
-${portfolioBlock}
-現在の所持メダル: ${medalReport(input.hunter)}
-
-${SOL_LABEL}「${assets?.solComment ?? "今日のニュースと相場を読んで判断する。"}」
-${LUNA_LABEL}「${assets?.lunaComment ?? "欲張らないのがルール。目標に届いたらおやすみモードよ。"}」
-
 ## 🌍 本日の社会貢献（BOINC宇宙分析レポート）
 
 ${boincBlock}
 
 ${SOL_LABEL}「みんなの応援（購読）が、僕たちの戦う力と宇宙を解き明かすエネルギーになるんだ。」
 ${LUNA_LABEL}「${boincMinutes} 分、ちゃんとログを残して。貢献は気分じゃなく積み上げよ。」
+
+---
+
+${guildFinance}
 
 毎日自動で、ここまでをお届けします。明日もまた、ニュースをモンスターに変えて討伐に出かけます。`;
 
