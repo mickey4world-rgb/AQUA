@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/azure-openai";
 import { resolveDailyBattle } from "@/lib/server/soluna-battle";
 import { formatBriefingForPrompt } from "@/lib/server/soluna-news";
+import { formatBattleModePromptAddon } from "@/lib/server/soluna-asset-rpg";
 import { enrichBriefingWithMonsters, pickBoss } from "@/lib/soluna-monsters";
 import {
   LUNA_SYSTEM_PROVIDER,
@@ -29,6 +30,7 @@ import {
   getLatestBriefing,
   getSystemHunter,
   getSystemLastRunAt,
+  getSystemAssets,
   listSystemEpisodes,
   listSystemMessages,
   markSystemRunAt,
@@ -278,11 +280,13 @@ export async function runDailySystemChat(options?: {
 
   const personality = await getOrInitSystemPersonality({ rotateInterests: options?.force });
   const hunter = await getSystemHunter();
+  const assets = await getSystemAssets();
+  const guildBuffBlock = formatBattleModePromptAddon(assets);
   const episodes = await listSystemEpisodes(8);
   const prior = await listSystemMessages(6);
   const encounter = enrichBriefingWithMonsters(briefing);
   const boss = pickBoss(encounter);
-  const briefingBlock = formatBriefingForPrompt(encounter);
+  const briefingBlock = `${formatBriefingForPrompt(encounter)}\n\n${guildBuffBlock}`;
   const transcript = formatSystemTranscript(prior);
   const relationshipBlock = buildPairRelationshipPrompt(personality);
   const solPersonalityBlock = buildCharacterPersonalityPrompt(personality, "sol", episodes);
@@ -293,11 +297,22 @@ export async function runDailySystemChat(options?: {
     ? `Lv.${boss.monster.rank} ${boss.monster.speciesLabel}「${boss.monster.name}」が現れた`
     : briefing.summary;
 
+  const buffNarration =
+    assets?.battleMode === "attack"
+      ? `🌟 ギルド特殊効果『前日ドロップ利益の恩恵（魔力増幅＋20%）』発動中！`
+      : assets
+        ? `🛡️ 防御モード — 黄金の守護巨兵で足元固め`
+        : "";
+
   created.push(
-    createSystemMessage("system", `⚔️ 朝の討伐開始 — ${bossLine}`, {
-      briefingId: briefing.id,
-      kind: "narration",
-    }),
+    createSystemMessage(
+      "system",
+      `⚔️ 朝の討伐開始 — ${bossLine}${buffNarration ? `\n${buffNarration}` : ""}`,
+      {
+        briefingId: briefing.id,
+        kind: "narration",
+      },
+    ),
   );
 
   // ── ターン1：ソル（ニュース解説） ──────────────────────────────────────────

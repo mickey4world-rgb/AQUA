@@ -215,6 +215,8 @@ export interface SolunaMonthlyAssetSummary {
   goalReachedAt?: string;      // 達成日時
 }
 
+export type SolunaBattleMode = "attack" | "defense";
+
 export interface SolunaAssetLedger {
   principalYen: number;
   /** 先月末総資産（初回は principalYen） */
@@ -225,20 +227,28 @@ export interface SolunaAssetLedger {
   monthlyRealizedPnlYen: number;
   /** おやすみモード（目標 ≥ monthlyTargetYen） */
   sleepMode: boolean;
-  /** 現在の BTC 保有量（烈火の竜） */
+  /** 現在の BTC 保有量（雷轟の蒼竜） */
   btcHeld: number;
   /** 現在の ETH 保有量（蒼穹の不死鳥）— 保有表示用 */
   ethHeld: number;
-  /** 現在の現金残高（円）＝未召喚の魔力 */
+  /** 現在の現金残高（円）＝黄金の守護巨兵の防衛魔力 */
   cashYen: number;
   /** 総資産（現金 + BTC/ETH 時価）＝総魔力 MP */
   totalYen: number;
   /** 前回記録時の総資産（前日比用） */
   previousTotalYen: number;
+  /** 前回 BTC 評価額（レベルアップ差分用） */
+  previousBtcValueYen: number;
+  /** 前回現金残高（ゴーレム Lv 差分用） */
+  previousCashYen: number;
   /** 最新 BTC 価格 */
   btcPriceYen: number;
   /** 最新 ETH 価格 */
   ethPriceYen: number;
+  /** 前日比に基づくバトルモード（翌日の会話用） */
+  battleMode: SolunaBattleMode;
+  /** 本日のニュースバトルで使ったバフ／防御（Note 無料リード用） */
+  lastPromptBattleMode?: SolunaBattleMode;
   /** 当月取引履歴 */
   trades: SolunaTradeRecord[];
   /** 月次サマリー履歴 */

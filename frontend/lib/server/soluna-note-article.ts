@@ -152,6 +152,19 @@ export function composeDailyNote(input: {
   const freeBody = `${SOL_LABEL} ／ ${LUNA_LABEL}
 今日もニュースをモンスターに変えて、2人が討伐に挑みます。
 → キャラクター紹介: ${charImageUrl}
+${
+  (assets?.lastPromptBattleMode ?? assets?.battleMode) === "attack"
+    ? `
+【前日からのバフ発動！】
+🌟 ギルド特殊効果：『前日ドロップ利益の恩恵（魔力増幅＋20%）』が発動中！
+`
+    : (assets?.lastPromptBattleMode ?? assets?.battleMode) === "defense" && assets?.status === "done"
+      ? `
+【防御モード】
+🛡️ 昨日は敵の急襲の気配。黄金の守護巨兵で足元を固めてから討伐へ。
+`
+      : ""
+}
 
 ## 今日のニュース
 ${news}

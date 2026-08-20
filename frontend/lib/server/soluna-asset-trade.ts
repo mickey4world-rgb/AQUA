@@ -16,6 +16,7 @@ import type {
 } from "@/lib/types/soluna";
 import { medalUnitScore } from "@/lib/server/soluna-battle";
 import type { SolunaHunterState } from "@/lib/types/soluna";
+import { resolveBattleMode } from "@/lib/server/soluna-asset-rpg";
 
 // ── 定数 ─────────────────────────────────────────────────────────────────────
 
@@ -145,13 +146,16 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     cashYen: ASSET_PRINCIPAL_YEN,
     totalYen: ASSET_PRINCIPAL_YEN,
     previousTotalYen: ASSET_PRINCIPAL_YEN,
+    previousBtcValueYen: 0,
+    previousCashYen: ASSET_PRINCIPAL_YEN,
     btcPriceYen: 0,
     ethPriceYen: 0,
+    battleMode: "defense",
     trades: [],
     monthlySummaries: [],
     medalUnits,
     status: "waiting-spec",
-    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、烈火の竜を召喚する！",
+    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、雷轟の蒼竜を召喚する！",
     lunaComment: "入金確認まで待機。ルールは決まった、あとは実行するだけ。",
     updatedAt: now,
   };
@@ -204,19 +208,20 @@ type TradeDecision =
   | { action: "HOLD"; reason: string };
 
 /**
- * ニュースセンチメント・現在価格・保有状況から売買を判断する
+ * ニュースセンチメント・戦況バフ・保有状況から売買を判断する
+ * attack（前日利益）→ 強気ホールド／買い増し
+ * defense（前日マイナス）→ 静観・ゴーレム固め
  */
 function decideTrade(
   ledger: SolunaAssetLedger,
   btcPrice: number,
   newsSentiment: "positive" | "negative" | "neutral",
+  battleMode: "attack" | "defense",
 ): TradeDecision {
-  // おやすみモード: 目標達成済みは新規購入しない
   if (ledger.sleepMode) {
     return { action: "HOLD", reason: "月次目標達成済み（おやすみモード）" };
   }
 
-  // 保有 BTC があれば利確・損切りチェック
   if (ledger.btcHeld > MIN_BTC_ORDER) {
     const buyTrades = ledger.trades.filter((t) => t.side === "BUY");
     if (buyTrades.length > 0) {
@@ -240,17 +245,30 @@ function decideTrade(
     }
   }
 
-  // ポジティブニュース × 現金あり → ドルコスト平均法で購入
+  // 防御モード: 新規召喚せずゴーレム固め
+  if (battleMode === "defense") {
+    if (newsSentiment === "positive" && ledger.cashYen >= MAX_TRADE_YEN) {
+      // 強い好材料のみ、最小限の反撃買い
+      return {
+        action: "BUY",
+        reason: `防御モードの反撃召喚: 好材料のみ ${Math.min(5_000, ledger.cashYen).toLocaleString()}円分`,
+        amountJpy: Math.min(5_000, ledger.cashYen),
+      };
+    }
+    return { action: "HOLD", reason: "防御モード：黄金の守護巨兵で足元固め（静観）" };
+  }
+
+  // 攻撃バフモード: ネガティブ以外はドルコストで蒼竜を育成
   if (newsSentiment !== "negative" && ledger.cashYen >= 1000) {
     const tradeYen = Math.min(MAX_TRADE_YEN, ledger.cashYen);
     return {
       action: "BUY",
-      reason: `DCA購入: ニュースセンチメント=${newsSentiment}、${tradeYen.toLocaleString()}円分`,
+      reason: `バフ発動中の蒼竜育成（DCA）: ${tradeYen.toLocaleString()}円分`,
       amountJpy: tradeYen,
     };
   }
 
-  return { action: "HOLD", reason: "取引条件なし（HOLD）" };
+  return { action: "HOLD", reason: "攻撃モードだが材料不足のため強気ホールド" };
 }
 
 /**
@@ -307,20 +325,31 @@ export async function runDailyAssetTrade(input: {
         ethHeld: input.ledger.ethHeld ?? 0,
         ethPriceYen: input.ledger.ethPriceYen ?? 0,
         previousTotalYen: input.ledger.previousTotalYen ?? input.ledger.totalYen ?? ASSET_PRINCIPAL_YEN,
+        previousBtcValueYen: input.ledger.previousBtcValueYen ?? 0,
+        previousCashYen: input.ledger.previousCashYen ?? input.ledger.cashYen ?? ASSET_PRINCIPAL_YEN,
+        battleMode: input.ledger.battleMode ?? "defense",
       }
     : buildInitialLedger(medalUnits);
   const previousTotalYen = ledger.totalYen || ASSET_PRINCIPAL_YEN;
+  const previousBtcValueYen = Math.round(ledger.btcHeld * (ledger.btcPriceYen || btcPrice));
+  const previousCashYen = Math.round(ledger.cashYen);
+
+  // 前日比でバフ／防御を決定（今日の売買ロジックに反映）
+  const incomingDayChange = previousTotalYen - (ledger.previousTotalYen || previousTotalYen);
+  const battleMode = resolveBattleMode(incomingDayChange);
+
   ledger = rolloverMonthIfNeeded({
     ...ledger,
     totalYen,
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
+    battleMode,
     ...balance,
   });
   ledger = { ...ledger, medalUnits };
 
   const sentiment = inferNewsSentiment(input.newsSummary);
-  const decision = decideTrade(ledger, btcPrice, sentiment);
+  const decision = decideTrade(ledger, btcPrice, sentiment, battleMode);
 
   let newTrades = [...ledger.trades];
   let monthlyPnl = ledger.monthlyRealizedPnlYen;
@@ -376,15 +405,24 @@ export async function runDailyAssetTrade(input: {
   );
 
   const solComments: Record<string, string> = {
-    BUY: `${decision.amountJpy?.toLocaleString()} MP を消費して【烈火の竜】を追加召喚！ニュースの風は ${sentiment}。`,
-    SELL: `${decision.reason.startsWith("利確") ? "利確" : "損切り"}！烈火の竜を解呪して ${Math.round(monthlyPnl).toLocaleString()} ゴールドを金庫へ。`,
-    HOLD: `今日は召喚を温存。${decision.reason}。戦況を見極める！`,
+    BUY: `バフの余熱で ${decision.amountJpy?.toLocaleString()} MP を雷轟の蒼竜にエサやり！ゴールドを魔力結晶に変えて育成するぜ！`,
+    SELL: `${decision.reason.startsWith("利確") ? "利確ドロップ成功" : "損切りで盾構え"}！蒼竜を解呪して ${Math.round(monthlyPnl).toLocaleString()} ゴールドを金庫へ。`,
+    HOLD:
+      battleMode === "attack"
+        ? `攻撃バフ中だが今日は強気ホールド。蒼竜のライトニングを温存する！`
+        : `防御モード。黄金の守護巨兵の足元を固めて反撃を待つ。`,
   };
   const lunaComments: Record<string, string> = {
-    BUY: `1回 ${MAX_TRADE_YEN.toLocaleString()} MP までのルール守ってね。未召喚魔力は ${Math.round(updatedBalance.cashYen).toLocaleString()} MP 残っているわ。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
-    SELL: `${decision.reason.startsWith("利確") ? "純金ゴールドのドロップ成功" : "小さな損失で盾を構えた"}。次の召喚タイミングを見計らうわ。`,
-    HOLD: `${sleepMode ? "おやすみモード中。今月のゴールドは守りきる。" : "条件未達。翌日に備えて魔力を温存しましょう。"}`,
+    BUY: `獲得ゴールドを蒼竜に食べさせたわ。レベルアップの兆しよ。未召喚魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
+    SELL: `${decision.reason.startsWith("利確") ? "純金ゴールドのドロップ成功" : "小さな損失で金剛の盾"}。次の召喚タイミングを見計らうわ。`,
+    HOLD:
+      battleMode === "defense"
+        ? `昨日は敵の急襲で魔力を削られた可能性あり。焦らずゴーレムで守りましょう。`
+        : `${sleepMode ? "おやすみモード中。今月のゴールドは守りきる。" : "条件を見て、明日また育成チャンスを狙うわ。"}`,
   };
+
+  const closingDayChange = updatedTotal - previousTotalYen;
+  const closingBattleMode = resolveBattleMode(closingDayChange);
 
   return {
     ...ledger,
@@ -394,9 +432,13 @@ export async function runDailyAssetTrade(input: {
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
     previousTotalYen,
+    previousBtcValueYen,
+    previousCashYen,
     totalYen: updatedTotal,
     monthlyRealizedPnlYen: monthlyPnl,
     sleepMode,
+    battleMode: closingBattleMode,
+    lastPromptBattleMode: battleMode,
     trades: newTrades,
     status: "done",
     solComment: solComments[decision.action],
