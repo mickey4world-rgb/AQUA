@@ -1,7 +1,11 @@
 import {
   generateWithAnthropic,
+  getAnthropicModel,
   getClaudeBackend,
+  getFoundryClaudeDeployment,
+  getFoundryClaudeFableDeployment,
   isAnthropicConfigured,
+  isAzureFoundryClaudeConfigured,
 } from "@/lib/server/anthropic";
 import {
   getAzureOpenAiClient,
@@ -29,11 +33,7 @@ import {
 import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
 import { buildHumanChatBriefingSection } from "@/lib/server/soluna-system-chat";
-import {
-  formatModelUsedLabel,
-  resolveModelForProvider,
-} from "@/lib/server/soluna-model-registry";
-import { getFoundryClaudeDeployment, isAzureFoundryClaudeConfigured } from "@/lib/server/anthropic";
+import { formatModelUsedLabel, resolveModelForProvider } from "@/lib/server/soluna-model-registry";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
   clampIntimacy,
@@ -65,9 +65,13 @@ const SOL_CHAT_MAX_OUTPUT_TOKENS = 900;
 const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 350;
 const CLAUDE_CHAT_MAX_TOKENS = 350;
 const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 900;
-/** SWA の API 制限（約 45 秒）内に収める */
+/** SWA の API 制限（約 45 秒）内に収める。ソルは早めに切ってモデル切替 */
 const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
-const MAX_PROVIDER_ATTEMPTS = 2;
+const SOL_PRIMARY_TIMEOUT_MS = 11_000;
+const SOL_FALLBACK_TIMEOUT_MS = 14_000;
+const MAX_PROVIDER_ATTEMPTS_SOL = 3;
+const MAX_PROVIDER_ATTEMPTS_LUNA = 2;
+const MAX_CLAUDE_MODEL_ATTEMPTS = 3;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
   "goal",
@@ -214,12 +218,41 @@ function buildUserMessages(
   ];
 }
 
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Claude が落ちたときにすぐ試す代替デプロイ／モデル */
+function listClaudeFailoverModels(primary: string, tier: SolunaGrowthTier): string[] {
+  return uniqueStrings([
+    primary,
+    getFoundryClaudeDeployment(tier),
+    getFoundryClaudeDeployment("budding"),
+    getFoundryClaudeDeployment("growing"),
+    getFoundryClaudeDeployment("mature"),
+    getFoundryClaudeFableDeployment(),
+    process.env.ANTHROPIC_MODEL?.trim(),
+    getAnthropicModel(),
+  ]).slice(0, MAX_CLAUDE_MODEL_ATTEMPTS);
+}
+
 async function callProvider(
   userId: string,
   character: SolunaCharacter,
   assignment: SolunaRouteAssignment,
   system: string,
   userMessages: Array<{ role: "user"; content: string }>,
+  timeoutMs = SOLUNA_PROVIDER_TIMEOUT_MS,
 ): Promise<CharacterChatResult> {
   const feature = character === "sol" ? "soluna-sol-chat" : "soluna-luna-chat";
   const { provider, model, tier } = assignment;
@@ -240,7 +273,7 @@ async function callProvider(
         ...request,
         maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
       },
-      { models: [model], timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS, maxAttempts: 1 },
+      { models: [model], timeoutMs, maxAttempts: 1 },
     );
 
     if (result.ok && result.finishReason === "MAX_TOKENS") {
@@ -249,7 +282,7 @@ async function callProvider(
           ...request,
           maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
         },
-        { models: [model], timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS, maxAttempts: 1 },
+        { models: [model], timeoutMs, maxAttempts: 1 },
       );
     }
 
@@ -278,33 +311,52 @@ async function callProvider(
     }
 
     const transcriptParts = userMessages.map((message) => message.content);
-    const result = await generateWithAnthropic({
-      system,
-      messages: [{ role: "user", content: transcriptParts.join("\n\n") }],
-      maxTokens: tier === "mature" ? 420 : CLAUDE_CHAT_MAX_TOKENS,
-      temperature: character === "sol" ? 0.75 : 0.85,
-      model: assignment.model,
-      tier: assignment.tier,
-      timeoutMs: SOLUNA_PROVIDER_TIMEOUT_MS,
-    });
+    const modelsToTry =
+      character === "sol"
+        ? listClaudeFailoverModels(assignment.model, tier)
+        : uniqueStrings([assignment.model]).slice(0, 1);
+    let lastError = "Claude から応答がありませんでした。";
 
-    if (!result.ok) return { error: result.reason };
+    for (const candidateModel of modelsToTry) {
+      const result = await generateWithAnthropic({
+        system,
+        messages: [{ role: "user", content: transcriptParts.join("\n\n") }],
+        maxTokens: tier === "mature" ? 420 : CLAUDE_CHAT_MAX_TOKENS,
+        temperature: character === "sol" ? 0.75 : 0.85,
+        model: candidateModel,
+        tier: assignment.tier,
+        timeoutMs,
+      });
 
-    await recordTokenUsage({
-      userId,
-      feature,
-      model: result.model,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-    });
+      if (!result.ok) {
+        lastError = result.reason;
+        console.warn(
+          `[soluna] ${character} Claude model failed (${candidateModel}): ${result.reason}`,
+        );
+        continue;
+      }
 
-    return {
-      content: result.text.trim(),
-      model: result.model,
-      modelLabel: assignment.modelLabel,
-      provider,
-      reason: "",
-    };
+      await recordTokenUsage({
+        userId,
+        feature,
+        model: result.model,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+      });
+
+      const switched = candidateModel !== assignment.model;
+      return {
+        content: result.text.trim(),
+        model: result.model,
+        modelLabel: switched
+          ? formatModelUsedLabel(provider, result.model, candidateModel)
+          : assignment.modelLabel,
+        provider,
+        reason: switched ? `モデル即時切替（${assignment.model}→${result.model}）` : "",
+      };
+    }
+
+    return { error: lastError };
   }
 
   if (!isAzureOpenAiConfigured()) {
@@ -328,7 +380,7 @@ async function callProvider(
           })),
         ],
       }),
-      SOLUNA_PROVIDER_TIMEOUT_MS,
+      timeoutMs,
       "Azure OpenAI",
     );
 
@@ -415,9 +467,19 @@ async function chatWithCharacter(
   );
   const userMessages = buildUserMessages(history, userMessage);
 
+  // ソルは応答不能を避けるため、失敗時は相手のプロバイダも含め全候補へ即切替
+  const allowPartnerProviderOnFailover = character === "sol";
+  const maxAttempts =
+    character === "sol" ? MAX_PROVIDER_ATTEMPTS_SOL : MAX_PROVIDER_ATTEMPTS_LUNA;
+
   const tryOrder: SolunaRouteAssignment[] = [assignment];
-  for (const provider of listFallbackProviders(character, userMessage, assignment.provider, costMode)) {
-    if (provider === blockedProvider) continue;
+  for (const provider of listFallbackProviders(
+    character,
+    userMessage,
+    assignment.provider,
+    costMode,
+  )) {
+    if (!allowPartnerProviderOnFailover && provider === blockedProvider) continue;
     tryOrder.push(
       buildFallbackAssignment(
         character,
@@ -431,18 +493,39 @@ async function chatWithCharacter(
 
   const candidates = tryOrder
     .filter((candidate) => isProviderConfigured(candidate.provider))
-    .filter((candidate) => candidate.provider !== blockedProvider)
-    .slice(0, MAX_PROVIDER_ATTEMPTS);
+    .filter(
+      (candidate) =>
+        allowPartnerProviderOnFailover || candidate.provider !== blockedProvider,
+    )
+    .filter(
+      (candidate, index, list) =>
+        list.findIndex(
+          (item) =>
+            item.provider === candidate.provider &&
+            item.model.toLowerCase() === candidate.model.toLowerCase(),
+        ) === index,
+    )
+    .slice(0, maxAttempts);
 
   let lastError = "応答を取得できませんでした。";
+  const failedLabels: string[] = [];
 
-  for (const candidate of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]!;
+    const timeoutMs =
+      character === "sol"
+        ? i === 0
+          ? SOL_PRIMARY_TIMEOUT_MS
+          : SOL_FALLBACK_TIMEOUT_MS
+        : SOLUNA_PROVIDER_TIMEOUT_MS;
+
     const result = await callProvider(
       userId,
       character,
       candidate,
       system,
       userMessages,
+      timeoutMs,
     );
 
     if (!("error" in result)) {
@@ -453,14 +536,25 @@ async function chatWithCharacter(
           result.model,
           candidate.modelDisplayName,
         );
+      const failoverReason =
+        i > 0
+          ? `即時フェイルオーバー（${failedLabels.join("→")}→${candidate.provider}/${result.model}）`
+          : result.reason || candidate.reason || assignment.reason;
+      if (i > 0) {
+        console.warn(`[soluna] ${character} recovered via failover: ${failoverReason}`);
+      }
       return {
         ...result,
         modelLabel,
-        reason: candidate.reason || assignment.reason,
+        reason: failoverReason,
       };
     }
 
     lastError = result.error;
+    failedLabels.push(`${candidate.provider}/${candidate.model}`);
+    console.warn(
+      `[soluna] ${character} provider failed (${candidate.provider}/${candidate.model}): ${result.error}`,
+    );
   }
 
   return { error: lastError };
@@ -607,7 +701,7 @@ export async function sendSolunaChat(
     },
   );
 
-  const [solResult, lunaResult] = await Promise.all([
+  const [solResultRaw, lunaResult] = await Promise.all([
     chatWithCharacter(
       userId,
       "sol",
@@ -635,6 +729,44 @@ export async function sendSolunaChat(
       briefingSection,
     ),
   ]);
+
+  // ソルが全滅したら、相手プロバイダ制限なしで最終リトライ（会話継続を最優先）
+  let solResult = solResultRaw;
+  if ("error" in solResult) {
+    console.warn(`[soluna] sol emergency retry after: ${solResult.error}`);
+    const emergencyProviders = getAvailableSolunaProviders().filter(
+      (provider) => provider !== routePlan.sol.provider,
+    );
+    for (const provider of emergencyProviders) {
+      const emergencyAssignment = buildFallbackAssignment(
+        "sol",
+        provider,
+        routePlan.sol.tier,
+        routePlan.sol.tierLevel,
+        costAssessment.mode,
+      );
+      solResult = await chatWithCharacter(
+        userId,
+        "sol",
+        emergencyAssignment,
+        trimmed,
+        solMemories,
+        history,
+        profile.solIntimacy,
+        solStage.label,
+        costAssessment.mode,
+        undefined,
+        briefingSection,
+      );
+      if (!("error" in solResult)) {
+        solResult = {
+          ...solResult,
+          reason: `緊急フェイルオーバー（${routePlan.sol.provider}→${solResult.provider}/${solResult.model}）`,
+        };
+        break;
+      }
+    }
+  }
 
   if ("error" in solResult && "error" in lunaResult) {
     return { ok: false, reason: `${solResult.error} / ${lunaResult.error}` };
