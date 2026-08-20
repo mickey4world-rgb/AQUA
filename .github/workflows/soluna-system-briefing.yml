@@ -2,8 +2,11 @@ name: Soluna System Briefing
 
 on:
   schedule:
-    # 毎日 9:00 JST = 0:00 UTC
-    - cron: "0 0 * * *"
+    # GitHub Actions の schedule は混雑で数時間遅延し得るため、複数枠で取りこぼしを防ぐ
+    # （API 側は同日二重実行をスキップする）
+    - cron: "0 0 * * *"   # 9:00 JST 目標
+    - cron: "30 0 * * *"  # 9:30 JST バックアップ
+    - cron: "0 1 * * *"   # 10:00 JST キャッチアップ
   workflow_dispatch:
 
 jobs:
@@ -103,44 +106,6 @@ jobs:
             echo "::warning::BOINC_ACCOUNT_KEY 未設定のためスキップ。GitHub Secrets に追加すると社会貢献が有効になります。"
             exit 0
           fi
-
-          echo "=== BOINC 社会貢献 開始 ==="
-          echo "実行予定: ${RUN_MINUTES} 分 / briefingId: ${BRIEFING_ID}"
-
-          sudo apt-get install -y --no-install-recommends boinc-client -qq
-          sudo systemctl start boinc-client || true
-          sleep 3
-
-          PROJECT_URL="${BOINC_PROJECT_URL:-https://www.worldcommunitygrid.org}"
-          boinccmd --project_attach "${PROJECT_URL}" "${BOINC_ACCOUNT_KEY}" || true
-          sleep 10
-
-          START_TIME=$(date +%s)
-          DEADLINE=$(( START_TIME + RUN_MINUTES * 60 ))
-          boinccmd --run_benchmarks || true
-
-          while [ $(date +%s) -lt $DEADLINE ]; do
-            boinccmd --get_tasks 2>/dev/null | grep -E "fraction_done|state" | head -5 || true
-            sleep 60
-          done
-
-          ACTUAL_MIN=$(( ($(date +%s) - START_TIME) / 60 ))
-          TASKS=$(boinccmd --get_tasks 2>/dev/null | grep -c "state: uploaded" || echo "0")
-          CREDIT=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=user_total_credit: )\S+" | head -1 || echo "0")
-          PROJECT_NAME=$(boinccmd --get_project_status 2>/dev/null | grep -oP "(?<=project_name: ).+" | head -1 || echo "World Community Grid")
-
-          boinccmd --project "${PROJECT_URL}" detach || true
-          sudo systemctl stop boinc-client || true
-
-          echo "=== BOINC 結果 ==="
-          echo "実績: ${ACTUAL_MIN} 分, タスク ${TASKS} 件, クレジット ${CREDIT} cobblestones"
-          echo "プロジェクト: ${PROJECT_NAME} (${PROJECT_URL})"
-
-          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          HTTP_CODE=$(curl -sS -o /tmp/boinc-report.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/soluna/boinc-report" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "{\"briefingId\":\"${BRIEFING_ID}\",\"creditGranted\":${CREDIT},\"tasksCompleted\":${TASKS},\"projectName\":\"${PROJECT_NAME}\",\"projectUrl\":\"${PROJECT_URL}\",\"runMinutesActual\":${ACTUAL_MIN}}")
-          cat /tmp/boinc-report.json
-          echo "HTTP ${HTTP_CODE}"
+          chmod +x frontend/scripts/run-soluna-boinc.sh
+          sed -i 's/\r$//' frontend/scripts/run-soluna-boinc.sh || true
+          frontend/scripts/run-soluna-boinc.sh

@@ -26,20 +26,46 @@ type BoincReportBody = {
   runMinutesActual: number;
 };
 
+function asFiniteNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: BoincReportBody;
+  let raw: Record<string, unknown>;
   try {
-    body = (await request.json()) as BoincReportBody;
-    if (!body.briefingId || typeof body.creditGranted !== "number") {
-      throw new Error("invalid");
-    }
+    raw = (await request.json()) as Record<string, unknown>;
   } catch {
     return Response.json({ error: "Invalid body" }, { status: 400 });
   }
+
+  const briefingId = typeof raw.briefingId === "string" ? raw.briefingId.trim() : "";
+  if (!briefingId) {
+    return Response.json({ error: "Invalid body: briefingId required" }, { status: 400 });
+  }
+
+  const body: BoincReportBody = {
+    briefingId,
+    creditGranted: asFiniteNumber(raw.creditGranted, 0),
+    tasksCompleted: Math.max(0, Math.round(asFiniteNumber(raw.tasksCompleted, 0))),
+    projectName:
+      typeof raw.projectName === "string" && raw.projectName.trim()
+        ? raw.projectName.trim()
+        : "World Community Grid",
+    projectUrl:
+      typeof raw.projectUrl === "string" && raw.projectUrl.trim()
+        ? raw.projectUrl.trim()
+        : "https://www.worldcommunitygrid.org",
+    runMinutesActual: Math.max(0, Math.round(asFiniteNumber(raw.runMinutesActual, 0))),
+  };
 
   const existing = await getLatestBoincRun();
   if (!existing || existing.briefingId !== body.briefingId) {
