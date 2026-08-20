@@ -4,15 +4,22 @@ import {
   countMarkers,
   PRAISE_MARKERS,
 } from "@/lib/server/soluna-system-config";
-import { enrichBriefingWithMonsters, pickBoss } from "@/lib/soluna-monsters";
+import { enrichBriefingWithMonsters, pickBoss, pickTrashMobs } from "@/lib/soluna-monsters";
+import {
+  getAreaById,
+  inferAreaFromBriefing,
+  pickNextDestination,
+} from "@/lib/server/soluna-journey";
 import type {
   SolunaBattleLoot,
   SolunaBattleOutcome,
   SolunaBattleResult,
+  SolunaEncounterResult,
   SolunaHunterInventoryItem,
   SolunaHunterState,
   SolunaMedalKind,
   SolunaNewsBriefing,
+  SolunaNewsItem,
   SolunaSystemMessage,
 } from "@/lib/types/soluna";
 
@@ -177,6 +184,51 @@ function buildNextMove(briefing: SolunaNewsBriefing, outcome: SolunaBattleOutcom
     : "今日の結論を1行にして、明日のニュースで検証する。";
 }
 
+function decideTrashOutcome(heat: number, depth: number, rank: number): SolunaBattleOutcome {
+  const power = heat * 0.55 + depth * 0.45;
+  const escapeLine = 0.22 + rank * 0.04;
+  if (power < escapeLine && heat < 0.2) return "escape";
+  return "victory";
+}
+
+function resolveEncounter(
+  item: SolunaNewsItem,
+  role: SolunaEncounterResult["role"],
+  heat: number,
+  depth: number,
+): SolunaEncounterResult {
+  const rank = (item.monster?.rank ?? 2) as SolunaEncounterResult["rank"];
+  const outcome =
+    role === "boss" ? decideOutcome(heat, depth, rank) : decideTrashOutcome(heat, depth, rank);
+  const xpGained =
+    role === "boss"
+      ? outcome === "victory"
+        ? 12 + rank * 8 + Math.round(heat * 18)
+        : 4 + rank * 2
+      : outcome === "victory"
+        ? 5 + rank * 3
+        : 2;
+  const goldFlavor =
+    outcome === "victory" ? (role === "boss" ? 400 + rank * 100 : 120 + rank * 40) : 0;
+
+  return {
+    role,
+    monsterName: item.monster?.name ?? item.title,
+    rank,
+    newsTitle: item.title,
+    newsPlain: item.summary,
+    outcome,
+    xpGained,
+    goldFlavor,
+    lootName:
+      outcome === "escape" && role === "boss"
+        ? ESCAPE_ITEM.name
+        : outcome === "victory" && role !== "boss"
+          ? "魔力結晶の欠片"
+          : null,
+  };
+}
+
 function formatRecap(result: SolunaBattleResult): string {
   const medalLabel: Record<SolunaMedalKind, string> = {
     bronze: "銅メダル",
@@ -190,9 +242,18 @@ function formatRecap(result: SolunaBattleResult): string {
     result.loot.itemName ?? "アイテムなし",
     `経験値 +${result.loot.xpGained}`,
   ];
+  const score =
+    result.wins !== undefined
+      ? `複数戦: ${result.wins}勝${result.losses ?? 0}敗 / 物語ゴールド +${result.goldFlavorTotal ?? 0}`
+      : "";
+  const place = result.journey
+    ? `舞台: 『${result.journey.areaName}』（${result.journey.regionLabel}）→ 次は『${result.journey.nextAreaName}』`
+    : "";
 
   return `【バトル結果】${resultLabel}
-相手: Lv.${result.bossRank} ${result.bossName}
+相手（大ボス）: Lv.${result.bossRank} ${result.bossName}
+${place}
+${score}
 ニュース: ${result.newsPlain}
 なぜ: ${result.outcomeWhy}
 入手: ${lootBits.join(" ／ ")}
@@ -207,18 +268,36 @@ export function resolveDailyBattle(
 ): { result: SolunaBattleResult; hunter: SolunaHunterState; recap: string } {
   const enriched = enrichBriefingWithMonsters(briefing);
   const boss = pickBoss(enriched);
+  const trash = pickTrashMobs(enriched, 2);
   const rank = boss.monster?.rank ?? 2;
   const { heat, depth } = evaluateDebateHeat(messages);
-  const outcome = decideOutcome(heat, depth, rank);
+
+  const area = inferAreaFromBriefing(enriched);
+  const nextArea = pickNextDestination(area, enriched);
+
+  const trashEncounters = trash.map((item, index) =>
+    resolveEncounter(item, index === 0 ? "trash" : "mid", heat, depth),
+  );
+  const bossEncounter = resolveEncounter(boss, "boss", heat, depth);
+  const encounters = [...trashEncounters, bossEncounter];
+  const wins = encounters.filter((row) => row.outcome === "victory").length;
+  const losses = encounters.length - wins;
+  const goldFlavorTotal = encounters.reduce((sum, row) => sum + row.goldFlavor, 0);
+  const xpFromEncounters = encounters.reduce((sum, row) => sum + row.xpGained, 0);
+
+  const outcome = bossEncounter.outcome;
   const medal = medalFor(rank, heat, outcome);
-  const xpGained =
-    outcome === "victory" ? 12 + rank * 8 + Math.round(heat * 18) : 4 + rank * 2;
   const item =
     outcome === "victory"
       ? hashPick(ITEM_POOL, `${briefing.id}:${boss.title}`)
       : heat < 0.18
         ? null
         : ESCAPE_ITEM;
+
+  const xpGained = Math.max(
+    xpFromEncounters,
+    outcome === "victory" ? 12 + rank * 8 : 4 + rank * 2,
+  );
 
   const loot: SolunaBattleLoot = {
     medal,
@@ -234,6 +313,7 @@ export function resolveDailyBattle(
       ...hunter.medals,
       ...(medal ? { [medal]: hunter.medals[medal] + 1 } : {}),
     },
+    currentAreaId: area.id,
     updatedAt: new Date().toISOString(),
   });
 
@@ -251,6 +331,11 @@ export function resolveDailyBattle(
     ? [...progressed.inventory, inventoryItem].slice(-24)
     : progressed.inventory;
 
+  const positiveSpin =
+    outcome === "escape" && wins > 0
+      ? `大ボスには逃げられたが、小物戦 ${wins} 勝で経験値と物語ゴールドを確保。旅は続く。`
+      : undefined;
+
   const result: SolunaBattleResult = {
     id: `battle-${randomUUID()}`,
     briefingId: briefing.id,
@@ -259,22 +344,36 @@ export function resolveDailyBattle(
     heat: Number(heat.toFixed(2)),
     depth: Number(depth.toFixed(2)),
     bossName: boss.monster?.name ?? boss.title,
-    bossRank: rank,
+    bossRank: rank as SolunaBattleResult["bossRank"],
     newsTitle: boss.title,
     newsPlain: boss.summary,
-    outcomeWhy: buildOutcomeWhy(outcome, heat, depth),
+    outcomeWhy: positiveSpin ?? buildOutcomeWhy(outcome, heat, depth),
     impression: buildImpression(outcome, heat, depth, messages),
     nextMove: buildNextMove(enriched, outcome),
     loot,
     levelAfter: progressed.level,
     xpAfter: hunter.xp + xpGained,
+    encounters,
+    wins,
+    losses,
+    goldFlavorTotal,
+    journey: {
+      areaId: area.id,
+      areaName: area.name,
+      regionLabel: area.regionLabel,
+      nextAreaId: nextArea.id,
+      nextAreaName: nextArea.name,
+    },
   };
 
   const nextHunter: SolunaHunterState = {
     ...progressed,
     inventory,
     battles: [...progressed.battles, result].slice(-14),
+    currentAreaId: nextArea.id,
   };
+
+  void getAreaById(nextHunter.currentAreaId);
 
   return { result, hunter: nextHunter, recap: formatRecap(result) };
 }

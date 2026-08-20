@@ -9,6 +9,7 @@ import type {
 } from "@/lib/types/soluna";
 import { medalUnitScore } from "@/lib/server/soluna-battle";
 import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
+import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
 
 function jstDateLabel(date = new Date()): string {
   return date.toLocaleDateString("ja-JP", {
@@ -149,8 +150,10 @@ export function composeDailyNote(input: {
 討伐はできた。でも収穫の使い道と、次に来るモンスターの弱点は、まだ話していないわ。
 続きが気になるなら↓へ。`;
 
+  const adventureLog = formatAdventureLogForNote(input.battle);
+
   const freeBody = `${SOL_LABEL} ／ ${LUNA_LABEL}
-今日もニュースをモンスターに変えて、2人が討伐に挑みます。
+今日もニュースをモンスターに変えて、2人が世界を旅しながら討伐に挑みます。
 → キャラクター紹介: ${charImageUrl}
 ${
   (assets?.lastPromptBattleMode ?? assets?.battleMode) === "attack"
@@ -166,11 +169,7 @@ ${
       : ""
 }
 
-## 今日のニュース
-${news}
-${input.battle.newsTitle ? `\n出典: ${input.battle.newsTitle}` : ""}
-
-相手は ${boss}。結果は【${resultLabel}】です。
+${adventureLog}
 
 ## 2人の掛け合い（ダイジェスト）
 
@@ -183,9 +182,9 @@ ${paywallTeaser}
 ---
 
 【有料エリアの先にあるもの】
-・激闘の続き: 2人のドタバタ反省会 / 白熱バトル全文
+・激闘の続き: 小物戦の裏側＆大ボス戦の白熱全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
-・ギルド財務報告: 聖なる魔力タンク（MP）と召喚獣の戦況
+・召喚獣育成ステータス: 聖なる魔力タンク（MP）とレベルアップ報告
 ・社会貢献: 購読の熱量が宇宙分析（BOINC）に変わるレポート
 
 ${escapeHook}
@@ -223,9 +222,11 @@ ${LUNA_LABEL}
 
 ---
 
-## バトル結果：${boss} vs ソル＆ルーナ
+## バトル結果：${boss} vs ソル＆ルーナ（複数戦）
 
-結果: ${resultLabel}
+大ボス結果: ${resultLabel}
+複数戦成績: ${input.battle.wins ?? "—"}勝${input.battle.losses ?? "—"}敗 / 物語ゴールド +${input.battle.goldFlavorTotal ?? 0}
+${input.battle.journey ? `舞台: 『${input.battle.journey.areaName}』→ 次は『${input.battle.journey.nextAreaName}』` : ""}
 ${input.battle.outcomeWhy || input.battle.impression}
 
 ${input.battle.impression}
