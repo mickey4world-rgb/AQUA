@@ -293,17 +293,25 @@ export async function saveSystemBoincRun(run: SolunaBoincRun): Promise<void> {
 }
 
 export async function getLatestBoincRun(): Promise<SolunaBoincRun | null> {
+  const runs = await listSystemBoincRuns(1);
+  return runs[0] ?? null;
+}
+
+export async function listSystemBoincRuns(limit = 60): Promise<SolunaBoincRun[]> {
   const { resources } = await recordsContainer().items
     .query<StoredBoinc>({
       query:
-        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemBoincRun' ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1",
-      parameters: [{ name: "@userId", value: SOLUNA_SYSTEM_USER_ID }],
+        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemBoincRun' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
+      parameters: [
+        { name: "@userId", value: SOLUNA_SYSTEM_USER_ID },
+        { name: "@limit", value: Math.max(1, Math.min(200, limit)) },
+      ],
     })
     .fetchAll();
-  const resource = resources[0];
-  if (!resource) return null;
-  const { userId: _userId, docType: _docType, ...run } = resource;
-  return run;
+  return resources.map((resource) => {
+    const { userId: _userId, docType: _docType, ...run } = resource;
+    return run;
+  });
 }
 
 export async function saveSystemAssets(assets: SolunaAssetLedger): Promise<void> {

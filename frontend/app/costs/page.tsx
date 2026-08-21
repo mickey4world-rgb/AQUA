@@ -7,9 +7,16 @@ import CostsPageShell from "@/components/costs/CostsPageShell";
 import DailyUsageChart from "@/components/costs/DailyUsageChart";
 import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
+import SolunaOpsAnalyticsPanels from "@/components/costs/SolunaOpsAnalyticsPanels";
 import UsageHistory from "@/components/costs/UsageHistory";
-import type { AzureInfraCostSummary, CostDashboard } from "@/lib/types/analytics";
+import type {
+  AzureInfraCostSummary,
+  CostDashboard,
+  SolunaOpsAnalyticsReport,
+} from "@/lib/types/analytics";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
+
+type CostsTab = "ai" | "soluna";
 
 function currentMonthParam(): string {
   const now = new Date();
@@ -30,15 +37,19 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 export default function CostsPage() {
+  const [tab, setTab] = useState<CostsTab>("ai");
   const [month, setMonth] = useState(currentMonthParam());
   const [dashboard, setDashboard] = useState<CostDashboard | null>(null);
   const [azureInfra, setAzureInfra] = useState<AzureInfraCostSummary | null>(null);
-  // 表示中の月と読み込み済みの月がずれている間がローディング。
+  const [solunaOps, setSolunaOps] = useState<SolunaOpsAnalyticsReport | null>(null);
   const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
   const [azureLoadedMonth, setAzureLoadedMonth] = useState<string | null>(null);
-  const loading = loadedMonth !== month;
-  const azureLoading = azureLoadedMonth !== month;
+  const [solunaLoadedMonth, setSolunaLoadedMonth] = useState<string | null>(null);
+  const [solunaError, setSolunaError] = useState<string | null>(null);
 
+  const loadingAi = loadedMonth !== month;
+  const azureLoading = azureLoadedMonth !== month;
+  const loadingSoluna = solunaLoadedMonth !== month;
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
   useEffect(() => {
@@ -51,7 +62,6 @@ export default function CostsPage() {
       .catch(() => null)
       .then((data) => {
         if (cancelled) return;
-        // 取得に失敗したときは前月分の表示を残したままローディングだけ解除する。
         if (data) setDashboard(data);
         setLoadedMonth(month);
       });
@@ -80,6 +90,39 @@ export default function CostsPage() {
     };
   }, [month]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setSolunaError(null);
+
+    fetch(`/api/costs/soluna-ops?month=${month}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        return (await res.json()) as SolunaOpsAnalyticsReport;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setSolunaOps(data);
+        setSolunaLoadedMonth(month);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setSolunaError(err instanceof Error ? err.message : "読み込みに失敗しました");
+        setSolunaLoadedMonth(month);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  const monthLabel =
+    tab === "soluna"
+      ? solunaOps?.monthLabel ?? month
+      : dashboard?.monthLabel ?? month;
+
   return (
     <CostsPageShell>
       <main className={PAGE_MAIN_CLASS}>
@@ -92,8 +135,8 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              各アプリの AI トークン使用量・推定コストに加え、Azure
-              サブスクリプションの実績請求額も確認できます。
+              AI トークン・Azure 実績に加え、Soluna の bitFlyer 資産運用と BOINC
+              社会貢献の詳細も確認できます。
             </p>
             <a
               href="/costs/access"
@@ -114,7 +157,7 @@ export default function CostsPage() {
               ←
             </button>
             <span className="min-w-[8rem] text-center text-sm font-medium text-white">
-              {dashboard?.monthLabel ?? month}
+              {monthLabel}
             </span>
             <button
               type="button"
@@ -136,32 +179,69 @@ export default function CostsPage() {
           </div>
         </div>
 
-        {loading || !dashboard ? (
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setTab("ai")}
+            className={`rounded-full px-4 py-2 text-sm transition ${
+              tab === "ai"
+                ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white"
+                : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            AI・Azure コスト
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("soluna")}
+            className={`rounded-full px-4 py-2 text-sm transition ${
+              tab === "soluna"
+                ? "bg-gradient-to-r from-cyan-600 to-teal-600 text-white"
+                : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            Soluna 資産運用・BOINC
+          </button>
+        </div>
+
+        {tab === "ai" ? (
+          loadingAi || !dashboard ? (
+            <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400/30 border-t-amber-300" />
+              分析データを読み込み中...
+            </div>
+          ) : (
+            <div className="mt-8 space-y-6">
+              <QuotaCard quota={dashboard.quota} monthLabel={dashboard.monthLabel} />
+              <AzureInfraCostPanel
+                azure={azureInfra}
+                quota={dashboard.quota}
+                monthLabel={dashboard.monthLabel}
+                loading={azureLoading}
+              />
+              <AppSummaryGrid apps={dashboard.byApp} />
+              <DailyUsageChart points={dashboard.dailyUsage} />
+              <FeatureBreakdownTable features={dashboard.byFeature} />
+              <UsageHistory
+                tokens={dashboard.recentTokens}
+                access={dashboard.recentAccess}
+              />
+            </div>
+          )
+        ) : loadingSoluna ? (
           <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400/30 border-t-amber-300" />
-            分析データを読み込み中...
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-300" />
+            Soluna 運用データを読み込み中...
           </div>
-        ) : (
-          <div className="mt-8 space-y-6">
-            <QuotaCard
-              quota={dashboard.quota}
-              monthLabel={dashboard.monthLabel}
-            />
-            <AzureInfraCostPanel
-              azure={azureInfra}
-              quota={dashboard.quota}
-              monthLabel={dashboard.monthLabel}
-              loading={azureLoading}
-            />
-            <AppSummaryGrid apps={dashboard.byApp} />
-            <DailyUsageChart points={dashboard.dailyUsage} />
-            <FeatureBreakdownTable features={dashboard.byFeature} />
-            <UsageHistory
-              tokens={dashboard.recentTokens}
-              access={dashboard.recentAccess}
-            />
+        ) : solunaError ? (
+          <div className="mt-10 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
+            {solunaError}
           </div>
-        )}
+        ) : solunaOps ? (
+          <div className="mt-8">
+            <SolunaOpsAnalyticsPanels report={solunaOps} />
+          </div>
+        ) : null}
       </main>
     </CostsPageShell>
   );

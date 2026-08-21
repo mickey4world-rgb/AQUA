@@ -185,3 +185,100 @@ export interface PublicAccessAnalyticsReport {
   byReferrer: PublicAccessAnalyticsReferrerRow[];
   recentViews: PublicAccessAnalyticsRecentRow[];
 }
+
+/** Soluna 資産運用・BOINC 運用分析（コストダッシュボード用） */
+export interface SolunaOpsTradeRow {
+  id: string;
+  createdAt: string;
+  side: "BUY" | "SELL";
+  sizeJpy: number;
+  priceBtc: number;
+  realizedPnlJpy?: number;
+  reason: string;
+  briefingId: string;
+}
+
+export interface SolunaOpsBoincRunRow {
+  id: string;
+  briefingId: string;
+  createdAt: string;
+  plannedMinutes: number;
+  actualMinutes: number | null;
+  status: string;
+  creditGranted: number | null;
+  tasksCompleted: number | null;
+  projectName: string | null;
+  projectUrl: string | null;
+  finishedAt: string | null;
+}
+
+export interface SolunaOpsFacilityRow {
+  id: string;
+  name: string;
+  location: string;
+  levelLabel: string;
+  builtAt: string;
+}
+
+export interface SolunaOpsAnalyticsReport {
+  month: string;
+  monthLabel: string;
+  bitFlyerConfigured: boolean;
+  updatedAt: string | null;
+  assets: {
+    status: string;
+    sleepMode: boolean;
+    battleMode: string;
+    principalYen: number;
+    totalYen: number;
+    cashYen: number;
+    btcHeld: number;
+    ethHeld: number;
+    btcPriceYen: number;
+    ethPriceYen: number;
+    btcValueYen: number;
+    ethValueYen: number;
+    previousTotalYen: number;
+    dayChangeYen: number;
+    monthlyTargetYen: number;
+    monthlyRealizedPnlYen: number;
+    targetProgressPct: number;
+    golemLevel: number;
+    dragonLevel: number;
+    monthBuyYen: number;
+    monthSellYen: number;
+    monthTradeCount: number;
+    monthRealizedPnlYen: number;
+    trades: SolunaOpsTradeRow[];
+    monthlySummaries: Array<{
+      month: string;
+      openingBalanceYen: number;
+      targetProfitYen: number;
+      realizedPnlYen: number;
+      goalReached: boolean;
+    }>;
+    solComment: string;
+    lunaComment: string;
+  } | null;
+  boinc: {
+    monthRunCount: number;
+    monthPlannedMinutes: number;
+    monthActualMinutes: number;
+    monthCreditGranted: number;
+    monthTasksCompleted: number;
+    lifetimePlannedMinutes: number;
+    lifetimeActualMinutes: number;
+    lifetimeCreditGranted: number;
+    lifetimeTasksCompleted: number;
+    runs: SolunaOpsBoincRunRow[];
+  };
+  settlement: {
+    settlementName: string;
+    settlementLevel: string;
+    cumulativeMinutes: number;
+    analysisSlots: number;
+    facilities: SolunaOpsFacilityRow[];
+    latestHeadline: string | null;
+    latestTopic: string | null;
+  } | null;
+}
