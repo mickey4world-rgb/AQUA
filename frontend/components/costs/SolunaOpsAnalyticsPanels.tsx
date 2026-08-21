@@ -125,9 +125,30 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 hint={`${formatCurrency(assets.btcValueYen)} · Lv.${assets.dragonLevel.toFixed(1)}`}
               />
               <Stat
+                label="ETH（不死鳥）"
+                value={`${assets.ethHeld.toFixed(4)} ETH`}
+                hint={formatCurrency(assets.ethValueYen)}
+              />
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
                 label="月次目標(2%)進捗"
                 value={formatPercent(assets.targetProgressPct)}
                 hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}（おやすみは10%超）`}
+              />
+              <Stat
+                label="ジパング枠"
+                value={
+                  assets.zpgHeld > 0
+                    ? `${assets.zpgHeld.toFixed(4)} ZPG`
+                    : "現金袖 ~12%"
+                }
+                hint={
+                  assets.zpgHeld > 0
+                    ? formatCurrency(assets.zpgValueYen)
+                    : "API非対応のため残高監視＋防衛現金"
+                }
               />
             </div>
 
@@ -148,12 +169,10 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               />
             </div>
 
-            {(assets.btcPriceYen > 0 || assets.ethHeld > 0) && (
+            {(assets.btcPriceYen > 0 || assets.ethPriceYen > 0) && (
               <div className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
-                BTC 参照価格 {formatCurrency(assets.btcPriceYen)}
-                {assets.ethHeld > 0 && (
-                  <> · ETH {assets.ethHeld.toFixed(4)}（{formatCurrency(assets.ethValueYen)}）</>
-                )}
+                BTC {formatCurrency(assets.btcPriceYen)} · ETH {formatCurrency(assets.ethPriceYen)}
+                {" · "}分散: 現金下限28% / 単一42% / 暗号合計72%
                 {" · "}元本 {formatCurrency(assets.principalYen)}
               </div>
             )}
@@ -181,9 +200,10 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                     <thead className="text-slate-500">
                       <tr className="border-b border-white/10">
                         <th className="px-2 py-2 font-medium">日時</th>
+                        <th className="px-2 py-2 font-medium">銘柄</th>
                         <th className="px-2 py-2 font-medium">売買</th>
                         <th className="px-2 py-2 font-medium">金額</th>
-                        <th className="px-2 py-2 font-medium">BTC価格</th>
+                        <th className="px-2 py-2 font-medium">単価</th>
                         <th className="px-2 py-2 font-medium">理由</th>
                         <th className="px-2 py-2 font-medium">実現損益</th>
                       </tr>
@@ -192,6 +212,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                       {assets.trades.map((t) => (
                         <tr key={t.id} className="border-b border-white/5 text-slate-200">
                           <td className="px-2 py-2 whitespace-nowrap">{formatJst(t.createdAt)}</td>
+                          <td className="px-2 py-2">{t.product?.replace("_JPY", "") ?? "BTC"}</td>
                           <td
                             className={`px-2 py-2 font-semibold ${
                               t.side === "BUY" ? "text-sky-300" : "text-rose-300"

@@ -507,7 +507,8 @@ function formatAssetsForHumanChat(assets: SolunaAssetLedger | null): string | nu
   const lastTrade = assets.trades[assets.trades.length - 1];
   return `## ギルド資産運用（聖なる魔力タンク）※取引所名はユーザーに言わない
 総魔力: ${Math.round(assets.totalYen).toLocaleString("ja-JP")} 円
-現金: ${Math.round(assets.cashYen).toLocaleString("ja-JP")} 円 / BTC: ${assets.btcHeld.toFixed(4)}
+現金: ${Math.round(assets.cashYen).toLocaleString("ja-JP")} 円 / BTC: ${assets.btcHeld.toFixed(4)} / ETH: ${(assets.ethHeld ?? 0).toFixed(4)}${(assets.zpgHeld ?? 0) > 0 ? ` / ZPG: ${(assets.zpgHeld ?? 0).toFixed(4)}` : ""}
+分散: 現金下限・単一銘柄上限・暗号合計上限あり。ジパングは自動売買不可のため防衛現金枠で代替
 当月実現損益: ${Math.round(assets.monthlyRealizedPnlYen).toLocaleString("ja-JP")} 円
 月次目標（2%）: ${Math.round(assets.monthlyTargetYen).toLocaleString("ja-JP")} 円
 おやすみモード（10%超）: ${assets.sleepMode ? "ON" : "OFF"}
@@ -516,7 +517,7 @@ function formatAssetsForHumanChat(assets: SolunaAssetLedger | null): string | nu
 ルーナ: ${assets.lunaComment || "—"}
 ${
   lastTrade
-    ? `直近取引: ${lastTrade.side} ${Math.round(lastTrade.sizeJpy).toLocaleString("ja-JP")} 円（${lastTrade.reason}）`
+    ? `直近取引: ${lastTrade.side} ${lastTrade.product} ${Math.round(lastTrade.sizeJpy).toLocaleString("ja-JP")} 円（${lastTrade.reason}）`
     : "直近取引: なし"
 }`.trim();
 }

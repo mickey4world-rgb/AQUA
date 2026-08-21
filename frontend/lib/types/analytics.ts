@@ -191,6 +191,7 @@ export interface SolunaOpsTradeRow {
   id: string;
   createdAt: string;
   side: "BUY" | "SELL";
+  product: string;
   sizeJpy: number;
   priceBtc: number;
   realizedPnlJpy?: number;
@@ -234,10 +235,13 @@ export interface SolunaOpsAnalyticsReport {
     cashYen: number;
     btcHeld: number;
     ethHeld: number;
+    zpgHeld: number;
     btcPriceYen: number;
     ethPriceYen: number;
+    zpgPriceYen: number;
     btcValueYen: number;
     ethValueYen: number;
+    zpgValueYen: number;
     previousTotalYen: number;
     dayChangeYen: number;
     monthlyTargetYen: number;

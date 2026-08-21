@@ -1,17 +1,20 @@
 /**
- * bitFlyer Lightning API クライアント + Soluna 資産運用ロジック
+ * 資産運用 API クライアント + Soluna マルチ資産ロジック
  *
  * 運用ルール:
  *   1. 1回の取引は最大 10,000 円（確信度でサイズ可変）
  *   2. 利確 / 損切りは市場モメンタムに応じて動的（硬い上限: +4% / -3%）
  *   3. 月次目標は月初残高×2%。おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: リアルタイム板・約定・スプレッドから利益見込みを見て売買
+ *   5. 対象: BTC_JPY / ETH_JPY（Lightning）。ジパング(ZPG)は API 非対応のため残高監視＋防衛現金枠
+ *   6. 分散: 現金下限 / 単一銘柄上限 / 暗号合計上限
  */
 
 import crypto from "crypto";
 import type {
   SolunaAssetLedger,
   SolunaMonthlyAssetSummary,
+  SolunaTradeProduct,
   SolunaTradeRecord,
 } from "@/lib/types/soluna";
 import { medalUnitScore } from "@/lib/server/soluna-battle";
@@ -29,14 +32,45 @@ const SOFT_STOP_LOSS_RATE = -0.02;
 const MONTHLY_TARGET_RATE = 0.02;
 /** おやすみモード閾値（月初残高比）。目標2%とは別に、10%超で新規購入停止 */
 const SLEEP_MODE_RATE = 0.1;
-const MIN_BTC_ORDER = 0.0001;
-const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 市場が良いとき再エントリーしやすく 2h
+const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const MAX_DAILY_BUY_YEN = 20_000;
-const MAX_SPREAD_BPS = 12; // スプレッドが広すぎるときは見送り
+const MAX_SPREAD_BPS = 12;
 const BULLISH_SCORE = 28;
 const STRONG_BULLISH_SCORE = 55;
 
-// ── bitFlyer API ──────────────────────────────────────────────────────────────
+/** 総資産に対する現金の下限（ジパング防衛枠を含む） */
+const MIN_CASH_RATIO = 0.28;
+/** 1銘柄の時価上限 */
+const MAX_SINGLE_ASSET_RATIO = 0.42;
+/** 暗号資産合計の時価上限 */
+const MAX_CRYPTO_RATIO = 0.72;
+/** ジパング相当として温存する防衛現金（総資産比）。Lightning で ZPG が買えないため現金袖として確保 */
+const ZIPANGU_CASH_SLEEVE_RATIO = 0.12;
+
+export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY"] as const;
+export type TradeableProduct = (typeof TRADEABLE_PRODUCTS)[number];
+
+const PRODUCT_META: Record<
+  TradeableProduct,
+  { currency: "BTC" | "ETH"; minSize: number; decimals: number; label: string; rpgName: string }
+> = {
+  BTC_JPY: {
+    currency: "BTC",
+    minSize: 0.0001,
+    decimals: 4,
+    label: "BTC",
+    rpgName: "雷轟の蒼竜",
+  },
+  ETH_JPY: {
+    currency: "ETH",
+    minSize: 0.01,
+    decimals: 2,
+    label: "ETH",
+    rpgName: "蒼穹の不死鳥",
+  },
+};
+
+// ── API ───────────────────────────────────────────────────────────────────────
 
 function isBitFlyerConfigured(): boolean {
   return Boolean(process.env.BITFLYER_API_KEY?.trim() && process.env.BITFLYER_API_SECRET?.trim());
@@ -76,12 +110,11 @@ async function bitFlyerFetch<T>(
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`bitFlyer API ${res.status}: ${err}`);
+    throw new Error(`asset API ${res.status}: ${err}`);
   }
   return res.json() as Promise<T>;
 }
 
-/** 公開市場データ（署名なし） */
 async function bitFlyerPublicGet<T>(path: string): Promise<T> {
   const res = await fetch(`https://api.bitflyer.com${path}`, {
     method: "GET",
@@ -90,12 +123,10 @@ async function bitFlyerPublicGet<T>(path: string): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`bitFlyer public API ${res.status}: ${err}`);
+    throw new Error(`asset public API ${res.status}: ${err}`);
   }
   return res.json() as Promise<T>;
 }
-
-// ── 市場データ ──────────────────────────────────────────────────────────────
 
 type BfTicker = {
   ltp: number;
@@ -125,6 +156,7 @@ type BfExecution = {
 };
 
 export type MarketPulse = {
+  product: TradeableProduct;
   ltp: number;
   spreadBps: number;
   imbalance: number;
@@ -150,14 +182,11 @@ export async function getEthPrice(): Promise<number> {
   }
 }
 
-/**
- * 板・約定・スプレッドから「いま利益が出そうか」を数値化する
- */
-export async function fetchBtcMarketPulse(): Promise<MarketPulse> {
+export async function fetchMarketPulse(product: TradeableProduct): Promise<MarketPulse> {
   const [ticker, board, executions] = await Promise.all([
-    bitFlyerPublicGet<BfTicker>("/v1/ticker?product_code=BTC_JPY"),
-    bitFlyerPublicGet<BfBoard>("/v1/board?product_code=BTC_JPY"),
-    bitFlyerPublicGet<BfExecution[]>("/v1/executions?product_code=BTC_JPY&count=80"),
+    bitFlyerPublicGet<BfTicker>(`/v1/ticker?product_code=${product}`),
+    bitFlyerPublicGet<BfBoard>(`/v1/board?product_code=${product}`),
+    bitFlyerPublicGet<BfExecution[]>(`/v1/executions?product_code=${product}&count=80`),
   ]);
 
   const mid =
@@ -201,8 +230,9 @@ export async function fetchBtcMarketPulse(): Promise<MarketPulse> {
   const bias: MarketPulse["bias"] =
     score >= BULLISH_SCORE ? "bullish" : score <= -BULLISH_SCORE ? "bearish" : "neutral";
 
+  const label = PRODUCT_META[product].label;
   const summary = [
-    `LTP ${Math.round(ticker.ltp).toLocaleString()}円`,
+    `${label} LTP ${Math.round(ticker.ltp).toLocaleString()}円`,
     `モメ ${momentumPct >= 0 ? "+" : ""}${(momentumPct * 100).toFixed(2)}%`,
     `買い圧 ${(buyPressure * 100).toFixed(0)}%`,
     `板偏り ${imbalance >= 0 ? "+" : ""}${(imbalance * 100).toFixed(0)}%`,
@@ -211,6 +241,7 @@ export async function fetchBtcMarketPulse(): Promise<MarketPulse> {
   ].join(" / ");
 
   return {
+    product,
     ltp: ticker.ltp,
     spreadBps,
     imbalance,
@@ -223,49 +254,69 @@ export async function fetchBtcMarketPulse(): Promise<MarketPulse> {
   };
 }
 
+/** @deprecated use fetchMarketPulse("BTC_JPY") */
+export async function fetchBtcMarketPulse(): Promise<MarketPulse> {
+  return fetchMarketPulse("BTC_JPY");
+}
+
 type BfBalance = { currency_code: string; amount: number; available: number };
 
 export async function getBitFlyerBalance(): Promise<{
   cashYen: number;
   btcHeld: number;
   ethHeld: number;
+  zpgHeld: number;
 }> {
   const balances = await bitFlyerFetch<BfBalance[]>("GET", "/v1/me/getbalance");
   const jpy = balances.find((b) => b.currency_code === "JPY");
   const btc = balances.find((b) => b.currency_code === "BTC");
   const eth = balances.find((b) => b.currency_code === "ETH");
+  const zpg = balances.find((b) => b.currency_code === "ZPG");
   return {
     cashYen: jpy?.available ?? 0,
     btcHeld: btc?.available ?? 0,
     ethHeld: eth?.available ?? 0,
+    zpgHeld: zpg?.available ?? 0,
   };
 }
 
-// ── 注文 ─────────────────────────────────────────────────────────────────────
-
 type BfOrderResponse = { child_order_acceptance_id: string };
 
-async function sendOrder(side: "BUY" | "SELL", sizeJpy: number, priceYen: number): Promise<string> {
-  const sizeBtc = Math.max(MIN_BTC_ORDER, Math.floor((sizeJpy / priceYen) * 10000) / 10000);
+function roundSize(size: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.floor(size * factor) / factor;
+}
+
+async function sendOrder(
+  product: TradeableProduct,
+  side: "BUY" | "SELL",
+  sizeJpy: number,
+  priceYen: number,
+): Promise<string> {
+  const meta = PRODUCT_META[product];
+  const raw = sizeJpy / Math.max(1, priceYen);
+  const size = Math.max(meta.minSize, roundSize(raw, meta.decimals));
   const order = await bitFlyerFetch<BfOrderResponse>("POST", "/v1/me/sendchildorder", {
-    product_code: "BTC_JPY",
+    product_code: product,
     child_order_type: "MARKET",
     side,
-    size: sizeBtc,
+    size,
     minute_to_expire: 10,
     time_in_force: "GTC",
   });
   return order.child_order_acceptance_id;
 }
 
-// ── 売買判断ロジック ──────────────────────────────────────────────────────────
+// ── 台帳ヘルパ ────────────────────────────────────────────────────────────────
 
 function jstMonthStr(date = new Date()): string {
   const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 7);
 }
 
-function sleepModeThresholdYen(ledger: Pick<SolunaAssetLedger, "lastMonthTotalYen" | "principalYen">): number {
+function sleepModeThresholdYen(
+  ledger: Pick<SolunaAssetLedger, "lastMonthTotalYen" | "principalYen">,
+): number {
   const base = ledger.lastMonthTotalYen || ledger.principalYen || ASSET_PRINCIPAL_YEN;
   return Math.round(base * SLEEP_MODE_RATE);
 }
@@ -288,6 +339,7 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     sleepMode: false,
     btcHeld: 0,
     ethHeld: 0,
+    zpgHeld: 0,
     cashYen: ASSET_PRINCIPAL_YEN,
     totalYen: ASSET_PRINCIPAL_YEN,
     previousTotalYen: ASSET_PRINCIPAL_YEN,
@@ -295,13 +347,14 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     previousCashYen: ASSET_PRINCIPAL_YEN,
     btcPriceYen: 0,
     ethPriceYen: 0,
+    zpgPriceYen: 0,
     battleMode: "defense",
     trades: [],
     monthlySummaries: [],
     medalUnits,
     status: "waiting-spec",
-    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、雷轟の蒼竜を召喚する！",
-    lunaComment: "入金確認まで待機。ルールは決まった、あとは実行するだけ。",
+    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、蒼竜と不死鳥を召喚する！",
+    lunaComment: "入金確認まで待機。分散ルールは決まった、あとは実行するだけ。",
     updatedAt: now,
   };
 }
@@ -343,16 +396,31 @@ function rolloverMonthIfNeeded(ledger: SolunaAssetLedger): SolunaAssetLedger {
 }
 
 type TradeDecision =
-  | { action: "BUY"; reason: string; amountJpy: number; tradeReason: SolunaTradeRecord["reason"] }
-  | { action: "SELL"; reason: string; tradeReason: "take-profit" | "stop-loss" }
+  | {
+      action: "BUY";
+      product: TradeableProduct;
+      reason: string;
+      amountJpy: number;
+      tradeReason: SolunaTradeRecord["reason"];
+      pulse: MarketPulse;
+    }
+  | {
+      action: "SELL";
+      product: TradeableProduct;
+      reason: string;
+      tradeReason: "take-profit" | "stop-loss";
+      pulse: MarketPulse;
+    }
   | { action: "HOLD"; reason: string };
 
 function jstDayKey(date = new Date()): string {
   return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function lastBuyTrade(ledger: SolunaAssetLedger): SolunaTradeRecord | null {
-  const buys = ledger.trades.filter((t) => t.side === "BUY");
+function lastBuyTrade(ledger: SolunaAssetLedger, product?: TradeableProduct): SolunaTradeRecord | null {
+  const buys = ledger.trades.filter(
+    (t) => t.side === "BUY" && (!product || t.product === product),
+  );
   return buys.length > 0 ? buys[buys.length - 1]! : null;
 }
 
@@ -362,75 +430,153 @@ function boughtYenOnJstDay(ledger: SolunaAssetLedger, dayKey: string): number {
     .reduce((sum, t) => sum + t.sizeJpy, 0);
 }
 
-function averageBuyPrice(ledger: SolunaAssetLedger): number | null {
-  const buyTrades = ledger.trades.filter((t) => t.side === "BUY");
-  if (buyTrades.length === 0) return null;
+function averageBuyPrice(ledger: SolunaAssetLedger, product: SolunaTradeProduct): number | null {
+  const buyTrades = ledger.trades.filter((t) => t.side === "BUY" && t.product === product);
+  if (buyTrades.length === 0) {
+    // 旧データ互換: product 未区別の BTC のみ
+    if (product === "BTC_JPY") {
+      const legacy = ledger.trades.filter(
+        (t) => t.side === "BUY" && (!t.product || t.product === "BTC_JPY"),
+      );
+      if (legacy.length === 0) return null;
+      const notional = legacy.reduce((s, t) => s + t.sizeJpy, 0);
+      if (notional <= 0) return null;
+      return legacy.reduce((s, t) => s + t.priceBtc * t.sizeJpy, 0) / notional;
+    }
+    return null;
+  }
   const notional = buyTrades.reduce((s, t) => s + t.sizeJpy, 0);
   if (notional <= 0) return null;
   return buyTrades.reduce((s, t) => s + t.priceBtc * t.sizeJpy, 0) / notional;
 }
 
+function heldAmount(ledger: SolunaAssetLedger, product: TradeableProduct): number {
+  return product === "BTC_JPY" ? ledger.btcHeld : ledger.ethHeld;
+}
+
+function assetValueYen(ledger: SolunaAssetLedger, product: TradeableProduct, price: number): number {
+  return Math.round(heldAmount(ledger, product) * price);
+}
+
+function cryptoValueYen(
+  ledger: SolunaAssetLedger,
+  prices: Record<TradeableProduct, number>,
+): number {
+  return (
+    assetValueYen(ledger, "BTC_JPY", prices.BTC_JPY) +
+    assetValueYen(ledger, "ETH_JPY", prices.ETH_JPY) +
+    Math.round((ledger.zpgHeld || 0) * (ledger.zpgPriceYen || 0))
+  );
+}
+
+function cashFloorYen(totalYen: number): number {
+  return Math.round(totalYen * Math.max(MIN_CASH_RATIO, ZIPANGU_CASH_SLEEVE_RATIO));
+}
+
+function maxBuyRoomYen(
+  ledger: SolunaAssetLedger,
+  product: TradeableProduct,
+  prices: Record<TradeableProduct, number>,
+): number {
+  const total = Math.max(1, ledger.totalYen);
+  const current = assetValueYen(ledger, product, prices[product]);
+  const roomSingle = Math.max(0, Math.round(total * MAX_SINGLE_ASSET_RATIO) - current);
+  const cryptoNow = cryptoValueYen(ledger, prices);
+  const roomCrypto = Math.max(0, Math.round(total * MAX_CRYPTO_RATIO) - cryptoNow);
+  const spendableCash = Math.max(0, Math.round(ledger.cashYen - cashFloorYen(total)));
+  return Math.max(0, Math.min(roomSingle, roomCrypto, spendableCash, MAX_TRADE_YEN));
+}
+
+function trySellDecision(
+  ledger: SolunaAssetLedger,
+  pulse: MarketPulse,
+): Extract<TradeDecision, { action: "SELL" }> | null {
+  const product = pulse.product;
+  const meta = PRODUCT_META[product];
+  const held = heldAmount(ledger, product);
+  if (held < meta.minSize) return null;
+
+  const avgBuyPrice = averageBuyPrice(ledger, product);
+  if (!avgBuyPrice) return null;
+
+  const changeRate = (pulse.ltp - avgBuyPrice) / avgBuyPrice;
+  const fading = pulse.score < 0 || pulse.bias === "bearish";
+  const acceleratingDown = pulse.score <= -BULLISH_SCORE && pulse.momentumPct < 0;
+
+  if (changeRate >= HARD_TAKE_PROFIT_RATE) {
+    return {
+      action: "SELL",
+      product,
+      tradeReason: "take-profit",
+      pulse,
+      reason: `${meta.label} 硬利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+    };
+  }
+  if (changeRate >= SOFT_TAKE_PROFIT_RATE && fading) {
+    return {
+      action: "SELL",
+      product,
+      tradeReason: "take-profit",
+      pulse,
+      reason: `${meta.label} 勢い減衰で早め利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+    };
+  }
+  if (changeRate <= HARD_STOP_LOSS_RATE) {
+    return {
+      action: "SELL",
+      product,
+      tradeReason: "stop-loss",
+      pulse,
+      reason: `${meta.label} 硬損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+    };
+  }
+  if (changeRate <= SOFT_STOP_LOSS_RATE && acceleratingDown) {
+    return {
+      action: "SELL",
+      product,
+      tradeReason: "stop-loss",
+      pulse,
+      reason: `${meta.label} 下落加速のため早め損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+    };
+  }
+  return null;
+}
+
 /**
- * リアルタイム市場パルス＋保有状況から、利益が出そうな範囲で売買判断する
+ * BTC/ETH の市場パルスと分散上限から売買判断する
  */
 function decideTrade(
   ledger: SolunaAssetLedger,
-  pulse: MarketPulse,
+  pulses: MarketPulse[],
   newsSentiment: "positive" | "negative" | "neutral",
   battleMode: "attack" | "defense",
 ): TradeDecision {
-  const btcPrice = pulse.ltp;
+  const prices = Object.fromEntries(pulses.map((p) => [p.product, p.ltp])) as Record<
+    TradeableProduct,
+    number
+  >;
+  const pulseSummary = pulses.map((p) => `${PRODUCT_META[p.product].label}:${p.score}`).join(" ");
 
   if (isSleepModeActive(ledger.monthlyRealizedPnlYen, ledger)) {
     return {
       action: "HOLD",
-      reason: `月次おやすみ閾値（10%）達成済み｜${pulse.summary}`,
+      reason: `月次おやすみ閾値（10%）達成済み｜${pulseSummary}`,
     };
   }
 
-  if (ledger.btcHeld > MIN_BTC_ORDER) {
-    const avgBuyPrice = averageBuyPrice(ledger);
-    if (avgBuyPrice) {
-      const changeRate = (btcPrice - avgBuyPrice) / avgBuyPrice;
-      const fading = pulse.score < 0 || pulse.bias === "bearish";
-      const acceleratingDown = pulse.score <= -BULLISH_SCORE && pulse.momentumPct < 0;
-
-      if (changeRate >= HARD_TAKE_PROFIT_RATE) {
-        return {
-          action: "SELL",
-          tradeReason: "take-profit",
-          reason: `硬利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
-        };
-      }
-      if (changeRate >= SOFT_TAKE_PROFIT_RATE && fading) {
-        return {
-          action: "SELL",
-          tradeReason: "take-profit",
-          reason: `勢い減衰で早め利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
-        };
-      }
-      if (changeRate <= HARD_STOP_LOSS_RATE) {
-        return {
-          action: "SELL",
-          tradeReason: "stop-loss",
-          reason: `硬損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
-        };
-      }
-      if (changeRate <= SOFT_STOP_LOSS_RATE && acceleratingDown) {
-        return {
-          action: "SELL",
-          tradeReason: "stop-loss",
-          reason: `下落加速のため早め損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
-        };
-      }
-    }
-  }
-
-  if (pulse.spreadBps > MAX_SPREAD_BPS) {
-    return {
-      action: "HOLD",
-      reason: `スプレッド ${pulse.spreadBps.toFixed(1)}bps が広いため見送り｜${pulse.summary}`,
-    };
+  // 利確・損切りを優先（損失が大きいもの → 利益が大きいもの）
+  const sellCandidates = pulses
+    .map((p) => trySellDecision(ledger, p))
+    .filter((d): d is Extract<TradeDecision, { action: "SELL" }> => Boolean(d));
+  if (sellCandidates.length > 0) {
+    sellCandidates.sort((a, b) => {
+      const avgA = averageBuyPrice(ledger, a.product) ?? a.pulse.ltp;
+      const avgB = averageBuyPrice(ledger, b.product) ?? b.pulse.ltp;
+      const chA = (a.pulse.ltp - avgA) / avgA;
+      const chB = (b.pulse.ltp - avgB) / avgB;
+      return chA - chB;
+    });
+    return sellCandidates[0]!;
   }
 
   const lastBuy = lastBuyTrade(ledger);
@@ -440,7 +586,7 @@ function decideTrade(
       const remainH = ((BUY_COOLDOWN_MS - elapsed) / 3_600_000).toFixed(1);
       return {
         action: "HOLD",
-        reason: `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulse.summary}`,
+        reason: `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulseSummary}`,
       };
     }
   }
@@ -450,12 +596,16 @@ function decideTrade(
   if (dailyBuyRoom < 1000) {
     return {
       action: "HOLD",
-      reason: `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulse.summary}`,
+      reason: `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulseSummary}`,
     };
   }
 
-  if (ledger.cashYen < 1000) {
-    return { action: "HOLD", reason: `現金不足。監視のみ｜${pulse.summary}` };
+  const floor = cashFloorYen(ledger.totalYen);
+  if (ledger.cashYen <= floor + 999) {
+    return {
+      action: "HOLD",
+      reason: `現金下限（防衛枠 ${(MIN_CASH_RATIO * 100).toFixed(0)}%＋ジパング袖）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+    };
   }
 
   let buyThreshold = BULLISH_SCORE;
@@ -464,30 +614,40 @@ function decideTrade(
   if (newsSentiment === "positive") buyThreshold -= 6;
   if (battleMode === "attack") buyThreshold -= 5;
 
-  if (pulse.score < buyThreshold || pulse.bias !== "bullish") {
+  const buyCandidates = pulses
+    .filter((p) => p.bias === "bullish" && p.score >= buyThreshold && p.spreadBps <= MAX_SPREAD_BPS)
+    .map((p) => {
+      const room = maxBuyRoomYen(ledger, p.product, prices);
+      return { pulse: p, room };
+    })
+    .filter((c) => c.room >= 1000)
+    .sort((a, b) => b.pulse.score - a.pulse.score || b.room - a.room);
+
+  if (buyCandidates.length === 0) {
     return {
       action: "HOLD",
-      reason: `利益見込み不足（スコア ${pulse.score} < 閾値 ${buyThreshold}）｜${pulse.summary}`,
+      reason: `分散上限内で強気銘柄なし（閾値 ${buyThreshold}）｜${pulseSummary}`,
     };
   }
 
+  const best = buyCandidates[0]!;
   const conviction =
-    pulse.score >= STRONG_BULLISH_SCORE ? 1 : 0.45 + ((pulse.score - buyThreshold) / 80) * 0.55;
+    best.pulse.score >= STRONG_BULLISH_SCORE
+      ? 1
+      : 0.45 + ((best.pulse.score - buyThreshold) / 80) * 0.55;
   const amountJpy = Math.max(
     1000,
-    Math.min(
-      MAX_TRADE_YEN,
-      Math.round(ledger.cashYen),
-      dailyBuyRoom,
-      Math.round(MAX_TRADE_YEN * conviction),
-    ),
+    Math.min(best.room, dailyBuyRoom, Math.round(MAX_TRADE_YEN * conviction)),
   );
+  const meta = PRODUCT_META[best.pulse.product];
 
   return {
     action: "BUY",
+    product: best.pulse.product,
     tradeReason: "dca",
     amountJpy,
-    reason: `市場強気エントリー ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%）｜${pulse.summary}`,
+    pulse: best.pulse,
+    reason: `${meta.rpgName}へ分散召喚 ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%／単一上限${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号上限${(MAX_CRYPTO_RATIO * 100).toFixed(0)}%）｜${best.pulse.summary}`,
   };
 }
 
@@ -502,7 +662,7 @@ export function inferNewsSentiment(summary: string): "positive" | "negative" | "
   return "neutral";
 }
 
-// ── メインの実行関数 ──────────────────────────────────────────────────────────
+// ── メイン ────────────────────────────────────────────────────────────────────
 
 export async function runDailyAssetTrade(input: {
   ledger: SolunaAssetLedger | null;
@@ -521,19 +681,26 @@ export async function runDailyAssetTrade(input: {
       solComment:
         "聖なる魔力タンクの接続呪文がまだ届いていない。ギルド金庫の同期設定を待っている！",
       lunaComment:
-        "魔力タンクのAPI接続が未設定よ。設定が来たら市場を見て即動くわ。取引所の名前は外に出さないこと。",
+        "魔力タンクのAPI接続が未設定よ。設定が来たら BTC／ETH を分散して動くわ。取引所の名前は外に出さないこと。",
       updatedAt: new Date().toISOString(),
     };
   }
 
-  const [balance, pulse, ethPrice] = await Promise.all([
+  const [balance, btcPulse, ethPulse] = await Promise.all([
     getBitFlyerBalance(),
-    fetchBtcMarketPulse(),
-    getEthPrice(),
+    fetchMarketPulse("BTC_JPY"),
+    fetchMarketPulse("ETH_JPY"),
   ]);
-  const btcPrice = pulse.ltp;
+  const pulses = [btcPulse, ethPulse];
+  const btcPrice = btcPulse.ltp;
+  const ethPrice = ethPulse.ltp;
+  // ZPG は Lightning に無いため時価は 0（保有数量のみ台帳へ）
+  const zpgPrice = 0;
   const totalYen = Math.round(
-    balance.cashYen + balance.btcHeld * btcPrice + balance.ethHeld * ethPrice,
+    balance.cashYen +
+      balance.btcHeld * btcPrice +
+      balance.ethHeld * ethPrice +
+      balance.zpgHeld * zpgPrice,
   );
 
   let ledger = input.ledger
@@ -541,7 +708,9 @@ export async function runDailyAssetTrade(input: {
         ...buildInitialLedger(medalUnits),
         ...input.ledger,
         ethHeld: input.ledger.ethHeld ?? 0,
+        zpgHeld: input.ledger.zpgHeld ?? 0,
         ethPriceYen: input.ledger.ethPriceYen ?? 0,
+        zpgPriceYen: input.ledger.zpgPriceYen ?? 0,
         previousTotalYen: input.ledger.previousTotalYen ?? input.ledger.totalYen ?? ASSET_PRINCIPAL_YEN,
         previousBtcValueYen: input.ledger.previousBtcValueYen ?? 0,
         previousCashYen: input.ledger.previousCashYen ?? input.ledger.cashYen ?? ASSET_PRINCIPAL_YEN,
@@ -560,77 +729,88 @@ export async function runDailyAssetTrade(input: {
     totalYen,
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
+    zpgPriceYen: zpgPrice,
     battleMode,
     ...balance,
   });
   ledger = { ...ledger, medalUnits };
 
   const sentiment = inferNewsSentiment(input.newsSummary);
-  const decision = decideTrade(ledger, pulse, sentiment, battleMode);
+  const decision = decideTrade(ledger, pulses, sentiment, battleMode);
 
   let newTrades = [...ledger.trades];
   let monthlyPnl = ledger.monthlyRealizedPnlYen;
   let updatedBalance = balance;
 
-  console.log(`[asset-trade] 市場: ${pulse.summary}`);
+  console.log(`[asset-trade] 市場: ${pulses.map((p) => p.summary).join(" || ")}`);
   console.log(`[asset-trade] 判断: ${decision.action} — ${decision.reason}`);
 
   if (decision.action === "BUY") {
-    await sendOrder("BUY", decision.amountJpy, btcPrice);
+    await sendOrder(decision.product, "BUY", decision.amountJpy, decision.pulse.ltp);
     const trade: SolunaTradeRecord = {
       id: `trade-${Date.now()}`,
       createdAt: new Date().toISOString(),
       side: "BUY",
-      product: "BTC_JPY",
+      product: decision.product,
       sizeJpy: decision.amountJpy,
-      priceBtc: btcPrice,
+      priceBtc: decision.pulse.ltp,
       reason: decision.tradeReason,
       briefingId: input.briefingId,
     };
     newTrades = [...newTrades.slice(-29), trade];
     updatedBalance = await getBitFlyerBalance();
-  } else if (decision.action === "SELL" && ledger.btcHeld > MIN_BTC_ORDER) {
-    const sellValueJpy = Math.round(ledger.btcHeld * btcPrice);
-    const avgBuyPrice = averageBuyPrice({ ...ledger, trades: newTrades }) ?? btcPrice;
-    const costJpy = Math.round(ledger.btcHeld * avgBuyPrice);
-    const pnl = sellValueJpy - costJpy;
-    monthlyPnl += pnl;
+  } else if (decision.action === "SELL") {
+    const held = heldAmount(ledger, decision.product);
+    const meta = PRODUCT_META[decision.product];
+    if (held >= meta.minSize) {
+      const sellValueJpy = Math.round(held * decision.pulse.ltp);
+      const avgBuyPrice = averageBuyPrice({ ...ledger, trades: newTrades }, decision.product) ?? decision.pulse.ltp;
+      const costJpy = Math.round(held * avgBuyPrice);
+      const pnl = sellValueJpy - costJpy;
+      monthlyPnl += pnl;
 
-    await sendOrder("SELL", sellValueJpy, btcPrice);
-    const trade: SolunaTradeRecord = {
-      id: `trade-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      side: "SELL",
-      product: "BTC_JPY",
-      sizeJpy: sellValueJpy,
-      priceBtc: btcPrice,
-      realizedPnlJpy: pnl,
-      reason: decision.tradeReason,
-      briefingId: input.briefingId,
-    };
-    newTrades = [...newTrades.slice(-29), trade];
-    updatedBalance = await getBitFlyerBalance();
+      await sendOrder(decision.product, "SELL", sellValueJpy, decision.pulse.ltp);
+      const trade: SolunaTradeRecord = {
+        id: `trade-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        side: "SELL",
+        product: decision.product,
+        sizeJpy: sellValueJpy,
+        priceBtc: decision.pulse.ltp,
+        realizedPnlJpy: pnl,
+        reason: decision.tradeReason,
+        briefingId: input.briefingId,
+      };
+      newTrades = [...newTrades.slice(-29), trade];
+      updatedBalance = await getBitFlyerBalance();
+    }
   }
 
   const sleepMode = isSleepModeActive(monthlyPnl, ledger);
   const updatedTotal = Math.round(
-    updatedBalance.cashYen + updatedBalance.btcHeld * btcPrice + updatedBalance.ethHeld * ethPrice,
+    updatedBalance.cashYen +
+      updatedBalance.btcHeld * btcPrice +
+      updatedBalance.ethHeld * ethPrice +
+      updatedBalance.zpgHeld * zpgPrice,
   );
 
+  const sleeveYen = Math.round(updatedTotal * ZIPANGU_CASH_SLEEVE_RATIO);
   const buyAmount = decision.action === "BUY" ? decision.amountJpy : 0;
   const isTp = decision.action === "SELL" && decision.tradeReason === "take-profit";
+  const productLabel =
+    decision.action === "HOLD" ? "" : PRODUCT_META[decision.product].rpgName;
 
   const solComments: Record<string, string> = {
-    BUY: `市場パルス強気！ ${buyAmount.toLocaleString()} MP を蒼竜に投入。予測スコア ${pulse.score} で利益を狙うぜ！`,
-    SELL: `${isTp ? "利確ドロップ成功" : "損切りで盾構え"}！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。${pulse.summary}`,
-    HOLD: `今回は見送り。市場を見て利益見込みが出るまで温存する！ ${pulse.summary}`,
+    BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金下限とジパング防衛枠は死守するぜ！`,
+    SELL: `${isTp ? "利確ドロップ成功" : "損切りで盾構え"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
+    HOLD: `見送り。BTC/ETH を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}%＋ジパング袖 ${sleeveYen.toLocaleString()} を温存！`,
   };
   const lunaComments: Record<string, string> = {
-    BUY: `板と約定のリアルタイム予測でエントリーしたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
-    SELL: `${isTp ? "利益を確定" : "損失を限定"}。市場が次のエッジを出すまで見張るわ。`,
+    BUY: `単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% の上限内で入れたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
+    SELL: `${isTp ? "利益を確定" : "損失を限定"}。ジパングは Lightning API 対象外なので、防衛枠は現金で持つのよ。`,
     HOLD: sleepMode
       ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
-      : `わかる範囲の市場情報では、いま無理に動かない方が期待値が高いわ。${pulse.summary}`,
+      : `分散ルール的にも無理しない判断。ZPG は残高監視のみ（自動売買不可）。${decision.reason}`,
   };
 
   const closingDayChange = updatedTotal - previousTotalYen;
@@ -641,8 +821,10 @@ export async function runDailyAssetTrade(input: {
     cashYen: updatedBalance.cashYen,
     btcHeld: updatedBalance.btcHeld,
     ethHeld: updatedBalance.ethHeld,
+    zpgHeld: updatedBalance.zpgHeld,
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
+    zpgPriceYen: zpgPrice,
     previousTotalYen,
     previousBtcValueYen,
     previousCashYen,
