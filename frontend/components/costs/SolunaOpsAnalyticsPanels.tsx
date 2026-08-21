@@ -63,7 +63,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           {report.monthLabel} · 資産運用と社会貢献
         </h2>
         <p className="mt-2 text-sm text-slate-400">
-          bitFlyer の魔力タンク運用と、BOINC 解析パワー（拠点都市）の実績です。
+          聖なる魔力タンクの運用と、BOINC 解析パワー（拠点都市）の実績です。
           {report.updatedAt && (
             <span className="ml-2 text-slate-500">
               最終更新 {formatJst(report.updatedAt)}
@@ -71,7 +71,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           )}
         </p>
         <p className="mt-3 text-[12px] text-slate-400">
-          bitFlyer API:{" "}
+          資産運用API:{" "}
           <span className={report.bitFlyerConfigured ? "text-emerald-300" : "text-amber-300"}>
             {report.bitFlyerConfigured ? "接続設定あり" : "未設定"}
           </span>
@@ -82,7 +82,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
       <section className={`${costsPanelClass} p-5`}>
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">bitFlyer</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">Assets</p>
             <h3 className="mt-1 text-lg font-semibold text-white">資産運用分析</h3>
           </div>
           {assets && (
@@ -125,9 +125,9 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 hint={`${formatCurrency(assets.btcValueYen)} · Lv.${assets.dragonLevel.toFixed(1)}`}
               />
               <Stat
-                label="月次ゴールド進捗"
+                label="月次目標(2%)進捗"
                 value={formatPercent(assets.targetProgressPct)}
-                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}`}
+                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}（おやすみは10%超）`}
               />
             </div>
 

@@ -192,7 +192,7 @@ OpenAI Chat Completions と Gemini の system + user 形式は、そのまま So
 5. それでも失敗したらソル緊急リトライ（制限なしでもう一周）
 6. 成功したモデル名を `modelLabel` / `routeReason`（フェイルオーバー理由付き）として保存
 
-自律ジョブ（ニュース討伐・Note・街づくり・BOINC・bitFlyer）は本ドキュメントの対象外です → [`SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
+自律ジョブ（ニュース討伐・Note・街づくり・BOINC・資産運用）は本ドキュメントの対象外です → [`SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
 ---
 

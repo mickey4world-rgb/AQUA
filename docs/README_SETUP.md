@@ -461,7 +461,7 @@ npm run build
 #### Soluna 本番環境変数（Azure Portal → SWA → 構成）
 
 モデル自動判断の仕組み（ルーティング・コスト調整・プロンプト設計）: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)  
-朝の討伐・Note・街づくり・BOINC・bitFlyer: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
+朝の討伐・Note・街づくり・BOINC・資産運用: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
 **Claude（Azure AI Foundry — 推奨）**
 
@@ -481,11 +481,11 @@ npm run build
 | `NOTE_PRICE_YEN` | 有料価格（例: `100`） |
 | `NOTE_EYECATCH_UUID` | （任意）ヘッダー画像 UUID |
 
-**bitFlyer 資産運用（裏稼働）**
+**資産運用 API（裏稼働・取引所名は公開しない）**
 
 | 変数 | 内容 |
 |---|---|
-| `BITFLYER_API_KEY` | Lightning API Key（照会＋注文） |
+| `BITFLYER_API_KEY` | 資産運用 API Key（照会＋注文） |
 | `BITFLYER_API_SECRET` | API Secret |
 
 キー設定後、GitHub Actions **Soluna Asset Trade** を1回手動実行すると口座と同期されます。
@@ -628,7 +628,7 @@ npm run seed:users
 |---|---|
 | [`docs/DESIGN.md`](./DESIGN.md) | システム設計・アーキテクチャ |
 | [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md) | Soluna モデル自動ルーティング |
-| [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md) | Soluna 自律運用（討伐・Note・街・BOINC・bitFlyer） |
+| [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md) | Soluna 自律運用（討伐・Note・街・BOINC・資産運用） |
 | [`frontend/README.md`](../frontend/README.md) | Next.js フロントエンドの概要 |
 
 ---

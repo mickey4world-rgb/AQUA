@@ -406,7 +406,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                     討伐報酬 {(assets.monthlyRealizedPnlYen ?? 0).toLocaleString("ja-JP")} ゴールド
                   </span>
                   <span>
-                    目標 {(assets.monthlyTargetYen ?? 0).toLocaleString("ja-JP")} ゴールド
+                    目標(2%) {(assets.monthlyTargetYen ?? 0).toLocaleString("ja-JP")} / おやすみは10%超
                   </span>
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
@@ -425,7 +425,9 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                   />
                 </div>
                 {assets.sleepMode && (
-                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">🌙 月次目標達成 · おやすみモード</p>
+                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">
+                    🌙 月次利益10%超 · おやすみモード
+                  </p>
                 )}
               </div>
 
@@ -455,8 +457,8 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
               {assets.status === "waiting-spec" && (
                 <p className="mt-2 text-[11px] text-amber-200/80">
                   {jobs.bitFlyerConfigured
-                    ? "⏳ キー設定済み。口座同期待ち（Actions の Asset Trade を1回実行するか、毎時クロンを待つ）"
-                    : "⏳ 魔力充填待ち / BITFLYER_API_KEY と BITFLYER_API_SECRET を SWA に設定してください"}
+                    ? "⏳ 接続設定済み。口座同期待ち（Actions の Asset Trade を1回実行するか、毎時クロンを待つ）"
+                    : "⏳ 魔力充填待ち / 資産運用APIの接続設定が必要です"}
                 </p>
               )}
 

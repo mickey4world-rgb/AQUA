@@ -13,6 +13,12 @@ import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
 import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
 import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 
+/** Note 設定・世界観の案内ページ（無料リード冒頭） */
+export const NOTE_SETTINGS_GUIDE_URL =
+  "https://note.com/aqua_studio/n/nf8c11722537c";
+
+const CHAR_IMAGE_URL = "https://www.aquacore.net/soluna/characters.png";
+
 function jstDateLabel(date = new Date()): string {
   return date.toLocaleDateString("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -40,20 +46,51 @@ function toNoteHtml(text: string): string {
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
-      if (block.startsWith("## ")) {
-        return `<h2>${escapeHtml(block.slice(3).trim())}</h2>`;
+      const lines = block.split("\n").map((line) => line.trimEnd());
+      const first = lines[0]?.trim() ?? "";
+
+      if (first.startsWith("## ")) {
+        const heading = `<h2>${escapeHtml(first.slice(3).trim())}</h2>`;
+        const rest = lines.slice(1).join("\n").trim();
+        return rest ? `${heading}${toNoteHtml(rest)}` : heading;
       }
-      const lines = block
-        .split("\n")
+
+      const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(first);
+      if (imageMatch && lines.filter(Boolean).length === 1) {
+        const alt = escapeHtml(imageMatch[1] || "image");
+        const src = escapeHtml(imageMatch[2]);
+        return `<p><img src="${src}" alt="${alt}"></p>`;
+      }
+
+      const nonEmpty = lines.filter((line) => line.trim());
+      const bulletLines = nonEmpty.filter((line) => /^[・\-*]\s+/.test(line.trim()));
+      if (bulletLines.length >= 2 && bulletLines.length === nonEmpty.length) {
+        const items = bulletLines
+          .map((line) => {
+            const body = line.trim().replace(/^[・\-*]\s+/, "");
+            return `<li>${escapeHtml(body)}</li>`;
+          })
+          .join("");
+        return `<ul>${items}</ul>`;
+      }
+
+      const htmlLines = lines
         .map((line) => {
+          const trimmed = line.trim();
+          if (/^[・\-*]\s+/.test(trimmed)) {
+            return `・${escapeHtml(trimmed.replace(/^[・\-*]\s+/, ""))}`;
+          }
           const escaped = escapeHtml(line);
           if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
             return `<strong>${escaped}</strong>`;
           }
-          return escaped;
+          return escaped.replace(
+            /(https?:\/\/[^\s<]+)/g,
+            '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+          );
         })
         .join("<br>");
-      return `<p>${lines}</p>`;
+      return `<p>${htmlLines}</p>`;
     })
     .join("");
 }
@@ -71,6 +108,30 @@ function dialogueLines(messages: SolunaSystemMessage[]): string {
 function medalReport(hunter: SolunaHunterState): string {
   const { medals } = hunter;
   return `銅${medals.bronze}枚 / 銀${medals.silver}枚 / 金${medals.gold}枚 / 虹${medals.rainbow}枚（AI総投資単位 ${medalUnitScore(medals)}）`;
+}
+
+function harvestReflection(input: {
+  battle: SolunaBattleResult;
+  escaped: boolean;
+}): string {
+  const impression = (input.battle.impression || input.battle.outcomeWhy || "").trim();
+  const next = (input.battle.nextMove || "").trim();
+  return `## 今日の感想
+${impression || "今日のニュースも、討伐を通じて立体的に見えてきた。"}
+
+${SOL_LABEL}
+${
+  input.escaped
+    ? "取り逃がしたのは悔しい。でも『逃げ足の鱗』があるなら、次はもっと上手く読めるはずだ！"
+    : "今日の収穫はちゃんとギルドの燃料にするぞ。ニュースが少し身近に感じられた！"
+}
+
+${LUNA_LABEL}
+${
+  next
+    ? `感想としては、${next}`
+    : "たとえは味付け。大事なのはニュース自体が楽しく理解できること。そういう見方もあるね、で終われるのが理想よ。"
+}`;
 }
 
 export function notePriceYen(): number {
@@ -99,7 +160,6 @@ export function composeDailyNote(input: {
   const boss = `Lv.${input.battle.bossRank} ${input.battle.bossName}`;
   const escaped = input.battle.outcome === "escape";
   const resultLabel = escaped ? "取り逃がし 💨" : "討伐成功 🏆";
-  const news = input.battle.newsPlain || input.briefing.summary;
   const item = input.battle.loot.itemName
     ? `${input.battle.loot.itemName}${input.battle.loot.itemFlavor ? `（${input.battle.loot.itemFlavor}）` : ""}`
     : "今回はアイテムなし";
@@ -115,20 +175,19 @@ export function composeDailyNote(input: {
             : "メダルなし";
 
   const allMessages = input.messages.filter((m) => m.role === "sol" || m.role === "luna");
-  // 無料: ソル第1＋ルーナ第2（引き）。有料: 第3・第4（白熱）
   const freeDialogue = dialogueLines(allMessages.slice(0, 2));
   const paidDialogue = dialogueLines(allMessages.slice(2));
 
   const creator = process.env.NOTE_CREATOR_URLNAME?.trim();
   const shopLine = creator ? `https://note.com/${creator}` : "このマガジンの有料購読";
-  const charImageUrl = "https://www.aquacore.net/soluna/characters.png";
   const assets = input.assets ?? null;
   const boincMinutes = input.boinc?.result?.runMinutesActual ?? input.boincMinutes;
   const boincCredit = input.boinc?.result?.creditGranted;
 
   const title = `⚔️ ${input.battle.bossName}を追え｜${dateLabel}｜ソルとルーナの朝討伐`;
 
-  // 取り逃がし時は「リベンジ価値」を無料エリアで明示
+  const disclaimer = `※このnoteはAIがニュースを討伐するゲームです。初めての方は【こちらの設定ページ】（${NOTE_SETTINGS_GUIDE_URL}）をご覧ください。`;
+
   const escapeHook = escaped
     ? `
 ## 取り逃がしたからこそ手に入るもの
@@ -147,17 +206,20 @@ export function composeDailyNote(input: {
 
   const paywallTeaser = escaped
     ? `${LUNA_LABEL}
-でもソル、この ${input.battle.bossName} を放置すると、私たちのサイフ（ポートフォリオ）に直撃する大問題が発生するわよ…！
-討伐には失敗したけれど、奴の『逃げ足の鱗』から次の防衛策が見えてきたわ。続きは有料で。`
+でもソル、この ${input.battle.bossName} を放置すると、私たちのサイフ（ポートフォリオ）にも影響が出るかもしれないわ。
+討伐には失敗したけれど、奴の『逃げ足の鱗』から次の防衛策が見えてきた。続きは有料で。`
     : `${LUNA_LABEL}
 討伐はできた。でも収穫の使い道と、次に来るモンスターの弱点は、まだ話していないわ。
 続きが気になるなら↓へ。`;
 
   const adventureLog = formatAdventureLogForNote(input.battle);
 
-  const freeBody = `${SOL_LABEL} ／ ${LUNA_LABEL}
+  const freeBody = `${disclaimer}
+
+![ソルとルーナ](${CHAR_IMAGE_URL})
+
+${SOL_LABEL} ／ ${LUNA_LABEL}
 今日もニュースをモンスターに変えて、2人が世界を旅しながら討伐に挑みます。
-→ キャラクター紹介: ${charImageUrl}
 ${
   (assets?.lastPromptBattleMode ?? assets?.battleMode) === "attack"
     ? `
@@ -196,6 +258,13 @@ ${escapeHook}
 
   const guildFinance = formatGuildFinanceRpgReport(assets);
   const settlementDiary = formatSettlementDiary(input.settlement);
+  const harvestBlock = `## 今日の収穫
+・メダル: ${medal}
+・アイテム: ${item}
+・経験値: +${input.battle.loot.xpGained}
+・累計メダル: ${medalReport(input.hunter)}
+・ハンターレベル: Lv.${input.hunter.level}
+・複数戦成績: ${input.battle.wins ?? "—"}勝${input.battle.losses ?? "—"}敗 / 物語ゴールド +${input.battle.goldFlavorTotal ?? 0}`;
 
   const paidBody = `有料購読のあなたへ。白熱の続きと、今日のギルド全仕事レポートです。
 
@@ -222,21 +291,15 @@ ${LUNA_LABEL}
 ## バトル結果：${boss} vs ソル＆ルーナ（複数戦）
 
 大ボス結果: ${resultLabel}
-複数戦成績: ${input.battle.wins ?? "—"}勝${input.battle.losses ?? "—"}敗 / 物語ゴールド +${input.battle.goldFlavorTotal ?? 0}
 ${input.battle.journey ? `舞台: 『${input.battle.journey.areaName}』→ 次は『${input.battle.journey.nextAreaName}』` : ""}
-${input.battle.outcomeWhy || input.battle.impression}
-
-${input.battle.impression}
+${input.battle.outcomeWhy || ""}
 
 ## ${escaped ? "リベンジ戦略（次に見るべきポイント）" : "次に見るべきポイント"}
 ${input.battle.nextMove}
 
-## 今日の収穫
-・メダル: ${medal}
-・アイテム: ${item}
-・経験値: +${input.battle.loot.xpGained}
-・累計メダル: ${medalReport(input.hunter)}
-・ハンターレベル: Lv.${input.hunter.level}
+${harvestBlock}
+
+${harvestReflection({ battle: input.battle, escaped })}
 
 ---
 
