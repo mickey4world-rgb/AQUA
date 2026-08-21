@@ -1,7 +1,11 @@
 "use client";
 
 import { costsPanelClass, formatCurrency, formatPercent } from "@/lib/analytics-utils";
-import type { SolunaOpsAnalyticsReport } from "@/lib/types/analytics";
+import type {
+  SolunaOpsAnalyticsReport,
+  SolunaOpsDaySummary,
+  SolunaOpsHourBucket,
+} from "@/lib/types/analytics";
 
 type Props = {
   report: SolunaOpsAnalyticsReport;
@@ -30,6 +34,10 @@ function reasonJa(reason: string): string {
   return reason || "—";
 }
 
+function signedYen(n: number): string {
+  return `${n >= 0 ? "+" : ""}${formatCurrency(n)}`;
+}
+
 function Stat({
   label,
   value,
@@ -44,6 +52,142 @@ function Stat({
       <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-semibold text-white">{value}</p>
       {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function DayCard({
+  title,
+  day,
+  accent,
+}: {
+  title: string;
+  day: SolunaOpsDaySummary;
+  accent: "amber" | "cyan";
+}) {
+  const ring =
+    accent === "cyan"
+      ? "border-cyan-400/25 bg-cyan-500/5"
+      : "border-amber-400/25 bg-amber-500/5";
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${ring}`}>
+      <p className="text-[11px] font-medium text-slate-300">
+        {title} · {day.label}
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div>
+          <p className="text-[10px] text-slate-500">約定</p>
+          <p className="text-base font-semibold text-white">{day.tradeCount} 件</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">買付</p>
+          <p className="text-base font-semibold text-sky-300">{formatCurrency(day.buyYen)}</p>
+          <p className="text-[10px] text-slate-500">{day.buyCount} 回</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">売却</p>
+          <p className="text-base font-semibold text-rose-300">{formatCurrency(day.sellYen)}</p>
+          <p className="text-[10px] text-slate-500">{day.sellCount} 回</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">実現損益</p>
+          <p
+            className={`text-base font-semibold ${
+              day.realizedPnlYen >= 0 ? "text-emerald-300" : "text-rose-300"
+            }`}
+          >
+            {signedYen(day.realizedPnlYen)}
+          </p>
+        </div>
+      </div>
+      {day.products.length > 0 && (
+        <p className="mt-2 text-[11px] text-slate-400">銘柄: {day.products.join(" / ")}</p>
+      )}
+      {day.tradeCount === 0 && (
+        <p className="mt-2 text-[11px] text-slate-500">この日の約定はまだありません（見送り含む）。</p>
+      )}
+    </div>
+  );
+}
+
+function HourlyChart({
+  title,
+  buckets,
+  compactEmpty,
+}: {
+  title: string;
+  buckets: SolunaOpsHourBucket[];
+  compactEmpty?: boolean;
+}) {
+  const visible = compactEmpty ? buckets.filter((b) => b.tradeCount > 0) : buckets;
+  const maxVol = Math.max(1, ...visible.map((b) => b.buyYen + b.sellYen));
+
+  if (visible.length === 0 || (compactEmpty && visible.every((b) => b.tradeCount === 0))) {
+    return (
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">{title}</p>
+        <p className="mt-2 text-sm text-slate-500">時間帯の約定はありません。</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">{title}</p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        毎時の Asset Trade で約定があった時間帯を表示（HOLD のみの時間は記録なし）
+      </p>
+      <div className="mt-3 flex items-end gap-1 overflow-x-auto pb-1" style={{ minHeight: 88 }}>
+        {visible.map((b) => {
+          const vol = b.buyYen + b.sellYen;
+          const h = b.tradeCount === 0 ? 4 : Math.max(8, Math.round((vol / maxVol) * 72));
+          return (
+            <div key={b.hour} className="flex w-7 flex-col items-center gap-1 sm:w-8">
+              <div
+                className={`w-full rounded-t ${
+                  b.tradeCount === 0
+                    ? "bg-white/5"
+                    : b.buyYen >= b.sellYen
+                      ? "bg-sky-400/80"
+                      : "bg-rose-400/80"
+                }`}
+                style={{ height: h }}
+                title={`${b.label}: 買 ${b.buyYen} / 売 ${b.sellYen} / ${b.tradeCount}件`}
+              />
+              <span className="text-[9px] text-slate-500">{String(b.hour).padStart(2, "0")}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto text-[12px]">
+        {visible
+          .filter((b) => b.tradeCount > 0)
+          .map((b) => (
+            <li
+              key={`detail-${b.hour}`}
+              className="rounded-lg border border-white/5 bg-black/15 px-3 py-2 text-slate-300"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-medium text-white">{b.label}</span>
+                <span className="text-slate-400">
+                  {b.tradeCount}件 · 買 {formatCurrency(b.buyYen)} · 売 {formatCurrency(b.sellYen)}
+                  {b.realizedPnlYen !== 0 && (
+                    <> · 損益 {signedYen(b.realizedPnlYen)}</>
+                  )}
+                </span>
+              </div>
+              <ul className="mt-1 space-y-0.5 text-[11px] text-slate-400">
+                {b.actions.map((a, i) => (
+                  <li key={`${b.hour}-${i}`}>
+                    {a.time} {a.side === "BUY" ? "買" : "売"} {a.product}{" "}
+                    {formatCurrency(a.sizeJpy)}（{reasonJa(a.reason)}）
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+      </ul>
     </div>
   );
 }
@@ -166,6 +310,37 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 label="今月の実現損益"
                 value={`${assets.monthRealizedPnlYen >= 0 ? "+" : ""}${formatCurrency(assets.monthRealizedPnlYen)}`}
                 hint={`${assets.monthTradeCount} 件の取引`}
+              />
+            </div>
+
+            <div className="mt-6 space-y-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                前日 / 今日（JST）
+              </p>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <DayCard title="前日" day={assets.yesterday} accent="amber" />
+                <DayCard title="今日" day={assets.today} accent="cyan" />
+              </div>
+              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
+                評価額の前日比（台帳）:{" "}
+                <span
+                  className={
+                    assets.dayChangeYen >= 0 ? "text-emerald-300" : "text-rose-300"
+                  }
+                >
+                  {signedYen(assets.dayChangeYen)}
+                </span>
+                {" · "}前回総魔力 {formatCurrency(assets.previousTotalYen)} → 現在{" "}
+                {formatCurrency(assets.totalYen)}
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <HourlyChart title="今日の時間帯" buckets={assets.todayHourly} />
+              <HourlyChart
+                title="前日の時間帯（約定ありのみ）"
+                buckets={assets.yesterdayHourly}
+                compactEmpty
               />
             </div>
 
