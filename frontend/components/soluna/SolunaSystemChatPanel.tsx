@@ -348,7 +348,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
           <p className="mt-1 text-[10px] text-slate-500">
-            朝の開始時刻なし · 1時間ごとに板・約定を見て利益見込みで売買
+            1時間ごと · BTC/ETH をスコア比較して分散売買（現金下限・単一/合計上限あり）
           </p>
           {assets ? (
             <>
@@ -392,12 +392,21 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                     {(assets.btcHeld ?? 0).toFixed(4)} BTC
                   </p>
                 </div>
-                {(assets.ethHeld ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[10px] text-slate-400">🦅 蒼穹の不死鳥</p>
-                    <p className="text-[13px] text-slate-200">{(assets.ethHeld ?? 0).toFixed(4)} ETH</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-[10px] text-slate-400">🦅 蒼穹の不死鳥</p>
+                  <p className="text-[13px] text-slate-200">
+                    Lv.{((((assets.ethHeld ?? 0) * (assets.ethPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
+                    {(assets.ethHeld ?? 0).toFixed(4)} ETH
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">🏅 ジパング防衛枠</p>
+                  <p className="text-[13px] text-slate-200">
+                    {(assets.zpgHeld ?? 0) > 0
+                      ? `${(assets.zpgHeld ?? 0).toFixed(4)} ZPG（監視）`
+                      : "現金袖 ~12%（自動売買API非対応）"}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-2">
@@ -440,7 +449,9 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                         <span className={`font-semibold ${t.side === "BUY" ? "text-blue-300" : "text-rose-300"}`}>
                           {t.side === "BUY" ? "召喚" : "解呪"}
                         </span>
-                        <span className="text-slate-300">{(t.sizeJpy ?? 0).toLocaleString()} MP</span>
+                        <span className="text-slate-300">
+                          {(t.product ?? "BTC_JPY").replace("_JPY", "")} {(t.sizeJpy ?? 0).toLocaleString()} MP
+                        </span>
                         <span className="text-slate-400">@ {(t.priceBtc ?? 0).toLocaleString()}</span>
                         {t.realizedPnlJpy !== undefined && (
                           <span className={t.realizedPnlJpy >= 0 ? "text-emerald-300" : "text-rose-300"}>
