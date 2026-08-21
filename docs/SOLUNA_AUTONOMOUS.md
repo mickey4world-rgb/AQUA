@@ -102,6 +102,7 @@ UI は `jobs.bitFlyerConfigured` で設定済み／未設定を区別する。
 | `POST /api/soluna/cron/system-briefing` | 朝パイプライン |
 | `POST /api/soluna/cron/asset-trade` | bitFlyer 裏稼働 |
 | `POST /api/soluna/boinc-report` | BOINC 実績保存 |
+| `GET /api/costs/soluna-ops` | コスト画面用・資産運用／BOINC 分析 |
 
 認可: `Authorization: Bearer ${SOLUNA_CRON_SECRET}`（cron / report）
 

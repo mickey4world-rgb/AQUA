@@ -103,6 +103,8 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 Soluna のモデル自動判断の詳細: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)  
 Soluna の朝パイプライン・街づくり・BOINC・bitFlyer: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
+コストダッシュボード（`/costs`）の **Soluna 資産運用・BOINC** タブでも、bitFlyer 台帳と BOINC 貢献の詳細を確認できます（`GET /api/costs/soluna-ops`）。
+
 ### Soluna（`/soluna`）
 
 | 項目 | 内容 |
