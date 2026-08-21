@@ -135,7 +135,7 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              AI トークン・Azure 実績に加え、Soluna の bitFlyer 資産運用と BOINC
+              AI トークン・Azure 実績に加え、Soluna の資産運用と BOINC
               社会貢献の詳細も確認できます。
             </p>
             <a

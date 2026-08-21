@@ -4,7 +4,7 @@
  * 運用ルール:
  *   1. 1回の取引は最大 10,000 円（確信度でサイズ可変）
  *   2. 利確 / 損切りは市場モメンタムに応じて動的（硬い上限: +4% / -3%）
- *   3. おやすみモード: 当月実現損益が目標（月初残高×2%）に達したら新規購入停止
+ *   3. 月次目標は月初残高×2%。おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: リアルタイム板・約定・スプレッドから利益見込みを見て売買
  */
 
@@ -27,6 +27,8 @@ const SOFT_TAKE_PROFIT_RATE = 0.025;
 const HARD_STOP_LOSS_RATE = -0.03;
 const SOFT_STOP_LOSS_RATE = -0.02;
 const MONTHLY_TARGET_RATE = 0.02;
+/** おやすみモード閾値（月初残高比）。目標2%とは別に、10%超で新規購入停止 */
+const SLEEP_MODE_RATE = 0.1;
 const MIN_BTC_ORDER = 0.0001;
 const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 市場が良いとき再エントリーしやすく 2h
 const MAX_DAILY_BUY_YEN = 20_000;
@@ -263,6 +265,18 @@ function jstMonthStr(date = new Date()): string {
   return jst.toISOString().slice(0, 7);
 }
 
+function sleepModeThresholdYen(ledger: Pick<SolunaAssetLedger, "lastMonthTotalYen" | "principalYen">): number {
+  const base = ledger.lastMonthTotalYen || ledger.principalYen || ASSET_PRINCIPAL_YEN;
+  return Math.round(base * SLEEP_MODE_RATE);
+}
+
+function isSleepModeActive(
+  monthlyPnlYen: number,
+  ledger: Pick<SolunaAssetLedger, "lastMonthTotalYen" | "principalYen">,
+): boolean {
+  return monthlyPnlYen >= sleepModeThresholdYen(ledger);
+}
+
 function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
   const now = new Date().toISOString();
   const targetYen = Math.round(ASSET_PRINCIPAL_YEN * MONTHLY_TARGET_RATE);
@@ -304,7 +318,7 @@ function rolloverMonthIfNeeded(ledger: SolunaAssetLedger): SolunaAssetLedger {
     newSummaries[newSummaries.length - 1] = {
       ...lastSummary,
       realizedPnlYen: ledger.monthlyRealizedPnlYen,
-      goalReached: ledger.sleepMode,
+      goalReached: ledger.monthlyRealizedPnlYen >= ledger.monthlyTargetYen,
     };
   }
 
@@ -367,8 +381,11 @@ function decideTrade(
 ): TradeDecision {
   const btcPrice = pulse.ltp;
 
-  if (ledger.sleepMode) {
-    return { action: "HOLD", reason: `月次目標達成済み（おやすみモード）｜${pulse.summary}` };
+  if (isSleepModeActive(ledger.monthlyRealizedPnlYen, ledger)) {
+    return {
+      action: "HOLD",
+      reason: `月次おやすみ閾値（10%）達成済み｜${pulse.summary}`,
+    };
   }
 
   if (ledger.btcHeld > MIN_BTC_ORDER) {
@@ -502,8 +519,9 @@ export async function runDailyAssetTrade(input: {
       medalUnits,
       status: "waiting-spec",
       solComment:
-        "bitFlyer API キーが設定されていない。環境変数 BITFLYER_API_KEY / BITFLYER_API_SECRET を設定してくれ。",
-      lunaComment: "入金後に BITFLYER_API_KEY を SWA 環境変数へ。設定が来たら市場を見て即動くわ。",
+        "聖なる魔力タンクの接続呪文がまだ届いていない。ギルド金庫の同期設定を待っている！",
+      lunaComment:
+        "魔力タンクのAPI接続が未設定よ。設定が来たら市場を見て即動くわ。取引所の名前は外に出さないこと。",
       updatedAt: new Date().toISOString(),
     };
   }
@@ -594,7 +612,7 @@ export async function runDailyAssetTrade(input: {
     updatedBalance = await getBitFlyerBalance();
   }
 
-  const sleepMode = monthlyPnl >= ledger.monthlyTargetYen;
+  const sleepMode = isSleepModeActive(monthlyPnl, ledger);
   const updatedTotal = Math.round(
     updatedBalance.cashYen + updatedBalance.btcHeld * btcPrice + updatedBalance.ethHeld * ethPrice,
   );
@@ -608,10 +626,10 @@ export async function runDailyAssetTrade(input: {
     HOLD: `今回は見送り。市場を見て利益見込みが出るまで温存する！ ${pulse.summary}`,
   };
   const lunaComments: Record<string, string> = {
-    BUY: `板と約定のリアルタイム予測でエントリーしたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月目標達成！おやすみモードへ。" : ""}`,
+    BUY: `板と約定のリアルタイム予測でエントリーしたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
     SELL: `${isTp ? "利益を確定" : "損失を限定"}。市場が次のエッジを出すまで見張るわ。`,
     HOLD: sleepMode
-      ? "おやすみモード中。今月のゴールドは守りきる。"
+      ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
       : `わかる範囲の市場情報では、いま無理に動かない方が期待値が高いわ。${pulse.summary}`,
   };
 

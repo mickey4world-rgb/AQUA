@@ -280,7 +280,7 @@ export interface SolunaMonthlyAssetSummary {
   openingBalanceYen: number;   // 月初総資産
   targetProfitYen: number;     // 月利益目標（月初残高 × 2%）
   realizedPnlYen: number;      // 当月累計実現損益
-  goalReached: boolean;        // 目標達成フラグ → おやすみモード
+  goalReached: boolean;        // 月次目標（2%）達成フラグ
   goalReachedAt?: string;      // 達成日時
 }
 
@@ -294,7 +294,7 @@ export interface SolunaAssetLedger {
   monthlyTargetYen: number;
   /** 当月累計実現損益（＝討伐報酬ゴールド） */
   monthlyRealizedPnlYen: number;
-  /** おやすみモード（目標 ≥ monthlyTargetYen） */
+  /** おやすみモード（実現損益 ≥ 月初残高 × 10%） */
   sleepMode: boolean;
   /** 現在の BTC 保有量（雷轟の蒼竜） */
   btcHeld: number;

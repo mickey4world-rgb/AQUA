@@ -1,5 +1,5 @@
 /**
- * bitFlyer 資産運用の裏稼働クロン。
+ * 資産運用の裏稼働クロン（取引所接続・ブランド名は公開しない）。
  * POST /api/soluna/cron/asset-trade
  * Authorization: Bearer ${SOLUNA_CRON_SECRET}
  *

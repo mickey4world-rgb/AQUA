@@ -101,9 +101,9 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 トップの **SHOWCASE** ボタンおよび `/login` から導線。
 
 Soluna のモデル自動判断の詳細: [`docs/SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md)  
-Soluna の朝パイプライン・街づくり・BOINC・bitFlyer: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
+Soluna の朝パイプライン・街づくり・BOINC・資産運用: [`docs/SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)
 
-コストダッシュボード（`/costs`）の **Soluna 資産運用・BOINC** タブでも、bitFlyer 台帳と BOINC 貢献の詳細を確認できます（`GET /api/costs/soluna-ops`）。
+コストダッシュボード（`/costs`）の **Soluna 資産運用・BOINC** タブでも、魔力タンク台帳と BOINC 貢献の詳細を確認できます（`GET /api/costs/soluna-ops`）。
 
 ### Soluna（`/soluna`）
 
@@ -114,7 +114,7 @@ Soluna の朝パイプライン・街づくり・BOINC・bitFlyer: [`docs/SOLUNA
 | AI | **Gemini / Azure OpenAI / Claude** を質問内容で自動切替（初期割当は別モデル）。ソル失敗時は即フェイルオーバー |
 | 育成 | 親密度 0–100 → ステージ進行 + **知能 Lv.1〜3**（高親密度ほど最新・高性能モデル） |
 | ニュース討伐 | 毎朝ニュースをモンスター化し、複数戦＋旅エリアで討伐。結果は Note 有料記事にも掲載 |
-| 自律ジョブ | Note 公開 / BOINC→拠点都市開拓日誌 / bitFlyer 裏稼働（市場パルス） |
+| 自律ジョブ | Note 公開 / BOINC→拠点都市開拓日誌 / 資産運用の裏稼働（市場パルス・取引所名は非公開） |
 | リージョン | **海外リージョン可**（Soluna の Azure OpenAI は global エンドポイント） |
 | Apple Watch | `POST /api/soluna/shortcut/chat` + `X-Soluna-Token`（ログイン不要） |
 
@@ -388,4 +388,4 @@ ClaudeCodeWork/
 | 2026-07-31 | 初版（株・Disney・コスト中心、Functions 前提） |
 | 2026-08-09 | AQUA 現行に再進化。Works/司法/行政/合議/Space、Next.js API、Gemini 中継 |
 | 2026-08-14 | Soluna、Showcase（`/sample`）、WORKS 図解ビューワー、公開 PV 分析、Cosmos コンテナ追加、Gemini 耐障害、Apple Watch ショートカット API |
-| 2026-08-21 | Soluna 自律運用を差分化ドキュメント化。ニュース複数戦・旅・Note・街づくり(BOINC)・bitFlyer裏稼働・朝4枠schedule・ソル即フェイルオーバー（[`SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)） |
+| 2026-08-21 | Soluna 自律運用を差分化ドキュメント化。ニュース複数戦・旅・Note・街づくり(BOINC)・資産運用裏稼働・朝4枠schedule・ソル即フェイルオーバー（[`SOLUNA_AUTONOMOUS.md`](./SOLUNA_AUTONOMOUS.md)） |

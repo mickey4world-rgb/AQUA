@@ -35,7 +35,9 @@ import {
   getLatestBriefing,
   getSystemHunter,
   getSystemLastRunAt,
+  getLatestBoincRun,
   getSystemAssets,
+  getSystemSettlement,
   listSystemEpisodes,
   listSystemMessages,
   markSystemRunAt,
@@ -43,20 +45,29 @@ import {
   saveSystemPersonality,
 } from "@/lib/server/soluna-system-store";
 import { recordTokenUsage } from "@/lib/server/token-usage";
-import type { SolunaNewsBriefing, SolunaSystemMessage, SolunaSystemStateResponse } from "@/lib/types/soluna";
+import type {
+  SolunaAssetLedger,
+  SolunaBattleResult,
+  SolunaBoincRun,
+  SolunaNewsBriefing,
+  SolunaSettlementState,
+  SolunaSystemMessage,
+  SolunaSystemStateResponse,
+} from "@/lib/types/soluna";
 
 const SYSTEM_TIMEOUT_MS = 18_000;
 const SYSTEM_USER_ID = "__system__";
 
-const RPG_METAPHOR_RULE = `## RPG変換ルール（必須）
-経済・政治の硬い用語は、必ずゲームのギミックに言い換える。用語をそのまま並べない。
-例:
-- サプライチェーン寸断 → 職人街から王都への物流ルート（補給線）が塞がれる
-- インフレ長期化 → 宿屋の宿泊代やポーションの値段がじわじわ上がり続ける呪い
-- 追加関税 → 関税の罠 / 関税の壁 / 通行税の呪い
-- 金利・為替 → 魔王軍の魔力ゲージ / 通貨の防衛結界
-- ポートフォリオ・資産 → サイフ / 所持メダル / ギルド金庫
-専門用語を使う場合は「（ゲーム言い換え）」を直後に付ける。`;
+const RPG_METAPHOR_RULE = `## RPG変換ルール（味付け・必須の翻訳付き）
+経済・政治の硬い用語はゲームのギミックで楽しく言い換えてよい。ただし過激なたとえだけで終わらせない。
+例（「たとえ → つまりニュースでは」のセット）:
+- サプライチェーン寸断 → 補給線が塞がれる → つまり物流や部品の流れが滞る話
+- インフレ長期化 → 宿代やポーション代が上がる呪い → つまり物価がじわじわ上がり続ける話
+- 追加関税 → 通行税の壁 → つまり輸入コストや価格への圧が強まる話
+- 金利・為替 → 魔力ゲージ／防衛結界 → つまりお金の借りやすさや通貨の揺らぎの話
+- ポートフォリオ・資産 → サイフ／ギルド金庫 → つまり家計や投資の持ち分の話
+専門用語を使う場合は「（ゲーム言い換え）」を直後に付ける。
+**禁止**: ニュース内容が伝わらないほど激しい比喩だけを連ねること。読後に「で、何が起きたの？」とならないこと。`;
 
 const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオン／勇者です。
 ルーナと朝のニュースをモンスター討伐として読み解く。本業は「ニュースを誰でもワクワク分かるように伝えること」。
@@ -66,15 +77,15 @@ ${RPG_METAPHOR_RULE}
 ## 役割（ターンによって使い分ける）
 
 ### 第1発言（ニュース解説・無料エリア用）
-1. モンスター名と正体を一言で言う（何が起きたか）
-2. RPG比喩でなぜ大事かを説明する（補給線・呪い・壁など）
-3. チャンスはどこか — 楽観的な勇者としての読みを1つ
+1. モンスター名と、元ニュースで何が起きたかを一言で言う
+2. RPG比喩は1〜2個まで。直後に「つまり〜」で現実の意味を必ず添える
+3. チャンス／面白ポイントを楽観的に1つ
 4. 最後に「ルーナ、これをどう見る？」で余韻を残す
 ※ 結論を出し切らない。読者が「なるほど、終わり」と感じないこと
 
 ### 第3発言（白熱の深掘り・有料エリア用）
 - ルーナの切り返しを受けて「でも実は…」と切り返す
-- ボケや熱量のある掛け合いを混ぜる
+- ボケや熱量のある掛け合いを混ぜつつ、ニュース理解は落とさない
 - まだ答えが出ない問いを1つ残す
 
 ## 話し方
@@ -82,27 +93,28 @@ ${RPG_METAPHOR_RULE}
 - **5〜8行、220〜380文字**。箇条書き禁止。数字・固有名詞は捏造しない`;
 
 const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオン／賢者です。
-ソルの解説を受けて、読者が誤解しないようニュースを補強・切り返す。討伐は味付け。
+ソルの解説を受けて、読者がニュースを誤解なく楽しく理解できるよう補強・切り返す。討伐は味付け。
 
 ${RPG_METAPHOR_RULE}
 
 ## 役割（ターンによって使い分ける）
 
 ### 第2発言（有料ライン直前の「引き」・最重要）
-1. ソルの解説を認めつつ、足りない急所を1つ補う
-2. **必ず**「サイフ（ポートフォリオ）への直撃」「メダルの価値が削られる」など、続きが気になる問いかけかツッコミで締める
-3. 例: 「でもソル、このモンスターを放置すると、私たちのサイフに直撃する大問題が発生するわよ…！」
-4. 解説を完結させない。読者が無料だけで満足しないこと
-5. 「答えは有料で」と露骨に言わず、危機感とボケで引きを作る
+1. ソルのたとえを認めつつ、「つまりニュースでは〜」と現実の急所を1つ補う
+2. 「そういう見方もあるね」と読者が納得できる別角度を1つ出す（過度な危機煽りは禁止）
+3. 続きが気になる問いかけは、サイフ／家計／市場への影響を**穏やかに**匂わせて締める
+4. 同じ決まり文句の連発禁止（「サイフに直撃する大問題が発生するわよ」のコピペ禁止）
+5. 「答えは有料で」と露骨に言わない
 
 ### 第4発言（締め・リベンジ／防衛策）
-- 自分なりの結論を1行で言い切る
-- 「逃げ足の鱗」「次の弱点」など、次回につながる一言を残す
+- 自分なりの結論を1行で言い切る（ニュースの意味が残ること）
+- 次回につながる一言を残す
 - 読者が「続き／深掘りが欲しい」状態で終わる
 
 ## 話し方
 - 日本語。ソルに返答する。知的で少し皮肉、でも温かい
-- **5〜8行、220〜380文字**。数字・固有名詞は捏造しない`;
+- **5〜8行、220〜380文字**。数字・固有名詞は捏造しない
+- たとえが激しくて意味不明になるくらいなら、たとえを減らしてニュース理解を優先する`;
 
 function resolveSystemModels(): { solModel: string; lunaModel: string } | null {
   if (!isAnthropicConfigured() || !isAzureOpenAiConfigured()) return null;
@@ -334,7 +346,7 @@ export async function runDailySystemChat(options?: {
   const solPrompt = `${briefingBlock}
 
 ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今日の題材は ${boss.monster ? `「${boss.monster.name}」（正体: ${boss.title}）` : boss.title} です。
-【第1発言】ルーナに話しかけてください。ニュースをRPGギミックで分かりやすく説明し、たとえは補給線・呪い・壁などを使う。結論を出し切らず、「ルーナ、これをどう見る？」で余韻を残す。`;
+【第1発言】ルーナに話しかけてください。まずニュースで何が起きたかを分かりやすく言い、RPGたとえは1〜2個までに留め、直後に「つまり〜」で現実の意味を添えること。結論を出し切らず、「ルーナ、これをどう見る？」で余韻を残す。`;
 
   const solResult = await callClaudeSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -357,9 +369,11 @@ ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今�
 【これまでのやりとり】
 ${formatSystemTranscript([...prior, ...created])}
 
-【第2発言・最重要】ソルの解説を受けて、サイフ（ポートフォリオ）やメダル価値への直撃を匂わせる「引き」を作れ。
-例:「でもソル、このモンスターを放置すると、私たちのサイフに直撃する大問題が発生するわよ…！」
-解説を完結させない。ボケとツッコミの開幕で終わり、読者が続きを気にする状態にせよ。`;
+【第2発言・最重要】ソルの解説を受けて、ニュース理解を補強せよ。
+1) 「つまりニュースでは〜」で現実の急所を1つ
+2) 「そういう見方もあるね」と読者が納得できる別角度を1つ
+3) 家計／市場への影響は穏やかに匂わせて引きを作る（過激な危機煽りの決まり文句は禁止）
+解説を完結させすぎないこと。`;
 
   const lunaResult = await callOpenAiSystem(
     buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
@@ -471,8 +485,71 @@ export async function runFullSystemBriefingPipeline(options?: {
 }
 
 export const HUMAN_CHAT_BRIEFING_ADDON = `## 自律的な話題提供（人間との会話）
-システム側ではニュースをモンスター化した討伐をしています。ユーザーの発言と**自然に関連する**ときだけ、怪物名か1フレーズ触れてください。
-無関係なときは無理にニュースを持ち出さないこと。`;
+あなたは今日のニュース討伐結果、ギルド資産運用（聖なる魔力タンク）、BOINC／拠点都市の状況を把握しています。
+ユーザーがそれらに触れた／関連する質問をしたときは、下記の「今日の討伐・運用状況」を踏まえて具体的に答えてください。
+無関係な雑談では無理にニュースや運用の話を持ち出さないこと。
+事実のない取引・クレジット・討伐結果は捏造しないこと。
+**重要**: 取引所名・ブローカー名・API ベンダー名（例: 取引所ブランド）は絶対に口にしない。資産運用は「聖なる魔力タンク」「召喚獣」「ギルド金庫」など世界観の言葉だけで語る。`;
+
+function formatBattleForHumanChat(battle: SolunaBattleResult | null): string | null {
+  if (!battle) return null;
+  const result = battle.outcome === "escape" ? "取り逃がし" : "討伐成功";
+  return `## 今日のニュース討伐結果
+ボス: Lv.${battle.bossRank} ${battle.bossName}（${result}）
+成績: ${battle.wins ?? "—"}勝${battle.losses ?? "—"}敗
+要約: ${battle.newsPlain || battle.impression || "—"}
+次の一手: ${battle.nextMove || "—"}
+${battle.journey ? `舞台: 『${battle.journey.areaName}』→『${battle.journey.nextAreaName}』` : ""}`.trim();
+}
+
+function formatAssetsForHumanChat(assets: SolunaAssetLedger | null): string | null {
+  if (!assets) return null;
+  const lastTrade = assets.trades[assets.trades.length - 1];
+  return `## ギルド資産運用（聖なる魔力タンク）※取引所名はユーザーに言わない
+総魔力: ${Math.round(assets.totalYen).toLocaleString("ja-JP")} 円
+現金: ${Math.round(assets.cashYen).toLocaleString("ja-JP")} 円 / BTC: ${assets.btcHeld.toFixed(4)}
+当月実現損益: ${Math.round(assets.monthlyRealizedPnlYen).toLocaleString("ja-JP")} 円
+月次目標（2%）: ${Math.round(assets.monthlyTargetYen).toLocaleString("ja-JP")} 円
+おやすみモード（10%超）: ${assets.sleepMode ? "ON" : "OFF"}
+状態: ${assets.status} / バトルモード: ${assets.battleMode ?? "defense"}
+ソル: ${assets.solComment || "—"}
+ルーナ: ${assets.lunaComment || "—"}
+${
+  lastTrade
+    ? `直近取引: ${lastTrade.side} ${Math.round(lastTrade.sizeJpy).toLocaleString("ja-JP")} 円（${lastTrade.reason}）`
+    : "直近取引: なし"
+}`.trim();
+}
+
+function formatBoincForHumanChat(
+  boinc: SolunaBoincRun | null,
+  settlement: SolunaSettlementState | null,
+): string | null {
+  const lines: string[] = ["## BOINC・拠点都市"];
+  if (boinc) {
+    lines.push(
+      `最新BOINC: 計画 ${boinc.minutes} 分 / 状態 ${boinc.status}`,
+    );
+    if (boinc.result) {
+      lines.push(
+        `実績: ${boinc.result.runMinutesActual} 分 / ${boinc.result.creditGranted} cs / タスク ${boinc.result.tasksCompleted}（${boinc.result.projectName}）`,
+      );
+    }
+    if (boinc.solComment) lines.push(`ソル: ${boinc.solComment}`);
+    if (boinc.lunaComment) lines.push(`ルーナ: ${boinc.lunaComment}`);
+  } else {
+    lines.push("最新BOINC: まだ記録なし");
+  }
+  if (settlement) {
+    lines.push(
+      `拠点: ${settlement.settlementName}（${settlement.settlementLevel}） / 累積開拓 ${settlement.cumulativeMinutes} 分 / 分析スロット ${settlement.analysisSlots}`,
+    );
+    if (settlement.latestEvent?.headline) {
+      lines.push(`最新開拓: ${settlement.latestEvent.headline}`);
+    }
+  }
+  return lines.join("\n");
+}
 
 export async function buildHumanChatBriefingSection(
   briefing: SolunaNewsBriefing | null,
@@ -485,8 +562,23 @@ export async function buildHumanChatBriefingSection(
   }
 
   try {
-    const personality = await getOrInitSystemPersonality();
+    const [personality, hunter, assets, boinc, settlement] = await Promise.all([
+      getOrInitSystemPersonality(),
+      getSystemHunter(),
+      getSystemAssets(),
+      getLatestBoincRun(),
+      getSystemSettlement(),
+    ]);
     blocks.push(formatPersonalitySnapshotForHumanChat(personality));
+
+    const latestBattle =
+      hunter.battles.length > 0 ? hunter.battles[hunter.battles.length - 1] : null;
+    const battleBlock = formatBattleForHumanChat(latestBattle);
+    if (battleBlock) blocks.push(battleBlock);
+    const assetsBlock = formatAssetsForHumanChat(assets);
+    if (assetsBlock) blocks.push(assetsBlock);
+    const boincBlock = formatBoincForHumanChat(boinc, settlement);
+    if (boincBlock) blocks.push(boincBlock);
 
     const episodes = userMessage
       ? await findRelevantEpisodes(userMessage, 3)

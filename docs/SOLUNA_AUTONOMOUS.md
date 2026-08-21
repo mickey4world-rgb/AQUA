@@ -1,6 +1,8 @@
-# Soluna — 自律運用（ニュースバトル / Note / 街づくり / BOINC / bitFlyer）
+# Soluna — 自律運用（ニュースバトル / Note / 街づくり / BOINC / 資産運用）
 
 > 2026-08 時点の差分化ドキュメント。人間チャット（モデル自動切替）は [`SOLUNA_MODEL_ROUTING.md`](./SOLUNA_MODEL_ROUTING.md) を参照。
+>
+> **公開ポリシー**: Note・チャット・UI では取引所ブランド名を出さない。資産は「聖なる魔力タンク／召喚獣」など世界観で語る。
 
 ## 1. 画面構成（`/soluna`）
 
@@ -65,24 +67,24 @@ GitHub Actions: **`Soluna System Briefing`**
   Vars: `BOINC_PROJECT_URL`（任意、既定 World Community Grid）
 - RPC 権限・JSON 正規化は `run-soluna-boinc.sh` 側で対応済み
 
-## 6. bitFlyer 資産運用（裏稼働）
+## 6. 資産運用（裏稼働・取引所名は非公開）
 
 実装: `frontend/lib/server/soluna-asset-trade.ts`  
 GHA: **`Soluna Asset Trade (background)`**（毎時 `:20` UTC）
 
 | 項目 | 内容 |
 |------|------|
-| SWA 環境変数 | `BITFLYER_API_KEY` / `BITFLYER_API_SECRET`（必須） |
+| SWA 環境変数 | 資産運用 API Key / Secret（`BITFLYER_*` — 設定名のみ。公開文面には書かない） |
 | 判断 | 板・約定・スプレッドから予測スコア。強気時のみ買い |
 | 利確 | 硬 +4% / 勢い減衰で +2.5% |
 | 損切り | 硬 −3% / 下落加速で −2% |
 | DCA 抑制 | 冷却 2h、1日購入上限 2万円、1回最大 1万円 |
-| 月次目標 | 実現損益 ≥ 月初×2% でおやすみモード |
-| RPG 表現 | 魔力MP・蒼竜(BTC)・守護巨兵(現金) |
+| 月次目標 | 実現損益の目安は月初×2%。おやすみモードは月初×10%超で発動 |
+| RPG 表現 | 魔力MP・蒼竜(BTC)・守護巨兵(現金)。**取引所名は Note/チャット/UI に出さない** |
 
 **注意**: キー設定後も台帳 `status` が古いと「未設定」に見えることがある。  
 Actions で Asset Trade を1回手動実行すると口座同期される。  
-UI は `jobs.bitFlyerConfigured` で設定済み／未設定を区別する。
+UI は `jobs.bitFlyerConfigured`（内部フラグ名）で接続済み／未設定を区別する。
 
 ## 7. 人間チャット（ソル応答の耐障害）
 
@@ -98,9 +100,9 @@ UI は `jobs.bitFlyerConfigured` で設定済み／未設定を区別する。
 | パス | 用途 |
 |------|------|
 | `GET /api/soluna/system` | ニュース討伐ログ＋仕事デスク |
-| `POST /api/soluna/chat` | 人間チャット |
+| `POST /api/soluna/chat` | 人間チャット（討伐結果・資産運用・BOINC状況を踏まえて応答。取引所名は出さない） |
 | `POST /api/soluna/cron/system-briefing` | 朝パイプライン |
-| `POST /api/soluna/cron/asset-trade` | bitFlyer 裏稼働 |
+| `POST /api/soluna/cron/asset-trade` | 資産運用の裏稼働 |
 | `POST /api/soluna/boinc-report` | BOINC 実績保存 |
 | `GET /api/costs/soluna-ops` | コスト画面用・資産運用／BOINC 分析 |
 
@@ -117,13 +119,13 @@ UI は `jobs.bitFlyerConfigured` で設定済み／未設定を区別する。
 | systemHunter | バトル・メダル・レベル |
 | systemNoteArticle | Note 原稿／投稿結果 |
 | systemBoincRun | BOINC 計画・実績 |
-| systemAssets | bitFlyer 台帳 |
+| systemAssets | 資産台帳（魔力タンク） |
 | systemSettlement | 拠点都市 |
 | systemPersonality / systemEpisode / systemMeta | 性格・エピソード・最終実行日 |
 
 ## 10. 運用チェックリスト
 
-- [ ] SWA: `SOLUNA_CRON_SECRET`, Claude/OpenAI/Gemini, Cosmos, Note, `BITFLYER_*`
+- [ ] SWA: `SOLUNA_CRON_SECRET`, Claude/OpenAI/Gemini, Cosmos, Note, 資産運用 API（`BITFLYER_*`）
 - [ ] GitHub Secrets: `SOLUNA_CRON_SECRET`, `BOINC_ACCOUNT_KEY`, Gemini relay（ニュース用）
 - [ ] GitHub Vars: `PRODUCTION_URL`, `BOINC_PROJECT_URL`（任意）
 - [ ] Actions: Briefing が朝に走る / Asset Trade が毎時走る

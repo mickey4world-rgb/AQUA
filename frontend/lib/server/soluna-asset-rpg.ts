@@ -181,8 +181,8 @@ ${
       : "";
 
   const sleepLine = assets.sleepMode
-    ? "🌙 月次目標達成！おやすみモード（新規召喚停止・防衛専念）"
-    : `討伐報酬ゴールド: ${gold.toLocaleString("ja-JP")} / 目標 ${goldTarget.toLocaleString("ja-JP")}`;
+    ? "🌙 月次利益が10%を超えたためおやすみモード（新規召喚停止・防衛専念）"
+    : `討伐報酬ゴールド: ${gold.toLocaleString("ja-JP")} / 目標(2%) ${goldTarget.toLocaleString("ja-JP")}（おやすみは10%超）`;
 
   return `${buffBanner}
 ## 📊 召喚獣の育成ステータス（現在のポートフォリオ）
