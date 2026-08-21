@@ -199,6 +199,36 @@ export interface SolunaOpsTradeRow {
   briefingId: string;
 }
 
+/** JST 1日分の売買サマリー */
+export interface SolunaOpsDaySummary {
+  date: string; // YYYY-MM-DD (JST)
+  label: string;
+  tradeCount: number;
+  buyYen: number;
+  sellYen: number;
+  realizedPnlYen: number;
+  buyCount: number;
+  sellCount: number;
+  products: string[];
+}
+
+/** JST 時間帯バケット（0–23） */
+export interface SolunaOpsHourBucket {
+  hour: number; // 0-23 JST
+  label: string; // "09時"
+  tradeCount: number;
+  buyYen: number;
+  sellYen: number;
+  realizedPnlYen: number;
+  actions: Array<{
+    time: string;
+    side: "BUY" | "SELL";
+    product: string;
+    sizeJpy: number;
+    reason: string;
+  }>;
+}
+
 export interface SolunaOpsBoincRunRow {
   id: string;
   briefingId: string;
@@ -253,6 +283,14 @@ export interface SolunaOpsAnalyticsReport {
     monthSellYen: number;
     monthTradeCount: number;
     monthRealizedPnlYen: number;
+    /** 前日（JST）の約定サマリー */
+    yesterday: SolunaOpsDaySummary;
+    /** 今日（JST）の約定サマリー */
+    today: SolunaOpsDaySummary;
+    /** 今日の時間帯別状況（約定があった時間＋空の枠を含む 0–23） */
+    todayHourly: SolunaOpsHourBucket[];
+    /** 前日の時間帯別（約定があった時間のみ） */
+    yesterdayHourly: SolunaOpsHourBucket[];
     trades: SolunaOpsTradeRow[];
     monthlySummaries: Array<{
       month: string;

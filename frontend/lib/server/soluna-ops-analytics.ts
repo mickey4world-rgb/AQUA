@@ -7,7 +7,13 @@ import {
   getSystemSettlement,
   listSystemBoincRuns,
 } from "@/lib/server/soluna-system-store";
-import type { SolunaOpsAnalyticsReport } from "@/lib/types/analytics";
+import type {
+  SolunaOpsAnalyticsReport,
+  SolunaOpsDaySummary,
+  SolunaOpsHourBucket,
+  SolunaOpsTradeRow,
+} from "@/lib/types/analytics";
+import type { SolunaTradeRecord } from "@/lib/types/soluna";
 
 function monthLabelJa(month: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(month);
@@ -16,8 +22,117 @@ function monthLabelJa(month: string): string {
 }
 
 function inMonth(iso: string, month: string): boolean {
-  // createdAt は UTC ISO。表示月は UTC 月キーに揃える（コスト画面と同じ）
   return iso.slice(0, 7) === month;
+}
+
+/** JST の YYYY-MM-DD */
+function jstDateKey(isoOrDate: string | Date): string {
+  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function jstHour(iso: string): number {
+  const d = new Date(iso);
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).getUTCHours();
+}
+
+function shiftJstDateKey(dateKey: string, deltaDays: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const utc = Date.UTC(y!, m! - 1, d! + deltaDays);
+  return new Date(utc).toISOString().slice(0, 10);
+}
+
+function dateLabelJa(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return `${m}月${d}日`;
+}
+
+function toTradeRow(t: SolunaTradeRecord): SolunaOpsTradeRow {
+  return {
+    id: t.id,
+    createdAt: t.createdAt,
+    side: t.side,
+    product: t.product ?? "BTC_JPY",
+    sizeJpy: t.sizeJpy,
+    priceBtc: t.priceBtc,
+    realizedPnlJpy: t.realizedPnlJpy,
+    reason: t.reason,
+    briefingId: t.briefingId,
+  };
+}
+
+function summarizeDay(dateKey: string, trades: SolunaTradeRecord[]): SolunaOpsDaySummary {
+  const buyTrades = trades.filter((t) => t.side === "BUY");
+  const sellTrades = trades.filter((t) => t.side === "SELL");
+  const products = [...new Set(trades.map((t) => (t.product ?? "BTC_JPY").replace("_JPY", "")))];
+  return {
+    date: dateKey,
+    label: dateLabelJa(dateKey),
+    tradeCount: trades.length,
+    buyYen: buyTrades.reduce((s, t) => s + (t.sizeJpy ?? 0), 0),
+    sellYen: sellTrades.reduce((s, t) => s + (t.sizeJpy ?? 0), 0),
+    realizedPnlYen: sellTrades.reduce((s, t) => s + (t.realizedPnlJpy ?? 0), 0),
+    buyCount: buyTrades.length,
+    sellCount: sellTrades.length,
+    products,
+  };
+}
+
+function buildHourlyBuckets(
+  trades: SolunaTradeRecord[],
+  options: { fillAllHours: boolean },
+): SolunaOpsHourBucket[] {
+  const byHour = new Map<number, SolunaOpsHourBucket>();
+
+  const ensure = (hour: number): SolunaOpsHourBucket => {
+    let bucket = byHour.get(hour);
+    if (!bucket) {
+      bucket = {
+        hour,
+        label: `${String(hour).padStart(2, "0")}時`,
+        tradeCount: 0,
+        buyYen: 0,
+        sellYen: 0,
+        realizedPnlYen: 0,
+        actions: [],
+      };
+      byHour.set(hour, bucket);
+    }
+    return bucket;
+  };
+
+  if (options.fillAllHours) {
+    for (let h = 0; h < 24; h++) ensure(h);
+  }
+
+  const sorted = [...trades].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+
+  for (const t of sorted) {
+    const hour = jstHour(t.createdAt);
+    const bucket = ensure(hour);
+    bucket.tradeCount += 1;
+    if (t.side === "BUY") bucket.buyYen += t.sizeJpy ?? 0;
+    if (t.side === "SELL") {
+      bucket.sellYen += t.sizeJpy ?? 0;
+      bucket.realizedPnlYen += t.realizedPnlJpy ?? 0;
+    }
+    const time = new Date(t.createdAt).toLocaleTimeString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    bucket.actions.push({
+      time,
+      side: t.side,
+      product: (t.product ?? "BTC_JPY").replace("_JPY", ""),
+      sizeJpy: t.sizeJpy ?? 0,
+      reason: t.reason,
+    });
+  }
+
+  return [...byHour.values()].sort((a, b) => a.hour - b.hour);
 }
 
 export async function buildSolunaOpsAnalyticsReport(
@@ -29,7 +144,8 @@ export async function buildSolunaOpsAnalyticsReport(
     listSystemBoincRuns(90),
   ]);
 
-  const monthTrades = (assets?.trades ?? []).filter((t) => inMonth(t.createdAt, month));
+  const allTrades = assets?.trades ?? [];
+  const monthTrades = allTrades.filter((t) => inMonth(t.createdAt, month));
   const monthBuyYen = monthTrades
     .filter((t) => t.side === "BUY")
     .reduce((s, t) => s + (t.sizeJpy ?? 0), 0);
@@ -39,6 +155,11 @@ export async function buildSolunaOpsAnalyticsReport(
   const monthRealizedPnlYen = monthTrades
     .filter((t) => t.side === "SELL")
     .reduce((s, t) => s + (t.realizedPnlJpy ?? 0), 0);
+
+  const todayKey = jstDateKey(new Date());
+  const yesterdayKey = shiftJstDateKey(todayKey, -1);
+  const todayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === todayKey);
+  const yesterdayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === yesterdayKey);
 
   const btcPrice = assets?.btcPriceYen ?? 0;
   const ethPrice = assets?.ethPriceYen ?? 0;
@@ -97,21 +218,15 @@ export async function buildSolunaOpsAnalyticsReport(
           monthSellYen,
           monthTradeCount: monthTrades.length,
           monthRealizedPnlYen,
+          yesterday: summarizeDay(yesterdayKey, yesterdayTrades),
+          today: summarizeDay(todayKey, todayTrades),
+          todayHourly: buildHourlyBuckets(todayTrades, { fillAllHours: true }),
+          yesterdayHourly: buildHourlyBuckets(yesterdayTrades, { fillAllHours: false }),
           trades: monthTrades
             .slice()
             .reverse()
             .slice(0, 40)
-            .map((t) => ({
-              id: t.id,
-              createdAt: t.createdAt,
-              side: t.side,
-              product: t.product ?? "BTC_JPY",
-              sizeJpy: t.sizeJpy,
-              priceBtc: t.priceBtc,
-              realizedPnlJpy: t.realizedPnlJpy,
-              reason: t.reason,
-              briefingId: t.briefingId,
-            })),
+            .map(toTradeRow),
           monthlySummaries: (assets.monthlySummaries ?? []).slice(-12).map((m) => ({
             month: m.month,
             openingBalanceYen: m.openingBalanceYen,
