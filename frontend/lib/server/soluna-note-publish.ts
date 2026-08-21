@@ -99,8 +99,9 @@ async function loadEyecatchImageBuffer(): Promise<Buffer> {
  * note.com に画像をアップロードして uuid を返す。
  */
 async function uploadNoteImage(imageBuffer: Buffer, mimeType: string): Promise<string> {
-  const cookie = noteCookie();
-  if (!cookie) throw new Error("NOTE_COOKIE が未設定です。");
+  const cookieValue = noteCookie();
+  if (!cookieValue) throw new Error("NOTE_COOKIE が未設定です。");
+  const cookie: string = cookieValue;
 
   const boundary = `----NoteUpload${Date.now()}`;
   const body = Buffer.concat([
