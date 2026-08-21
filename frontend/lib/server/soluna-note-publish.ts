@@ -18,22 +18,78 @@ export function noteCreatorUrl(): string | undefined {
 
 type NoteApiJson = {
   data?: {
-    id?: number;
+    id?: number | string;
     key?: string;
     note_url?: string;
     noteUrl?: string;
     uuid?: string;
     url?: string;
+    note?: {
+      id?: number | string;
+      key?: string;
+    };
   };
-  error?: { message?: string };
+  error?: { message?: string; code?: string | number };
+  message?: string;
+  status?: number | string;
 };
 
-const EDITOR_HEADERS = {
+const EDITOR_HEADERS_BASE = {
   "Content-Type": "application/json",
   "X-Requested-With": "XMLHttpRequest",
   Origin: "https://editor.note.com",
   Referer: "https://editor.note.com/",
+  Accept: "application/json, text/plain, */*",
 };
+
+/** Cookie から XSRF トークンを拾う（あれば X-XSRF-TOKEN に載せる） */
+function extractXsrfToken(cookie: string): string | null {
+  const patterns = [
+    /(?:^|;\s*)XSRF-TOKEN=([^;]+)/i,
+    /(?:^|;\s*)_xsrf=([^;]+)/i,
+    /(?:^|;\s*)note_xsrf_token=([^;]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(cookie);
+    if (match?.[1]) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+  }
+  return null;
+}
+
+function editorHeaders(cookie: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...EDITOR_HEADERS_BASE,
+    Cookie: cookie,
+  };
+  const xsrf = extractXsrfToken(cookie);
+  if (xsrf) {
+    headers["X-XSRF-TOKEN"] = xsrf;
+  }
+  return headers;
+}
+
+function summarizeNotePayload(payload: NoteApiJson): string {
+  const dataKeys = payload.data ? Object.keys(payload.data).join(",") : "(no data)";
+  const err =
+    payload.error?.message ||
+    payload.message ||
+    (typeof payload.status !== "undefined" ? `status=${payload.status}` : "");
+  return `dataKeys=[${dataKeys}]${err ? ` err=${err}` : ""}`;
+}
+
+function readDraftIds(payload: NoteApiJson): { draftId: number; noteKey: string } | null {
+  const rawId = payload.data?.id ?? payload.data?.note?.id;
+  const noteKey = payload.data?.key ?? payload.data?.note?.key;
+  const draftId = typeof rawId === "string" ? Number(rawId) : rawId;
+  if (!draftId || !Number.isFinite(draftId) || !noteKey) return null;
+  return { draftId, noteKey };
+}
 
 async function noteFetch(path: string, init: RequestInit): Promise<NoteApiJson> {
   const cookie = noteCookie();
@@ -42,15 +98,24 @@ async function noteFetch(path: string, init: RequestInit): Promise<NoteApiJson> 
   const response = await fetch(`https://note.com/api${path}`, {
     ...init,
     headers: {
-      ...EDITOR_HEADERS,
-      Cookie: cookie,
+      ...editorHeaders(cookie),
       ...(init.headers ?? {}),
     },
   });
 
   const payload = (await response.json().catch(() => ({}))) as NoteApiJson;
   if (!response.ok) {
-    throw new Error(payload.error?.message ?? `note.com HTTP ${response.status}`);
+    const msg =
+      payload.error?.message ||
+      payload.message ||
+      `note.com HTTP ${response.status}`;
+    // 認証切れを分かりやすく
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `${msg}（NOTE_COOKIE の期限切れの可能性。ブラウザで再ログインし Cookie を更新してください）`,
+      );
+    }
+    throw new Error(`${msg}｜${summarizeNotePayload(payload)}`);
   }
   return payload;
 }
@@ -113,15 +178,11 @@ async function uploadNoteImage(imageBuffer: Buffer, mimeType: string): Promise<s
   ]);
 
   async function postTo(path: string): Promise<{ ok: boolean; status: number; payload: NoteApiJson }> {
+    const headers = editorHeaders(cookie);
+    headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
     const response = await fetch(`https://note.com/api${path}`, {
       method: "POST",
-      headers: {
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "X-Requested-With": "XMLHttpRequest",
-        Origin: "https://editor.note.com",
-        Referer: "https://editor.note.com/",
-        Cookie: cookie,
-      },
+      headers,
       body,
     });
     const payload = (await response.json().catch(() => ({}))) as NoteApiJson;
@@ -169,7 +230,6 @@ async function getEyecatchUuid(): Promise<string | null> {
 
 function eyecatchPayload(eyecatchUuid: string | null): Record<string, string> {
   if (!eyecatchUuid) return {};
-  // note 側のフィールド名ゆれに備えて両方送る
   return {
     eyecatch: eyecatchUuid,
     eyecatch_image_uuid: eyecatchUuid,
@@ -182,6 +242,8 @@ export async function publishNoteArticle(input: {
   paidHtml: string;
   priceYen: number;
 }): Promise<{ noteKey: string; noteUrl: string }> {
+  // 画像は作成後の draft_save / publish で付ける。
+  // 新規作成ペイロードに eyecatch を混ぜると id/key が返らない事例があるため分離する。
   const eyecatchUuid = await getEyecatchUuid();
 
   const created = await noteFetch("/v1/text_notes", {
@@ -192,17 +254,20 @@ export async function publishNoteArticle(input: {
       name: input.title,
       index: false,
       is_lead_form: false,
-      ...eyecatchPayload(eyecatchUuid),
     }),
   });
 
-  const draftId = created.data?.id;
-  const noteKey = created.data?.key;
-  if (!draftId || !noteKey) {
-    throw new Error("note の下書き ID を取得できませんでした。");
+  const ids = readDraftIds(created);
+  if (!ids) {
+    console.error(`[note-publish] create response unexpected: ${summarizeNotePayload(created)}`);
+    throw new Error(
+      `note の下書き ID を取得できませんでした。NOTE_COOKIE 期限切れか API 応答変化の可能性。${summarizeNotePayload(created)}`,
+    );
   }
 
+  const { draftId, noteKey } = ids;
   const combinedLength = input.freeHtml.length + input.paidHtml.length;
+
   await noteFetch(`/v1/text_notes/draft_save?id=${draftId}&is_temp_saved=true`, {
     method: "POST",
     body: JSON.stringify({
