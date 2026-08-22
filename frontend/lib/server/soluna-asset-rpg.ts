@@ -181,12 +181,6 @@ ${
 所持: ${assets.ethHeld.toFixed(4)} ETH`
       : `\n${RPG_ETH_NAME}: 未召喚（分散枠が空けば召喚候補）`;
 
-  const zpgHeld = assets.zpgHeld ?? 0;
-  const zpgBlock =
-    zpgHeld > 0
-      ? `\n🏅 ジパングの黄金札（ZPG）: ${zpgHeld.toFixed(4)} 枚（自動売買API非対応・残高監視）`
-      : `\n🏅 ジパング防衛枠: 現金袖として総魔力の約12%を温存（ZPG は Lightning 自動売買不可）`;
-
   const sleepLine = assets.sleepMode
     ? "🌙 月次利益が10%を超えたためおやすみモード（新規召喚停止・防衛専念）"
     : `討伐報酬ゴールド: ${gold.toLocaleString("ja-JP")} / 目標(2%) ${goldTarget.toLocaleString("ja-JP")}（おやすみは10%超）`;
@@ -196,12 +190,12 @@ ${
 
 現在のギルド総資産：${Math.round(assets.totalYen).toLocaleString("ja-JP")} MP（${dayChangeLabel}）
 ${RPG_MP_TANK}（元本）: ${Math.round(assets.principalYen).toLocaleString("ja-JP")} MP
-分散ルール: 現金下限28% / 単一銘柄上限42% / 暗号合計上限72%
+分散ルール: 現金下限28% / 単一銘柄上限42% / 暗号合計上限72%（BTC・ETH）
 ${sleepLine}
 
 ${btcBlock}
 
-${golemBlock}${ethBlock}${zpgBlock}
+${golemBlock}${ethBlock}
 
 ⚔️ ソル「${assets.solComment}」
 📖 ルーナの賢者投資メモ:

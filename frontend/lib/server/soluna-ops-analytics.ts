@@ -2,6 +2,7 @@
  * Soluna 資産運用・BOINC の運用分析レポート（コストダッシュボード用）
  */
 import { isBitFlyerEnabled } from "@/lib/server/soluna-asset-trade";
+import { buildSolunaNoteOpsReport } from "@/lib/server/soluna-note-stats";
 import {
   getSystemAssets,
   getSystemSettlement,
@@ -138,10 +139,11 @@ function buildHourlyBuckets(
 export async function buildSolunaOpsAnalyticsReport(
   month: string,
 ): Promise<SolunaOpsAnalyticsReport> {
-  const [assets, settlement, boincRuns] = await Promise.all([
+  const [assets, settlement, boincRuns, note] = await Promise.all([
     getSystemAssets(),
     getSystemSettlement(),
     listSystemBoincRuns(90),
+    buildSolunaNoteOpsReport(month),
   ]);
 
   const allTrades = assets?.trades ?? [];
@@ -163,13 +165,10 @@ export async function buildSolunaOpsAnalyticsReport(
 
   const btcPrice = assets?.btcPriceYen ?? 0;
   const ethPrice = assets?.ethPriceYen ?? 0;
-  const zpgPrice = assets?.zpgPriceYen ?? 0;
   const btcHeld = assets?.btcHeld ?? 0;
   const ethHeld = assets?.ethHeld ?? 0;
-  const zpgHeld = assets?.zpgHeld ?? 0;
   const btcValueYen = Math.round(btcHeld * btcPrice);
   const ethValueYen = Math.round(ethHeld * ethPrice);
-  const zpgValueYen = Math.round(zpgHeld * zpgPrice);
   const totalYen = assets?.totalYen ?? 0;
   const previousTotalYen = assets?.previousTotalYen ?? totalYen;
   const monthlyTarget = Math.max(1, assets?.monthlyTargetYen ?? 1);
@@ -189,7 +188,7 @@ export async function buildSolunaOpsAnalyticsReport(
     month,
     monthLabel: monthLabelJa(month),
     bitFlyerConfigured: isBitFlyerEnabled(),
-    updatedAt: assets?.updatedAt ?? settlement?.updatedAt ?? null,
+    updatedAt: assets?.updatedAt ?? settlement?.updatedAt ?? note.latestPublishedAt,
     assets: assets
       ? {
           status: assets.status,
@@ -200,13 +199,10 @@ export async function buildSolunaOpsAnalyticsReport(
           cashYen: assets.cashYen ?? 0,
           btcHeld,
           ethHeld,
-          zpgHeld,
           btcPriceYen: btcPrice,
           ethPriceYen: ethPrice,
-          zpgPriceYen: zpgPrice,
           btcValueYen,
           ethValueYen,
-          zpgValueYen,
           previousTotalYen,
           dayChangeYen: Math.round(totalYen - previousTotalYen),
           monthlyTargetYen: assets.monthlyTargetYen ?? 0,
@@ -238,6 +234,7 @@ export async function buildSolunaOpsAnalyticsReport(
           lunaComment: assets.lunaComment ?? "",
         }
       : null,
+    note,
     boinc: {
       monthRunCount: monthBoinc.length,
       monthPlannedMinutes: sumPlanned(monthBoinc),

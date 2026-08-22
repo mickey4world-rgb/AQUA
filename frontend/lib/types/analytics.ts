@@ -251,6 +251,38 @@ export interface SolunaOpsFacilityRow {
   builtAt: string;
 }
 
+export interface SolunaOpsNoteArticleRow {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  published: boolean;
+  noteKey: string | null;
+  noteUrl: string | null;
+  priceYen: number | null;
+  error: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+}
+
+export interface SolunaOpsNoteReport {
+  configured: boolean;
+  creatorUrl: string | null;
+  monthPublishCount: number;
+  monthDraftOrFailedCount: number;
+  monthPaidPublishCount: number;
+  latestPublishedAt: string | null;
+  latestTitle: string | null;
+  latestNoteUrl: string | null;
+  monthViewCount: number | null;
+  lifetimeViewCount: number | null;
+  paidSalesCount: number | null;
+  paidSalesNote: string;
+  pvError: string | null;
+  articles: SolunaOpsNoteArticleRow[];
+  topByViews: SolunaOpsNoteArticleRow[];
+}
+
 export interface SolunaOpsAnalyticsReport {
   month: string;
   monthLabel: string;
@@ -265,13 +297,10 @@ export interface SolunaOpsAnalyticsReport {
     cashYen: number;
     btcHeld: number;
     ethHeld: number;
-    zpgHeld: number;
     btcPriceYen: number;
     ethPriceYen: number;
-    zpgPriceYen: number;
     btcValueYen: number;
     ethValueYen: number;
-    zpgValueYen: number;
     previousTotalYen: number;
     dayChangeYen: number;
     monthlyTargetYen: number;
@@ -302,6 +331,7 @@ export interface SolunaOpsAnalyticsReport {
     solComment: string;
     lunaComment: string;
   } | null;
+  note: SolunaOpsNoteReport;
   boinc: {
     monthRunCount: number;
     monthPlannedMinutes: number;

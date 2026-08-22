@@ -194,6 +194,7 @@ function HourlyChart({
 
 export default function SolunaOpsAnalyticsPanels({ report }: Props) {
   const assets = report.assets;
+  const note = report.note;
   const boinc = report.boinc;
   const settlement = report.settlement;
 
@@ -204,10 +205,10 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           Soluna Ops
         </p>
         <h2 className="mt-2 text-xl font-bold text-white">
-          {report.monthLabel} · 資産運用と社会貢献
+          {report.monthLabel} · Note・資産運用・社会貢献
         </h2>
         <p className="mt-2 text-sm text-slate-400">
-          聖なる魔力タンクの運用と、BOINC 解析パワー（拠点都市）の実績です。
+          有料 Note の投稿状況、魔力タンクの運用、BOINC 解析パワー（拠点都市）の実績です。
           {report.updatedAt && (
             <span className="ml-2 text-slate-500">
               最終更新 {formatJst(report.updatedAt)}
@@ -219,8 +220,160 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           <span className={report.bitFlyerConfigured ? "text-emerald-300" : "text-amber-300"}>
             {report.bitFlyerConfigured ? "接続設定あり" : "未設定"}
           </span>
+          {" · "}
+          Note:{" "}
+          <span className={note?.configured ? "text-emerald-300" : "text-amber-300"}>
+            {note?.configured ? "Cookie 設定あり" : "未設定"}
+          </span>
         </p>
       </div>
+
+      {/* ── Note ── */}
+      {note && (
+        <section className={`${costsPanelClass} p-5`}>
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-fuchsia-300/80">Note</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">Note 投稿・アクセス</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              朝ブリーフィングの自動投稿実績と、note ダッシュボード相当の PV / スキです。
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat
+              label="今月の公開"
+              value={`${note.monthPublishCount} 本`}
+              hint={
+                note.monthPaidPublishCount > 0
+                  ? `有料 ${note.monthPaidPublishCount} · 失敗/未公開 ${note.monthDraftOrFailedCount}`
+                  : `失敗/未公開 ${note.monthDraftOrFailedCount}`
+              }
+            />
+            <Stat
+              label="直近公開"
+              value={note.latestPublishedAt ? formatJst(note.latestPublishedAt) : "—"}
+              hint={note.latestTitle ?? undefined}
+            />
+            <Stat
+              label="今月の PV"
+              value={note.monthViewCount != null ? note.monthViewCount.toLocaleString("ja-JP") : "—"}
+              hint={
+                note.lifetimeViewCount != null
+                  ? `累計 ${note.lifetimeViewCount.toLocaleString("ja-JP")}`
+                  : note.pvError ?? undefined
+              }
+            />
+            <Stat
+              label="有料利用"
+              value={note.paidSalesCount != null ? `${note.paidSalesCount} 件` : "未取得"}
+              hint={note.paidSalesNote}
+            />
+          </div>
+
+          {note.latestNoteUrl && (
+            <a
+              href={note.latestNoteUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-block text-[12px] text-fuchsia-200 underline"
+            >
+              直近の記事を開く
+            </a>
+          )}
+          {note.creatorUrl && (
+            <a
+              href={note.creatorUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 ml-3 inline-block text-[12px] text-slate-400 underline"
+            >
+              クリエイターページ
+            </a>
+          )}
+
+          {note.articles.length > 0 && (
+            <div className="mt-5">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                今月の投稿ログ（アプリ台帳）
+              </p>
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-left text-[12px]">
+                  <thead className="text-slate-500">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">日時</th>
+                      <th className="py-1.5 pr-3 font-medium">タイトル</th>
+                      <th className="py-1.5 pr-3 font-medium">状態</th>
+                      <th className="py-1.5 pr-3 font-medium">価格</th>
+                      <th className="py-1.5 pr-3 font-medium">PV</th>
+                      <th className="py-1.5 font-medium">スキ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-300">
+                    {note.articles.map((a) => (
+                      <tr key={a.id} className="border-t border-white/5">
+                        <td className="py-1.5 pr-3 whitespace-nowrap">
+                          {a.createdAt ? formatJst(a.createdAt) : "—"}
+                        </td>
+                        <td className="py-1.5 pr-3 max-w-[220px] truncate">
+                          {a.noteUrl ? (
+                            <a href={a.noteUrl} target="_blank" rel="noreferrer" className="text-fuchsia-200 underline">
+                              {a.title}
+                            </a>
+                          ) : (
+                            a.title
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          {a.published ? "公開" : a.error ? "失敗" : "未公開"}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          {a.priceYen != null && a.priceYen > 0 ? `${a.priceYen}円` : "無料"}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          {a.viewCount != null ? a.viewCount.toLocaleString("ja-JP") : "—"}
+                        </td>
+                        <td className="py-1.5">
+                          {a.likeCount != null ? a.likeCount.toLocaleString("ja-JP") : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {note.topByViews.length > 0 && (
+            <div className="mt-5">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                note 側 PV 上位（月間）
+              </p>
+              <ul className="mt-2 space-y-1.5 text-[12px] text-slate-300">
+                {note.topByViews.slice(0, 8).map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-white/5 bg-black/15 px-3 py-2"
+                  >
+                    <span className="truncate">
+                      {a.noteUrl ? (
+                        <a href={a.noteUrl} target="_blank" rel="noreferrer" className="text-fuchsia-200 underline">
+                          {a.title}
+                        </a>
+                      ) : (
+                        a.title
+                      )}
+                    </span>
+                    <span className="text-slate-400 whitespace-nowrap">
+                      PV {a.viewCount?.toLocaleString("ja-JP") ?? "—"}
+                      {a.likeCount != null && ` · スキ ${a.likeCount}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── 資産運用 ── */}
       <section className={`${costsPanelClass} p-5`}>
@@ -282,17 +435,9 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}（おやすみは10%超）`}
               />
               <Stat
-                label="ジパング枠"
-                value={
-                  assets.zpgHeld > 0
-                    ? `${assets.zpgHeld.toFixed(4)} ZPG`
-                    : "現金袖 ~12%"
-                }
-                hint={
-                  assets.zpgHeld > 0
-                    ? formatCurrency(assets.zpgValueYen)
-                    : "API非対応のため残高監視＋防衛現金"
-                }
+                label="現金比率目安"
+                value="下限 28%"
+                hint="単一42% / 暗号合計72%（BTC・ETH）"
               />
             </div>
 

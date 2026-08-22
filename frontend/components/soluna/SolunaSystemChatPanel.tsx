@@ -268,7 +268,9 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                   note.com で読む
                 </a>
               )}
-              {note.error && <p className="mt-2 text-[11px] text-amber-200/80">{note.error}</p>}
+              {note.error && !note.published && (
+                <p className="mt-2 text-[11px] text-amber-200/80">{note.error}</p>
+              )}
               <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">
                 {note.freeBody}
               </p>
@@ -347,9 +349,9 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
 
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
-          <p className="mt-1 text-[10px] text-slate-500">
-            1時間ごと · BTC/ETH をスコア比較して分散売買（現金下限・単一/合計上限あり）
-          </p>
+            <p className="mt-1 text-[10px] text-slate-500">
+              1時間ごと · BTC/ETH をスコア比較して分散売買（現金下限28%・単一/合計上限あり）
+            </p>
           {assets ? (
             <>
               {assets.battleMode === "attack" && (
@@ -397,14 +399,6 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                   <p className="text-[13px] text-slate-200">
                     Lv.{((((assets.ethHeld ?? 0) * (assets.ethPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
                     {(assets.ethHeld ?? 0).toFixed(4)} ETH
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400">🏅 ジパング防衛枠</p>
-                  <p className="text-[13px] text-slate-200">
-                    {(assets.zpgHeld ?? 0) > 0
-                      ? `${(assets.zpgHeld ?? 0).toFixed(4)} ZPG（監視）`
-                      : "現金袖 ~12%（自動売買API非対応）"}
                   </p>
                 </div>
               </div>

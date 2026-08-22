@@ -271,17 +271,25 @@ export async function saveSystemNoteArticle(article: SolunaNoteArticle): Promise
 }
 
 export async function getLatestNoteArticle(): Promise<SolunaNoteArticle | null> {
+  const articles = await listSystemNoteArticles(1);
+  return articles[0] ?? null;
+}
+
+export async function listSystemNoteArticles(limit = 60): Promise<SolunaNoteArticle[]> {
   const { resources } = await recordsContainer().items
     .query<StoredNote>({
       query:
-        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemNoteArticle' ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1",
-      parameters: [{ name: "@userId", value: SOLUNA_SYSTEM_USER_ID }],
+        "SELECT * FROM c WHERE c.userId = @userId AND c.docType = 'systemNoteArticle' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
+      parameters: [
+        { name: "@userId", value: SOLUNA_SYSTEM_USER_ID },
+        { name: "@limit", value: Math.max(1, Math.min(200, limit)) },
+      ],
     })
     .fetchAll();
-  const resource = resources[0];
-  if (!resource) return null;
-  const { userId: _userId, docType: _docType, ...article } = resource;
-  return article;
+  return resources.map((resource) => {
+    const { userId: _userId, docType: _docType, ...article } = resource;
+    return article;
+  });
 }
 
 export async function saveSystemBoincRun(run: SolunaBoincRun): Promise<void> {
