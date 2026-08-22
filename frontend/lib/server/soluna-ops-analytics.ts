@@ -12,9 +12,59 @@ import type {
   SolunaOpsAnalyticsReport,
   SolunaOpsDaySummary,
   SolunaOpsHourBucket,
+  SolunaOpsProductMonthStat,
   SolunaOpsTradeRow,
 } from "@/lib/types/analytics";
-import type { SolunaTradeRecord } from "@/lib/types/soluna";
+import type { SolunaTradeProduct, SolunaTradeRecord } from "@/lib/types/soluna";
+
+const PRODUCT_LABELS: Record<string, string> = {
+  BTC_JPY: "BTC",
+  ETH_JPY: "ETH",
+  XRP_JPY: "XRP",
+};
+
+async function fetchPublicLtp(product: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.bitflyer.com/v1/ticker?product_code=${product}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return 0;
+    const data = (await res.json()) as { ltp?: number };
+    return typeof data.ltp === "number" && data.ltp > 0 ? data.ltp : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function productKey(t: SolunaTradeRecord): string {
+  return t.product ?? "BTC_JPY";
+}
+
+function summarizeProductMonth(
+  monthTrades: SolunaTradeRecord[],
+  product: SolunaTradeProduct,
+  held: number,
+  priceYen: number,
+  totalYen: number,
+): SolunaOpsProductMonthStat {
+  const rows = monthTrades.filter((t) => productKey(t) === product);
+  const buys = rows.filter((t) => t.side === "BUY");
+  const sells = rows.filter((t) => t.side === "SELL");
+  const valueYen = Math.round(held * priceYen);
+  return {
+    product,
+    label: PRODUCT_LABELS[product] ?? product.replace("_JPY", ""),
+    buyYen: buys.reduce((s, t) => s + (t.sizeJpy ?? 0), 0),
+    sellYen: sells.reduce((s, t) => s + (t.sizeJpy ?? 0), 0),
+    buyCount: buys.length,
+    sellCount: sells.length,
+    realizedPnlYen: sells.reduce((s, t) => s + (t.realizedPnlJpy ?? 0), 0),
+    held,
+    valueYen,
+    priceYen,
+    allocationPct: totalYen > 0 ? Math.round((valueYen / totalYen) * 1000) / 10 : 0,
+  };
+}
 
 function monthLabelJa(month: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(month);
@@ -163,19 +213,34 @@ export async function buildSolunaOpsAnalyticsReport(
   const todayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === todayKey);
   const yesterdayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === yesterdayKey);
 
-  const btcPrice = assets?.btcPriceYen ?? 0;
-  const ethPrice = assets?.ethPriceYen ?? 0;
-  const xrpPrice = assets?.xrpPriceYen ?? 0;
+  // 台帳に XRP 価格がまだ無い場合でも公開板で補完し、配分を正しく出す
+  const [liveBtc, liveEth, liveXrp] = await Promise.all([
+    fetchPublicLtp("BTC_JPY"),
+    fetchPublicLtp("ETH_JPY"),
+    fetchPublicLtp("XRP_JPY"),
+  ]);
+  const btcPrice = (assets?.btcPriceYen && assets.btcPriceYen > 0 ? assets.btcPriceYen : liveBtc) || 0;
+  const ethPrice = (assets?.ethPriceYen && assets.ethPriceYen > 0 ? assets.ethPriceYen : liveEth) || 0;
+  const xrpPrice = (assets?.xrpPriceYen && assets.xrpPriceYen > 0 ? assets.xrpPriceYen : liveXrp) || 0;
   const btcHeld = assets?.btcHeld ?? 0;
   const ethHeld = assets?.ethHeld ?? 0;
   const xrpHeld = assets?.xrpHeld ?? 0;
+  const cashYen = assets?.cashYen ?? 0;
   const btcValueYen = Math.round(btcHeld * btcPrice);
   const ethValueYen = Math.round(ethHeld * ethPrice);
   const xrpValueYen = Math.round(xrpHeld * xrpPrice);
-  const totalYen = assets?.totalYen ?? 0;
+  const markedTotalYen = Math.round(cashYen + btcValueYen + ethValueYen + xrpValueYen);
+  const totalYen = markedTotalYen > 0 ? markedTotalYen : (assets?.totalYen ?? 0);
   const previousTotalYen = assets?.previousTotalYen ?? totalYen;
   const monthlyTarget = Math.max(1, assets?.monthlyTargetYen ?? 1);
   const monthlyPnl = assets?.monthlyRealizedPnlYen ?? 0;
+  const pct = (part: number) => (totalYen > 0 ? Math.round((part / totalYen) * 1000) / 10 : 0);
+
+  const byProduct: SolunaOpsProductMonthStat[] = [
+    summarizeProductMonth(monthTrades, "BTC_JPY", btcHeld, btcPrice, totalYen),
+    summarizeProductMonth(monthTrades, "ETH_JPY", ethHeld, ethPrice, totalYen),
+    summarizeProductMonth(monthTrades, "XRP_JPY", xrpHeld, xrpPrice, totalYen),
+  ];
 
   const monthBoinc = boincRuns.filter((r) => inMonth(r.createdAt, month));
   const sumPlanned = (runs: typeof boincRuns) =>
@@ -199,7 +264,7 @@ export async function buildSolunaOpsAnalyticsReport(
           battleMode: assets.battleMode ?? "defense",
           principalYen: assets.principalYen ?? 100_000,
           totalYen,
-          cashYen: assets.cashYen ?? 0,
+          cashYen,
           btcHeld,
           ethHeld,
           xrpHeld,
@@ -209,17 +274,24 @@ export async function buildSolunaOpsAnalyticsReport(
           btcValueYen,
           ethValueYen,
           xrpValueYen,
+          cashAllocationPct: pct(cashYen),
+          btcAllocationPct: pct(btcValueYen),
+          ethAllocationPct: pct(ethValueYen),
+          xrpAllocationPct: pct(xrpValueYen),
           previousTotalYen,
           dayChangeYen: Math.round(totalYen - previousTotalYen),
           monthlyTargetYen: assets.monthlyTargetYen ?? 0,
           monthlyRealizedPnlYen: monthlyPnl,
           targetProgressPct: Math.min(100, Math.round((monthlyPnl / monthlyTarget) * 100)),
-          golemLevel: (assets.cashYen ?? 0) / 10_000,
+          golemLevel: cashYen / 10_000,
           dragonLevel: btcValueYen / 10_000,
+          phoenixLevel: ethValueYen / 10_000,
+          seaDragonLevel: xrpValueYen / 10_000,
           monthBuyYen,
           monthSellYen,
           monthTradeCount: monthTrades.length,
           monthRealizedPnlYen,
+          byProduct,
           yesterday: summarizeDay(yesterdayKey, yesterdayTrades),
           today: summarizeDay(todayKey, todayTrades),
           todayHourly: buildHourlyBuckets(todayTrades, { fillAllHours: true }),
