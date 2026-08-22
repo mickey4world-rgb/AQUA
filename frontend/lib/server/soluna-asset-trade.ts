@@ -6,7 +6,7 @@
  *   2. 利確 / 損切りは市場モメンタムに応じて動的（硬い上限: +4% / -3%）
  *   3. 月次目標は月初残高×2%。おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: リアルタイム板・約定・スプレッドから利益見込みを見て売買
- *   5. 対象: BTC_JPY / ETH_JPY（Lightning）。ジパング(ZPG)は API 非対応のため残高監視＋防衛現金枠
+ *   5. 対象: BTC_JPY / ETH_JPY（Lightning Spot）。ジパング等 API 非対応銘柄は投資カテゴリ外
  *   6. 分散: 現金下限 / 単一銘柄上限 / 暗号合計上限
  */
 
@@ -38,14 +38,12 @@ const MAX_SPREAD_BPS = 12;
 const BULLISH_SCORE = 28;
 const STRONG_BULLISH_SCORE = 55;
 
-/** 総資産に対する現金の下限（ジパング防衛枠を含む） */
+/** 総資産に対する現金の下限 */
 const MIN_CASH_RATIO = 0.28;
 /** 1銘柄の時価上限 */
 const MAX_SINGLE_ASSET_RATIO = 0.42;
 /** 暗号資産合計の時価上限 */
 const MAX_CRYPTO_RATIO = 0.72;
-/** ジパング相当として温存する防衛現金（総資産比）。Lightning で ZPG が買えないため現金袖として確保 */
-const ZIPANGU_CASH_SLEEVE_RATIO = 0.12;
 
 export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY"] as const;
 export type TradeableProduct = (typeof TRADEABLE_PRODUCTS)[number];
@@ -464,13 +462,12 @@ function cryptoValueYen(
 ): number {
   return (
     assetValueYen(ledger, "BTC_JPY", prices.BTC_JPY) +
-    assetValueYen(ledger, "ETH_JPY", prices.ETH_JPY) +
-    Math.round((ledger.zpgHeld || 0) * (ledger.zpgPriceYen || 0))
+    assetValueYen(ledger, "ETH_JPY", prices.ETH_JPY)
   );
 }
 
 function cashFloorYen(totalYen: number): number {
-  return Math.round(totalYen * Math.max(MIN_CASH_RATIO, ZIPANGU_CASH_SLEEVE_RATIO));
+  return Math.round(totalYen * MIN_CASH_RATIO);
 }
 
 function maxBuyRoomYen(
@@ -604,7 +601,7 @@ function decideTrade(
   if (ledger.cashYen <= floor + 999) {
     return {
       action: "HOLD",
-      reason: `現金下限（防衛枠 ${(MIN_CASH_RATIO * 100).toFixed(0)}%＋ジパング袖）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+      reason: `現金下限（${(MIN_CASH_RATIO * 100).toFixed(0)}%）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
     };
   }
 
@@ -694,13 +691,10 @@ export async function runDailyAssetTrade(input: {
   const pulses = [btcPulse, ethPulse];
   const btcPrice = btcPulse.ltp;
   const ethPrice = ethPulse.ltp;
-  // ZPG は Lightning に無いため時価は 0（保有数量のみ台帳へ）
+  // ZPG は投資カテゴリ外・Lightning 自動売買不可のため総額に含めない
   const zpgPrice = 0;
   const totalYen = Math.round(
-    balance.cashYen +
-      balance.btcHeld * btcPrice +
-      balance.ethHeld * ethPrice +
-      balance.zpgHeld * zpgPrice,
+    balance.cashYen + balance.btcHeld * btcPrice + balance.ethHeld * ethPrice,
   );
 
   let ledger = input.ledger
@@ -790,27 +784,25 @@ export async function runDailyAssetTrade(input: {
   const updatedTotal = Math.round(
     updatedBalance.cashYen +
       updatedBalance.btcHeld * btcPrice +
-      updatedBalance.ethHeld * ethPrice +
-      updatedBalance.zpgHeld * zpgPrice,
+      updatedBalance.ethHeld * ethPrice,
   );
 
-  const sleeveYen = Math.round(updatedTotal * ZIPANGU_CASH_SLEEVE_RATIO);
   const buyAmount = decision.action === "BUY" ? decision.amountJpy : 0;
   const isTp = decision.action === "SELL" && decision.tradeReason === "take-profit";
   const productLabel =
     decision.action === "HOLD" ? "" : PRODUCT_META[decision.product].rpgName;
 
   const solComments: Record<string, string> = {
-    BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金下限とジパング防衛枠は死守するぜ！`,
+    BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`,
     SELL: `${isTp ? "利確ドロップ成功" : "損切りで盾構え"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
-    HOLD: `見送り。BTC/ETH を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}%＋ジパング袖 ${sleeveYen.toLocaleString()} を温存！`,
+    HOLD: `見送り。BTC/ETH を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
   };
   const lunaComments: Record<string, string> = {
     BUY: `単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% の上限内で入れたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
-    SELL: `${isTp ? "利益を確定" : "損失を限定"}。ジパングは Lightning API 対象外なので、防衛枠は現金で持つのよ。`,
+    SELL: `${isTp ? "利益を確定" : "損失を限定"}。次の召喚枠は BTC/ETH のスコア次第よ。`,
     HOLD: sleepMode
       ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
-      : `分散ルール的にも無理しない判断。ZPG は残高監視のみ（自動売買不可）。${decision.reason}`,
+      : `分散ルール的にも無理しない判断。${decision.reason}`,
   };
 
   const closingDayChange = updatedTotal - previousTotalYen;

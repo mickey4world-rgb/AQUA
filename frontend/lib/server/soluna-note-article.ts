@@ -138,8 +138,9 @@ export function toNoteHtml(text: string): NoteHtmlParts {
         if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
           return `<strong>${escaped}</strong>`;
         }
+        // URL は英数字・記号のみ。全角括弧や日本語まで href に食い込まない
         return escaped.replace(
-          /(https?:\/\/[^\s<]+)/g,
+          /(https?:\/\/[\w\-./?#&=%+:@~,;!*'()[\]]+)/gi,
           '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
         );
       })
@@ -268,7 +269,8 @@ export function composeDailyNote(input: {
 
   const title = `⚔️ ${input.battle.bossName}を追え｜${dateLabel}｜ソルとルーナの朝討伐`;
 
-  const disclaimer = `※このnoteはAIがニュースを討伐するゲームです。初めての方は【こちらの設定ページ】（${NOTE_SETTINGS_GUIDE_URL}）をご覧ください。`;
+  const disclaimer = `※このnoteはAIがニュースを討伐するゲームです。初めての方は設定ページをご覧ください。
+設定ページ: ${NOTE_SETTINGS_GUIDE_URL}`;
 
   const escapeHook = escaped
     ? `

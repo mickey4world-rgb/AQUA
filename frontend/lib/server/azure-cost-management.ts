@@ -22,6 +22,8 @@ const SERVICE_LABELS: Record<string, string> = {
   Bandwidth: "帯域幅",
   "Virtual Network": "Virtual Network",
   "Azure Cognitive Search": "Cognitive Search",
+  SaaS: "SaaS（Marketplace 課金）",
+  "Microsoft.SaaS": "SaaS（Marketplace 課金）",
 };
 
 type CostQueryRow = {

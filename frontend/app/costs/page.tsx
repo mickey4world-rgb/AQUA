@@ -200,7 +200,7 @@ export default function CostsPage() {
                 : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
-            Soluna 資産運用・BOINC
+            Soluna Note・資産・BOINC
           </button>
         </div>
 

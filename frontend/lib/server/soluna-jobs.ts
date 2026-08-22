@@ -51,13 +51,28 @@ function withBitFlyerFlag(
   };
 }
 
+/** 解消済みの Note 公開エラーを台帳から消す（UI に残さない） */
+async function sanitizeLatestNote(
+  note: Awaited<ReturnType<typeof getLatestNoteArticle>>,
+): Promise<typeof note> {
+  if (!note?.error) return note;
+  const stale =
+    note.error.includes("利用できない内容") ||
+    (note.published && Boolean(note.noteUrl));
+  if (!stale) return note;
+  const cleared = { ...note, error: undefined };
+  await saveSystemNoteArticle(cleared);
+  return cleared;
+}
+
 export async function buildJobsState(): Promise<SolunaJobsState> {
-  const [latestNote, latestBoinc, assets, settlement] = await Promise.all([
+  const [latestNoteRaw, latestBoinc, assets, settlement] = await Promise.all([
     getLatestNoteArticle(),
     getLatestBoincRun(),
     getSystemAssets(),
     getSystemSettlement(),
   ]);
+  const latestNote = await sanitizeLatestNote(latestNoteRaw);
   return withBitFlyerFlag({
     noteConfigured: isNotePublishConfigured(),
     creatorUrl: noteCreatorUrl(),
