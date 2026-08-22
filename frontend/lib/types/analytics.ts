@@ -297,10 +297,13 @@ export interface SolunaOpsAnalyticsReport {
     cashYen: number;
     btcHeld: number;
     ethHeld: number;
+    xrpHeld: number;
     btcPriceYen: number;
     ethPriceYen: number;
+    xrpPriceYen: number;
     btcValueYen: number;
     ethValueYen: number;
+    xrpValueYen: number;
     previousTotalYen: number;
     dayChangeYen: number;
     monthlyTargetYen: number;

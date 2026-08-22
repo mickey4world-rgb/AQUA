@@ -261,7 +261,7 @@ export interface SolunaSettlementState {
 }
 
 /** 資産運用での1回の取引記録 */
-export type SolunaTradeProduct = "BTC_JPY" | "ETH_JPY" | "ZPG_JPY";
+export type SolunaTradeProduct = "BTC_JPY" | "ETH_JPY" | "XRP_JPY" | "ZPG_JPY";
 
 export interface SolunaTradeRecord {
   id: string;
@@ -303,11 +303,13 @@ export interface SolunaAssetLedger {
   btcHeld: number;
   /** 現在の ETH 保有量（蒼穹の不死鳥） */
   ethHeld: number;
-  /** ジパングコイン(ZPG) 保有量 — Lightning 自動売買不可のため残高監視 */
+  /** 現在の XRP 保有量（銀濤の海竜） */
+  xrpHeld?: number;
+  /** ジパングコイン(ZPG) 保有量 — Lightning 自動売買不可のため投資カテゴリ外 */
   zpgHeld?: number;
   /** 現在の現金残高（円）＝黄金の守護巨兵の防衛魔力 */
   cashYen: number;
-  /** 総資産（現金 + BTC/ETH/ZPG 時価）＝総魔力 MP */
+  /** 総資産（現金 + BTC/ETH/XRP 時価）＝総魔力 MP */
   totalYen: number;
   /** 前回記録時の総資産（前日比用） */
   previousTotalYen: number;
@@ -319,6 +321,8 @@ export interface SolunaAssetLedger {
   btcPriceYen: number;
   /** 最新 ETH 価格 */
   ethPriceYen: number;
+  /** 最新 XRP 価格 */
+  xrpPriceYen?: number;
   /** ZPG 参考価格（Lightning 非対応時は 0） */
   zpgPriceYen?: number;
   /** 前日比に基づくバトルモード（翌日の会話用） */

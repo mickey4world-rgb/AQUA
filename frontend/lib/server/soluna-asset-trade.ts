@@ -6,7 +6,7 @@
  *   2. 利確 / 損切りは市場モメンタムに応じて動的（硬い上限: +4% / -3%）
  *   3. 月次目標は月初残高×2%。おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: リアルタイム板・約定・スプレッドから利益見込みを見て売買
- *   5. 対象: BTC_JPY / ETH_JPY（Lightning Spot）。ジパング等 API 非対応銘柄は投資カテゴリ外
+ *   5. 対象: BTC_JPY / ETH_JPY / XRP_JPY（Lightning Spot）。ジパング等 API 非対応銘柄は投資カテゴリ外
  *   6. 分散: 現金下限 / 単一銘柄上限 / 暗号合計上限
  */
 
@@ -45,12 +45,12 @@ const MAX_SINGLE_ASSET_RATIO = 0.42;
 /** 暗号資産合計の時価上限 */
 const MAX_CRYPTO_RATIO = 0.72;
 
-export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY"] as const;
+export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY", "XRP_JPY"] as const;
 export type TradeableProduct = (typeof TRADEABLE_PRODUCTS)[number];
 
 const PRODUCT_META: Record<
   TradeableProduct,
-  { currency: "BTC" | "ETH"; minSize: number; decimals: number; label: string; rpgName: string }
+  { currency: "BTC" | "ETH" | "XRP"; minSize: number; decimals: number; label: string; rpgName: string }
 > = {
   BTC_JPY: {
     currency: "BTC",
@@ -65,6 +65,13 @@ const PRODUCT_META: Record<
     decimals: 2,
     label: "ETH",
     rpgName: "蒼穹の不死鳥",
+  },
+  XRP_JPY: {
+    currency: "XRP",
+    minSize: 1,
+    decimals: 0,
+    label: "XRP",
+    rpgName: "銀濤の海竜",
   },
 };
 
@@ -229,8 +236,12 @@ export async function fetchMarketPulse(product: TradeableProduct): Promise<Marke
     score >= BULLISH_SCORE ? "bullish" : score <= -BULLISH_SCORE ? "bearish" : "neutral";
 
   const label = PRODUCT_META[product].label;
+  const priceLabel =
+    product === "XRP_JPY"
+      ? `${ticker.ltp.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}円`
+      : `${Math.round(ticker.ltp).toLocaleString()}円`;
   const summary = [
-    `${label} LTP ${Math.round(ticker.ltp).toLocaleString()}円`,
+    `${label} LTP ${priceLabel}`,
     `モメ ${momentumPct >= 0 ? "+" : ""}${(momentumPct * 100).toFixed(2)}%`,
     `買い圧 ${(buyPressure * 100).toFixed(0)}%`,
     `板偏り ${imbalance >= 0 ? "+" : ""}${(imbalance * 100).toFixed(0)}%`,
@@ -263,17 +274,20 @@ export async function getBitFlyerBalance(): Promise<{
   cashYen: number;
   btcHeld: number;
   ethHeld: number;
+  xrpHeld: number;
   zpgHeld: number;
 }> {
   const balances = await bitFlyerFetch<BfBalance[]>("GET", "/v1/me/getbalance");
   const jpy = balances.find((b) => b.currency_code === "JPY");
   const btc = balances.find((b) => b.currency_code === "BTC");
   const eth = balances.find((b) => b.currency_code === "ETH");
+  const xrp = balances.find((b) => b.currency_code === "XRP");
   const zpg = balances.find((b) => b.currency_code === "ZPG");
   return {
     cashYen: jpy?.available ?? 0,
     btcHeld: btc?.available ?? 0,
     ethHeld: eth?.available ?? 0,
+    xrpHeld: xrp?.available ?? 0,
     zpgHeld: zpg?.available ?? 0,
   };
 }
@@ -337,6 +351,7 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     sleepMode: false,
     btcHeld: 0,
     ethHeld: 0,
+    xrpHeld: 0,
     zpgHeld: 0,
     cashYen: ASSET_PRINCIPAL_YEN,
     totalYen: ASSET_PRINCIPAL_YEN,
@@ -345,13 +360,14 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     previousCashYen: ASSET_PRINCIPAL_YEN,
     btcPriceYen: 0,
     ethPriceYen: 0,
+    xrpPriceYen: 0,
     zpgPriceYen: 0,
     battleMode: "defense",
     trades: [],
     monthlySummaries: [],
     medalUnits,
     status: "waiting-spec",
-    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、蒼竜と不死鳥を召喚する！",
+    solComment: "聖なる魔力タンクへの充填を待っている。届き次第、蒼竜・不死鳥・海竜を召喚する！",
     lunaComment: "入金確認まで待機。分散ルールは決まった、あとは実行するだけ。",
     updatedAt: now,
   };
@@ -449,7 +465,9 @@ function averageBuyPrice(ledger: SolunaAssetLedger, product: SolunaTradeProduct)
 }
 
 function heldAmount(ledger: SolunaAssetLedger, product: TradeableProduct): number {
-  return product === "BTC_JPY" ? ledger.btcHeld : ledger.ethHeld;
+  if (product === "BTC_JPY") return ledger.btcHeld;
+  if (product === "ETH_JPY") return ledger.ethHeld ?? 0;
+  return ledger.xrpHeld ?? 0;
 }
 
 function assetValueYen(ledger: SolunaAssetLedger, product: TradeableProduct, price: number): number {
@@ -460,9 +478,9 @@ function cryptoValueYen(
   ledger: SolunaAssetLedger,
   prices: Record<TradeableProduct, number>,
 ): number {
-  return (
-    assetValueYen(ledger, "BTC_JPY", prices.BTC_JPY) +
-    assetValueYen(ledger, "ETH_JPY", prices.ETH_JPY)
+  return TRADEABLE_PRODUCTS.reduce(
+    (sum, product) => sum + assetValueYen(ledger, product, prices[product] ?? 0),
+    0,
   );
 }
 
@@ -540,7 +558,7 @@ function trySellDecision(
 }
 
 /**
- * BTC/ETH の市場パルスと分散上限から売買判断する
+ * BTC/ETH/XRP の市場パルスと分散上限から売買判断する
  */
 function decideTrade(
   ledger: SolunaAssetLedger,
@@ -678,23 +696,28 @@ export async function runDailyAssetTrade(input: {
       solComment:
         "聖なる魔力タンクの接続呪文がまだ届いていない。ギルド金庫の同期設定を待っている！",
       lunaComment:
-        "魔力タンクのAPI接続が未設定よ。設定が来たら BTC／ETH を分散して動くわ。取引所の名前は外に出さないこと。",
+        "魔力タンクのAPI接続が未設定よ。設定が来たら BTC／ETH／XRP を分散して動くわ。取引所の名前は外に出さないこと。",
       updatedAt: new Date().toISOString(),
     };
   }
 
-  const [balance, btcPulse, ethPulse] = await Promise.all([
+  const [balance, btcPulse, ethPulse, xrpPulse] = await Promise.all([
     getBitFlyerBalance(),
     fetchMarketPulse("BTC_JPY"),
     fetchMarketPulse("ETH_JPY"),
+    fetchMarketPulse("XRP_JPY"),
   ]);
-  const pulses = [btcPulse, ethPulse];
+  const pulses = [btcPulse, ethPulse, xrpPulse];
   const btcPrice = btcPulse.ltp;
   const ethPrice = ethPulse.ltp;
+  const xrpPrice = xrpPulse.ltp;
   // ZPG は投資カテゴリ外・Lightning 自動売買不可のため総額に含めない
   const zpgPrice = 0;
   const totalYen = Math.round(
-    balance.cashYen + balance.btcHeld * btcPrice + balance.ethHeld * ethPrice,
+    balance.cashYen +
+      balance.btcHeld * btcPrice +
+      balance.ethHeld * ethPrice +
+      balance.xrpHeld * xrpPrice,
   );
 
   let ledger = input.ledger
@@ -702,8 +725,10 @@ export async function runDailyAssetTrade(input: {
         ...buildInitialLedger(medalUnits),
         ...input.ledger,
         ethHeld: input.ledger.ethHeld ?? 0,
+        xrpHeld: input.ledger.xrpHeld ?? 0,
         zpgHeld: input.ledger.zpgHeld ?? 0,
         ethPriceYen: input.ledger.ethPriceYen ?? 0,
+        xrpPriceYen: input.ledger.xrpPriceYen ?? 0,
         zpgPriceYen: input.ledger.zpgPriceYen ?? 0,
         previousTotalYen: input.ledger.previousTotalYen ?? input.ledger.totalYen ?? ASSET_PRINCIPAL_YEN,
         previousBtcValueYen: input.ledger.previousBtcValueYen ?? 0,
@@ -723,6 +748,7 @@ export async function runDailyAssetTrade(input: {
     totalYen,
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
+    xrpPriceYen: xrpPrice,
     zpgPriceYen: zpgPrice,
     battleMode,
     ...balance,
@@ -784,7 +810,8 @@ export async function runDailyAssetTrade(input: {
   const updatedTotal = Math.round(
     updatedBalance.cashYen +
       updatedBalance.btcHeld * btcPrice +
-      updatedBalance.ethHeld * ethPrice,
+      updatedBalance.ethHeld * ethPrice +
+      updatedBalance.xrpHeld * xrpPrice,
   );
 
   const buyAmount = decision.action === "BUY" ? decision.amountJpy : 0;
@@ -795,11 +822,11 @@ export async function runDailyAssetTrade(input: {
   const solComments: Record<string, string> = {
     BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`,
     SELL: `${isTp ? "利確ドロップ成功" : "損切りで盾構え"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
-    HOLD: `見送り。BTC/ETH を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
+    HOLD: `見送り。BTC/ETH/XRP を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
   };
   const lunaComments: Record<string, string> = {
     BUY: `単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% の上限内で入れたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
-    SELL: `${isTp ? "利益を確定" : "損失を限定"}。次の召喚枠は BTC/ETH のスコア次第よ。`,
+    SELL: `${isTp ? "利益を確定" : "損失を限定"}。次の召喚枠は BTC/ETH/XRP のスコア次第よ。`,
     HOLD: sleepMode
       ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
       : `分散ルール的にも無理しない判断。${decision.reason}`,
@@ -813,9 +840,11 @@ export async function runDailyAssetTrade(input: {
     cashYen: updatedBalance.cashYen,
     btcHeld: updatedBalance.btcHeld,
     ethHeld: updatedBalance.ethHeld,
+    xrpHeld: updatedBalance.xrpHeld,
     zpgHeld: updatedBalance.zpgHeld,
     btcPriceYen: btcPrice,
     ethPriceYen: ethPrice,
+    xrpPriceYen: xrpPrice,
     zpgPriceYen: zpgPrice,
     previousTotalYen,
     previousBtcValueYen,

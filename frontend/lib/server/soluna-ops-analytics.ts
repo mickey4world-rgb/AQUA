@@ -165,10 +165,13 @@ export async function buildSolunaOpsAnalyticsReport(
 
   const btcPrice = assets?.btcPriceYen ?? 0;
   const ethPrice = assets?.ethPriceYen ?? 0;
+  const xrpPrice = assets?.xrpPriceYen ?? 0;
   const btcHeld = assets?.btcHeld ?? 0;
   const ethHeld = assets?.ethHeld ?? 0;
+  const xrpHeld = assets?.xrpHeld ?? 0;
   const btcValueYen = Math.round(btcHeld * btcPrice);
   const ethValueYen = Math.round(ethHeld * ethPrice);
+  const xrpValueYen = Math.round(xrpHeld * xrpPrice);
   const totalYen = assets?.totalYen ?? 0;
   const previousTotalYen = assets?.previousTotalYen ?? totalYen;
   const monthlyTarget = Math.max(1, assets?.monthlyTargetYen ?? 1);
@@ -199,10 +202,13 @@ export async function buildSolunaOpsAnalyticsReport(
           cashYen: assets.cashYen ?? 0,
           btcHeld,
           ethHeld,
+          xrpHeld,
           btcPriceYen: btcPrice,
           ethPriceYen: ethPrice,
+          xrpPriceYen: xrpPrice,
           btcValueYen,
           ethValueYen,
+          xrpValueYen,
           previousTotalYen,
           dayChangeYen: Math.round(totalYen - previousTotalYen),
           monthlyTargetYen: assets.monthlyTargetYen ?? 0,
