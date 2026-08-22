@@ -283,6 +283,20 @@ export interface SolunaOpsNoteReport {
   topByViews: SolunaOpsNoteArticleRow[];
 }
 
+export interface SolunaOpsProductMonthStat {
+  product: string;
+  label: string;
+  buyYen: number;
+  sellYen: number;
+  buyCount: number;
+  sellCount: number;
+  realizedPnlYen: number;
+  held: number;
+  valueYen: number;
+  priceYen: number;
+  allocationPct: number;
+}
+
 export interface SolunaOpsAnalyticsReport {
   month: string;
   monthLabel: string;
@@ -304,6 +318,10 @@ export interface SolunaOpsAnalyticsReport {
     btcValueYen: number;
     ethValueYen: number;
     xrpValueYen: number;
+    cashAllocationPct: number;
+    btcAllocationPct: number;
+    ethAllocationPct: number;
+    xrpAllocationPct: number;
     previousTotalYen: number;
     dayChangeYen: number;
     monthlyTargetYen: number;
@@ -311,10 +329,13 @@ export interface SolunaOpsAnalyticsReport {
     targetProgressPct: number;
     golemLevel: number;
     dragonLevel: number;
+    phoenixLevel: number;
+    seaDragonLevel: number;
     monthBuyYen: number;
     monthSellYen: number;
     monthTradeCount: number;
     monthRealizedPnlYen: number;
+    byProduct: SolunaOpsProductMonthStat[];
     /** 前日（JST）の約定サマリー */
     yesterday: SolunaOpsDaySummary;
     /** 今日（JST）の約定サマリー */
