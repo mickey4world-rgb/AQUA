@@ -3,6 +3,8 @@
  * note に公式公開 API はないため、ブラウザと同じ内部 API を Cookie で叩く。
  * Cookie は環境変数のみ。ログに出さない。
  */
+import { noteVisibleLength } from "@/lib/server/soluna-note-article";
+
 function noteCookie(): string | null {
   return process.env.NOTE_COOKIE?.trim() || process.env.NOTE_SESSION_COOKIE?.trim() || null;
 }
@@ -241,10 +243,24 @@ export async function publishNoteArticle(input: {
   freeHtml: string;
   paidHtml: string;
   priceYen: number;
+  /** free_body 末尾ブロック id（有料境界） */
+  separator?: string | null;
+  hashtags?: string[];
+  imageKeys?: string[];
 }): Promise<{ noteKey: string; noteUrl: string }> {
   // 画像は作成後の draft_save / publish で付ける。
   // 新規作成ペイロードに eyecatch を混ぜると id/key が返らない事例があるため分離する。
   const eyecatchUuid = await getEyecatchUuid();
+
+  // 最終ガード: 外部ドメイン img が残っていたら公開前に落とす
+  const freeHtml = stripExternalImages(input.freeHtml);
+  const paidHtml = stripExternalImages(input.paidHtml);
+  const combinedLength = noteVisibleLength(freeHtml, paidHtml);
+  const hashtags = (input.hashtags ?? [])
+    .map((t) => t.replace(/^#/, "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+  const imageKeys = input.imageKeys?.filter(Boolean) ?? [];
 
   const created = await noteFetch("/v1/text_notes", {
     method: "POST",
@@ -266,13 +282,12 @@ export async function publishNoteArticle(input: {
   }
 
   const { draftId, noteKey } = ids;
-  const combinedLength = input.freeHtml.length + input.paidHtml.length;
 
   await noteFetch(`/v1/text_notes/draft_save?id=${draftId}&is_temp_saved=true`, {
     method: "POST",
     body: JSON.stringify({
       name: input.title,
-      body: `${input.freeHtml}${input.paidHtml}`,
+      body: `${freeHtml}${paidHtml}`,
       body_length: combinedLength,
       index: false,
       is_lead_form: false,
@@ -280,17 +295,33 @@ export async function publishNoteArticle(input: {
     }),
   });
 
+  const publishBody: Record<string, unknown> = {
+    name: input.title,
+    free_body: freeHtml,
+    pay_body: paidHtml,
+    body_length: combinedLength,
+    status: "published",
+    price: input.priceYen,
+    // null を入れると 500 になることがあるため空オブジェクトを送る
+    lead_form: { is_active: false, consent_url: "" },
+    line_add_friend: { is_active: false, keyword: "", add_friend_url: "" },
+    ...eyecatchPayload(eyecatchUuid),
+  };
+  if (input.separator) {
+    publishBody.separator = input.separator;
+  }
+  if (hashtags.length > 0) {
+    publishBody.hashtags = hashtags;
+    publishBody.hashtag_notes_attributes = hashtags.map((name) => ({ name }));
+  }
+  // 空配列は note 側で落ちる事例があるため、キーがあるときだけ送る
+  if (imageKeys.length > 0) {
+    publishBody.image_keys = imageKeys;
+  }
+
   const published = await noteFetch(`/v1/text_notes/${draftId}`, {
     method: "PUT",
-    body: JSON.stringify({
-      name: input.title,
-      free_body: input.freeHtml,
-      pay_body: input.paidHtml,
-      body_length: combinedLength,
-      status: "published",
-      price: input.priceYen,
-      ...eyecatchPayload(eyecatchUuid),
-    }),
+    body: JSON.stringify(publishBody),
   });
 
   const url =
@@ -299,4 +330,22 @@ export async function publishNoteArticle(input: {
     `https://note.com/n/${noteKey}`;
 
   return { noteKey, noteUrl: url };
+}
+
+/** note 公開時に拒否される外部 img を除去する最終ガード */
+function stripExternalImages(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /src=["']([^"']+)["']/i.exec(tag)?.[1] ?? "";
+    if (!src) return "";
+    try {
+      const host = new URL(src).hostname;
+      if (host === "assets.st-note.com" || host.endsWith(".st-note.com")) {
+        return tag;
+      }
+    } catch {
+      return "";
+    }
+    console.warn(`[note-publish] 外部画像を本文から除去: ${src.slice(0, 120)}`);
+    return "";
+  });
 }

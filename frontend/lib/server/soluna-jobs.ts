@@ -160,6 +160,9 @@ export async function runDailyAutonomousJobs(options?: {
         freeHtml: composed.freeHtml,
         paidHtml: composed.paidHtml,
         priceYen: composed.priceYen,
+        separator: composed.freeLastBlockId,
+        hashtags: composed.hashtags,
+        imageKeys: composed.imageKeys,
       });
       article = {
         ...article,

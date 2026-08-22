@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type {
   SolunaAssetLedger,
   SolunaBattleResult,
@@ -17,7 +18,13 @@ import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 export const NOTE_SETTINGS_GUIDE_URL =
   "https://note.com/aqua_studio/n/nf8c11722537c";
 
-const CHAR_IMAGE_URL = "https://www.aquacore.net/soluna/characters.png";
+/** 既定ハッシュタグ（SWA の NOTE_HASHTAGS で上書き可。カンマ区切り） */
+export const DEFAULT_NOTE_HASHTAGS = [
+  "ソルとルーナ",
+  "AIニュース",
+  "ニュース解説",
+  "朝活",
+];
 
 function jstDateLabel(date = new Date()): string {
   return date.toLocaleDateString("ja-JP", {
@@ -40,59 +47,131 @@ const SOL_LABEL = "⚔️ ソル（勇者）";
 const LUNA_LABEL = "📖 ルーナ（賢者）";
 const CHARACTER_LABELS = [SOL_LABEL, LUNA_LABEL];
 
-function toNoteHtml(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .map((block) => {
-      const lines = block.split("\n").map((line) => line.trimEnd());
-      const first = lines[0]?.trim() ?? "";
+/** note CDN 配下のみ本文画像として許可（外部直リンクは公開時に拒否される） */
+function isNoteHostedImageUrl(src: string): boolean {
+  try {
+    const host = new URL(src).hostname;
+    return host === "assets.st-note.com" || host.endsWith(".st-note.com");
+  } catch {
+    return false;
+  }
+}
 
-      if (first.startsWith("## ")) {
-        const heading = `<h2>${escapeHtml(first.slice(3).trim())}</h2>`;
-        const rest = lines.slice(1).join("\n").trim();
-        return rest ? `${heading}${toNoteHtml(rest)}` : heading;
+function noteBlock(tag: "p" | "h2" | "ul", inner: string): { html: string; id: string } {
+  const id = randomUUID();
+  return { id, html: `<${tag} name="${id}" id="${id}">${inner}</${tag}>` };
+}
+
+export type NoteHtmlParts = {
+  html: string;
+  /** free_body 末尾ブロック id（有料境界 separator に使う） */
+  lastBlockId: string | null;
+  imageKeys: string[];
+};
+
+/**
+ * Note エディタ互換 HTML。
+ * - 各ブロックに UUID (name/id)
+ * - 外部ドメインの img は落とす（公開 422「利用できない内容」の主因）
+ */
+export function toNoteHtml(text: string): NoteHtmlParts {
+  const imageKeys: string[] = [];
+  let lastBlockId: string | null = null;
+  const chunks: string[] = [];
+
+  const push = (part: { html: string; id: string }) => {
+    chunks.push(part.html);
+    lastBlockId = part.id;
+  };
+
+  for (const block of text.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean)) {
+    const lines = block.split("\n").map((line) => line.trimEnd());
+    const first = lines[0]?.trim() ?? "";
+
+    if (first.startsWith("## ")) {
+      push(noteBlock("h2", escapeHtml(first.slice(3).trim())));
+      const rest = lines.slice(1).join("\n").trim();
+      if (rest) {
+        const nested = toNoteHtml(rest);
+        chunks.push(nested.html);
+        imageKeys.push(...nested.imageKeys);
+        if (nested.lastBlockId) lastBlockId = nested.lastBlockId;
       }
+      continue;
+    }
 
-      const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(first);
-      if (imageMatch && lines.filter(Boolean).length === 1) {
-        const alt = escapeHtml(imageMatch[1] || "image");
-        const src = escapeHtml(imageMatch[2]);
-        return `<p><img src="${src}" alt="${alt}"></p>`;
+    const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(first);
+    if (imageMatch && lines.filter(Boolean).length === 1) {
+      const alt = escapeHtml(imageMatch[1] || "image");
+      const src = imageMatch[2].trim();
+      if (!isNoteHostedImageUrl(src)) {
+        // aquacore 等の外部 URL は公開拒否されるためスキップ（見出し画像は eyecatch で別途）
+        continue;
       }
+      const safeSrc = escapeHtml(src);
+      push(noteBlock("p", `<img src="${safeSrc}" alt="${alt}">`));
+      const keyMatch = /\/([a-f0-9-]{8,})\./i.exec(src) ?? /images\/([^/?#]+)/i.exec(src);
+      if (keyMatch?.[1]) imageKeys.push(keyMatch[1]);
+      continue;
+    }
 
-      const nonEmpty = lines.filter((line) => line.trim());
-      const bulletLines = nonEmpty.filter((line) => /^[・\-*]\s+/.test(line.trim()));
-      if (bulletLines.length >= 2 && bulletLines.length === nonEmpty.length) {
-        const items = bulletLines
-          .map((line) => {
-            const body = line.trim().replace(/^[・\-*]\s+/, "");
-            return `<li>${escapeHtml(body)}</li>`;
-          })
-          .join("");
-        return `<ul>${items}</ul>`;
-      }
-
-      const htmlLines = lines
+    const nonEmpty = lines.filter((line) => line.trim());
+    const bulletLines = nonEmpty.filter((line) => /^[・\-*]\s+/.test(line.trim()));
+    if (bulletLines.length >= 2 && bulletLines.length === nonEmpty.length) {
+      const items = bulletLines
         .map((line) => {
-          const trimmed = line.trim();
-          if (/^[・\-*]\s+/.test(trimmed)) {
-            return `・${escapeHtml(trimmed.replace(/^[・\-*]\s+/, ""))}`;
-          }
-          const escaped = escapeHtml(line);
-          if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
-            return `<strong>${escaped}</strong>`;
-          }
-          return escaped.replace(
-            /(https?:\/\/[^\s<]+)/g,
-            '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
-          );
+          const body = line.trim().replace(/^[・\-*]\s+/, "");
+          return `<li>${escapeHtml(body)}</li>`;
         })
-        .join("<br>");
-      return `<p>${htmlLines}</p>`;
-    })
-    .join("");
+        .join("");
+      push(noteBlock("ul", items));
+      continue;
+    }
+
+    const htmlLines = lines
+      .map((line) => {
+        const trimmed = line.trim();
+        if (/^[・\-*]\s+/.test(trimmed)) {
+          return `・${escapeHtml(trimmed.replace(/^[・\-*]\s+/, ""))}`;
+        }
+        const escaped = escapeHtml(line);
+        if (CHARACTER_LABELS.some((label) => line.startsWith(label))) {
+          return `<strong>${escaped}</strong>`;
+        }
+        return escaped.replace(
+          /(https?:\/\/[^\s<]+)/g,
+          '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+        );
+      })
+      .join("<br>");
+    push(noteBlock("p", htmlLines));
+  }
+
+  return { html: chunks.join(""), lastBlockId, imageKeys };
+}
+
+export function noteHashtags(): string[] {
+  const raw = process.env.NOTE_HASHTAGS?.trim();
+  const source = raw
+    ? raw.split(/[,、]+/).map((t) => t.trim())
+    : DEFAULT_NOTE_HASHTAGS;
+  return source
+    .map((t) => t.replace(/^#/, "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+/** note の body_length は HTML タグ除去後の可視文字数 */
+export function noteVisibleLength(...htmlParts: string[]): number {
+  return htmlParts
+    .join("")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .length;
 }
 
 function dialogueLines(messages: SolunaSystemMessage[]): string {
@@ -154,6 +233,9 @@ export function composeDailyNote(input: {
   paidBody: string;
   freeHtml: string;
   paidHtml: string;
+  freeLastBlockId: string | null;
+  imageKeys: string[];
+  hashtags: string[];
   priceYen: number;
 } {
   const dateLabel = jstDateLabel(new Date(input.battle.createdAt));
@@ -214,9 +296,9 @@ export function composeDailyNote(input: {
 
   const adventureLog = formatAdventureLogForNote(input.battle);
 
+  // キャラ画像は見出し（eyecatch）のみ。本文へ aquacore 直リンクを置くと
+  // note 公開時に「本文に利用できない内容が含まれています」で拒否される。
   const freeBody = `${disclaimer}
-
-![ソルとルーナ](${CHAR_IMAGE_URL})
 
 ${SOL_LABEL} ／ ${LUNA_LABEL}
 今日もニュースをモンスターに変えて、2人が世界を旅しながら討伐に挑みます。
@@ -319,12 +401,18 @@ ${guildFinance}
 
 毎日自動で、ここまでをお届けします。明日もまた、ニュースをモンスターに変えて討伐に出かけます。`;
 
+  const freeParts = toNoteHtml(freeBody);
+  const paidParts = toNoteHtml(paidBody);
+
   return {
     title,
     freeBody,
     paidBody,
-    freeHtml: toNoteHtml(freeBody),
-    paidHtml: toNoteHtml(paidBody),
+    freeHtml: freeParts.html,
+    paidHtml: paidParts.html,
+    freeLastBlockId: freeParts.lastBlockId,
+    imageKeys: [...freeParts.imageKeys, ...paidParts.imageKeys],
+    hashtags: noteHashtags(),
     priceYen: notePriceYen(),
   };
 }
