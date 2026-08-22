@@ -44,6 +44,8 @@ GitHub Actions: **`Soluna System Briefing`**
 - 無料: ニュース要約・冒険日誌ダイジェスト・掛け合い前半＋引き  
 - 有料: 白熱会話、バトル結果、**🏡 拠点都市開拓日誌**、ギルド財務（RPG）  
 - 環境: `NOTE_COOKIE` / `NOTE_CREATOR_URLNAME` / `NOTE_PRICE_YEN` / `NOTE_EYECATCH_UUID`（SWA）
+- **本文に外部画像 URL（aquacore 直リンク等）を入れない**。キャラ画像は見出し（eyecatch）のみ。外部 img は note 公開時に「本文に利用できない内容が含まれています」で拒否される
+- ハッシュタグ: 既定 `ソルとルーナ, AIニュース, ニュース解説, 朝活`。SWA `NOTE_HASHTAGS`（カンマ区切り）で上書き可
 
 ## 4. 拠点都市（街づくり）＝ BOINC 社会貢献の物語化
 
