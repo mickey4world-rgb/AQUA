@@ -426,6 +426,11 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 value={`${assets.ethHeld.toFixed(4)} ETH`}
                 hint={formatCurrency(assets.ethValueYen)}
               />
+              <Stat
+                label="XRP（海竜）"
+                value={`${Math.floor(assets.xrpHeld).toLocaleString("ja-JP")} XRP`}
+                hint={formatCurrency(assets.xrpValueYen)}
+              />
             </div>
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -437,7 +442,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               <Stat
                 label="現金比率目安"
                 value="下限 28%"
-                hint="単一42% / 暗号合計72%（BTC・ETH）"
+                hint="単一42% / 暗号合計72%（BTC・ETH・XRP）"
               />
             </div>
 
@@ -489,9 +494,10 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               />
             </div>
 
-            {(assets.btcPriceYen > 0 || assets.ethPriceYen > 0) && (
+            {(assets.btcPriceYen > 0 || assets.ethPriceYen > 0 || assets.xrpPriceYen > 0) && (
               <div className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
-                BTC {formatCurrency(assets.btcPriceYen)} · ETH {formatCurrency(assets.ethPriceYen)}
+                BTC {formatCurrency(assets.btcPriceYen)} · ETH {formatCurrency(assets.ethPriceYen)} ·
+                XRP {assets.xrpPriceYen.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}円
                 {" · "}分散: 現金下限28% / 単一42% / 暗号合計72%
                 {" · "}元本 {formatCurrency(assets.principalYen)}
               </div>

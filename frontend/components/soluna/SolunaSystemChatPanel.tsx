@@ -350,7 +350,7 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
         <article className="rounded-xl border border-white/10 bg-black/20 p-3">
           <p className="text-[11px] font-medium text-cyan-100">③ 資産運用 · 召喚獣育成</p>
             <p className="mt-1 text-[10px] text-slate-500">
-              1時間ごと · BTC/ETH をスコア比較して分散売買（現金下限28%・単一/合計上限あり）
+              1時間ごと · BTC/ETH/XRP をスコア比較して分散売買（現金下限28%・単一/合計上限あり）
             </p>
           {assets ? (
             <>
@@ -399,6 +399,13 @@ function JobsDesk({ jobs }: { jobs: SolunaJobsState }) {
                   <p className="text-[13px] text-slate-200">
                     Lv.{((((assets.ethHeld ?? 0) * (assets.ethPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
                     {(assets.ethHeld ?? 0).toFixed(4)} ETH
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">🌊 銀濤の海竜</p>
+                  <p className="text-[13px] text-slate-200">
+                    Lv.{((((assets.xrpHeld ?? 0) * (assets.xrpPriceYen || 0)) / 10000) || 0).toFixed(1)} ·{" "}
+                    {Math.floor(assets.xrpHeld ?? 0).toLocaleString("ja-JP")} XRP
                   </p>
                 </div>
               </div>
