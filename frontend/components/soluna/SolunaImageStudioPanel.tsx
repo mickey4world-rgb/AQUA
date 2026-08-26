@@ -5,6 +5,8 @@ import type {
   SolunaImageAsset,
   SolunaImageGenerateResponse,
   SolunaImageListResponse,
+  SolunaImageModelId,
+  SolunaImageModelOption,
 } from "@/lib/types/soluna-image";
 
 type StudioMessage = {
@@ -20,6 +22,15 @@ const STARTERS = [
   "雨上がりの虹の下、2人のちびアイコン風ポートレート",
 ];
 
+const FALLBACK_MODELS: SolunaImageModelOption[] = [
+  { id: "flux", label: "Flux", description: "高品質・画風寄せ向き（推奨）", styleFriendly: true },
+  { id: "turbo", label: "Turbo", description: "高速・軽め" },
+  { id: "sana", label: "Sana", description: "軽量・安定" },
+  { id: "gptimage", label: "GPT Image", description: "イラスト寄りの表現", styleFriendly: true },
+  { id: "zimage", label: "Z-Image", description: "速い 6B 系" },
+  { id: "klein", label: "Klein", description: "高速・コンパクト" },
+];
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -29,26 +40,67 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function extFromMime(mime: string): string {
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  if (mime.includes("gif")) return "gif";
+  return "jpg";
+}
+
+async function downloadImage(url: string, filename: string) {
+  if (url.startsWith("data:")) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("ダウンロードに失敗しました");
+  const blob = await res.blob();
+  const obj = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = obj;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(obj);
+}
+
+function safeFilename(title: string, mime: string): string {
+  const base = title.replace(/[\\/:*?"<>|]+/g, "_").trim().slice(0, 40) || "soluna";
+  return `${base}.${extFromMime(mime)}`;
+}
+
 export default function SolunaImageStudioPanel() {
   const [images, setImages] = useState<SolunaImageAsset[]>([]);
   const [meta, setMeta] = useState<Pick<
     SolunaImageListResponse,
-    "baseImageUrl" | "generateConfigured" | "generateProvider" | "maxImages"
+    "baseImageUrl" | "generateConfigured" | "generateProvider" | "maxImages" | "models" | "defaultModel"
   > | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState<SolunaImageModelId>("flux");
+  const [matchBaseStyle, setMatchBaseStyle] = useState(true);
   const [messages, setMessages] = useState<StudioMessage[]>([
     {
       id: "welcome",
       role: "system",
       content:
-        "ソル＆ルーナのベース立ち絵を参考に、無料の画像生成が使えます。プロンプトを送るか、画像をアップロードしてください。",
+        "ソル＆ルーナのベース立ち絵を参考に、無料の画像生成が使えます。「ベース画風に合わせる」をONにすると公式ちび画風に寄せます。モデル切替とダウンロードもできます。",
     },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const models = meta?.models?.length ? meta.models : FALLBACK_MODELS;
 
   const loadImages = useCallback(async () => {
     setLoading(true);
@@ -66,6 +118,8 @@ export default function SolunaImageStudioPanel() {
         generateConfigured: data.generateConfigured,
         generateProvider: data.generateProvider,
         maxImages: data.maxImages,
+        models: data.models ?? FALLBACK_MODELS,
+        defaultModel: data.defaultModel ?? "flux",
       });
     } catch {
       setError("通信エラーが発生しました");
@@ -90,14 +144,18 @@ export default function SolunaImageStudioPanel() {
     setPrompt("");
     setMessages((prev) => [
       ...prev,
-      { id: `u-${Date.now()}`, role: "user", content: trimmed },
+      {
+        id: `u-${Date.now()}`,
+        role: "user",
+        content: `${trimmed}\n（${models.find((m) => m.id === model)?.label ?? model}${matchBaseStyle ? " · ベース画風" : ""}）`,
+      },
     ]);
 
     try {
       const res = await fetch("/api/soluna/images/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed }),
+        body: JSON.stringify({ prompt: trimmed, model, matchBaseStyle }),
       });
       const data = (await res.json()) as SolunaImageGenerateResponse & { error?: string };
       if (!res.ok) {
@@ -195,6 +253,14 @@ export default function SolunaImageStudioPanel() {
     }
   }
 
+  async function handleDownload(img: Pick<SolunaImageAsset, "imageUrl" | "title" | "mimeType">) {
+    try {
+      await downloadImage(img.imageUrl, safeFilename(img.title, img.mimeType || "image/jpeg"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ダウンロードに失敗しました");
+    }
+  }
+
   return (
     <div className="relative flex min-h-[34rem] flex-col gap-4">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(34,211,238,0.1),transparent_45%),radial-gradient(ellipse_at_80%_10%,rgba(167,139,250,0.12),transparent_42%)]" />
@@ -212,7 +278,37 @@ export default function SolunaImageStudioPanel() {
         {/* チャット生成 */}
         <div className="flex min-h-[28rem] flex-col rounded-2xl border border-white/10 bg-black/20 p-4">
           <p className="text-[11px] font-medium text-cyan-100">生成チャット</p>
-          <div className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: "22rem" }}>
+
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="flex min-w-[10rem] flex-1 flex-col gap-1">
+              <span className="text-[10px] text-slate-400">モデル</span>
+              <select
+                value={model}
+                disabled={busy}
+                onChange={(e) => setModel(e.target.value as SolunaImageModelId)}
+                className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[13px] text-white disabled:opacity-50"
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                    {m.styleFriendly ? " ★" : ""} — {m.description}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-slate-200">
+              <input
+                type="checkbox"
+                checked={matchBaseStyle}
+                disabled={busy}
+                onChange={(e) => setMatchBaseStyle(e.target.checked)}
+                className="accent-cyan-400"
+              />
+              ベース画風に合わせる
+            </label>
+          </div>
+
+          <div className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: "20rem" }}>
             {messages.map((m) => (
               <div
                 key={m.id}
@@ -230,12 +326,27 @@ export default function SolunaImageStudioPanel() {
                 {m.role === "luna" && <p className="mb-1 text-[10px] text-indigo-200/80">📖 ルーナ</p>}
                 <p className="whitespace-pre-wrap">{m.content}</p>
                 {m.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.imageUrl}
-                    alt="generated"
-                    className="mt-2 max-h-56 w-auto rounded-lg border border-white/10"
-                  />
+                  <div className="mt-2 space-y-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={m.imageUrl}
+                      alt="generated"
+                      className="max-h-56 w-auto rounded-lg border border-white/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleDownload({
+                          imageUrl: m.imageUrl!,
+                          title: `soluna-${m.id}`,
+                          mimeType: "image/jpeg",
+                        })
+                      }
+                      className="text-[11px] text-cyan-200/90 underline"
+                    >
+                      ダウンロード
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -341,20 +452,29 @@ export default function SolunaImageStudioPanel() {
                       {img.source === "base"
                         ? "ベース（削除不可）"
                         : img.source === "generate"
-                          ? "生成"
+                          ? `生成${img.model ? ` · ${img.model}` : ""}`
                           : "アップロード"}
                       {img.byteSize > 0 ? ` · ${Math.round(img.byteSize / 1024)}KB` : ""}
                     </p>
-                    {!img.locked && img.source !== "base" && (
+                    <div className="flex flex-wrap gap-2 pt-0.5">
                       <button
                         type="button"
-                        disabled={busy}
-                        onClick={() => void handleDelete(img.id)}
-                        className="text-[11px] text-rose-200/90 underline disabled:opacity-50"
+                        onClick={() => void handleDownload(img)}
+                        className="text-[11px] text-cyan-200/90 underline"
                       >
-                        削除
+                        DL
                       </button>
-                    )}
+                      {!img.locked && img.source !== "base" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void handleDelete(img.id)}
+                          className="text-[11px] text-rose-200/90 underline disabled:opacity-50"
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </li>
               ))}

@@ -7,7 +7,11 @@ import {
 
 export const maxDuration = 120;
 
-type Body = { prompt?: string };
+type Body = {
+  prompt?: string;
+  model?: string;
+  matchBaseStyle?: boolean;
+};
 
 export async function POST(request: Request) {
   return withApiAccessLog(request, async (auth) => {
@@ -24,13 +28,17 @@ export async function POST(request: Request) {
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    const prompt = sanitizeText((raw as Body).prompt ?? "", 800);
+    const body = raw as Body;
+    const prompt = sanitizeText(body.prompt ?? "", 800);
     if (!prompt) {
       return Response.json({ error: "プロンプトを入力してください" }, { status: 400 });
     }
 
     try {
-      const result = await generateSolunaImage(auth.userId, prompt);
+      const result = await generateSolunaImage(auth.userId, prompt, {
+        model: body.model,
+        matchBaseStyle: body.matchBaseStyle !== false,
+      });
       return Response.json(result);
     } catch (err) {
       return Response.json(

@@ -9,6 +9,8 @@ import { sanitizeText } from "@/lib/server/security";
 import type {
   SolunaImageAsset,
   SolunaImageGenerateResponse,
+  SolunaImageModelId,
+  SolunaImageModelOption,
   SolunaImageSource,
 } from "@/lib/types/soluna-image";
 
@@ -17,6 +19,56 @@ const MAX_BYTES = 900_000; // Cosmos ドキュメント余裕を見て約 900KB
 const DOC_TYPE = "solunaImage";
 
 export const SOLUNA_BASE_IMAGE_PATH = "/soluna/characters-base.jpg";
+
+/** 無料 Pollinations で実測応答したモデル */
+export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
+  {
+    id: "flux",
+    label: "Flux",
+    description: "高品質・画風寄せ向き（推奨）",
+    styleFriendly: true,
+  },
+  {
+    id: "turbo",
+    label: "Turbo",
+    description: "高速・軽め",
+  },
+  {
+    id: "sana",
+    label: "Sana",
+    description: "軽量・安定",
+  },
+  {
+    id: "gptimage",
+    label: "GPT Image",
+    description: "イラスト寄りの表現",
+    styleFriendly: true,
+  },
+  {
+    id: "zimage",
+    label: "Z-Image",
+    description: "速い 6B 系",
+  },
+  {
+    id: "klein",
+    label: "Klein",
+    description: "高速・コンパクト",
+  },
+];
+
+export const DEFAULT_SOLUNA_IMAGE_MODEL: SolunaImageModelId = "flux";
+
+/** ベース立ち絵と同じちび画風に寄せる固定スタイル文（英語） */
+export const SOLUNA_BASE_STYLE_LOCK = [
+  "exact same art style as official Soluna base character icons",
+  "polished chibi anime game avatar illustration",
+  "circular gold ornate frame portrait",
+  "Sol: young boy, spiky brown hair, cheerful wink, bright blue eye, blue-white tunic with brown leather straps, dark cloak, large sword on back, translucent glowing blue crystal shield",
+  "Luna: young girl, long wavy purple hair, soft brown eyes, purple-gold robe with white capelet, golden star headpiece with chains, tall wooden staff with glowing blue diamond crystal, ornate purple-gold book",
+  "soft fairy-tale castle bokeh background, sparkles and star light particles",
+  "clean lineart, vibrant colors, cute rounded proportions, high quality digital illustration",
+  "NOT photorealistic, NOT 3D render, NOT western cartoon, NOT different character designs",
+].join(", ");
 
 type StoredImage = SolunaImageAsset & { docType: typeof DOC_TYPE };
 
@@ -35,6 +87,14 @@ export function publicBaseImageUrl(): string {
     "https://www.aquacore.net"
   ).replace(/\/$/, "");
   return `${origin}${SOLUNA_BASE_IMAGE_PATH}`;
+}
+
+export function resolveImageModel(raw: unknown): SolunaImageModelId {
+  const id = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (SOLUNA_IMAGE_MODELS.some((m) => m.id === id)) {
+    return id as SolunaImageModelId;
+  }
+  return DEFAULT_SOLUNA_IMAGE_MODEL;
 }
 
 function baseAsset(userId: string): SolunaImageAsset {
@@ -98,6 +158,7 @@ export async function saveSolunaImage(input: {
   prompt?: string;
   source: Exclude<SolunaImageSource, "base">;
   dataUrl: string;
+  model?: string;
 }): Promise<SolunaImageAsset> {
   const count = await countUserImages(input.userId);
   if (count >= MAX_IMAGES) {
@@ -115,6 +176,7 @@ export async function saveSolunaImage(input: {
     imageUrl: input.dataUrl,
     mimeType,
     byteSize,
+    model: input.model,
     locked: false,
     createdAt: now,
     updatedAt: now,
@@ -145,34 +207,46 @@ export async function deleteSolunaImage(userId: string, id: string): Promise<voi
   await container().item(id, userId).delete();
 }
 
-async function enhancePromptWithGemini(userPrompt: string): Promise<{
+async function enhancePromptWithGemini(
+  userPrompt: string,
+  matchBaseStyle: boolean,
+): Promise<{
   enhancedPrompt: string;
   solComment: string;
   lunaComment: string;
 }> {
+  const stylePrefix = matchBaseStyle ? `${SOLUNA_BASE_STYLE_LOCK}, scene: ` : "";
   const fallback = {
-    enhancedPrompt: [
-      "chibi anime character illustration of Sol and Luna",
-      "Sol: spiky brown hair, blue eye wink, blue crystal shield, sword on back, golden circular frame",
-      "Luna: long purple wavy hair, purple robe, golden star headpiece, staff with blue crystal, ornate book",
-      "fantasy castle soft bokeh background, sparkles, polished game icon style",
-      userPrompt,
-    ].join(", "),
-    solComment: "よし、この雰囲気で描いてみようぜ！",
-    lunaComment: "ベースの立ち絵を崩さないよう、色と輪郭は揃えてね。",
+    enhancedPrompt: `${stylePrefix}${userPrompt}`.slice(0, 1400),
+    solComment: matchBaseStyle
+      ? "ベースと同じ画風でいくぜ！"
+      : "よし、この雰囲気で描いてみようぜ！",
+    lunaComment: matchBaseStyle
+      ? "立ち絵の色と輪郭は崩さないでね。"
+      : "構図と光は丁寧に合わせてね。",
   };
 
   if (!isGeminiConfigured()) return fallback;
 
   try {
+    const styleRule = matchBaseStyle
+      ? `必須: 公式ベース立ち絵と同一のちびアイコン画風を厳守。円形金枠、ソル（茶髪・青結晶盾・剣）とルーナ（紫髪・星杖・本）のデザインを変えない。`
+      : `キャラ指定があれば尊重し、綺麗なイラストにすること。`;
     const result = await generateWithGemini({
       system: `あなたはソルーナの画像プロンプト編集者です。ユーザー要望を、英語の画像生成プロンプト1行に圧縮してください。
-必ずソル（少年勇者・茶髪・青の結晶盾）とルーナ（紫髪の賢者・星の杖と本）の公式ちび立ち絵スタイルを保つこと。
+${styleRule}
 JSONのみ返す:
 {"enhancedPrompt":"...","solComment":"日本語20字以内","lunaComment":"日本語20字以内"}`,
-      messages: [{ role: "user", content: userPrompt }],
-      maxOutputTokens: 400,
-      temperature: 0.6,
+      messages: [
+        {
+          role: "user",
+          content: matchBaseStyle
+            ? `Style lock (keep verbatim fragments):\n${SOLUNA_BASE_STYLE_LOCK}\n\nUser request:\n${userPrompt}`
+            : userPrompt,
+        },
+      ],
+      maxOutputTokens: 450,
+      temperature: 0.45,
       responseMimeType: "application/json",
     });
     if (!result.ok) return fallback;
@@ -182,8 +256,13 @@ JSONのみ返す:
       lunaComment?: string;
     };
     if (!parsed.enhancedPrompt?.trim()) return fallback;
+    const enhanced = parsed.enhancedPrompt.trim();
+    const withLock =
+      matchBaseStyle && !enhanced.toLowerCase().includes("soluna base")
+        ? `${SOLUNA_BASE_STYLE_LOCK}, ${enhanced}`
+        : enhanced;
     return {
-      enhancedPrompt: parsed.enhancedPrompt.trim().slice(0, 1200),
+      enhancedPrompt: withLock.slice(0, 1400),
       solComment: (parsed.solComment || fallback.solComment).slice(0, 80),
       lunaComment: (parsed.lunaComment || fallback.lunaComment).slice(0, 80),
     };
@@ -192,10 +271,19 @@ JSONのみ返す:
   }
 }
 
-async function generateWithPollinations(prompt: string): Promise<{ dataUrl: string; mimeType: string }> {
-  const url =
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
-    `?width=1024&height=1024&nologo=true&model=flux&enhance=true&seed=${Date.now() % 1_000_000}`;
+async function generateWithPollinations(
+  prompt: string,
+  model: SolunaImageModelId,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  const params = new URLSearchParams({
+    width: "1024",
+    height: "1024",
+    nologo: "true",
+    model,
+    enhance: model === "flux" || model === "gptimage" ? "true" : "false",
+    seed: String(Date.now() % 1_000_000),
+  });
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
@@ -206,7 +294,7 @@ async function generateWithPollinations(prompt: string): Promise<{ dataUrl: stri
       cache: "no-store",
     });
     if (!res.ok) {
-      throw new Error(`無料画像API HTTP ${res.status}`);
+      throw new Error(`無料画像API HTTP ${res.status}（model=${model}）`);
     }
     const contentType = res.headers.get("content-type") || "image/jpeg";
     if (!contentType.startsWith("image/")) {
@@ -214,7 +302,6 @@ async function generateWithPollinations(prompt: string): Promise<{ dataUrl: stri
     }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.byteLength < 1000) throw new Error("生成画像が空です");
-    // 大きすぎる場合は保存前に JPEG として扱う（そのまま base64）
     if (buf.byteLength > MAX_BYTES) {
       throw new Error("生成画像が大きすぎます。プロンプトを短くしてもう一度試してください。");
     }
@@ -232,26 +319,33 @@ async function generateWithPollinations(prompt: string): Promise<{ dataUrl: stri
 export async function generateSolunaImage(
   userId: string,
   rawPrompt: string,
+  options?: { model?: unknown; matchBaseStyle?: boolean },
 ): Promise<SolunaImageGenerateResponse> {
   const userPrompt = sanitizeText(rawPrompt, 800);
   if (!userPrompt) throw new Error("プロンプトを入力してください");
 
-  const enhanced = await enhancePromptWithGemini(userPrompt);
-  const { dataUrl } = await generateWithPollinations(enhanced.enhancedPrompt);
+  const model = resolveImageModel(options?.model);
+  const matchBaseStyle = options?.matchBaseStyle !== false;
+
+  const enhanced = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
+  const { dataUrl } = await generateWithPollinations(enhanced.enhancedPrompt, model);
   const image = await saveSolunaImage({
     userId,
     title: userPrompt.slice(0, 40),
     prompt: enhanced.enhancedPrompt,
     source: "generate",
     dataUrl,
+    model,
   });
 
+  const modelLabel = SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.label ?? model;
   return {
     image,
     solComment: enhanced.solComment,
     lunaComment: enhanced.lunaComment,
     enhancedPrompt: enhanced.enhancedPrompt,
-    provider: "pollinations(flux)+gemini-prompt",
+    provider: `pollinations(${modelLabel})+gemini-prompt`,
+    model,
   };
 }
 
@@ -259,7 +353,9 @@ export function imageStudioMeta() {
   return {
     baseImageUrl: SOLUNA_BASE_IMAGE_PATH,
     generateConfigured: true,
-    generateProvider: "Pollinations Flux（無料）+ Gemini プロンプト整形",
+    generateProvider: "Pollinations（無料）+ Gemini プロンプト整形",
     maxImages: MAX_IMAGES,
+    models: SOLUNA_IMAGE_MODELS,
+    defaultModel: DEFAULT_SOLUNA_IMAGE_MODEL,
   };
 }
