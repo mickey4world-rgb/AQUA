@@ -5,6 +5,7 @@ import SolunaCharacterAvatar, {
   type SolunaAvatarMood,
 } from "@/components/soluna/SolunaCharacterAvatar";
 import SolunaCharacterCard from "@/components/soluna/SolunaCharacterCard";
+import SolunaImageStudioPanel from "@/components/soluna/SolunaImageStudioPanel";
 import SolunaSystemChatPanel from "@/components/soluna/SolunaSystemChatPanel";
 import { useSolunaVoice } from "@/lib/soluna-voice";
 import { getLatestExchange } from "@/lib/soluna-utils";
@@ -75,7 +76,7 @@ export default function SolunaPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showShortcut, setShowShortcut] = useState(false);
-  const [chatMode, setChatMode] = useState<"human" | "system">("human");
+  const [chatMode, setChatMode] = useState<"human" | "system" | "image">("human");
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatSeqRef = useRef(0);
   const loadSeqRef = useRef(0);
@@ -445,12 +446,25 @@ export default function SolunaPanel() {
           >
             ニュース討伐（全員共通）
           </button>
+          <button
+            type="button"
+            onClick={() => setChatMode("image")}
+            className={`rounded-full px-4 py-1.5 text-[11px] font-medium transition ${
+              chatMode === "image"
+                ? "bg-cyan-400/25 text-cyan-100 border border-cyan-300/30"
+                : "border border-white/10 text-slate-300 hover:bg-white/5"
+            }`}
+          >
+            画像生成
+          </button>
         </div>
 
         {chatMode === "system" ? (
           <NewsBattleErrorBoundary>
             <SolunaSystemChatPanel embedded />
           </NewsBattleErrorBoundary>
+        ) : chatMode === "image" ? (
+          <SolunaImageStudioPanel />
         ) : (
           <>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_0%,rgba(251,191,36,0.12),transparent_45%),radial-gradient(ellipse_at_90%_10%,rgba(129,140,248,0.12),transparent_42%)]" />

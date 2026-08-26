@@ -20,6 +20,7 @@ export default function SolunaPage() {
             <span className="text-amber-100/90"> ソル（太陽）</span> と
             <span className="text-indigo-100/90"> ルーナ（月）</span> が、あなたの言葉にそれぞれ答えます。
             毎朝の最新ニュースはモンスターになって現れ、2人の議論で討伐します。
+            画像生成タブではベース立ち絵を参考に、無料枠で画像を作って保管できます。
           </p>
         </div>
 
