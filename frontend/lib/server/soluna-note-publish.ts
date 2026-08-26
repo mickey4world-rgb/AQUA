@@ -135,30 +135,44 @@ function publicSiteOrigin(): string {
  * SWA API では public/ がディスクに無いことが多いので、公開 URL からの取得を優先する。
  */
 async function loadEyecatchImageBuffer(): Promise<Buffer> {
-  const remoteUrl = `${publicSiteOrigin()}/soluna/characters.png`;
-  try {
-    const response = await fetch(remoteUrl, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    if (arrayBuffer.byteLength < 1000) {
-      throw new Error("画像サイズが小さすぎます");
-    }
-    return Buffer.from(arrayBuffer);
-  } catch (remoteErr) {
-    const remoteMsg = remoteErr instanceof Error ? remoteErr.message : String(remoteErr);
+  const origin = publicSiteOrigin();
+  const candidates = [
+    `${origin}/soluna/characters-base.jpg`,
+    `${origin}/soluna/characters.jpg`,
+    `${origin}/soluna/characters.png`,
+  ];
+  let lastRemote = "unknown";
+  for (const remoteUrl of candidates) {
     try {
-      const { readFile } = await import("fs/promises");
-      const { join } = await import("path");
-      const imagePath = join(process.cwd(), "public", "soluna", "characters.png");
-      return await readFile(imagePath);
-    } catch (localErr) {
-      const localMsg = localErr instanceof Error ? localErr.message : String(localErr);
-      throw new Error(
-        `ヘッダー画像を取得できません（remote: ${remoteMsg} / local: ${localMsg}）`,
-      );
+      const response = await fetch(remoteUrl, { cache: "no-store" });
+      if (!response.ok) {
+        lastRemote = `HTTP ${response.status} (${remoteUrl})`;
+        continue;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      if (arrayBuffer.byteLength < 1000) {
+        lastRemote = "画像サイズが小さすぎます";
+        continue;
+      }
+      return Buffer.from(arrayBuffer);
+    } catch (remoteErr) {
+      lastRemote = remoteErr instanceof Error ? remoteErr.message : String(remoteErr);
     }
+  }
+  try {
+    const { readFile } = await import("fs/promises");
+    const { join } = await import("path");
+    for (const name of ["characters-base.jpg", "characters.jpg", "characters.png"]) {
+      try {
+        return await readFile(join(process.cwd(), "public", "soluna", name));
+      } catch {
+        /* try next */
+      }
+    }
+    throw new Error("local files missing");
+  } catch (localErr) {
+    const localMsg = localErr instanceof Error ? localErr.message : String(localErr);
+    throw new Error(`ヘッダー画像を取得できません（remote: ${lastRemote} / local: ${localMsg}）`);
   }
 }
 
@@ -169,11 +183,12 @@ async function uploadNoteImage(imageBuffer: Buffer, mimeType: string): Promise<s
   const cookieValue = noteCookie();
   if (!cookieValue) throw new Error("NOTE_COOKIE が未設定です。");
   const cookie: string = cookieValue;
+  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
 
   const boundary = `----NoteUpload${Date.now()}`;
   const body = Buffer.concat([
     Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="characters.png"\r\nContent-Type: ${mimeType}\r\n\r\n`,
+      `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="characters.${ext}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
     ),
     imageBuffer,
     Buffer.from(`\r\n--${boundary}--\r\n`),
@@ -217,7 +232,9 @@ async function getEyecatchUuid(): Promise<string | null> {
 
   try {
     const imageBuffer = await loadEyecatchImageBuffer();
-    const uuid = await uploadNoteImage(imageBuffer, "image/png");
+    const isJpeg = imageBuffer[0] === 0xff && imageBuffer[1] === 0xd8;
+    const mimeType = isJpeg ? "image/jpeg" : "image/png";
+    const uuid = await uploadNoteImage(imageBuffer, mimeType);
     console.log(`[note-publish] 画像アップロード完了。uuid=${uuid}`);
     console.log(
       `[note-publish] SWA 環境変数 NOTE_EYECATCH_UUID=${uuid} を設定すると次回から再アップロードをスキップできます。`,

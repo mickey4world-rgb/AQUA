@@ -10,6 +10,13 @@
 |------|------|
 | あなたと会話 | ソル／ルーナの個人チャット。失敗時はモデル即フェイルオーバー |
 | ニュース討伐（全員共通） | 毎朝のニュース→モンスター討伐ログ、仕事デスク（Note / 街づくり / 資産） |
+| 画像生成 | ベース立ち絵（`/soluna/characters-base.jpg`）を参考に無料生成・アップロード・削除 |
+
+### 画像スタジオ
+
+- 生成: Gemini でプロンプト整形（任意）→ **Pollinations Flux（無料）** で画像化 → Cosmos に data URL 保管
+- 上限: ユーザーあたり 24 枚・1枚約 900KB まで。ベース立ち絵は削除不可
+- API: `GET/POST /api/soluna/images` · `DELETE /api/soluna/images/[id]` · `POST /api/soluna/images/generate`
 
 ## 2. 朝の自律パイプライン
 
