@@ -22,7 +22,11 @@ export async function GET(request: Request) {
     const month = parseMonth(new URL(request.url).searchParams.get("month"));
     try {
       const report = await buildSolunaOpsAnalyticsReport(month);
-      return Response.json(report);
+      return Response.json(report, {
+        headers: {
+          "Cache-Control": "private, max-age=180, stale-while-revalidate=600",
+        },
+      });
     } catch (error) {
       console.error("[api/costs/soluna-ops]", error);
       return Response.json(

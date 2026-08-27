@@ -207,7 +207,7 @@ function maxCostForMode(costMode: SolunaCostMode): ModelCostClass {
     case "normal":
       return "premium";
     case "economy":
-      return "high";
+      return "medium";
     case "minimal":
       return "low";
   }
@@ -290,10 +290,15 @@ export function costBiasForProvider(
   provider: SolunaProvider,
   costMode: SolunaCostMode,
 ): number {
-  if (costMode === "normal") return 0;
-  if (provider === "gemini") return costMode === "minimal" ? 4 : 2;
-  if (provider === "openai") return costMode === "minimal" ? -2 : -1;
-  if (provider === "claude") return costMode === "minimal" ? -3 : -1;
+  // normal でも無料 Gemini をわずかに優遇（同点付近の有料偏りを緩和）
+  if (costMode === "normal") {
+    if (provider === "gemini") return 1;
+    if (provider === "claude") return -0.5;
+    return 0;
+  }
+  if (provider === "gemini") return costMode === "minimal" ? 6 : 3;
+  if (provider === "openai") return costMode === "minimal" ? -3 : -1.5;
+  if (provider === "claude") return costMode === "minimal" ? -4 : -2;
   return 0;
 }
 

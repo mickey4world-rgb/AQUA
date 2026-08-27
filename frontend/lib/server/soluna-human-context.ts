@@ -207,25 +207,34 @@ ${featureLines.length ? featureLines.join("\n") : "- （トークン集計なし
 export async function buildHumanChatBriefingSection(
   briefing: SolunaNewsBriefing | null,
   userMessage?: string,
-  options?: { userId?: string },
+  options?: { userId?: string; detail?: "compact" | "full" },
 ): Promise<string> {
   const blocks: string[] = [];
   const todayKey = jstDateString();
   const todayBriefingId = briefingDocIdForDate();
+  const detail =
+    options?.detail ??
+    (userMessage &&
+    /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|状況|今日の|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成/i.test(
+      userMessage,
+    )
+      ? "full"
+      : "compact");
 
-  if (briefing) {
+  // compact: トークン節約のためニュース全文は載せない（状況質問時のみ full）
+  if (detail === "full" && briefing) {
     blocks.push(formatBriefingForPrompt(briefing));
   }
 
   const settled = await Promise.allSettled([
     getOrInitSystemPersonality(),
     getSystemHunter(),
-    getSystemAssets(),
-    getLatestBoincRun(),
-    getSystemSettlement(),
+    detail === "full" ? getSystemAssets() : Promise.resolve(null),
+    detail === "full" ? getLatestBoincRun() : Promise.resolve(null),
+    detail === "full" ? getSystemSettlement() : Promise.resolve(null),
     getSystemLastRunAt(),
-    getLatestNoteArticle(),
-    listSystemMessages(16),
+    detail === "full" ? getLatestNoteArticle() : Promise.resolve(null),
+    detail === "full" ? listSystemMessages(16) : Promise.resolve([] as SolunaSystemMessage[]),
   ]);
 
   const personality = settled[0].status === "fulfilled" ? settled[0].value : null;
@@ -254,34 +263,44 @@ export async function buildHumanChatBriefingSection(
     blocks.push(formatPersonalitySnapshotForHumanChat(personality));
   }
 
-  const battleBlock = formatBattleForHumanChat(latestBattle);
-  if (battleBlock) blocks.push(battleBlock);
+  if (detail === "full") {
+    const battleBlock = formatBattleForHumanChat(latestBattle);
+    if (battleBlock) blocks.push(battleBlock);
 
-  const dialogueBlock = formatSystemDialogueForHumanChat(
-    systemMessages,
-    latestBattle?.briefingId ?? briefing?.id,
-  );
-  if (dialogueBlock) blocks.push(dialogueBlock);
+    const dialogueBlock = formatSystemDialogueForHumanChat(
+      systemMessages,
+      latestBattle?.briefingId ?? briefing?.id,
+    );
+    if (dialogueBlock) blocks.push(dialogueBlock);
 
-  blocks.push(formatNoteForHumanChat(note));
+    blocks.push(formatNoteForHumanChat(note));
 
-  const assetsBlock = formatAssetsForHumanChat(assets);
-  if (assetsBlock) blocks.push(assetsBlock);
+    const assetsBlock = formatAssetsForHumanChat(assets);
+    if (assetsBlock) blocks.push(assetsBlock);
 
-  blocks.push(formatBoincForHumanChat(boinc, settlement));
+    blocks.push(formatBoincForHumanChat(boinc, settlement));
 
-  try {
-    const episodes = userMessage
-      ? await findRelevantEpisodes(userMessage, 3)
-      : await listSystemEpisodes(3);
-    const episodeBlock = formatEpisodesForHumanChat(episodes);
-    if (episodeBlock) blocks.push(episodeBlock);
-  } catch {
-    /* optional */
-  }
+    try {
+      const episodes = userMessage
+        ? await findRelevantEpisodes(userMessage, 3)
+        : await listSystemEpisodes(3);
+      const episodeBlock = formatEpisodesForHumanChat(episodes);
+      if (episodeBlock) blocks.push(episodeBlock);
+    } catch {
+      /* optional */
+    }
 
-  if (options?.userId) {
-    blocks.push(await formatUserAppsForHumanChat(options.userId));
+    if (options?.userId) {
+      blocks.push(await formatUserAppsForHumanChat(options.userId));
+    }
+  } else if (latestBattle) {
+    // 1行だけ残して「今日何も知らない」状態を避ける
+    blocks.push(
+      `## 最新討伐（要約）\n${latestBattle.bossName}（${latestBattle.outcome === "escape" ? "取り逃がし" : "成功"}）· ${latestBattle.newsPlain || latestBattle.impression || "—"}`.slice(
+        0,
+        220,
+      ),
+    );
   }
 
   blocks.push(HUMAN_CHAT_BRIEFING_ADDON);
