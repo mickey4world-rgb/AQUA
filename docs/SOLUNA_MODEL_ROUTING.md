@@ -122,11 +122,16 @@ tier が高いほど `minTier` の高い（高性能）モデルが選択可能�
 
 | costMode | 条件（デフォルト） | 効果 |
 |---|---|---|
-| `normal` | 通常 | 最新・ premium まで選択可 |
-| `economy` | 月 $8+ または使用率 65%+ | tier を 1 段下げ、high 以下に制限 |
-| `minimal` | 月 $20+ または使用率 85%+ | tier を budding 固定、low 以下、Gemini 優先バイアス |
+| `normal` | 通常 | 最新・ premium まで選択可（Gemini をわずかに優遇） |
+| `economy` | 月 $4+ または使用率 50%+ | tier を 1 段下げ、medium 以下、Gemini 優遇 |
+| `minimal` | 月 $10+ または使用率 75%+ | tier を budding 固定、low 以下、Gemini 優先バイアス |
 
 環境変数: `SOLUNA_COST_ECONOMY_USD`, `SOLUNA_COST_MINIMAL_USD`, `SOLUNA_COST_ECONOMY_RATIO`, `SOLUNA_COST_MINIMAL_RATIO`
+
+補足（コスト抑制）:
+- 人間チャットの作戦コンテキストは通常 compact、状況質問時のみ full
+- `assessSolunaCostMode` はユーザー単位で 5 分キャッシュ
+- コスト画面は表示タブのデータだけ遅延取得
 
 ---
 
