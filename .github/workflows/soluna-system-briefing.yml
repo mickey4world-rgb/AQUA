@@ -2,13 +2,17 @@ name: Soluna System Briefing
 
 on:
   schedule:
-    # GitHub Actions の schedule は混雑で遅延し得るため、早朝から複数枠で取りこぼしを防ぐ
+    # GitHub Actions の schedule は混雑で遅延・取りこぼしし得るため、朝〜夜まで複数枠
     # （API 側は同日二重実行をスキップする）
     # JST = UTC+9
     - cron: "0 21 * * *" # 6:00 JST
     - cron: "0 22 * * *" # 7:00 JST
     - cron: "0 23 * * *" # 8:00 JST
     - cron: "0 0 * * *"  # 9:00 JST
+    - cron: "0 3 * * *"  # 12:00 JST 昼キャッチアップ
+    - cron: "0 6 * * *"  # 15:00 JST
+    - cron: "0 9 * * *"  # 18:00 JST
+    - cron: "0 12 * * *" # 21:00 JST 夜キャッチアップ
   workflow_dispatch:
 
 jobs:

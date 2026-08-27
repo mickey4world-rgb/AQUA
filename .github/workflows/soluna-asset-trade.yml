@@ -1,6 +1,7 @@
 name: Soluna Asset Trade (background)
 
 # 朝のブリーフィングに縛らず、月次目標に向けて裏で売買判断する
+# あわせて当日討伐未実行なら ensure で補完（GitHub schedule 取りこぼし対策）
 on:
   schedule:
     # 1時間ごと（UTC）= 市場変化に追従して利益チャンスを拾う
@@ -11,6 +12,25 @@ jobs:
   run_asset_trade:
     runs-on: ubuntu-latest
     steps:
+      - name: Ensure daily news battle if missing
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS -o /tmp/soluna-ensure.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"ensure"}')
+          cat /tmp/soluna-ensure.json
+          echo ""
+          echo "HTTP ${HTTP_CODE}"
+          # ensure 失敗でも資産ティックは続行（討伐は次枠で再試行）
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::warning::ensureDailyBriefing HTTP ${HTTP_CODE}"
+          fi
+
       - name: Run background asset trade tick
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}

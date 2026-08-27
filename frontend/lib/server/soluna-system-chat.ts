@@ -484,6 +484,79 @@ export async function runFullSystemBriefingPipeline(options?: {
   return { ok: true, briefing: news.briefing, messages: chat.messages };
 }
 
+/**
+ * 朝スケジュール取りこぼし用。JST 当日のシステム会話が未実行なら
+ * ニュース取得 → 討伐チャット → 自律ジョブまで一気に補完する。
+ */
+export async function ensureDailySystemBriefing(): Promise<{
+  ok: true;
+  skipped: boolean;
+  reason?: string;
+  briefingId?: string;
+  messageCount?: number;
+  notePublished?: boolean;
+  noteUrl?: string | null;
+  noteError?: string | null;
+  boincMinutes?: number;
+  medalUnits?: number;
+}> {
+  const lastRunAt = await getSystemLastRunAt();
+  if (lastRunAt && jstDateString(new Date(lastRunAt)) === jstDateString()) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "本日のシステム会話はすでに実行済みです。",
+      briefingId: (await getLatestBriefing())?.id,
+    };
+  }
+
+  const personality = await getOrInitSystemPersonality({ rotateInterests: false });
+  const { fetchGlobalNewsBriefing } = await import("@/lib/server/soluna-news");
+  const news = await fetchGlobalNewsBriefing({
+    interestKeywords: [...personality.sol.interests, ...personality.luna.interests],
+  });
+
+  const briefing = news.ok ? news.briefing : (await getLatestBriefing());
+  if (!briefing) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: news.ok ? "ブリーフィングがありません。" : news.reason,
+    };
+  }
+
+  const chat = await runDailySystemChat({
+    briefing,
+    skipFollowUp: true,
+  });
+  if (!chat.ok) {
+    return {
+      ok: true,
+      skipped: chat.skipped === true,
+      reason: chat.reason,
+      briefingId: briefing.id,
+    };
+  }
+
+  const { runDailyAutonomousJobs } = await import("@/lib/server/soluna-jobs");
+  const jobs = await runDailyAutonomousJobs({
+    briefing: chat.briefing,
+    messages: chat.messages,
+  });
+
+  return {
+    ok: true,
+    skipped: false,
+    briefingId: chat.briefing.id,
+    messageCount: chat.messages.length,
+    notePublished: jobs.latestNote?.published ?? false,
+    noteUrl: jobs.latestNote?.noteUrl ?? null,
+    noteError: jobs.latestNote?.error ?? null,
+    boincMinutes: jobs.latestBoinc?.minutes ?? 0,
+    medalUnits: jobs.assets?.medalUnits ?? 0,
+  };
+}
+
 export const HUMAN_CHAT_BRIEFING_ADDON = `## 自律的な話題提供（人間との会話）
 あなたは今日のニュース討伐結果、ギルド資産運用（聖なる魔力タンク）、BOINC／拠点都市の状況を把握しています。
 ユーザーがそれらに触れた／関連する質問をしたときは、下記の「今日の討伐・運用状況」を踏まえて具体的に答えてください。
