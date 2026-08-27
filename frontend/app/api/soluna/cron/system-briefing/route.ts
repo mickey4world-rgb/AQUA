@@ -127,7 +127,7 @@ export async function POST(request: Request) {
 
   if (step === "ensure") {
     const ensured = await ensureDailySystemBriefing();
-    return Response.json({ ok: true, step: "ensure", ...ensured });
+    return Response.json({ step: "ensure", ...ensured });
   }
 
   const result = await runFullSystemBriefingPipeline({ force });
