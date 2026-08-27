@@ -47,12 +47,13 @@ export default function CostsPage() {
   const [solunaLoadedMonth, setSolunaLoadedMonth] = useState<string | null>(null);
   const [solunaError, setSolunaError] = useState<string | null>(null);
 
-  const loadingAi = loadedMonth !== month;
-  const azureLoading = azureLoadedMonth !== month;
-  const loadingSoluna = solunaLoadedMonth !== month;
+  const loadingAi = tab === "ai" && loadedMonth !== month;
+  const azureLoading = tab === "ai" && azureLoadedMonth !== month;
+  const loadingSoluna = tab === "soluna" && solunaLoadedMonth !== month;
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
   useEffect(() => {
+    if (tab !== "ai") return;
     let cancelled = false;
 
     fetch(`/api/costs/dashboard?month=${month}`)
@@ -69,9 +70,10 @@ export default function CostsPage() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, tab]);
 
   useEffect(() => {
+    if (tab !== "ai") return;
     let cancelled = false;
 
     fetch(`/api/costs/azure-infra?month=${month}`)
@@ -88,9 +90,10 @@ export default function CostsPage() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, tab]);
 
   useEffect(() => {
+    if (tab !== "soluna") return;
     let cancelled = false;
     setSolunaError(null);
 
@@ -116,7 +119,7 @@ export default function CostsPage() {
     return () => {
       cancelled = true;
     };
-  }, [month]);
+  }, [month, tab]);
 
   const monthLabel =
     tab === "soluna"

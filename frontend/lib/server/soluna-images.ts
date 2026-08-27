@@ -256,6 +256,10 @@ async function enhancePromptWithGemini(
 
   if (!isGeminiConfigured()) return fallback;
 
+  // 短い依頼や英数字のみは Gemini を呼ばず、依頼文をそのまま場面にする（無料枠消費も抑制）
+  const needsTranslate = /[\u3040-\u30ff\u4e00-\u9fff]/.test(userPrompt) && userPrompt.length >= 12;
+  if (!needsTranslate) return fallback;
+
   try {
     const result = await generateWithGemini({
       system: `あなたはソルーナ画像のプロンプト翻訳者です。

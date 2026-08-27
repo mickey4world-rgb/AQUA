@@ -59,12 +59,12 @@ import type {
 } from "@/lib/types/soluna";
 
 const MAX_MESSAGE_CHARS = 2000;
-const MAX_HISTORY = 10;
+const MAX_HISTORY = 8;
 /** 短い返答向け — 思考モデルのトークン消費を抑える */
-const SOL_CHAT_MAX_OUTPUT_TOKENS = 900;
-const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 350;
-const CLAUDE_CHAT_MAX_TOKENS = 350;
-const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 900;
+const SOL_CHAT_MAX_OUTPUT_TOKENS = 420;
+const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 280;
+const CLAUDE_CHAT_MAX_TOKENS = 280;
+const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 500;
 /** SWA の API 制限（約 45 秒）内に収める。ソルは早めに切ってモデル切替 */
 const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
 const SOL_PRIMARY_TIMEOUT_MS = 11_000;
@@ -650,6 +650,8 @@ function scheduleMemoryExtraction(
   userMessage: string,
   existing: SolunaMemory[],
 ): void {
+  // 短い相づちは記憶抽出をスキップ（Gemini 呼び出し削減）
+  if (userMessage.trim().length < 18) return;
   void (async () => {
     try {
       const newMemories = await extractMemories(userId, userMessage, existing);
@@ -690,14 +692,14 @@ export async function sendSolunaChat(
     listMessages(userId),
     getBriefingForHumanChat(),
   ]);
-  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed, {
-    userId,
-  });
-
   const opsAsk =
     /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|状況|今日の|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成/i.test(
       trimmed,
     );
+  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed, {
+    userId,
+    detail: opsAsk ? "full" : "compact",
+  });
   const userPrompt = opsAsk
     ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に答えてください。）`
     : trimmed;
