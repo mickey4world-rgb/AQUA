@@ -20,13 +20,33 @@ const DOC_TYPE = "solunaImage";
 
 export const SOLUNA_BASE_IMAGE_PATH = "/soluna/characters-base.jpg";
 
-/** 無料 Pollinations で実測応答したモデル */
+/** 無料 Pollinations で実測応答したモデル（ベース立ち絵は Nano Banana 2 製） */
 export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
+  {
+    id: "nanobanana-2",
+    label: "Nano Banana 2",
+    description: "ベース立ち絵と同じモデル（推奨）",
+    styleFriendly: true,
+    supportsReference: true,
+  },
+  {
+    id: "nanobanana-2-lite",
+    label: "Nano Banana 2 Lite",
+    description: "同系統・やや軽量",
+    styleFriendly: true,
+    supportsReference: true,
+  },
   {
     id: "flux",
     label: "Flux",
-    description: "高品質・画風寄せ向き（推奨）",
+    description: "高品質（画風は寄りにくい）",
+  },
+  {
+    id: "gptimage",
+    label: "GPT Image",
+    description: "イラスト寄り・参照対応",
     styleFriendly: true,
+    supportsReference: true,
   },
   {
     id: "turbo",
@@ -39,12 +59,6 @@ export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
     description: "軽量・安定",
   },
   {
-    id: "gptimage",
-    label: "GPT Image",
-    description: "イラスト寄りの表現",
-    styleFriendly: true,
-  },
-  {
     id: "zimage",
     label: "Z-Image",
     description: "速い 6B 系",
@@ -52,22 +66,21 @@ export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
   {
     id: "klein",
     label: "Klein",
-    description: "高速・コンパクト",
+    description: "高速・参照対応",
+    supportsReference: true,
   },
 ];
 
-export const DEFAULT_SOLUNA_IMAGE_MODEL: SolunaImageModelId = "flux";
+export const DEFAULT_SOLUNA_IMAGE_MODEL: SolunaImageModelId = "nanobanana-2";
 
-/** ベース立ち絵と同じちび画風に寄せる固定スタイル文（英語） */
-export const SOLUNA_BASE_STYLE_LOCK = [
-  "exact same art style as official Soluna base character icons",
-  "polished chibi anime game avatar illustration",
-  "circular gold ornate frame portrait",
-  "Sol: young boy, spiky brown hair, cheerful wink, bright blue eye, blue-white tunic with brown leather straps, dark cloak, large sword on back, translucent glowing blue crystal shield",
-  "Luna: young girl, long wavy purple hair, soft brown eyes, purple-gold robe with white capelet, golden star headpiece with chains, tall wooden staff with glowing blue diamond crystal, ornate purple-gold book",
-  "soft fairy-tale castle bokeh background, sparkles and star light particles",
-  "clean lineart, vibrant colors, cute rounded proportions, high quality digital illustration",
-  "NOT photorealistic, NOT 3D render, NOT western cartoon, NOT different character designs",
+/** 短めの画風トレーラー（先頭に置かず、依頼の後ろに付ける） */
+export const SOLUNA_BASE_STYLE_TRAILER = [
+  "same Sol and Luna character designs as the reference image",
+  "Nano Banana 2 polished chibi anime game icon style",
+  "circular ornate gold frames, cute rounded proportions, vibrant colors, clean lineart",
+  "Sol: spiky brown hair, wink, blue crystal shield, sword on back",
+  "Luna: long wavy purple hair, star headpiece, staff with blue crystal, ornate book",
+  "keep identity consistent with reference, not photorealistic, not 3D",
 ].join(", ");
 
 type StoredImage = SolunaImageAsset & { docType: typeof DOC_TYPE };
@@ -97,17 +110,22 @@ export function resolveImageModel(raw: unknown): SolunaImageModelId {
   return DEFAULT_SOLUNA_IMAGE_MODEL;
 }
 
+function modelSupportsReference(model: SolunaImageModelId): boolean {
+  return SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.supportsReference === true;
+}
+
 function baseAsset(userId: string): SolunaImageAsset {
   const now = "2026-08-26T00:00:00.000Z";
   return {
     id: "base-sol-luna",
     userId,
     title: "ソル＆ルーナ ベース立ち絵",
-    prompt: "Sol and Luna official character base illustration",
+    prompt: "Sol and Luna official character base illustration (Nano Banana 2)",
     source: "base",
     imageUrl: SOLUNA_BASE_IMAGE_PATH,
     mimeType: "image/jpeg",
     byteSize: 0,
+    model: "nanobanana-2",
     locked: true,
     createdAt: now,
     updatedAt: now,
@@ -207,6 +225,16 @@ export async function deleteSolunaImage(userId: string, id: string): Promise<voi
   await container().item(id, userId).delete();
 }
 
+function composePrompt(sceneEnglish: string, matchBaseStyle: boolean): string {
+  const scene = sceneEnglish.trim().replace(/\s+/g, " ");
+  if (!matchBaseStyle) return scene.slice(0, 1200);
+  // 依頼を先頭に置き、画風は短いトレーラーのみ（依頼が埋もれないようにする）
+  return `${scene}. ${SOLUNA_BASE_STYLE_TRAILER}`.slice(0, 1200);
+}
+
+/**
+ * ユーザー依頼を英語の「場面」に翻訳。画風で上書きせず、依頼を主語にする。
+ */
 async function enhancePromptWithGemini(
   userPrompt: string,
   matchBaseStyle: boolean,
@@ -215,54 +243,47 @@ async function enhancePromptWithGemini(
   solComment: string;
   lunaComment: string;
 }> {
-  const stylePrefix = matchBaseStyle ? `${SOLUNA_BASE_STYLE_LOCK}, scene: ` : "";
+  const fallbackScene = userPrompt;
   const fallback = {
-    enhancedPrompt: `${stylePrefix}${userPrompt}`.slice(0, 1400),
+    enhancedPrompt: composePrompt(fallbackScene, matchBaseStyle),
     solComment: matchBaseStyle
-      ? "ベースと同じ画風でいくぜ！"
-      : "よし、この雰囲気で描いてみようぜ！",
+      ? "依頼どおり、バナナ2画風で！"
+      : "よし、この依頼どおり描くぜ！",
     lunaComment: matchBaseStyle
-      ? "立ち絵の色と輪郭は崩さないでね。"
-      : "構図と光は丁寧に合わせてね。",
+      ? "場面は変えず、参照立ち絵に寄せてね。"
+      : "依頼の内容を落とさないでね。",
   };
 
   if (!isGeminiConfigured()) return fallback;
 
   try {
-    const styleRule = matchBaseStyle
-      ? `必須: 公式ベース立ち絵と同一のちびアイコン画風を厳守。円形金枠、ソル（茶髪・青結晶盾・剣）とルーナ（紫髪・星杖・本）のデザインを変えない。`
-      : `キャラ指定があれば尊重し、綺麗なイラストにすること。`;
     const result = await generateWithGemini({
-      system: `あなたはソルーナの画像プロンプト編集者です。ユーザー要望を、英語の画像生成プロンプト1行に圧縮してください。
-${styleRule}
-JSONのみ返す:
-{"enhancedPrompt":"...","solComment":"日本語20字以内","lunaComment":"日本語20字以内"}`,
-      messages: [
-        {
-          role: "user",
-          content: matchBaseStyle
-            ? `Style lock (keep verbatim fragments):\n${SOLUNA_BASE_STYLE_LOCK}\n\nUser request:\n${userPrompt}`
-            : userPrompt,
-        },
-      ],
-      maxOutputTokens: 450,
-      temperature: 0.45,
+      system: `あなたはソルーナ画像のプロンプト翻訳者です。
+ユーザーの日本語依頼を、英語の「場面・構図・行動」説明に翻訳してください。
+
+厳守:
+1. ユーザーが頼んだ場面・行動・場所・小道具を絶対に省略・改変しない（これがプロンプトの主部）。
+2. 画風やキャラ説明を invent して場面を置き換えない。
+3. Sol / Luna が登場する依頼なら名前を残す。
+4. enhancedPrompt には場面の英語だけを入れる（画風フレーズはサーバ側で付ける）。
+5. JSONのみ:
+{"scenePrompt":"english scene only","solComment":"日本語20字以内","lunaComment":"日本語20字以内"}`,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 350,
+      temperature: 0.2,
       responseMimeType: "application/json",
     });
     if (!result.ok) return fallback;
     const parsed = JSON.parse(stripJsonFence(result.text)) as {
+      scenePrompt?: string;
       enhancedPrompt?: string;
       solComment?: string;
       lunaComment?: string;
     };
-    if (!parsed.enhancedPrompt?.trim()) return fallback;
-    const enhanced = parsed.enhancedPrompt.trim();
-    const withLock =
-      matchBaseStyle && !enhanced.toLowerCase().includes("soluna base")
-        ? `${SOLUNA_BASE_STYLE_LOCK}, ${enhanced}`
-        : enhanced;
+    const scene = (parsed.scenePrompt || parsed.enhancedPrompt || "").trim();
+    if (!scene) return fallback;
     return {
-      enhancedPrompt: withLock.slice(0, 1400),
+      enhancedPrompt: composePrompt(scene, matchBaseStyle),
       solComment: (parsed.solComment || fallback.solComment).slice(0, 80),
       lunaComment: (parsed.lunaComment || fallback.lunaComment).slice(0, 80),
     };
@@ -274,15 +295,20 @@ JSONのみ返す:
 async function generateWithPollinations(
   prompt: string,
   model: SolunaImageModelId,
+  options?: { referenceImageUrl?: string | null },
 ): Promise<{ dataUrl: string; mimeType: string }> {
   const params = new URLSearchParams({
     width: "1024",
     height: "1024",
     nologo: "true",
     model,
-    enhance: model === "flux" || model === "gptimage" ? "true" : "false",
+    // enhance は依頼を別シーンに書き換えやすいので常時オフ
+    enhance: "false",
     seed: String(Date.now() % 1_000_000),
   });
+  if (options?.referenceImageUrl) {
+    params.set("image", options.referenceImageUrl);
+  }
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params}`;
 
   const controller = new AbortController();
@@ -314,7 +340,7 @@ async function generateWithPollinations(
 }
 
 /**
- * Gemini でプロンプト整形 → Pollinations（無料）で画像生成 → Cosmos 保存
+ * Gemini で場面翻訳 → Pollinations（既定 Nano Banana 2）で生成 → Cosmos 保存
  */
 export async function generateSolunaImage(
   userId: string,
@@ -326,9 +352,13 @@ export async function generateSolunaImage(
 
   const model = resolveImageModel(options?.model);
   const matchBaseStyle = options?.matchBaseStyle !== false;
+  const useReference = matchBaseStyle && modelSupportsReference(model);
+  const referenceImageUrl = useReference ? publicBaseImageUrl() : null;
 
   const enhanced = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
-  const { dataUrl } = await generateWithPollinations(enhanced.enhancedPrompt, model);
+  const { dataUrl } = await generateWithPollinations(enhanced.enhancedPrompt, model, {
+    referenceImageUrl,
+  });
   const image = await saveSolunaImage({
     userId,
     title: userPrompt.slice(0, 40),
@@ -339,12 +369,13 @@ export async function generateSolunaImage(
   });
 
   const modelLabel = SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.label ?? model;
+  const refNote = referenceImageUrl ? "+base-ref" : "";
   return {
     image,
     solComment: enhanced.solComment,
     lunaComment: enhanced.lunaComment,
     enhancedPrompt: enhanced.enhancedPrompt,
-    provider: `pollinations(${modelLabel})+gemini-prompt`,
+    provider: `pollinations(${modelLabel})${refNote}+scene-prompt`,
     model,
   };
 }
@@ -353,7 +384,7 @@ export function imageStudioMeta() {
   return {
     baseImageUrl: SOLUNA_BASE_IMAGE_PATH,
     generateConfigured: true,
-    generateProvider: "Pollinations（無料）+ Gemini プロンプト整形",
+    generateProvider: "Pollinations Nano Banana 2（無料・ベース同系統）+ 場面翻訳",
     maxImages: MAX_IMAGES,
     models: SOLUNA_IMAGE_MODELS,
     defaultModel: DEFAULT_SOLUNA_IMAGE_MODEL,

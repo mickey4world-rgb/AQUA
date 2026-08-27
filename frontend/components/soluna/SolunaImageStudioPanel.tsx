@@ -23,12 +23,37 @@ const STARTERS = [
 ];
 
 const FALLBACK_MODELS: SolunaImageModelOption[] = [
-  { id: "flux", label: "Flux", description: "高品質・画風寄せ向き（推奨）", styleFriendly: true },
+  {
+    id: "nanobanana-2",
+    label: "Nano Banana 2",
+    description: "ベース立ち絵と同じモデル（推奨）",
+    styleFriendly: true,
+    supportsReference: true,
+  },
+  {
+    id: "nanobanana-2-lite",
+    label: "Nano Banana 2 Lite",
+    description: "同系統・やや軽量",
+    styleFriendly: true,
+    supportsReference: true,
+  },
+  { id: "flux", label: "Flux", description: "高品質（画風は寄りにくい）" },
+  {
+    id: "gptimage",
+    label: "GPT Image",
+    description: "イラスト寄り・参照対応",
+    styleFriendly: true,
+    supportsReference: true,
+  },
   { id: "turbo", label: "Turbo", description: "高速・軽め" },
   { id: "sana", label: "Sana", description: "軽量・安定" },
-  { id: "gptimage", label: "GPT Image", description: "イラスト寄りの表現", styleFriendly: true },
   { id: "zimage", label: "Z-Image", description: "速い 6B 系" },
-  { id: "klein", label: "Klein", description: "高速・コンパクト" },
+  {
+    id: "klein",
+    label: "Klein",
+    description: "高速・参照対応",
+    supportsReference: true,
+  },
 ];
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -87,14 +112,14 @@ export default function SolunaImageStudioPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<SolunaImageModelId>("flux");
+  const [model, setModel] = useState<SolunaImageModelId>("nanobanana-2");
   const [matchBaseStyle, setMatchBaseStyle] = useState(true);
   const [messages, setMessages] = useState<StudioMessage[]>([
     {
       id: "welcome",
       role: "system",
       content:
-        "ソル＆ルーナのベース立ち絵を参考に、無料の画像生成が使えます。「ベース画風に合わせる」をONにすると公式ちび画風に寄せます。モデル切替とダウンロードもできます。",
+        "ベース立ち絵は Nano Banana 2 製です。既定モデルも同じ系統で、依頼の場面を優先し、ON 時はベース画像を参照して画風を寄せます。",
     },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -119,7 +144,7 @@ export default function SolunaImageStudioPanel() {
         generateProvider: data.generateProvider,
         maxImages: data.maxImages,
         models: data.models ?? FALLBACK_MODELS,
-        defaultModel: data.defaultModel ?? "flux",
+        defaultModel: data.defaultModel ?? "nanobanana-2",
       });
     } catch {
       setError("通信エラーが発生しました");
@@ -305,6 +330,7 @@ export default function SolunaImageStudioPanel() {
                 className="accent-cyan-400"
               />
               ベース画風に合わせる
+              {models.find((m) => m.id === model)?.supportsReference ? "（参照画像あり）" : ""}
             </label>
           </div>
 
