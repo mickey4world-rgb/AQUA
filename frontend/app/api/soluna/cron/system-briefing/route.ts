@@ -1,4 +1,7 @@
-import { runFullSystemBriefingPipeline } from "@/lib/server/soluna-system-chat";
+import {
+  ensureDailySystemBriefing,
+  runFullSystemBriefingPipeline,
+} from "@/lib/server/soluna-system-chat";
 import {
   isSolunaSystemStorageConfigured,
   saveBriefing,
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   let force = false;
-  let step: "news" | "chat" | "full" | "ingest" | "jobs" = "full";
+  let step: "news" | "chat" | "full" | "ingest" | "jobs" | "ensure" = "full";
   let ingestBriefing: SolunaNewsBriefing | null = null;
   try {
     const body = (await request.json()) as {
@@ -40,7 +43,8 @@ export async function POST(request: Request) {
       body.step === "chat" ||
       body.step === "full" ||
       body.step === "ingest" ||
-      body.step === "jobs"
+      body.step === "jobs" ||
+      body.step === "ensure"
     ) {
       step = body.step;
     }
@@ -119,6 +123,11 @@ export async function POST(request: Request) {
       boincMinutes: jobs.latestBoinc?.minutes ?? 0,
       medalUnits: jobs.assets?.medalUnits ?? 0,
     });
+  }
+
+  if (step === "ensure") {
+    const ensured = await ensureDailySystemBriefing();
+    return Response.json({ ok: true, step: "ensure", ...ensured });
   }
 
   const result = await runFullSystemBriefingPipeline({ force });
