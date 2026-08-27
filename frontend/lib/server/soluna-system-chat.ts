@@ -24,9 +24,6 @@ import {
   buildCharacterPersonalityPrompt,
   buildPairRelationshipPrompt,
   extractAndSaveEpisodes,
-  findRelevantEpisodes,
-  formatEpisodesForHumanChat,
-  formatPersonalitySnapshotForHumanChat,
   getOrInitSystemPersonality,
 } from "@/lib/server/soluna-system-personality";
 import {
@@ -35,9 +32,7 @@ import {
   getLatestBriefing,
   getSystemHunter,
   getSystemLastRunAt,
-  getLatestBoincRun,
   getSystemAssets,
-  getSystemSettlement,
   listSystemEpisodes,
   listSystemMessages,
   markSystemRunAt,
@@ -46,11 +41,7 @@ import {
 } from "@/lib/server/soluna-system-store";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import type {
-  SolunaAssetLedger,
-  SolunaBattleResult,
-  SolunaBoincRun,
   SolunaNewsBriefing,
-  SolunaSettlementState,
   SolunaSystemMessage,
   SolunaSystemStateResponse,
 } from "@/lib/types/soluna";
@@ -557,112 +548,7 @@ export async function ensureDailySystemBriefing(): Promise<{
   };
 }
 
-export const HUMAN_CHAT_BRIEFING_ADDON = `## 自律的な話題提供（人間との会話）
-あなたは今日のニュース討伐結果、ギルド資産運用（聖なる魔力タンク）、BOINC／拠点都市の状況を把握しています。
-ユーザーがそれらに触れた／関連する質問をしたときは、下記の「今日の討伐・運用状況」を踏まえて具体的に答えてください。
-無関係な雑談では無理にニュースや運用の話を持ち出さないこと。
-事実のない取引・クレジット・討伐結果は捏造しないこと。
-**重要**: 取引所名・ブローカー名・API ベンダー名（例: 取引所ブランド）は絶対に口にしない。資産運用は「聖なる魔力タンク」「召喚獣」「ギルド金庫」など世界観の言葉だけで語る。`;
-
-function formatBattleForHumanChat(battle: SolunaBattleResult | null): string | null {
-  if (!battle) return null;
-  const result = battle.outcome === "escape" ? "取り逃がし" : "討伐成功";
-  return `## 今日のニュース討伐結果
-ボス: Lv.${battle.bossRank} ${battle.bossName}（${result}）
-成績: ${battle.wins ?? "—"}勝${battle.losses ?? "—"}敗
-要約: ${battle.newsPlain || battle.impression || "—"}
-次の一手: ${battle.nextMove || "—"}
-${battle.journey ? `舞台: 『${battle.journey.areaName}』→『${battle.journey.nextAreaName}』` : ""}`.trim();
-}
-
-function formatAssetsForHumanChat(assets: SolunaAssetLedger | null): string | null {
-  if (!assets) return null;
-  const lastTrade = assets.trades[assets.trades.length - 1];
-  return `## ギルド資産運用（聖なる魔力タンク）※取引所名はユーザーに言わない
-総魔力: ${Math.round(assets.totalYen).toLocaleString("ja-JP")} 円
-現金: ${Math.round(assets.cashYen).toLocaleString("ja-JP")} 円 / BTC: ${assets.btcHeld.toFixed(4)} / ETH: ${(assets.ethHeld ?? 0).toFixed(4)} / XRP: ${Math.floor(assets.xrpHeld ?? 0)}
-分散: 現金下限・単一銘柄上限・暗号合計上限あり（自動売買は BTC/ETH/XRP）
-当月実現損益: ${Math.round(assets.monthlyRealizedPnlYen).toLocaleString("ja-JP")} 円
-月次目標（2%）: ${Math.round(assets.monthlyTargetYen).toLocaleString("ja-JP")} 円
-おやすみモード（10%超）: ${assets.sleepMode ? "ON" : "OFF"}
-状態: ${assets.status} / バトルモード: ${assets.battleMode ?? "defense"}
-ソル: ${assets.solComment || "—"}
-ルーナ: ${assets.lunaComment || "—"}
-${
-  lastTrade
-    ? `直近取引: ${lastTrade.side} ${lastTrade.product} ${Math.round(lastTrade.sizeJpy).toLocaleString("ja-JP")} 円（${lastTrade.reason}）`
-    : "直近取引: なし"
-}`.trim();
-}
-
-function formatBoincForHumanChat(
-  boinc: SolunaBoincRun | null,
-  settlement: SolunaSettlementState | null,
-): string | null {
-  const lines: string[] = ["## BOINC・拠点都市"];
-  if (boinc) {
-    lines.push(
-      `最新BOINC: 計画 ${boinc.minutes} 分 / 状態 ${boinc.status}`,
-    );
-    if (boinc.result) {
-      lines.push(
-        `実績: ${boinc.result.runMinutesActual} 分 / ${boinc.result.creditGranted} cs / タスク ${boinc.result.tasksCompleted}（${boinc.result.projectName}）`,
-      );
-    }
-    if (boinc.solComment) lines.push(`ソル: ${boinc.solComment}`);
-    if (boinc.lunaComment) lines.push(`ルーナ: ${boinc.lunaComment}`);
-  } else {
-    lines.push("最新BOINC: まだ記録なし");
-  }
-  if (settlement) {
-    lines.push(
-      `拠点: ${settlement.settlementName}（${settlement.settlementLevel}） / 累積開拓 ${settlement.cumulativeMinutes} 分 / 分析スロット ${settlement.analysisSlots}`,
-    );
-    if (settlement.latestEvent?.headline) {
-      lines.push(`最新開拓: ${settlement.latestEvent.headline}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-export async function buildHumanChatBriefingSection(
-  briefing: SolunaNewsBriefing | null,
-  userMessage?: string,
-): Promise<string> {
-  const blocks: string[] = [];
-
-  if (briefing) {
-    blocks.push(formatBriefingForPrompt(briefing));
-  }
-
-  try {
-    const [personality, hunter, assets, boinc, settlement] = await Promise.all([
-      getOrInitSystemPersonality(),
-      getSystemHunter(),
-      getSystemAssets(),
-      getLatestBoincRun(),
-      getSystemSettlement(),
-    ]);
-    blocks.push(formatPersonalitySnapshotForHumanChat(personality));
-
-    const latestBattle =
-      hunter.battles.length > 0 ? hunter.battles[hunter.battles.length - 1] : null;
-    const battleBlock = formatBattleForHumanChat(latestBattle);
-    if (battleBlock) blocks.push(battleBlock);
-    const assetsBlock = formatAssetsForHumanChat(assets);
-    if (assetsBlock) blocks.push(assetsBlock);
-    const boincBlock = formatBoincForHumanChat(boinc, settlement);
-    if (boincBlock) blocks.push(boincBlock);
-
-    const episodes = userMessage
-      ? await findRelevantEpisodes(userMessage, 3)
-      : await listSystemEpisodes(3);
-    const episodeBlock = formatEpisodesForHumanChat(episodes);
-    if (episodeBlock) blocks.push(episodeBlock);
-  } catch {
-    /* optional enrichment */
-  }
-
-  blocks.push(HUMAN_CHAT_BRIEFING_ADDON);
-  return blocks.join("\n\n");
-}
+export {
+  HUMAN_CHAT_BRIEFING_ADDON,
+  buildHumanChatBriefingSection,
+} from "@/lib/server/soluna-human-context";

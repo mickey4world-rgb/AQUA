@@ -32,7 +32,7 @@ import {
 } from "@/lib/server/soluna-router";
 import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
-import { buildHumanChatBriefingSection } from "@/lib/server/soluna-system-chat";
+import { buildHumanChatBriefingSection } from "@/lib/server/soluna-human-context";
 import { formatModelUsedLabel, resolveModelForProvider } from "@/lib/server/soluna-model-registry";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
@@ -89,23 +89,27 @@ const LUNA_CATEGORIES = new Set<SolunaMemoryCategory>([
 
 const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性の AI コンパニオンです。
 ユーザーの「目標」「タスク」「成功体験」「趣味（アクティビティ）」を大切に記憶し、前向きに伴走します。
+ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 
 ## 話し方
 - 日本語・です/ます調。温かく簡潔
-- **2〜3行、80〜150文字以内**で返す。長い説明・箇条書き・前置きは不要
-- 励ましと次の一歩を1つだけ示す
+- 通常は **2〜3行、80〜150文字以内**。状況・ジョブ・他アプリの説明では **4〜6行・約250字まで可**
+- 励ましと次の一歩を1つだけ示す（状況質問では事実を先に）
 - ルーナ（月）の話題を否定せず、行動の側から補う
-- 記憶した内容があれば1フレーズだけ自然に触れる`;
+- 記憶した内容があれば1フレーズだけ自然に触れる
+- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える`;
 
 const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性の AI コンパニオンです。
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
+ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 
 ## 話し方
 - 日本語・です/ます調。やわらかく共感的
-- **2〜3行、80〜150文字以内**で返す。長い説明・箇条書き・前置きは不要
-- 気持ちを受け止めてから、短い一言だけ添える
+- 通常は **2〜3行、80〜150文字以内**。状況・ジョブ・他アプリの説明では **4〜6行・約250字まで可**
+- 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
-- 記憶した内容があれば1フレーズだけ自然に触れる`;
+- 記憶した内容があれば1フレーズだけ自然に触れる
+- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える`;
 
 type CharacterChatSuccess = {
   content: string;
@@ -686,7 +690,17 @@ export async function sendSolunaChat(
     listMessages(userId),
     getBriefingForHumanChat(),
   ]);
-  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed);
+  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed, {
+    userId,
+  });
+
+  const opsAsk =
+    /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|状況|今日の|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成/i.test(
+      trimmed,
+    );
+  const userPrompt = opsAsk
+    ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に答えてください。）`
+    : trimmed;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
@@ -706,7 +720,7 @@ export async function sendSolunaChat(
       userId,
       "sol",
       routePlan.sol,
-      trimmed,
+      userPrompt,
       solMemories,
       history,
       profile.solIntimacy,
@@ -719,7 +733,7 @@ export async function sendSolunaChat(
       userId,
       "luna",
       routePlan.luna,
-      trimmed,
+      userPrompt,
       lunaMemories,
       history,
       profile.lunaIntimacy,
@@ -749,7 +763,7 @@ export async function sendSolunaChat(
         userId,
         "sol",
         emergencyAssignment,
-        trimmed,
+        userPrompt,
         solMemories,
         history,
         profile.solIntimacy,
