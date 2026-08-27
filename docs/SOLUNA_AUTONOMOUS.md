@@ -15,8 +15,8 @@
 ### 画像スタジオ
 
 - 生成: Gemini でプロンプト整形（任意）→ **Pollinations（無料）** で画像化 → Cosmos に data URL 保管
-- モデル選択: `flux` / `turbo` / `sana` / `gptimage` / `zimage` / `klein`（既定 `flux`）
-- 「ベース画風に合わせる」ON 時は公式立ち絵スタイルロック文をプロンプトに付与
+- モデル選択: `nanobanana-2`（既定・ベース同系統）/ `nanobanana-2-lite` / `flux` / `gptimage` / `turbo` / `sana` / `zimage` / `klein`
+- 「ベース画風に合わせる」ON 時は公式立ち絵を `image=` 参照し、依頼場面を先頭に保ったうえで短いスタイルトレーラーを付与（`enhance` はオフ）
 - ギャラリー・チャット結果からダウンロード可能。上限: ユーザーあたり 24 枚・1枚約 900KB。ベースは削除不可
 - API: `GET/POST /api/soluna/images` · `DELETE /api/soluna/images/[id]` · `POST /api/soluna/images/generate`（`model`, `matchBaseStyle`）
 

@@ -2,6 +2,8 @@ export type SolunaImageSource = "upload" | "generate" | "base";
 
 /** Pollinations 無料枠で使えるモデル ID */
 export type SolunaImageModelId =
+  | "nanobanana-2"
+  | "nanobanana-2-lite"
   | "flux"
   | "turbo"
   | "sana"
@@ -13,8 +15,10 @@ export interface SolunaImageModelOption {
   id: SolunaImageModelId;
   label: string;
   description: string;
-  /** 画風寄せに向くか（推奨） */
+  /** ベース立ち絵画風寄せに向くか */
   styleFriendly?: boolean;
+  /** 参照画像（image=）対応 */
+  supportsReference?: boolean;
 }
 
 export interface SolunaImageAsset {
