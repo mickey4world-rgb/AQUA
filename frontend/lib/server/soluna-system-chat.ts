@@ -15,7 +15,6 @@ import {
 import { enrichBriefingWithMonsters, pickBoss, pickTrashMobs } from "@/lib/soluna-monsters";
 import {
   LUNA_SYSTEM_PROVIDER,
-  jstDateString,
   SOLUNA_SYSTEM_KEYWORDS,
   SOL_SYSTEM_PROVIDER,
 } from "@/lib/server/soluna-system-config";
@@ -29,6 +28,7 @@ import {
 import {
   appendSystemMessages,
   createSystemMessage,
+  getDailyBriefingStatus,
   getLatestBriefing,
   getSystemHunter,
   getSystemLastRunAt,
@@ -281,8 +281,8 @@ export async function runDailySystemChat(options?: {
   }
 
   if (!options?.force) {
-    const lastRunAt = await getSystemLastRunAt();
-    if (lastRunAt && jstDateString(new Date(lastRunAt)) === jstDateString()) {
+    const status = await getDailyBriefingStatus();
+    if (status.complete) {
       return { ok: false, reason: "本日のシステム会話はすでに実行済みです。", skipped: true };
     }
   }
@@ -479,7 +479,9 @@ export async function runFullSystemBriefingPipeline(options?: {
  * 朝スケジュール取りこぼし用。JST 当日のシステム会話が未実行なら
  * ニュース取得 → 討伐チャット → 自律ジョブまで一気に補完する。
  */
-export async function ensureDailySystemBriefing(): Promise<{
+export async function ensureDailySystemBriefing(options?: {
+  force?: boolean;
+}): Promise<{
   ok: true;
   skipped: boolean;
   reason?: string;
@@ -491,23 +493,26 @@ export async function ensureDailySystemBriefing(): Promise<{
   boincMinutes?: number;
   medalUnits?: number;
 }> {
-  const lastRunAt = await getSystemLastRunAt();
-  if (lastRunAt && jstDateString(new Date(lastRunAt)) === jstDateString()) {
+  const status = await getDailyBriefingStatus();
+  if (!options?.force && status.complete) {
     return {
       ok: true,
       skipped: true,
       reason: "本日のシステム会話はすでに実行済みです。",
-      briefingId: (await getLatestBriefing())?.id,
+      briefingId: status.todayBriefingId,
     };
   }
 
-  const personality = await getOrInitSystemPersonality({ rotateInterests: false });
+  const personality = await getOrInitSystemPersonality({ rotateInterests: options?.force ?? false });
   const { fetchGlobalNewsBriefing } = await import("@/lib/server/soluna-news");
+  const { getBriefingById } = await import("@/lib/server/soluna-system-store");
   const news = await fetchGlobalNewsBriefing({
+    force: options?.force,
     interestKeywords: [...personality.sol.interests, ...personality.luna.interests],
   });
 
-  const briefing = news.ok ? news.briefing : (await getLatestBriefing());
+  const briefing =
+    news.ok ? news.briefing : (await getBriefingById(status.todayBriefingId)) ?? (await getLatestBriefing());
   if (!briefing) {
     return {
       ok: true,
@@ -517,6 +522,7 @@ export async function ensureDailySystemBriefing(): Promise<{
   }
 
   const chat = await runDailySystemChat({
+    force: options?.force,
     briefing,
     skipFollowUp: true,
   });

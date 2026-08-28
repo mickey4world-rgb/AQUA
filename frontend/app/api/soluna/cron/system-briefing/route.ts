@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   let force = false;
-  let step: "news" | "chat" | "full" | "ingest" | "jobs" | "ensure" = "full";
+  let step: "news" | "chat" | "full" | "ingest" | "jobs" | "ensure" | "status" = "full";
   let ingestBriefing: SolunaNewsBriefing | null = null;
   try {
     const body = (await request.json()) as {
@@ -44,7 +44,8 @@ export async function POST(request: Request) {
       body.step === "full" ||
       body.step === "ingest" ||
       body.step === "jobs" ||
-      body.step === "ensure"
+      body.step === "ensure" ||
+      body.step === "status"
     ) {
       step = body.step;
     }
@@ -126,8 +127,19 @@ export async function POST(request: Request) {
   }
 
   if (step === "ensure") {
-    const ensured = await ensureDailySystemBriefing();
+    const ensured = await ensureDailySystemBriefing({ force });
     return Response.json({ step: "ensure", ...ensured });
+  }
+
+  if (step === "status") {
+    const { getDailyBriefingStatus } = await import("@/lib/server/soluna-system-store");
+    const status = await getDailyBriefingStatus();
+    return Response.json({
+      ok: true,
+      step: "status",
+      needsBriefing: !status.complete,
+      ...status,
+    });
   }
 
   const result = await runFullSystemBriefingPipeline({ force });
