@@ -3,7 +3,7 @@ name: Soluna System Briefing
 on:
   schedule:
     # GitHub Actions の schedule は混雑で遅延・取りこぼしし得るため、朝〜夜まで複数枠
-    # （API 側は同日のブリーフィング＋討伐が揃っていればスキップ）
+    # （API 側は当日ブリーフィング＋討伐が揃っていればスキップ）
     # JST = UTC+9
     - cron: "0 21 * * *" # 6:00 JST
     - cron: "0 22 * * *" # 7:00 JST
@@ -32,7 +32,27 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
+      - name: Check daily briefing status
+        id: status
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 30 -o /tmp/soluna-status.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}')
+          cat /tmp/soluna-status.json
+          echo ""
+          echo "status HTTP ${HTTP_CODE}"
+          test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
+          COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
+          echo "complete=${COMPLETE}" >> "$GITHUB_OUTPUT"
+
       - name: Fetch news briefing (Gemini → RSS fallback)
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
         id: fetch_news
         continue-on-error: true
         env:
@@ -44,46 +64,95 @@ jobs:
         run: node frontend/scripts/fetch-soluna-news.mjs
 
       - name: Warn if news fetch failed
-        if: steps.fetch_news.outcome == 'failure'
+        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.fetch_news.outcome == 'failure'
         run: echo "::warning::ニュース取得が失敗しました。API 側で RSS フォールバックまたは前日ブリーフィングを使います。"
 
-      - name: Ensure daily briefing (news + chat + jobs)
-        id: ensure
+      - name: Run system chat
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        id: chat
+        continue-on-error: true
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BODY='{"force": true, "step": "ensure"}'
+            BODY='{"force": true, "step": "chat"}'
           else
-            BODY='{"step": "ensure"}'
+            BODY='{"step": "chat"}'
           fi
-          HTTP_CODE=$(curl -sS --max-time 180 -o /tmp/soluna-ensure.json -w "%{http_code}" \
+          HTTP_CODE=$(curl -sS --max-time 180 -o /tmp/soluna-chat.json -w "%{http_code}" \
             -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
             -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
             -H "Content-Type: application/json" \
             -d "${BODY}")
-          cat /tmp/soluna-ensure.json
+          cat /tmp/soluna-chat.json
           echo ""
-          echo "HTTP ${HTTP_CODE}"
+          echo "chat HTTP ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::warning::chat HTTP ${HTTP_CODE}（SWA 45秒制限でタイムアウトした場合、サーバー側は継続処理中のことがあります）"
+          fi
+
+      - name: Wait for chat if gateway timed out
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        run: sleep 90
+
+      - name: Verify briefing complete
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 30 -o /tmp/soluna-status2.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}')
+          cat /tmp/soluna-status2.json
+          echo ""
+          COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status2.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
+          if [ "${COMPLETE}" != "true" ]; then
+            echo "::error::本日の討伐が未完了です（status HTTP ${HTTP_CODE}）"
+            exit 1
+          fi
+
+      - name: Run autonomous jobs (Note / BOINC / assets)
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        id: jobs
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BODY='{"force": true, "step": "jobs"}'
+          else
+            BODY='{"step": "jobs"}'
+          fi
+          HTTP_CODE=$(curl -sS --max-time 120 -o /tmp/soluna-jobs.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "${BODY}")
+          cat /tmp/soluna-jobs.json
+          echo ""
+          echo "jobs HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
-          SKIPPED=$(python3 -c "import json; d=json.load(open('/tmp/soluna-ensure.json')); print('true' if d.get('skipped') else 'false')" 2>/dev/null || echo "false")
-          BRIEFING_ID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-ensure.json')); print(d.get('briefingId',''))" 2>/dev/null || echo "")
-          BOINC=$(python3 -c "import json; d=json.load(open('/tmp/soluna-ensure.json')); print(d.get('boincMinutes',0))" 2>/dev/null || echo "0")
-          echo "skipped=${SKIPPED}" >> "$GITHUB_OUTPUT"
+          BRIEFING_ID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status2.json')); print(d.get('todayBriefingId',''))" 2>/dev/null || echo "")
+          BOINC=$(python3 -c "import json; d=json.load(open('/tmp/soluna-jobs.json')); print(d.get('boincMinutes',0))" 2>/dev/null || echo "0")
           echo "briefing_id=${BRIEFING_ID}" >> "$GITHUB_OUTPUT"
           echo "boinc_minutes=${BOINC}" >> "$GITHUB_OUTPUT"
 
       - name: Run BOINC social contribution
-        if: steps.ensure.outputs.boinc_minutes != '0' && steps.ensure.outputs.briefing_id != ''
+        if: steps.jobs.outputs.boinc_minutes != '0' && steps.jobs.outputs.briefing_id != ''
         env:
           BOINC_ACCOUNT_KEY: ${{ secrets.BOINC_ACCOUNT_KEY }}
           BOINC_PROJECT_URL: ${{ vars.BOINC_PROJECT_URL }}
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
-          RUN_MINUTES: ${{ steps.ensure.outputs.boinc_minutes }}
-          BRIEFING_ID: ${{ steps.ensure.outputs.briefing_id }}
+          RUN_MINUTES: ${{ steps.jobs.outputs.boinc_minutes }}
+          BRIEFING_ID: ${{ steps.jobs.outputs.briefing_id }}
         run: |
           if [ -z "${BOINC_ACCOUNT_KEY}" ]; then
             echo "::warning::BOINC_ACCOUNT_KEY 未設定のためスキップ。GitHub Secrets に追加すると社会貢献が有効になります。"
