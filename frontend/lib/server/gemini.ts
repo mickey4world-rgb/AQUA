@@ -298,13 +298,21 @@ export async function generateWithGemini(
   return { ok: false, reason: lastReason };
 }
 
+/** Nano Banana 2 → Nano Banana の順。preview 系は廃止・未提供のため含めない */
 const GEMINI_IMAGE_MODEL_DEFAULTS = [
   "gemini-3.1-flash-image",
-  "gemini-3.1-flash-image-preview",
   "gemini-2.5-flash-image",
-  "gemini-2.5-flash-image-preview",
 ];
 const GEMINI_IMAGE_TIMEOUT_MS = 90_000;
+
+function shouldTryNextGeminiImageModel(status: number, message?: string): boolean {
+  const msg = (message ?? "").toLowerCase();
+  if (status === 404) return true;
+  if (msg.includes("not found")) return true;
+  if (msg.includes("not supported for generatecontent")) return true;
+  if (status === 429 && msg.includes("limit: 0")) return true;
+  return isRetryableGeminiFailure(status, message);
+}
 
 export type GeminiImageReference = {
   mimeType: string;
@@ -341,7 +349,9 @@ function getGeminiImageModelCandidates(): string[] {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-  return [...new Set([...(preferred ? [preferred] : []), ...fallbacks])];
+  return [...new Set([...(preferred ? [preferred] : []), ...fallbacks])].filter(
+    (model) => !model.endsWith("-preview"),
+  );
 }
 
 function extractInlineImage(
@@ -385,83 +395,93 @@ export async function generateGeminiImage(
   const models = getGeminiImageModelCandidates();
   let lastReason = "Gemini 画像生成に失敗しました。";
 
-  for (const model of models) {
-    const imageConfig: { aspectRatio: string; imageSize?: string } = {
-      aspectRatio: request.aspectRatio ?? "1:1",
-    };
-    if (model.includes("3.1")) {
-      imageConfig.imageSize = "2K";
-    }
+  outer: for (const model of models) {
+    const imageConfigVariants: Array<{ aspectRatio: string; imageSize?: string }> = model.includes("3.1")
+      ? [
+          { aspectRatio: request.aspectRatio ?? "1:1", imageSize: "2K" },
+          { aspectRatio: request.aspectRatio ?? "1:1" },
+        ]
+      : [{ aspectRatio: request.aspectRatio ?? "1:1" }];
 
-    const payload = {
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        // IMAGE のみだと失敗するケースがあるため TEXT も含める
-        responseModalities: ["TEXT", "IMAGE"],
-        imageConfig,
-      },
-    };
-    const target: { url: string; headers: Record<string, string>; body: string } = relay
-      ? {
-          url: relay.url,
-          headers: {
-            "Content-Type": "application/json",
-            "x-functions-key": relay.key,
-          },
-          body: JSON.stringify({ model, body: payload }),
+    for (const imageConfig of imageConfigVariants) {
+      const payload = {
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          // IMAGE のみだと失敗するケースがあるため TEXT も含める
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig,
+        },
+      };
+      const target: { url: string; headers: Record<string, string>; body: string } = relay
+        ? {
+            url: relay.url,
+            headers: {
+              "Content-Type": "application/json",
+              "x-functions-key": relay.key,
+            },
+            body: JSON.stringify({ model, body: payload }),
+          }
+        : {
+            url: `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`,
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey as string,
+            },
+            body: JSON.stringify(payload),
+          };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), GEMINI_IMAGE_TIMEOUT_MS);
+      try {
+        const response = await fetch(target.url, {
+          method: "POST",
+          headers: target.headers,
+          signal: controller.signal,
+          body: target.body,
+        });
+        const body = (await response.json()) as GeminiImageApiResponse;
+        if (!response.ok) {
+          lastReason = failureReason(response.status, body, model);
+          if (shouldTryNextGeminiImageModel(response.status, body.error?.message)) {
+            continue;
+          }
+          break outer;
         }
-      : {
-          url: `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`,
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey as string,
-          },
-          body: JSON.stringify(payload),
-        };
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GEMINI_IMAGE_TIMEOUT_MS);
-    try {
-      const response = await fetch(target.url, {
-        method: "POST",
-        headers: target.headers,
-        signal: controller.signal,
-        body: target.body,
-      });
-      const body = (await response.json()) as GeminiImageApiResponse;
-      if (!response.ok) {
-        lastReason = failureReason(response.status, body, model);
-        if (!isRetryableGeminiFailure(response.status, body.error?.message)) break;
-        continue;
-      }
+        const image = extractInlineImage(body);
+        if (!image) {
+          const finish = body.candidates?.[0]?.finishReason;
+          lastReason = finish
+            ? `Gemini 画像生成が完了しませんでした（${finish}）`
+            : "Gemini から画像が返りませんでした。";
+          continue;
+        }
 
-      const image = extractInlineImage(body);
-      if (!image) {
-        const finish = body.candidates?.[0]?.finishReason;
-        lastReason = finish
-          ? `Gemini 画像生成が完了しませんでした（${finish}）`
-          : "Gemini から画像が返りませんでした。";
-        continue;
+        const mimeType = image.mimeType.split(";")[0]!.trim() || "image/png";
+        const dataUrl = `data:${mimeType};base64,${image.data}`;
+        return { ok: true, dataUrl, mimeType, model };
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          lastReason = "Gemini 画像生成がタイムアウトしました。";
+        } else {
+          lastReason =
+            error instanceof Error
+              ? `Gemini 画像生成エラー: ${error.message}`
+              : "Gemini 画像生成エラー";
+        }
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const mimeType = image.mimeType.split(";")[0]!.trim() || "image/png";
-      const dataUrl = `data:${mimeType};base64,${image.data}`;
-      return { ok: true, dataUrl, mimeType, model };
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        lastReason = "Gemini 画像生成がタイムアウトしました。";
-      } else {
-        lastReason =
-          error instanceof Error
-            ? `Gemini 画像生成エラー: ${error.message}`
-            : "Gemini 画像生成エラー";
-      }
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
-  return { ok: false, reason: lastReason };
+  return {
+    ok: false,
+    reason:
+      lastReason.includes("not found") || lastReason.includes("not supported")
+        ? `画像生成モデルが利用できませんでした。Google AI Studio で gemini-3.1-flash-image または gemini-2.5-flash-image が有効か確認してください。`
+        : lastReason,
+  };
 }
 
 /** モデルが JSON を ```json フェンスで包んで返すことがあるため剥がす */
