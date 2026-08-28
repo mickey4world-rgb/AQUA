@@ -298,12 +298,43 @@ export async function generateWithGemini(
   return { ok: false, reason: lastReason };
 }
 
-/** Nano Banana 2 → Nano Banana の順。preview 系は廃止・未提供のため含めない */
-const GEMINI_IMAGE_MODEL_DEFAULTS = [
+/** Nano Banana 2 → Nano Banana（GA のみ。preview は API 未提供） */
+const GEMINI_IMAGE_MODEL_ALLOWLIST = [
   "gemini-3.1-flash-image",
   "gemini-2.5-flash-image",
-];
+] as const;
+
+const GEMINI_IMAGE_MODEL_DEFAULTS = [...GEMINI_IMAGE_MODEL_ALLOWLIST];
 const GEMINI_IMAGE_TIMEOUT_MS = 90_000;
+
+/** 環境変数の preview / 誤設定を GA モデル ID に正規化 */
+function resolveGeminiImageModelId(raw: string): string | null {
+  const bare = raw.trim().toLowerCase().replace(/^models\//, "");
+  if (!bare) return null;
+
+  if (bare === "gemini-3.1-flash-image" || bare === "gemini-3.1-flash-image-preview") {
+    return "gemini-3.1-flash-image";
+  }
+  if (bare === "gemini-2.5-flash-image" || bare === "gemini-2.5-flash-image-preview") {
+    return "gemini-2.5-flash-image";
+  }
+  if (bare.includes("preview") || bare.includes("image-preview")) {
+    return null;
+  }
+  return (GEMINI_IMAGE_MODEL_ALLOWLIST as readonly string[]).includes(bare) ? bare : null;
+}
+
+function getGeminiImageModelCandidates(): string[] {
+  const fromEnv = [
+    process.env.SOLUNA_IMAGE_GEMINI_MODEL,
+    ...(process.env.SOLUNA_IMAGE_GEMINI_FALLBACK_MODELS ?? "").split(","),
+    ...GEMINI_IMAGE_MODEL_DEFAULTS,
+  ];
+  const resolved = fromEnv
+    .map((value) => resolveGeminiImageModelId(value ?? ""))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(resolved)];
+}
 
 function shouldTryNextGeminiImageModel(status: number, message?: string): boolean {
   const msg = (message ?? "").toLowerCase();
@@ -342,17 +373,6 @@ type GeminiImageApiResponse = {
   }>;
   error?: { message?: string };
 };
-
-function getGeminiImageModelCandidates(): string[] {
-  const preferred = process.env.SOLUNA_IMAGE_GEMINI_MODEL?.trim();
-  const fallbacks = (process.env.SOLUNA_IMAGE_GEMINI_FALLBACK_MODELS ?? GEMINI_IMAGE_MODEL_DEFAULTS.join(","))
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return [...new Set([...(preferred ? [preferred] : []), ...fallbacks])].filter(
-    (model) => !model.endsWith("-preview"),
-  );
-}
 
 function extractInlineImage(
   body: GeminiImageApiResponse,
