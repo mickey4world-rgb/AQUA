@@ -77,6 +77,47 @@ export async function getLatestBriefing(): Promise<SolunaNewsBriefing | null> {
   return enrichBriefingWithMonsters(briefing);
 }
 
+export async function getBriefingById(id: string): Promise<SolunaNewsBriefing | null> {
+  try {
+    const { resource } = await recordsContainer()
+      .item(id, SOLUNA_SYSTEM_USER_ID)
+      .read<StoredBriefing>();
+    if (!resource || resource.docType !== "systemBriefing") return null;
+    const { docType: _docType, userId: _userId, ...briefing } = resource;
+    return enrichBriefingWithMonsters(briefing);
+  } catch {
+    return null;
+  }
+}
+
+export type DailyBriefingStatus = {
+  todayBriefingId: string;
+  hasBriefing: boolean;
+  hasBattle: boolean;
+  complete: boolean;
+  lastRunAt: string | null;
+};
+
+/** JST 当日のブリーフィングと討伐が揃っているか（lastRunAt だけでは判定しない） */
+export async function getDailyBriefingStatus(date = new Date()): Promise<DailyBriefingStatus> {
+  const todayBriefingId = briefingDocIdForDate(date);
+  const [briefing, hunter, lastRunAt] = await Promise.all([
+    getBriefingById(todayBriefingId),
+    getSystemHunter(),
+    getSystemLastRunAt(),
+  ]);
+  const battle = hunter.battles[hunter.battles.length - 1] ?? null;
+  const hasBattle = battle?.briefingId === todayBriefingId;
+  const hasBriefing = briefing !== null;
+  return {
+    todayBriefingId,
+    hasBriefing,
+    hasBattle,
+    complete: hasBriefing && hasBattle,
+    lastRunAt,
+  };
+}
+
 export async function saveBriefing(briefing: SolunaNewsBriefing): Promise<void> {
   const enriched = enrichBriefingWithMonsters(briefing);
   await recordsContainer().items.upsert({
