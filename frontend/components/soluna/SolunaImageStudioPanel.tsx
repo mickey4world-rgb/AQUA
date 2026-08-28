@@ -119,7 +119,7 @@ export default function SolunaImageStudioPanel() {
       id: "welcome",
       role: "system",
       content:
-        "ベース立ち絵は Nano Banana 2 製です。既定モデルも同じ系統で、依頼の場面を優先し、ON 時はベース画像を参照して画風を寄せます。",
+        "Nano Banana 2 は Google AI Studio と同系統の Gemini 直叩きを優先します。依頼は日本語のまま渡し、ON 時はベース立ち絵を参照して画風を寄せます。",
     },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);

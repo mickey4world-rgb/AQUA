@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="AQUA">
+  <defs>
+    <linearGradient id="bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e5a8a"/>
+      <stop offset="1" stop-color="#0a1a33"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="11" y1="6" x2="21" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a5f3fc"/>
+      <stop offset="0.45" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="6" y1="24" x2="26" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67e8f9" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <path
+    d="M16 6.5c0 0-6.5 8.8-6.5 13.3 0 3.6 2.9 6.5 6.5 6.5s6.5-2.9 6.5-6.5C22.5 15.3 16 6.5 16 6.5z"
+    fill="url(#drop)"
+  />
+  <ellipse cx="13.6" cy="15.2" rx="1.6" ry="2.2" fill="#fff" opacity="0.42"/>
+  <path
+    d="M7 25.5c2.2-1.6 4.8-1.4 7.2-.2 2.1 1.1 4.2 1.2 6.3.1 1.4-.7 2.7-1 4-.6"
+    stroke="url(#wave)"
+    stroke-width="1.4"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>
