@@ -12,7 +12,7 @@ jobs:
   run_asset_trade:
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure daily news battle if missing
+      - name: Check daily briefing status
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -27,21 +27,8 @@ jobs:
           echo ""
           echo "status HTTP ${STATUS_CODE}"
           NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('needsBriefing') else 'false')" 2>/dev/null || echo "false")
-          if [ "${NEEDS}" != "true" ]; then
-            echo "本日の討伐は完了済み。ensure をスキップします。"
-            exit 0
-          fi
-          echo "::warning::本日の討伐が未完了。ensure を実行します。"
-          HTTP_CODE=$(curl -sS --max-time 180 -o /tmp/soluna-ensure.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d '{"step":"ensure"}')
-          cat /tmp/soluna-ensure.json
-          echo ""
-          echo "ensure HTTP ${HTTP_CODE}"
-          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
-            echo "::warning::ensureDailyBriefing HTTP ${HTTP_CODE}"
+          if [ "${NEEDS}" = "true" ]; then
+            echo "::warning::本日の討伐が未完了。Soluna System Briefing ワークフローで補完されます。"
           fi
 
       - name: Run background asset trade tick
