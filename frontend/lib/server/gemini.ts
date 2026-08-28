@@ -302,6 +302,7 @@ const GEMINI_IMAGE_MODEL_DEFAULTS = [
   "gemini-3.1-flash-image",
   "gemini-3.1-flash-image-preview",
   "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-preview",
 ];
 const GEMINI_IMAGE_TIMEOUT_MS = 90_000;
 
@@ -371,6 +372,7 @@ export async function generateGeminiImage(
   }
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+  parts.push({ text: request.prompt });
   if (request.referenceImage) {
     parts.push({
       inlineData: {
@@ -379,22 +381,26 @@ export async function generateGeminiImage(
       },
     });
   }
-  parts.push({ text: request.prompt });
-
-  const payload = {
-    contents: [{ role: "user", parts }],
-    generationConfig: {
-      responseModalities: ["IMAGE"],
-      imageConfig: {
-        aspectRatio: request.aspectRatio ?? "1:1",
-      },
-    },
-  };
 
   const models = getGeminiImageModelCandidates();
   let lastReason = "Gemini 画像生成に失敗しました。";
 
   for (const model of models) {
+    const imageConfig: { aspectRatio: string; imageSize?: string } = {
+      aspectRatio: request.aspectRatio ?? "1:1",
+    };
+    if (model.includes("3.1")) {
+      imageConfig.imageSize = "2K";
+    }
+
+    const payload = {
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        // IMAGE のみだと失敗するケースがあるため TEXT も含める
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig,
+      },
+    };
     const target: { url: string; headers: Record<string, string>; body: string } = relay
       ? {
           url: relay.url,
