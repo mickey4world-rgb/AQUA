@@ -1,30 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="AQUA">
   <defs>
     <linearGradient id="bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1e5a8a"/>
-      <stop offset="1" stop-color="#0a1a33"/>
+      <stop stop-color="#1a4f7a"/>
+      <stop offset="1" stop-color="#071526"/>
     </linearGradient>
-    <linearGradient id="drop" x1="11" y1="6" x2="21" y2="26" gradientUnits="userSpaceOnUse">
+    <linearGradient id="crystal-main" x1="10" y1="5" x2="22" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ecfeff"/>
+      <stop offset="0.35" stop-color="#67e8f9"/>
+      <stop offset="0.7" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="facet-left" x1="8" y1="12" x2="16" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0e7490" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#164e63" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="facet-right" x1="16" y1="12" x2="24" y2="28" gradientUnits="userSpaceOnUse">
       <stop stop-color="#a5f3fc"/>
-      <stop offset="0.45" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0.75"/>
     </linearGradient>
-    <linearGradient id="wave" x1="6" y1="24" x2="26" y2="30" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#67e8f9" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0.35"/>
-    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(16 14) scale(12)">
+      <stop stop-color="#67e8f9" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <circle cx="16" cy="15" r="11" fill="url(#glow)"/>
+  <!-- 結晶本体 -->
   <path
-    d="M16 6.5c0 0-6.5 8.8-6.5 13.3 0 3.6 2.9 6.5 6.5 6.5s6.5-2.9 6.5-6.5C22.5 15.3 16 6.5 16 6.5z"
-    fill="url(#drop)"
+    d="M16 4.5 L23.5 11.5 L21.5 25.5 L16 28 L10.5 25.5 L8.5 11.5 Z"
+    fill="url(#crystal-main)"
   />
-  <ellipse cx="13.6" cy="15.2" rx="1.6" ry="2.2" fill="#fff" opacity="0.42"/>
-  <path
-    d="M7 25.5c2.2-1.6 4.8-1.4 7.2-.2 2.1 1.1 4.2 1.2 6.3.1 1.4-.7 2.7-1 4-.6"
-    stroke="url(#wave)"
-    stroke-width="1.4"
-    stroke-linecap="round"
-    fill="none"
-  />
+  <!-- ファセット -->
+  <path d="M16 4.5 L8.5 11.5 L10.5 25.5 L16 28 L16 4.5 Z" fill="url(#facet-left)"/>
+  <path d="M16 4.5 L23.5 11.5 L21.5 25.5 L16 28 L16 4.5 Z" fill="url(#facet-right)" opacity="0.72"/>
+  <path d="M16 4.5 L23.5 11.5 L8.5 11.5 Z" fill="#ecfeff" opacity="0.55"/>
+  <path d="M16 11.5 L21.5 25.5 L10.5 25.5 Z" fill="#cffafe" opacity="0.18"/>
+  <!-- 輝線 -->
+  <path d="M13 8.5 L14.8 14" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.75"/>
+  <path d="M18.5 9.5 L17.2 13.5" stroke="#fff" stroke-width="0.6" stroke-linecap="round" opacity="0.45"/>
+  <!-- きらめき -->
+  <circle cx="11.2" cy="8.8" r="0.75" fill="#fff" opacity="0.9"/>
+  <path d="M22.5 10.5 L22.5 12.3 M21.6 11.4 L23.4 11.4" stroke="#fff" stroke-width="0.55" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="20.8" cy="22.2" r="0.45" fill="#a5f3fc" opacity="0.8"/>
 </svg>
