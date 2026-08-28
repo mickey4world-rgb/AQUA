@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none" role="img" aria-label="AQUA">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="12" x2="156" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e5a8a"/>
+      <stop offset="0.55" stop-color="#123a62"/>
+      <stop offset="1" stop-color="#0a1a33"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="62" y1="34" x2="118" y2="146" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#cffafe"/>
+      <stop offset="0.35" stop-color="#67e8f9"/>
+      <stop offset="0.7" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="34" y1="132" x2="146" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67e8f9" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0.25"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(90 52) rotate(90) scale(70)">
+      <stop stop-color="#38bdf8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="url(#bg)"/>
+  <circle cx="90" cy="52" r="70" fill="url(#glow)"/>
+  <path
+    d="M90 36c0 0-36.5 49.5-36.5 74.8 0 20.3 16.3 36.7 36.5 36.7s36.5-16.4 36.5-36.7C126.5 85.5 90 36 90 36z"
+    fill="url(#drop)"
+  />
+  <ellipse cx="76.5" cy="86" rx="9" ry="12.5" fill="#fff" opacity="0.38"/>
+  <path
+    d="M39 143.5c12.5-9 27-8 40.5-1.2 11.8 6.2 23.5 6.8 35.2.6 7.8-4 15-5.5 22.3-3.2"
+    stroke="url(#wave)"
+    stroke-width="7"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M48 156c10-5.5 22-4.8 33-1 9.5 3.2 19 3.5 28.5 1"
+    stroke="#a5f3fc"
+    stroke-opacity="0.35"
+    stroke-width="4"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>

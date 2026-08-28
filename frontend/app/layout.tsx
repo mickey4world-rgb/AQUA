@@ -32,6 +32,7 @@ export const metadata: Metadata = {
   title: "AQUA — Personal Software Studio",
   description:
     "AQUA 個人向け統合情報ポータル。保有株・ディズニー・AI 合議・宇宙分析・WORKS を一つの画面から。",
+  applicationName: "AQUA",
 };
 
 export const viewport: Viewport = {

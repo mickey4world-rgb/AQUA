@@ -3,8 +3,10 @@
  * 実体は Cosmos に data URL で保管（Blob 無しでも動く）
  */
 import { randomUUID } from "crypto";
+import { readFile } from "fs/promises";
+import path from "path";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
-import { isGeminiConfigured, generateWithGemini, stripJsonFence } from "@/lib/server/gemini";
+import { generateGeminiImage, generateWithGemini, isGeminiConfigured, stripJsonFence } from "@/lib/server/gemini";
 import { sanitizeText } from "@/lib/server/security";
 import type {
   SolunaImageAsset,
@@ -73,15 +75,19 @@ export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
 
 export const DEFAULT_SOLUNA_IMAGE_MODEL: SolunaImageModelId = "nanobanana-2";
 
-/** 短めの画風トレーラー（先頭に置かず、依頼の後ろに付ける） */
+/** Pollinations フォールバック用の短い画風トレーラー */
 export const SOLUNA_BASE_STYLE_TRAILER = [
-  "same Sol and Luna character designs as the reference image",
-  "Nano Banana 2 polished chibi anime game icon style",
-  "circular ornate gold frames, cute rounded proportions, vibrant colors, clean lineart",
-  "Sol: spiky brown hair, wink, blue crystal shield, sword on back",
-  "Luna: long wavy purple hair, star headpiece, staff with blue crystal, ornate book",
-  "keep identity consistent with reference, not photorealistic, not 3D",
+  "same Sol and Luna as reference",
+  "chibi anime game icon style, circular gold frames, vibrant colors",
 ].join(", ");
+
+/** Gemini 直叩き用（日本語・依頼優先） */
+function composeGeminiImagePrompt(userPrompt: string, matchBaseStyle: boolean): string {
+  if (!matchBaseStyle) return userPrompt.trim();
+  return `${userPrompt.trim()}
+
+参照画像のソルとルーナのキャラデザイン・ちびゲームアイコン風の画風を維持したまま、上記の場面をそのまま描いてください。依頼にない要素は追加しないでください。`;
+}
 
 type StoredImage = SolunaImageAsset & { docType: typeof DOC_TYPE };
 
@@ -112,6 +118,52 @@ export function resolveImageModel(raw: unknown): SolunaImageModelId {
 
 function modelSupportsReference(model: SolunaImageModelId): boolean {
   return SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.supportsReference === true;
+}
+
+function isGeminiNativeImageModel(model: SolunaImageModelId): boolean {
+  return model === "nanobanana-2" || model === "nanobanana-2-lite";
+}
+
+async function loadBaseReferenceImage(): Promise<{ mimeType: string; data: string } | null> {
+  const candidates = [
+    path.join(process.cwd(), "public", "soluna", "characters-base.jpg"),
+    path.join(process.cwd(), "frontend", "public", "soluna", "characters-base.jpg"),
+  ];
+  for (const filePath of candidates) {
+    try {
+      const buffer = await readFile(filePath);
+      if (buffer.byteLength < 32) continue;
+      return { mimeType: "image/jpeg", data: buffer.toString("base64") };
+    } catch {
+      /* try next path */
+    }
+  }
+
+  try {
+    const res = await fetch(publicBaseImageUrl(), { cache: "no-store" });
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength < 32) return null;
+    return {
+      mimeType: contentType.split(";")[0]!.trim() || "image/jpeg",
+      data: buffer.toString("base64"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function defaultStudioComments(matchBaseStyle: boolean): { solComment: string; lunaComment: string } {
+  return matchBaseStyle
+    ? {
+        solComment: "依頼どおり、ベース画風で描くぞ！",
+        lunaComment: "参照立ち絵に寄せつつ、場面はそのままね。",
+      }
+    : {
+        solComment: "よし、この依頼どおり描くぜ！",
+        lunaComment: "依頼の内容を落とさないでね。",
+      };
 }
 
 function baseAsset(userId: string): SolunaImageAsset {
@@ -256,8 +308,8 @@ async function enhancePromptWithGemini(
 
   if (!isGeminiConfigured()) return fallback;
 
-  // 短い依頼や英数字のみは Gemini を呼ばず、依頼文をそのまま場面にする（無料枠消費も抑制）
-  const needsTranslate = /[\u3040-\u30ff\u4e00-\u9fff]/.test(userPrompt) && userPrompt.length >= 12;
+  // Pollinations フォールバック時のみ英訳（Gemini 直叩きは日本語のまま依頼を尊重）
+  const needsTranslate = /[\u3040-\u30ff\u4e00-\u9fff]/.test(userPrompt);
   if (!needsTranslate) return fallback;
 
   try {
@@ -306,21 +358,33 @@ async function generateWithPollinations(
     height: "1024",
     nologo: "true",
     model,
-    // enhance は依頼を別シーンに書き換えやすいので常時オフ
     enhance: "false",
     seed: String(Date.now() % 1_000_000),
   });
+  if (model === "nanobanana-2" || model === "nanobanana-2-lite") {
+    params.set("resolution", "2k");
+  }
   if (options?.referenceImageUrl) {
     params.set("image", options.referenceImageUrl);
   }
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params}`;
+
+  const pollinationsKey = process.env.POLLINATIONS_API_KEY?.trim();
+  if (pollinationsKey) {
+    params.set("key", pollinationsKey);
+  }
+
+  const url = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?${params}`;
+  const headers: Record<string, string> = { Accept: "image/*" };
+  if (pollinationsKey) {
+    headers.Authorization = `Bearer ${pollinationsKey}`;
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: "image/*" },
+      headers,
       cache: "no-store",
     });
     if (!res.ok) {
@@ -344,7 +408,7 @@ async function generateWithPollinations(
 }
 
 /**
- * Gemini で場面翻訳 → Pollinations（既定 Nano Banana 2）で生成 → Cosmos 保存
+ * Gemini ネイティブ（Nano Banana 2）優先 → 失敗時 Pollinations フォールバック
  */
 export async function generateSolunaImage(
   userId: string,
@@ -358,39 +422,72 @@ export async function generateSolunaImage(
   const matchBaseStyle = options?.matchBaseStyle !== false;
   const useReference = matchBaseStyle && modelSupportsReference(model);
   const referenceImageUrl = useReference ? publicBaseImageUrl() : null;
+  const comments = defaultStudioComments(matchBaseStyle);
 
-  const enhanced = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
-  const { dataUrl } = await generateWithPollinations(enhanced.enhancedPrompt, model, {
-    referenceImageUrl,
-  });
+  let enhancedPrompt = composeGeminiImagePrompt(userPrompt, matchBaseStyle);
+  let provider = "";
+  let dataUrl = "";
+  let mimeType = "image/jpeg";
+
+  if (isGeminiNativeImageModel(model) && isGeminiConfigured()) {
+    const referenceImage = useReference ? await loadBaseReferenceImage() : undefined;
+    const gemini = await generateGeminiImage({
+      prompt: enhancedPrompt,
+      referenceImage: referenceImage ?? undefined,
+      aspectRatio: "1:1",
+    });
+    if (gemini.ok) {
+      dataUrl = gemini.dataUrl;
+      mimeType = gemini.mimeType;
+      provider = `gemini(${gemini.model})${referenceImage ? "+base-ref" : ""}`;
+    }
+  }
+
+  if (!dataUrl) {
+    const pollinationsPrompt = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
+    enhancedPrompt = pollinationsPrompt.enhancedPrompt;
+    const generated = await generateWithPollinations(enhancedPrompt, model, {
+      referenceImageUrl,
+    });
+    dataUrl = generated.dataUrl;
+    mimeType = generated.mimeType;
+    const modelLabel = SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.label ?? model;
+    const refNote = referenceImageUrl ? "+base-ref" : "";
+    provider = `pollinations(${modelLabel})${refNote}`;
+    comments.solComment = pollinationsPrompt.solComment;
+    comments.lunaComment = pollinationsPrompt.lunaComment;
+  }
+
   const image = await saveSolunaImage({
     userId,
     title: userPrompt.slice(0, 40),
-    prompt: enhanced.enhancedPrompt,
+    prompt: enhancedPrompt,
     source: "generate",
     dataUrl,
     model,
   });
 
-  const modelLabel = SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.label ?? model;
-  const refNote = referenceImageUrl ? "+base-ref" : "";
   return {
     image,
-    solComment: enhanced.solComment,
-    lunaComment: enhanced.lunaComment,
-    enhancedPrompt: enhanced.enhancedPrompt,
-    provider: `pollinations(${modelLabel})${refNote}+scene-prompt`,
+    solComment: comments.solComment,
+    lunaComment: comments.lunaComment,
+    enhancedPrompt,
+    provider,
     model,
   };
 }
 
 export function imageStudioMeta() {
+  const geminiDirect = isGeminiConfigured();
   return {
     baseImageUrl: SOLUNA_BASE_IMAGE_PATH,
     generateConfigured: true,
-    generateProvider: "Pollinations Nano Banana 2（無料・ベース同系統）+ 場面翻訳",
+    generateProvider: geminiDirect
+      ? "Gemini Nano Banana 2（Google AI Studio 同系統）→ Pollinations フォールバック"
+      : "Pollinations Nano Banana 2 + 場面翻訳",
     maxImages: MAX_IMAGES,
     models: SOLUNA_IMAGE_MODELS,
     defaultModel: DEFAULT_SOLUNA_IMAGE_MODEL,
+    geminiDirect,
   };
 }

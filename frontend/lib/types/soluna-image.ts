@@ -47,6 +47,8 @@ export interface SolunaImageListResponse {
   maxImages: number;
   models: SolunaImageModelOption[];
   defaultModel: SolunaImageModelId;
+  /** Gemini ネイティブ画像生成が使えるか */
+  geminiDirect?: boolean;
 }
 
 export interface SolunaImageGenerateResponse {
