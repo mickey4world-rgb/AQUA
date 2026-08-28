@@ -348,6 +348,10 @@ async function enhancePromptWithGemini(
   }
 }
 
+function pollinationsConfigured(): boolean {
+  return Boolean(process.env.POLLINATIONS_API_KEY?.trim());
+}
+
 async function generateWithPollinations(
   prompt: string,
   model: SolunaImageModelId,
@@ -388,6 +392,13 @@ async function generateWithPollinations(
       cache: "no-store",
     });
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          pollinationsKey
+            ? `Pollinations API 認証エラー（HTTP ${res.status}）。API キーを確認してください。`
+            : `Pollinations の ${model} は API キーが必要です。本番では Gemini 経由を使用します。`,
+        );
+      }
       throw new Error(`無料画像API HTTP ${res.status}（model=${model}）`);
     }
     const contentType = res.headers.get("content-type") || "image/jpeg";
@@ -428,8 +439,15 @@ export async function generateSolunaImage(
   let provider = "";
   let dataUrl = "";
   let mimeType = "image/jpeg";
+  let geminiError: string | null = null;
 
-  if (isGeminiNativeImageModel(model) && isGeminiConfigured()) {
+  if (isGeminiNativeImageModel(model)) {
+    if (!isGeminiConfigured()) {
+      throw new Error(
+        "Nano Banana 2 には GEMINI_RELAY（または GEMINI_API_KEY）の設定が必要です。",
+      );
+    }
+
     const referenceImage = useReference ? await loadBaseReferenceImage() : undefined;
     const gemini = await generateGeminiImage({
       prompt: enhancedPrompt,
@@ -440,10 +458,21 @@ export async function generateSolunaImage(
       dataUrl = gemini.dataUrl;
       mimeType = gemini.mimeType;
       provider = `gemini(${gemini.model})${referenceImage ? "+base-ref" : ""}`;
+    } else {
+      geminiError = gemini.reason;
     }
   }
 
   if (!dataUrl) {
+    const pollinationsAllowed =
+      !isGeminiNativeImageModel(model) || pollinationsConfigured();
+    if (!pollinationsAllowed) {
+      throw new Error(
+        geminiError ??
+          "Gemini 画像生成に失敗しました。GEMINI_RELAY の設定と画像モデルの利用可否を確認してください。",
+      );
+    }
+
     const pollinationsPrompt = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
     enhancedPrompt = pollinationsPrompt.enhancedPrompt;
     const generated = await generateWithPollinations(enhancedPrompt, model, {
