@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import CrowdStatusCard from "@/components/disney/CrowdStatusCard";
 import DisneyCalendar from "@/components/disney/DisneyCalendar";
 import DisneyChatPanel from "@/components/disney/DisneyChatPanel";
+import DisneyCrowdBreakdownPanel from "@/components/disney/DisneyCrowdBreakdownPanel";
+import DisneyEveningAdvicePanel from "@/components/disney/DisneyEveningAdvicePanel";
+import DisneyHourlyForecast from "@/components/disney/DisneyHourlyForecast";
 import DisneyInfoPanel from "@/components/disney/DisneyInfoPanel";
 import DisneyPageShell from "@/components/disney/DisneyPageShell";
 import WaitTimeList from "@/components/disney/WaitTimeList";
@@ -66,8 +69,15 @@ async function fetchParkData(
   };
 }
 
+function getTomorrowClient(): string {
+  const d = new Date(`${getJstTodayClient()}T12:00:00+09:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+}
+
 export default function DisneyPage() {
   const today = useMemo(() => getJstTodayClient(), []);
+  const tomorrow = useMemo(() => getTomorrowClient(), []);
   const mobileProfile = useMobileProfile();
   const refreshMs = getAdaptiveRefreshMs(BASE_REFRESH_MS, mobileProfile);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
@@ -154,11 +164,11 @@ export default function DisneyPage() {
               混雑・待ち時間ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
-              リアルタイム混雑とカレンダー予測（最大6か月先）で来園計画を立てられます。
+              リアルタイム混雑・時間帯別予想・数値化カレンダー（最大6か月先）で来園計画を立てられます。
               {isLiveDay
                 ? ` ${Math.round(refreshMs / 1000)}秒ごとに自動更新。`
                 : " 未来日は予測モードです。"}
-              {" AI 回り方アドバイスはチャットで質問したときだけ利用します。"}
+              {" ベイマックス／エルサの前日アドバイスはルールベース（AI コストなし）。"}
             </p>
           </div>
           <button
@@ -250,6 +260,17 @@ export default function DisneyPage() {
           />
         </div>
 
+        <div className="mt-6">
+          <DisneyHourlyForecast park={park} date={selectedDate} />
+        </div>
+
+        <div className="mt-6">
+          <DisneyEveningAdvicePanel
+            park={park}
+            targetDate={selectedDate > today ? selectedDate : tomorrow}
+          />
+        </div>
+
         <div className="mt-6 grid gap-6 lg:grid-cols-5">
           <div className="space-y-6 lg:col-span-2">
             {waitData && (
@@ -261,6 +282,10 @@ export default function DisneyPage() {
                 predictionDescription={predictionDescription}
               />
             )}
+            <DisneyCrowdBreakdownPanel
+              breakdown={advice?.breakdown ?? null}
+              crowdLabel={advice?.prediction?.crowdLabel ?? waitData?.status.crowdLabel}
+            />
             <WaitTimeList
               attractions={waitData?.attractions ?? []}
               loading={loading}

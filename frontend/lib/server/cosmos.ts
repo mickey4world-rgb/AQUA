@@ -11,6 +11,7 @@ export const COSMOS_CONTAINERS = {
   workNotes: process.env.COSMOS_WORK_NOTES_CONTAINER ?? "WorkNotes",
   solunaRecords: process.env.COSMOS_SOLUNA_CONTAINER ?? "SolunaRecords",
   solunaTokens: process.env.COSMOS_SOLUNA_TOKENS_CONTAINER ?? "SolunaTokens",
+  disneyRecords: process.env.COSMOS_DISNEY_CONTAINER ?? "DisneyRecords",
 } as const;
 
 export function isCosmosConfigured(): boolean {

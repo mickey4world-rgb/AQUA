@@ -1,4 +1,4 @@
-import type { CrowdLevel } from "@/lib/types/disney";
+import type { AttractionCrowdBand, CrowdLevel } from "@/lib/types/disney";
 
 export const crowdLevelLabels: Record<CrowdLevel, string> = {
   low: "空いている",
@@ -78,3 +78,17 @@ export const crowdLevelBgColors: Record<CrowdLevel, string> = {
 
 export const disneyPanelClass =
   "rounded-2xl border border-white/10 bg-indigo-950/50 shadow-xl shadow-black/20 backdrop-blur-xl";
+
+export const crowdBandCellStyles: Record<AttractionCrowdBand, string> = {
+  empty: "bg-emerald-500/35 text-emerald-50",
+  moderate: "bg-amber-500/40 text-amber-50",
+  busy: "bg-orange-500/45 text-orange-50",
+  extreme: "bg-rose-500/50 text-rose-50",
+};
+
+export const crowdBandLabels: Record<AttractionCrowdBand, string> = {
+  empty: "空",
+  moderate: "中",
+  busy: "混",
+  extreme: "大",
+};

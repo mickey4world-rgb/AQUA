@@ -53,6 +53,7 @@ export interface DisneyAdvice {
   fetchedAt: string;
   targetDate?: string;
   prediction?: DisneyDatePrediction;
+  breakdown?: DisneyCrowdBreakdown;
   aiInsight?: DisneyAiInsight;
 }
 
@@ -90,11 +91,103 @@ export interface DisneyCalendarDay {
   date: string;
   crowdLevel: CrowdLevel;
   crowdLabel: string;
+  crowdScore: number;
   estimatedWait: number;
   isToday: boolean;
   isPast: boolean;
   isFuture: boolean;
   factors: string[];
+  breakdown: DisneyCrowdBreakdown;
+}
+
+/** 混雑要因の数値内訳（0〜100、高いほど混雑寄り） */
+export interface DisneyCrowdBreakdown {
+  calendar: number;
+  seasonal: number;
+  weather: number;
+  event: number;
+  newsBuzz: number;
+  merchandise: number;
+  historical: number;
+  total: number;
+  labels: {
+    calendar: string;
+    seasonal: string;
+    weather: string;
+    event: string;
+    newsBuzz: string;
+    merchandise: string;
+    historical: string;
+  };
+}
+
+export type AttractionCrowdBand = "empty" | "moderate" | "busy" | "extreme";
+
+export interface AttractionHourSlot {
+  hour: number;
+  label: string;
+  waitMinutes: number;
+  band: AttractionCrowdBand;
+}
+
+export interface AttractionDayForecast {
+  id: string;
+  name: string;
+  nameJa: string;
+  isPopular: boolean;
+  slots: AttractionHourSlot[];
+  bestHours: number[];
+  worstHours: number[];
+}
+
+export interface DisneyDayForecast {
+  park: DisneyParkKey;
+  parkName: string;
+  date: string;
+  mode: "live" | "forecast";
+  hours: number[];
+  hourLabels: string[];
+  attractions: AttractionDayForecast[];
+  summary: {
+    quietestHour: number;
+    busiestHour: number;
+    quietestLabel: string;
+    busiestLabel: string;
+  };
+  generatedAt: string;
+}
+
+export interface DisneyCharacterEveningAdvice {
+  park: DisneyParkKey;
+  parkName: string;
+  targetDate: string;
+  characterId: "baymax" | "elsa";
+  characterNameJa: string;
+  headline: string;
+  crowdReasons: string[];
+  cautions: string[];
+  touringTips: string[];
+  breakdown: DisneyCrowdBreakdown;
+  crowdLevel: CrowdLevel;
+  crowdScore: number;
+  generatedAt: string;
+  mode: "evening" | "preview";
+}
+
+export interface DisneyShowcaseSnapshot {
+  generatedAt: string;
+  today: string;
+  tomorrow: string;
+  tdl: {
+    calendar: DisneyCalendarDay[];
+    eveningAdvice: DisneyCharacterEveningAdvice;
+    todayForecast: DisneyDayForecast;
+  };
+  tds: {
+    calendar: DisneyCalendarDay[];
+    eveningAdvice: DisneyCharacterEveningAdvice;
+    todayForecast: DisneyDayForecast;
+  };
 }
 
 export interface DisneyCalendarMonth {

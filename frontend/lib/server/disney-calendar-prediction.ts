@@ -9,6 +9,7 @@ import {
   isJapanHoliday,
   parseJstDate,
 } from "@/lib/disney-holidays";
+import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import type {
   CrowdLevel,
   DisneyCalendarDay,
@@ -261,15 +262,18 @@ export async function predictCalendarMonth(
 
   const days = getMonthDays(year, month).map((dateStr): DisneyCalendarDay => {
     const prediction = predictCrowdForDate(park, dateStr, liveBias);
+    const breakdown = buildCrowdBreakdown(dateStr, park);
     return {
       date: dateStr,
       crowdLevel: prediction.crowdLevel,
       crowdLabel: prediction.crowdLabel,
+      crowdScore: breakdown.total,
       estimatedWait: prediction.estimatedWait,
       isToday: dateStr === today,
       isPast: compareDateStr(dateStr, today) < 0,
       isFuture: compareDateStr(dateStr, today) > 0,
-      factors: prediction.factors.slice(0, 2),
+      factors: prediction.factors.slice(0, 3),
+      breakdown,
     };
   });
 

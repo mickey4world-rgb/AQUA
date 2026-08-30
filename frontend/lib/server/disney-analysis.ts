@@ -1,6 +1,7 @@
 import { crowdLevelLabels } from "@/lib/disney-utils";
 import { getJstToday } from "@/lib/disney-holidays";
 import { DISNEY_PARKS } from "@/lib/disney-constants";
+import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
 import { fetchParkLiveData, fetchParkSchedule } from "@/lib/server/themeparks-api";
 import type {
@@ -229,6 +230,7 @@ export async function buildDisneyAdvice(
 
   if (date !== today) {
     const prediction = predictCrowdForDate(park, date);
+    const breakdown = buildCrowdBreakdown(date, park);
     return {
       park,
       parkName: prediction.parkName,
@@ -240,6 +242,7 @@ export async function buildDisneyAdvice(
       fetchedAt: new Date().toISOString(),
       targetDate: date,
       prediction,
+      breakdown,
     };
   }
 
@@ -250,6 +253,7 @@ export async function buildDisneyAdvice(
 
   const touringPlan = buildTouringPlan(attractions);
   const nowCount = touringPlan.filter((item) => item.priority === "now").length;
+  const breakdown = buildCrowdBreakdown(today, park);
 
   return {
     park,
@@ -261,6 +265,7 @@ export async function buildDisneyAdvice(
     summary: `${DISNEY_PARKS[park].nameJa}は現在${status.crowdLabel}（平均待ち ${status.averageWait}分）。今すぐ向かう候補は ${nowCount} 件です。`,
     fetchedAt: new Date().toISOString(),
     targetDate: today,
+    breakdown,
   };
 }
 
