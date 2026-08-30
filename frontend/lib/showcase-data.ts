@@ -62,7 +62,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "TDR Analytics",
     titleJa: "ディズニー",
     description:
-      "TDR の混雑予測・待ち時間・キャラクターチャット。パーク体験をデータと AI で計画するモジュールです。",
+      "TDR の混雑予測カレンダー・時間帯別アトラクション予想・ベイマックス／エルサの前日アドバイス。ショーケースから無料でプレビューできます。",
     accent: "#f0abfc",
     href: "/disney",
     tag: "Experience",

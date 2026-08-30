@@ -5,7 +5,6 @@ import {
   crowdLevelCellStyles,
   crowdLevelDotColors,
   crowdLevelLabels,
-  crowdLevelShortLabels,
   disneyPanelClass,
   formatJstDateLabel,
 } from "@/lib/disney-utils";
@@ -211,7 +210,7 @@ export default function DisneyCalendar({
                             : "text-rose-200"
                     }`}
                   >
-                    {crowdLevelShortLabels[day.crowdLevel]}
+                    {day.crowdScore}
                   </span>
                 </button>
               );
@@ -235,7 +234,7 @@ export default function DisneyCalendar({
           ))}
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          祝日・曜日・季節要因から最大6か月先まで予測。セル内の文字（空/中/混/大）が混雑度です。
+          祝日・曜日・季節・イベント・天候・グッズ・過去傾向から数値化（0〜100）。セル内数字が混雑スコアです。
         </p>
       </div>
     </div>

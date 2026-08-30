@@ -6,6 +6,7 @@ import {
   predictDailyCrowd,
 } from "@/lib/server/disney-analysis";
 import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
+import { recordWaitSnapshot } from "@/lib/server/disney-historical-store";
 import { fetchParkLiveData } from "@/lib/server/themeparks-api";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
@@ -46,6 +47,8 @@ export async function GET(request: Request) {
         fetchParkLiveData(park),
         buildParkCrowdStatus(park),
       ]);
+
+      void recordWaitSnapshot(park, attractions).catch(() => undefined);
 
       return Response.json({
         park,
