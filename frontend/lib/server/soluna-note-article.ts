@@ -13,6 +13,7 @@ import { medalUnitScore } from "@/lib/server/soluna-battle";
 import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
 import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
 import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
+import { buildDisneyGuildNoticeForNote } from "@/lib/server/disney-note-guild-notice";
 
 /** Note 設定・世界観の案内ページ（無料リード冒頭） */
 export const NOTE_SETTINGS_GUIDE_URL =
@@ -400,6 +401,8 @@ ${
 ---
 
 ${guildFinance}
+
+${buildDisneyGuildNoticeForNote()}
 
 毎日自動で、ここまでをお届けします。明日もまた、ニュースをモンスターに変えて討伐に出かけます。`;
 

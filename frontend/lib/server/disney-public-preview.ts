@@ -39,13 +39,14 @@ async function buildParkPublicPreview(
   park: DisneyParkKey,
   today: string,
   tomorrow: string,
+  options?: { skipLiveFetch?: boolean },
 ): Promise<DisneyParkPublicPreview> {
   const now = new Date(`${today}T12:00:00+09:00`);
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
   const [calendarMonth, todayBriefing, tomorrowBriefing] = await Promise.all([
-    predictCalendarMonth(park, year, month),
+    predictCalendarMonth(park, year, month, { skipLiveFetch: options?.skipLiveFetch }),
     buildDayBriefing(park, today, "today"),
     buildDayBriefing(park, tomorrow, "tomorrow"),
   ]);
@@ -59,12 +60,14 @@ async function buildParkPublicPreview(
   };
 }
 
-export async function buildDisneyShowcaseSnapshot(): Promise<DisneyShowcaseSnapshot> {
+export async function buildDisneyShowcaseSnapshot(options?: {
+  skipLiveFetch?: boolean;
+}): Promise<DisneyShowcaseSnapshot> {
   const today = getJstToday();
   const tomorrow = getTomorrowJst();
   const [tdl, tds] = await Promise.all([
-    buildParkPublicPreview("tdl", today, tomorrow),
-    buildParkPublicPreview("tds", today, tomorrow),
+    buildParkPublicPreview("tdl", today, tomorrow, options),
+    buildParkPublicPreview("tds", today, tomorrow, options),
   ]);
 
   return {

@@ -11,7 +11,7 @@ export default function DisneyShowcaseDemo() {
   const [park, setPark] = useState<"tdl" | "tds">("tdl");
 
   useEffect(() => {
-    fetch("/api/disney/showcase")
+    fetch("/api/public/tdr-preview")
       .then(async (res) => (res.ok ? ((await res.json()) as DisneyShowcaseSnapshot) : null))
       .catch(() => null)
       .then(setData);

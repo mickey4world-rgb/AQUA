@@ -248,16 +248,19 @@ export async function predictCalendarMonth(
   park: DisneyParkKey,
   year: number,
   month: number,
+  options?: { skipLiveFetch?: boolean },
 ): Promise<DisneyCalendarMonth> {
   const today = getJstToday();
   let liveBias = 0;
 
-  try {
-    const { buildParkCrowdStatus } = await import("@/lib/server/disney-analysis");
-    const status = await buildParkCrowdStatus(park);
-    liveBias = crowdLevelToScoreDelta(status.crowdLevel);
-  } catch {
-    liveBias = 0;
+  if (!options?.skipLiveFetch) {
+    try {
+      const { buildParkCrowdStatus } = await import("@/lib/server/disney-analysis");
+      const status = await buildParkCrowdStatus(park);
+      liveBias = crowdLevelToScoreDelta(status.crowdLevel);
+    } catch {
+      liveBias = 0;
+    }
   }
 
   const days = getMonthDays(year, month).map((dateStr): DisneyCalendarDay => {
