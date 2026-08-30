@@ -20,10 +20,11 @@ export async function GET(request: Request) {
     }
 
     const today = getJstToday();
+    const dayContext = date === today ? "today" : "tomorrow";
     const mode = date > today ? "evening" : "preview";
 
     try {
-      const advice = buildCharacterEveningAdvice(park, date, mode);
+      const advice = buildCharacterEveningAdvice(park, date, dayContext, mode);
       return Response.json(advice);
     } catch (error) {
       return Response.json(

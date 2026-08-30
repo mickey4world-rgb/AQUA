@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import DisneyCompanion from "@/components/disney/DisneyCompanion";
-import { crowdBandCellStyles, crowdLevelColors } from "@/lib/disney-utils";
+import { crowdLevelColors } from "@/lib/disney-utils";
 import type { DisneyShowcaseSnapshot } from "@/lib/types/disney";
 
 export default function DisneyShowcaseDemo() {
@@ -16,10 +17,8 @@ export default function DisneyShowcaseDemo() {
       .then(setData);
   }, []);
 
-  const snapshot = park === "tdl" ? data?.tdl : data?.tds;
-  const advice = snapshot?.eveningAdvice;
-  const forecast = snapshot?.todayForecast;
-  const calendar = snapshot?.calendar?.slice(0, 7) ?? [];
+  const preview = park === "tdl" ? data?.tdl : data?.tds;
+  const advice = preview?.today.characterAdvice;
 
   return (
     <div className="showcase-demo showcase-demo--disney">
@@ -41,9 +40,7 @@ export default function DisneyShowcaseDemo() {
                 type="button"
                 onClick={() => setPark(key)}
                 className={`rounded-full px-2 py-0.5 text-[10px] ${
-                  park === key
-                    ? "bg-fuchsia-500/30 text-fuchsia-100"
-                    : "text-slate-400"
+                  park === key ? "bg-fuchsia-500/30 text-fuchsia-100" : "text-slate-400"
                 }`}
               >
                 {key === "tdl" ? "ランド" : "シー"}
@@ -52,71 +49,37 @@ export default function DisneyShowcaseDemo() {
           </div>
         </div>
 
-        {!data ? (
+        {!data || !preview || !advice ? (
           <p className="mt-4 text-xs text-slate-400">混雑予測を読み込み中...</p>
-        ) : advice ? (
+        ) : (
           <>
-            <div className="showcase-disney-companion mt-4 rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-2.5">
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className={`rounded-lg border p-2 text-[10px] ${crowdLevelColors[preview.today.crowdLevel]}`}>
+                <p className="opacity-80">本日</p>
+                <p className="font-bold">{preview.today.crowdScore}</p>
+              </div>
+              <div className={`rounded-lg border p-2 text-[10px] ${crowdLevelColors[preview.tomorrow.crowdLevel]}`}>
+                <p className="opacity-80">明日</p>
+                <p className="font-bold">{preview.tomorrow.crowdScore}</p>
+              </div>
+            </div>
+
+            <div className="showcase-disney-companion mt-3 rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-2.5">
               <DisneyCompanion
                 characterId={advice.characterId}
                 mood="speaking"
                 nameJa={advice.characterNameJa}
-                line={advice.headline}
+                line={advice.headline.slice(0, 120) + (advice.headline.length > 120 ? "…" : "")}
               />
             </div>
 
-            <div className="mt-3 grid grid-cols-7 gap-1">
-              {calendar.map((day) => (
-                <div
-                  key={day.date}
-                  className={`rounded border px-1 py-1 text-center text-[9px] ${
-                    crowdLevelColors[day.crowdLevel]
-                  }`}
-                  title={day.crowdLabel}
-                >
-                  <div className="font-bold">{Number(day.date.slice(8, 10))}</div>
-                  <div className="font-mono">{day.crowdScore}</div>
-                </div>
-              ))}
-            </div>
-
-            {forecast && (
-              <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full text-[9px]">
-                  <thead>
-                    <tr className="text-slate-500">
-                      <th className="text-left">Attr</th>
-                      {forecast.hourLabels.slice(0, 6).map((h) => (
-                        <th key={h}>{h.replace(":00", "")}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {forecast.attractions.slice(0, 4).map((attr) => (
-                      <tr key={attr.id}>
-                        <td className="text-slate-300">{attr.nameJa.slice(0, 6)}</td>
-                        {attr.slots.slice(0, 6).map((slot) => (
-                          <td
-                            key={slot.hour}
-                            className={`text-center font-mono ${crowdBandCellStyles[slot.band]}`}
-                          >
-                            {slot.waitMinutes}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <p className="mt-2 text-[10px] text-slate-500">
-              公開プレビュー · ルールベース予測（AI コストなし）· 明日{" "}
-              {data.tomorrow} 向け
-            </p>
+            <Link
+              href="/tdr-preview"
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-3 py-2 text-[11px] text-fuchsia-100 hover:bg-fuchsia-500/20"
+            >
+              カレンダー・時間帯予想をすべて見る →
+            </Link>
           </>
-        ) : (
-          <p className="mt-4 text-xs text-rose-300">データを取得できませんでした</p>
         )}
       </div>
     </div>

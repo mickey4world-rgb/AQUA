@@ -161,6 +161,7 @@ export interface DisneyCharacterEveningAdvice {
   park: DisneyParkKey;
   parkName: string;
   targetDate: string;
+  targetDayLabel: "本日" | "明日";
   characterId: "baymax" | "elsa";
   characterNameJa: string;
   headline: string;
@@ -169,25 +170,37 @@ export interface DisneyCharacterEveningAdvice {
   touringTips: string[];
   breakdown: DisneyCrowdBreakdown;
   crowdLevel: CrowdLevel;
+  crowdLabel: string;
   crowdScore: number;
   generatedAt: string;
   mode: "evening" | "preview";
+}
+
+export interface DisneyDayBriefing {
+  date: string;
+  crowdLevel: CrowdLevel;
+  crowdLabel: string;
+  crowdScore: number;
+  breakdown: DisneyCrowdBreakdown;
+  forecast: DisneyDayForecast;
+  characterAdvice: DisneyCharacterEveningAdvice;
+}
+
+export interface DisneyParkPublicPreview {
+  park: DisneyParkKey;
+  parkName: string;
+  calendarMonth: DisneyCalendarMonth;
+  today: DisneyDayBriefing;
+  tomorrow: DisneyDayBriefing;
 }
 
 export interface DisneyShowcaseSnapshot {
   generatedAt: string;
   today: string;
   tomorrow: string;
-  tdl: {
-    calendar: DisneyCalendarDay[];
-    eveningAdvice: DisneyCharacterEveningAdvice;
-    todayForecast: DisneyDayForecast;
-  };
-  tds: {
-    calendar: DisneyCalendarDay[];
-    eveningAdvice: DisneyCharacterEveningAdvice;
-    todayForecast: DisneyDayForecast;
-  };
+  tdl: DisneyParkPublicPreview;
+  tds: DisneyParkPublicPreview;
+  loginNotice: string;
 }
 
 export interface DisneyCalendarMonth {
