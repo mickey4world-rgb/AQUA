@@ -19,11 +19,13 @@ const BREAKDOWN_ITEMS: Array<{
 type DisneyCrowdBreakdownPanelProps = {
   breakdown: DisneyCrowdBreakdown | null;
   crowdLabel?: string;
+  title?: string;
 };
 
 export default function DisneyCrowdBreakdownPanel({
   breakdown,
   crowdLabel,
+  title = "混雑スコア内訳",
 }: DisneyCrowdBreakdownPanelProps) {
   if (!breakdown) return null;
 
@@ -33,7 +35,7 @@ export default function DisneyCrowdBreakdownPanel({
         Crowd Score
       </p>
       <h2 className="mt-1 text-base font-semibold text-white sm:text-lg">
-        混雑スコア内訳
+        {title}
         {crowdLabel ? (
           <span className="ml-2 text-sm font-normal text-slate-300">({crowdLabel})</span>
         ) : null}

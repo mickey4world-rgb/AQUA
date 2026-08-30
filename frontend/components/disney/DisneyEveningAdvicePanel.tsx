@@ -46,7 +46,8 @@ export default function DisneyEveningAdvicePanel({
         Evening Briefing
       </p>
       <h2 className="mt-1 text-base font-semibold text-white sm:text-lg">
-        {park === "tdl" ? "ベイマックス" : "エルサ"}の前日アドバイス
+        {park === "tdl" ? "ベイマックス―" : "エルサ―"}のアドバイス
+        {advice ? `（${advice.targetDayLabel}）` : ""}
       </h2>
       <p className="mt-1 text-[11px] text-slate-400">
         {formatJstDateLabel(targetDate)} 来園向け — ルールベース予測（AI コストなし）

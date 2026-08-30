@@ -8,6 +8,8 @@ export type ShowcaseSectionMeta = {
   description: string;
   accent: string;
   href: string;
+  /** ログイン不要の公開プレビュー（あれば） */
+  publicHref?: string;
   tag: string;
 };
 
@@ -62,9 +64,10 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "TDR Analytics",
     titleJa: "ディズニー",
     description:
-      "TDR の混雑予測カレンダー・時間帯別アトラクション予想・ベイマックス／エルサの前日アドバイス。ショーケースから無料でプレビューできます。",
+      "混雑予測カレンダー・時間帯別アトラクション予想・ベイマックス―／エルサ―の本日・明日アドバイスを無料公開。リアルタイム待ち時間とチャットはログイン後。",
     accent: "#f0abfc",
     href: "/disney",
+    publicHref: "/tdr-preview",
     tag: "Experience",
   },
   {

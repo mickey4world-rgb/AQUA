@@ -65,13 +65,24 @@ function ShowcaseSection({
             {section.title}
           </p>
           <p className="mt-5 max-w-lg text-sm leading-7 text-slate-400">{section.description}</p>
-          <Link
-            href={section.href}
-            className="showcase-section__link mt-6 inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25 hover:bg-white/5"
-          >
-            ログイン後に開く
-            <span aria-hidden>→</span>
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3">
+            {section.publicHref ? (
+              <Link
+                href={section.publicHref}
+                className="showcase-section__link inline-flex items-center gap-2 rounded-full border border-fuchsia-400/35 bg-fuchsia-500/15 px-4 py-2 text-sm text-fuchsia-100 transition hover:border-fuchsia-400/50 hover:bg-fuchsia-500/25"
+              >
+                無料プレビューを見る
+                <span aria-hidden>→</span>
+              </Link>
+            ) : null}
+            <Link
+              href={section.href}
+              className="showcase-section__link inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25 hover:bg-white/5"
+            >
+              {section.publicHref ? "ログイン後にフル版" : "ログイン後に開く"}
+              <span aria-hidden>→</span>
+            </Link>
+          </div>
         </div>
         <div className="showcase-section__demo">{children}</div>
       </div>
