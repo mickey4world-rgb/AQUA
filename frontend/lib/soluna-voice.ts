@@ -8,7 +8,14 @@ type SpeechRecognitionErrorEvent = {
 };
 
 type SpeechRecognitionResultEvent = {
-  results: { [index: number]: { [index: number]: { transcript?: string } } };
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: { transcript?: string };
+    };
+  };
 };
 
 type BrowserSpeechRecognition = {
@@ -26,6 +33,11 @@ type BrowserSpeechRecognition = {
 };
 
 type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+
+/** 無音が続いたら発話完了とみなす（ms） */
+const SILENCE_MS = 1400;
+/** 連続認識が切れたあと再開するまでの待機（ms） */
+const RESTART_DELAY_MS = 280;
 
 function getSpeechRecognition(): SpeechRecognitionCtor | null {
   if (typeof window === "undefined") return null;
@@ -81,7 +93,7 @@ async function ensureMicrophoneAccess(): Promise<string | null> {
         return mapSpeechError("not-allowed");
       }
       if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
-        return "マイクが見つかりません。Windows のサウンド設定で入力デバイスを確認してください。";
+        return "マイクが見つかりません。端末のサウンド設定で入力デバイスを確認してください。";
       }
       if (error.name === "NotReadableError") {
         return mapSpeechError("audio-capture");
@@ -99,15 +111,50 @@ type SpeakLine = {
 
 export function useSolunaVoice() {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [conversationMode, setConversationMode] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [speakingAs, setSpeakingAs] = useState<"sol" | "luna" | null>(null);
+  const [interimTranscript, setInterimTranscript] = useState("");
+
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speakQueueRef = useRef<SpeakLine[]>([]);
   const speakingRef = useRef(false);
   const intentionalStopRef = useRef(false);
   const gotResultRef = useRef(false);
   const errorFiredRef = useRef(false);
+
+  const conversationModeRef = useRef(false);
+  const pausedForReplyRef = useRef(false);
+  const onResultRef = useRef<((text: string) => void) | null>(null);
+  const onErrorRef = useRef<((message: string) => void) | null>(null);
+  const onSpeakCompleteRef = useRef<(() => void) | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finalTranscriptRef = useRef("");
+  const interimTranscriptRef = useRef("");
+  const utteranceSentRef = useRef(false);
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRestartTimer = useCallback(() => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+  }, []);
+
+  const resetTranscript = useCallback(() => {
+    finalTranscriptRef.current = "";
+    interimTranscriptRef.current = "";
+    utteranceSentRef.current = false;
+    setInterimTranscript("");
+  }, []);
 
   const stopSpeaking = useCallback(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -119,12 +166,19 @@ export function useSolunaVoice() {
     setSpeakingAs(null);
   }, []);
 
+  const finishSpeaking = useCallback(() => {
+    speakingRef.current = false;
+    setSpeaking(false);
+    setSpeakingAs(null);
+    const onComplete = onSpeakCompleteRef.current;
+    onSpeakCompleteRef.current = null;
+    onComplete?.();
+  }, []);
+
   const speakNext = useCallback(() => {
     const next = speakQueueRef.current.shift();
     if (!next || typeof window === "undefined" || !window.speechSynthesis) {
-      speakingRef.current = false;
-      setSpeaking(false);
-      setSpeakingAs(null);
+      finishSpeaking();
       return;
     }
 
@@ -141,20 +195,33 @@ export function useSolunaVoice() {
     utterance.onend = () => speakNext();
     utterance.onerror = () => speakNext();
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [finishSpeaking]);
 
   const speakLines = useCallback(
-    (lines: SpeakLine[]) => {
-      if (!voiceEnabled || !isSpeechSynthesisSupported()) return;
+    (lines: SpeakLine[], onComplete?: () => void) => {
+      onSpeakCompleteRef.current = onComplete ?? null;
+      if (!voiceEnabled || !isSpeechSynthesisSupported()) {
+        finishSpeaking();
+        return;
+      }
       stopSpeaking();
       speakQueueRef.current = lines.filter((line) => line.text.trim());
+      if (speakQueueRef.current.length === 0) {
+        finishSpeaking();
+        return;
+      }
       speakNext();
     },
-    [voiceEnabled, speakNext, stopSpeaking],
+    [voiceEnabled, speakNext, stopSpeaking, finishSpeaking],
   );
 
   const stopRecognition = useCallback(() => {
-    if (!recognitionRef.current) return;
+    clearSilenceTimer();
+    clearRestartTimer();
+    if (!recognitionRef.current) {
+      setListening(false);
+      return;
+    }
     intentionalStopRef.current = true;
     try {
       recognitionRef.current.stop();
@@ -167,7 +234,178 @@ export function useSolunaVoice() {
     }
     recognitionRef.current = null;
     setListening(false);
-  }, []);
+  }, [clearSilenceTimer, clearRestartTimer]);
+
+  const scheduleConversationRestart = useCallback(() => {
+    if (!conversationModeRef.current || pausedForReplyRef.current) return;
+    clearRestartTimer();
+    restartTimerRef.current = setTimeout(() => {
+      restartTimerRef.current = null;
+      if (!conversationModeRef.current || pausedForReplyRef.current) return;
+      void beginContinuousRecognitionRef.current?.();
+    }, RESTART_DELAY_MS);
+  }, [clearRestartTimer]);
+
+  const finalizeConversationUtterance = useCallback(() => {
+    if (utteranceSentRef.current || pausedForReplyRef.current) return;
+    const combined = `${finalTranscriptRef.current}${interimTranscriptRef.current}`.trim();
+    if (!combined) return;
+
+    utteranceSentRef.current = true;
+    clearSilenceTimer();
+    resetTranscript();
+    onResultRef.current?.(combined);
+  }, [clearSilenceTimer, resetTranscript]);
+
+  const scheduleSilenceFinalize = useCallback(() => {
+    clearSilenceTimer();
+    silenceTimerRef.current = setTimeout(() => {
+      silenceTimerRef.current = null;
+      finalizeConversationUtterance();
+    }, SILENCE_MS);
+  }, [clearSilenceTimer, finalizeConversationUtterance]);
+
+  const beginContinuousRecognitionRef = useRef<(() => Promise<void>) | null>(null);
+
+  const beginContinuousRecognition = useCallback(async () => {
+    const Ctor = getSpeechRecognition();
+    if (!Ctor || !conversationModeRef.current || pausedForReplyRef.current) return;
+
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      onErrorRef.current?.("音声入力は HTTPS 接続でのみ利用できます。");
+      return;
+    }
+
+    if (recognitionRef.current) return;
+
+    const micError = await ensureMicrophoneAccess();
+    if (micError) {
+      onErrorRef.current?.(micError);
+      conversationModeRef.current = false;
+      setConversationMode(false);
+      return;
+    }
+
+    intentionalStopRef.current = false;
+    errorFiredRef.current = false;
+    resetTranscript();
+
+    const recognition = new Ctor();
+    recognition.lang = "ja-JP";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+      if (conversationModeRef.current && !pausedForReplyRef.current && !intentionalStopRef.current) {
+        scheduleConversationRestart();
+      }
+      intentionalStopRef.current = false;
+    };
+
+    recognition.onerror = (event) => {
+      if (intentionalStopRef.current || event.error === "aborted") {
+        intentionalStopRef.current = false;
+        return;
+      }
+      if (event.error === "no-speech") {
+        scheduleConversationRestart();
+        return;
+      }
+      if (conversationModeRef.current) {
+        scheduleConversationRestart();
+        if (event.error !== "network") return;
+      }
+      errorFiredRef.current = true;
+      onErrorRef.current?.(mapSpeechError(event.error));
+    };
+
+    recognition.onresult = (event) => {
+      if (pausedForReplyRef.current || utteranceSentRef.current) return;
+
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const chunk = result?.[0]?.transcript ?? "";
+        if (!chunk) continue;
+        if (result.isFinal) {
+          finalTranscriptRef.current += chunk;
+        } else {
+          interim += chunk;
+        }
+      }
+
+      const preview = `${finalTranscriptRef.current}${interim}`.trim();
+      interimTranscriptRef.current = interim;
+      setInterimTranscript(preview);
+      if (preview) {
+        gotResultRef.current = true;
+        scheduleSilenceFinalize();
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      scheduleConversationRestart();
+    }
+  }, [resetTranscript, scheduleConversationRestart, scheduleSilenceFinalize]);
+
+  beginContinuousRecognitionRef.current = beginContinuousRecognition;
+
+  const startConversation = useCallback(
+    async (onResult: (text: string) => void, onError?: (message: string) => void) => {
+      const Ctor = getSpeechRecognition();
+      if (!Ctor) {
+        onError?.("このブラウザは音声入力に未対応です。スマホでは Chrome をお試しください。");
+        return;
+      }
+
+      stopSpeaking();
+      stopRecognition();
+      conversationModeRef.current = true;
+      setConversationMode(true);
+      pausedForReplyRef.current = false;
+      onResultRef.current = onResult;
+      onErrorRef.current = onError ?? null;
+      setVoiceEnabled(true);
+      await beginContinuousRecognition();
+    },
+    [beginContinuousRecognition, stopRecognition, stopSpeaking],
+  );
+
+  const stopConversation = useCallback(() => {
+    conversationModeRef.current = false;
+    setConversationMode(false);
+    pausedForReplyRef.current = false;
+    onResultRef.current = null;
+    onErrorRef.current = null;
+    resetTranscript();
+    stopRecognition();
+  }, [resetTranscript, stopRecognition]);
+
+  const pauseForReply = useCallback(() => {
+    pausedForReplyRef.current = true;
+    clearSilenceTimer();
+    resetTranscript();
+    stopRecognition();
+  }, [clearSilenceTimer, resetTranscript, stopRecognition]);
+
+  const resumeAfterReply = useCallback(() => {
+    if (!conversationModeRef.current) return;
+    pausedForReplyRef.current = false;
+    utteranceSentRef.current = false;
+    resetTranscript();
+    void beginContinuousRecognition();
+  }, [beginContinuousRecognition, resetTranscript]);
 
   const startListening = useCallback(
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {
@@ -253,6 +491,9 @@ export function useSolunaVoice() {
   useEffect(() => {
     return () => {
       intentionalStopRef.current = true;
+      conversationModeRef.current = false;
+      clearSilenceTimer();
+      clearRestartTimer();
       try {
         recognitionRef.current?.abort();
       } catch {
@@ -260,16 +501,22 @@ export function useSolunaVoice() {
       }
       stopSpeaking();
     };
-  }, [stopSpeaking]);
+  }, [clearRestartTimer, clearSilenceTimer, stopSpeaking]);
 
   return {
     voiceEnabled,
     setVoiceEnabled,
+    conversationMode,
     listening,
     speaking,
     speakingAs,
+    interimTranscript,
     startListening,
     stopListening,
+    startConversation,
+    stopConversation,
+    pauseForReply,
+    resumeAfterReply,
     speakLines,
     stopSpeaking,
     sttSupported: isSpeechRecognitionSupported(),

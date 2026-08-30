@@ -8,6 +8,7 @@ import SolunaCharacterCard from "@/components/soluna/SolunaCharacterCard";
 import SolunaImageStudioPanel from "@/components/soluna/SolunaImageStudioPanel";
 import SolunaSystemChatPanel from "@/components/soluna/SolunaSystemChatPanel";
 import { useSolunaVoice } from "@/lib/soluna-voice";
+import { useMobileProfile } from "@/lib/mobile-utils";
 import { getLatestExchange } from "@/lib/soluna-utils";
 import {
   SOLUNA_CHARACTER_META,
@@ -85,14 +86,23 @@ export default function SolunaPanel() {
   const {
     voiceEnabled,
     setVoiceEnabled,
+    conversationMode,
     listening,
+    speaking,
     speakingAs,
+    interimTranscript,
     startListening,
     stopListening,
+    startConversation,
+    stopConversation,
+    pauseForReply,
+    resumeAfterReply,
     speakLines,
     sttSupported,
     ttsSupported,
   } = useSolunaVoice();
+
+  const { isMobile } = useMobileProfile();
 
   const loadState = useCallback(async () => {
     const seq = ++loadSeqRef.current;
@@ -152,9 +162,17 @@ export default function SolunaPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayMessages, sending]);
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, fromVoice = false) {
     const trimmed = text.trim();
     if (!trimmed || sending || !state) return;
+
+    if (fromVoice || conversationMode) {
+      pauseForReply();
+    }
+
+    const resumeIfConversation = () => {
+      if (conversationMode) resumeAfterReply();
+    };
 
     setSending(true);
     setError(null);
@@ -196,6 +214,7 @@ export default function SolunaPanel() {
             : `通信エラーが発生しました（HTTP ${res.status}）`,
         );
         setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        resumeIfConversation();
         return;
       }
 
@@ -209,6 +228,7 @@ export default function SolunaPanel() {
             : "送信に失敗しました";
         setError(message);
         setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        resumeIfConversation();
         return;
       }
 
@@ -218,6 +238,7 @@ export default function SolunaPanel() {
       if (!payload.messages || !payload.sol?.content || !payload.luna?.content) {
         setError("応答形式が不正です。もう一度お試しください。");
         setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        resumeIfConversation();
         return;
       }
 
@@ -277,18 +298,22 @@ export default function SolunaPanel() {
       setError(null);
 
       try {
-        speakLines([
-          { label: "ソル", text: payload.sol.content, character: "sol" },
-          { label: "ルーナ", text: payload.luna.content, character: "luna" },
-        ]);
+        speakLines(
+          [
+            { label: "ソル", text: payload.sol.content, character: "sol" },
+            { label: "ルーナ", text: payload.luna.content, character: "luna" },
+          ],
+          resumeIfConversation,
+        );
       } catch {
-        /* 音声読み上げ失敗はチャット成功扱いのまま */
+        resumeIfConversation();
       }
     } catch (error) {
       if (seq !== chatSeqRef.current || chatApplied) return;
       console.error("[soluna] chat failed", error);
       setError("通信エラーが発生しました");
       setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+      resumeIfConversation();
     } finally {
       if (seq === chatSeqRef.current) {
         setSending(false);
@@ -297,13 +322,26 @@ export default function SolunaPanel() {
   }
 
   function handleMicClick() {
+    if (conversationMode) return;
     if (listening) {
       stopListening();
       return;
     }
     setError(null);
     void startListening(
-      (text) => void sendMessage(text),
+      (text) => void sendMessage(text, true),
+      (message) => setError(message),
+    );
+  }
+
+  function handleConversationToggle() {
+    if (conversationMode) {
+      stopConversation();
+      return;
+    }
+    setError(null);
+    void startConversation(
+      (text) => void sendMessage(text, true),
       (message) => setError(message),
     );
   }
@@ -482,39 +520,80 @@ export default function SolunaPanel() {
           </div>
 
           {(sttSupported || ttsSupported) && (
-            <div className="flex flex-wrap gap-2">
-              {ttsSupported && (
-                <button
-                  type="button"
-                  onClick={() => setVoiceEnabled((value) => !value)}
-                  className={`rounded-full border px-3 py-1.5 text-[11px] transition ${
-                    voiceEnabled
-                      ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
-                      : "border-white/10 text-slate-300 hover:bg-white/5"
-                  }`}
-                >
-                  {voiceEnabled ? "🔊 音声返答 ON" : "🔇 音声返答 OFF"}
-                </button>
-              )}
+            <div className="flex w-full flex-col gap-2 sm:w-auto">
               {sttSupported && (
                 <button
                   type="button"
                   disabled={sending}
-                  onClick={handleMicClick}
-                  className={`rounded-full border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${
-                    listening
-                      ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
-                      : "border-white/10 text-slate-300 hover:bg-white/5"
+                  onClick={handleConversationToggle}
+                  className={`w-full rounded-2xl border px-4 py-3 text-sm font-medium transition disabled:opacity-40 sm:w-auto sm:rounded-full sm:px-4 sm:py-2 sm:text-[11px] ${
+                    conversationMode
+                      ? "border-emerald-400/45 bg-emerald-500/20 text-emerald-50 shadow-[0_0_24px_rgba(52,211,153,0.15)]"
+                      : isMobile
+                        ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-50"
+                        : "border-white/10 text-slate-300 hover:bg-white/5"
                   }`}
                 >
-                  {listening ? "⏹ 聞き取り中…" : "🎙 話す"}
+                  {conversationMode
+                    ? speaking
+                      ? "🔊 返答中…（タップで終了）"
+                      : sending
+                        ? "💭 考え中…（タップで終了）"
+                        : listening
+                          ? "🟢 会話中 — 話しかけてください（タップで終了）"
+                          : "🟢 会話モード（タップで終了）"
+                    : isMobile
+                      ? "💬 会話モードを始める"
+                      : "💬 会話モード"}
                 </button>
               )}
+              <div className="flex flex-wrap gap-2">
+                {ttsSupported && (
+                  <button
+                    type="button"
+                    onClick={() => setVoiceEnabled((value) => !value)}
+                    disabled={conversationMode}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${
+                      voiceEnabled
+                        ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
+                        : "border-white/10 text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {voiceEnabled ? "🔊 音声返答 ON" : "🔇 音声返答 OFF"}
+                  </button>
+                )}
+                {sttSupported && !conversationMode && (
+                  <button
+                    type="button"
+                    disabled={sending}
+                    onClick={handleMicClick}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${
+                      listening
+                        ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
+                        : "border-white/10 text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {listening ? "⏹ 聞き取り中…" : "🎙 1回だけ話す"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {listening && (
+        {(listening || interimTranscript) && conversationMode && (
+          <p className="relative mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+            {interimTranscript ? (
+              <>
+                <span className="text-cyan-200/70">聞き取り中:</span> {interimTranscript}
+              </>
+            ) : (
+              "話しかけてください…（少し間を空けると送信されます）"
+            )}
+          </p>
+        )}
+
+        {listening && !conversationMode && (
           <p className="relative mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
             マイクに向かって話してください…
           </p>
@@ -646,7 +725,7 @@ export default function SolunaPanel() {
             rows={2}
             maxLength={2000}
             disabled={sending}
-            placeholder="Soluna に話しかける（🎙 ボタンで音声入力も可）"
+            placeholder="Soluna に話しかける（💬 会話モードで音声のみも可）"
             className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
           />
           <button
