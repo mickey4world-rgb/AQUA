@@ -1,0 +1,28 @@
+name: TDR Public Preview Warm
+
+on:
+  schedule:
+    # 0:05 JST = 15:05 UTC（前日）
+    - cron: "5 15 * * *"
+  workflow_dispatch:
+
+jobs:
+  warm_tdr_preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm public TDR preview cache
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+        run: |
+          if [ -z "$SOLUNA_CRON_SECRET" ]; then
+            echo "SOLUNA_CRON_SECRET not set; skip"
+            exit 0
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          curl -sfS -X POST \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            "${BASE%/}/api/public/tdr-preview/warm" \
+            -d '{}' \
+            --max-time 120

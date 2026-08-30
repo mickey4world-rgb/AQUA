@@ -9,6 +9,14 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/public/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/tdr-preview",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/disney/*",
       "allowedRoles": ["authenticated"]
     },

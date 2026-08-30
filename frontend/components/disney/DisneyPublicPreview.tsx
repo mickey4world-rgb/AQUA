@@ -173,7 +173,7 @@ export default function DisneyPublicPreview() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/disney/showcase")
+    fetch("/api/public/tdr-preview")
       .then(async (res) => {
         if (!res.ok) throw new Error("データを取得できませんでした");
         return (await res.json()) as DisneyShowcaseSnapshot;
@@ -196,6 +196,16 @@ export default function DisneyPublicPreview() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             誰でも無料で閲覧できます（ルールベース予測・AI コストなし）。
+            {data ? (
+              <>
+                {" "}
+                最終更新:{" "}
+                {new Date(data.generatedAt).toLocaleString("ja-JP", {
+                  timeZone: "Asia/Tokyo",
+                })}{" "}
+                （JST 0:05 頃に自動更新、最大1時間キャッシュ）
+              </>
+            ) : null}
             リアルタイム待ち時間とチャットは
             <Link href="/login" className="text-fuchsia-300 hover:underline">
               ログイン後
