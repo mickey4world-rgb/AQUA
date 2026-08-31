@@ -13,6 +13,7 @@ async function buildFreshSnapshot(): Promise<MoneyFlowResponse> {
   const snapshot = await queryMoneyFlow({
     year,
     limit: 40,
+    rowMode: "detail",
   });
   memoryCache = { year, snapshot, builtAt: Date.now() };
   return snapshot;

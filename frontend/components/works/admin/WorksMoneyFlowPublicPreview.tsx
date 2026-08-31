@@ -3,8 +3,14 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import type { MoneyFlowResponse } from "@/lib/types/gyosei";
+import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
+import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
+import {
+  buildNodeSelectionSummary,
+  filterRowsBySelectedNode,
+  formatMoneyFlowAmount,
+} from "@/lib/works-money-flow-ui";
 
 const SankeyDiagram = dynamic(
   () => import("@/components/works/admin/SankeyDiagram"),
@@ -20,14 +26,11 @@ const SankeyDiagram = dynamic(
 
 const ROW_PAGE_SIZE = 25;
 
-function formatAmount(value: number, unit: string): string {
-  return `${value.toLocaleString("ja-JP")} ${unit}`;
-}
-
 export default function WorksMoneyFlowPublicPreview() {
   const [data, setData] = useState<MoneyFlowResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
+  const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,14 +55,38 @@ export default function WorksMoneyFlowPublicPreview() {
     };
   }, []);
 
-  const pagedRows = useMemo(() => {
-    const rows = data?.rows ?? [];
-    const start = rowPage * ROW_PAGE_SIZE;
-    return rows.slice(start, start + ROW_PAGE_SIZE);
-  }, [data?.rows, rowPage]);
+  const filteredRows = useMemo(
+    () => filterRowsBySelectedNode(data?.rows ?? [], selectedNode),
+    [data?.rows, selectedNode],
+  );
 
-  const rowPageCount = Math.max(1, Math.ceil((data?.rows.length ?? 0) / ROW_PAGE_SIZE));
+  const selectionSummary = useMemo(() => {
+    if (!data || !selectedNode) return null;
+    return buildNodeSelectionSummary(
+      selectedNode,
+      data.rows,
+      data.links,
+      data.nodes,
+    );
+  }, [data, selectedNode]);
+
+  const pagedRows = useMemo(() => {
+    const start = rowPage * ROW_PAGE_SIZE;
+    return filteredRows.slice(start, start + ROW_PAGE_SIZE);
+  }, [filteredRows, rowPage]);
+
+  const rowPageCount = Math.max(1, Math.ceil(filteredRows.length / ROW_PAGE_SIZE));
   const projectCount = data?.nodes.filter((node) => node.kind === "project").length ?? 0;
+
+  function handleNodeClick(node: MoneyFlowNode) {
+    if (node.kind === "government") {
+      setSelectedNode(null);
+      setRowPage(0);
+      return;
+    }
+    setSelectedNode((current) => (current?.id === node.id ? null : node));
+    setRowPage(0);
+  }
 
   return (
     <main className={`${PAGE_MAIN_CLASS} mx-auto w-full max-w-6xl px-4 py-8 sm:px-6`}>
@@ -68,12 +95,12 @@ export default function WorksMoneyFlowPublicPreview() {
         <h1 className="display-section mt-3 text-white">お金の流れ（無料プレビュー）</h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400">
           内閣官房「行政事業レビュー」の公開データを、サンキー図と明細で表示します。
-          2列目=府省庁、3列目=主要事業、最右列=支出先。AI コストはかかりません。
+          府省庁・事業・支出先をクリックすると詳細と明細が絞り込まれます（AI コストなし）。
           {data ? (
             <>
               {" "}
               {data.year}年度 · 主要事業 {projectCount} 件 · 合計{" "}
-              {formatAmount(data.totals.amount, data.unit)}
+              {formatMoneyFlowAmount(data.totals.amount, data.unit)}
             </>
           ) : null}
         </p>
@@ -113,7 +140,7 @@ export default function WorksMoneyFlowPublicPreview() {
               <div>
                 <p className="eyebrow">Sankey</p>
                 <p className="mt-1 text-sm text-slate-400">
-                  政府全体 → 府省庁 → 主要事業 → 支出先
+                  1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで絞り込み）
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
@@ -143,22 +170,39 @@ export default function WorksMoneyFlowPublicPreview() {
                 height={560}
                 amountWeightedLinks
                 fixedColumns
+                selectedNodeId={selectedNode?.id ?? null}
+                onNodeClick={handleNodeClick}
               />
             </div>
+            {selectionSummary ? (
+              <div className="border-t border-white/8 px-4 pb-4 sm:px-5">
+                <MoneyFlowSelectionPanel
+                  summary={selectionSummary}
+                  unit={data.unit}
+                  onClear={() => {
+                    setSelectedNode(null);
+                    setRowPage(0);
+                  }}
+                />
+              </div>
+            ) : null}
           </section>
 
           <section className="glass-panel overflow-hidden rounded-3xl">
             <div className="border-b border-white/8 px-5 py-4">
               <p className="eyebrow">明細</p>
               <p className="mt-1 text-sm text-slate-400">
-                契約明細（金額の大きい順） ·{" "}
-                {data.rows.length === 0
+                {selectedNode
+                  ? `${selectionSummary?.kindLabel}「${selectionSummary?.name}」に関連する契約明細`
+                  : "契約明細（金額の大きい順）"}
+                {" · "}
+                {filteredRows.length === 0
                   ? "0"
                   : `${rowPage * ROW_PAGE_SIZE + 1}–${Math.min(
                       (rowPage + 1) * ROW_PAGE_SIZE,
-                      data.rows.length,
+                      filteredRows.length,
                     )}`}{" "}
-                / {data.rows.length} 件
+                / {filteredRows.length} 件
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -187,7 +231,7 @@ export default function WorksMoneyFlowPublicPreview() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-slate-500">{row.block}</td>
                       <td className="px-4 py-3 text-right font-mono text-cyan-100/90 whitespace-nowrap">
-                        {formatAmount(row.amount, data.unit)}
+                        {formatMoneyFlowAmount(row.amount, data.unit)}
                       </td>
                     </tr>
                   ))}

@@ -57,6 +57,8 @@ export type MoneyFlowFilters = {
   focusKind?: MoneyFlowFocusKind;
   focusValue?: string;
   limit?: number;
+  /** 公開プレビューなど明細フィルタ向けに契約行を返す */
+  rowMode?: "aggregate" | "detail";
 };
 
 export type MoneyFlowNode = {
