@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import DisneyCalendar from "@/components/disney/DisneyCalendar";
 import DisneyCompanion from "@/components/disney/DisneyCompanion";
 import DisneyCrowdBreakdownPanel from "@/components/disney/DisneyCrowdBreakdownPanel";
+import PublicPreviewNav from "@/components/public/PublicPreviewNav";
 import {
   crowdBandCellStyles,
   crowdBandLabels,
@@ -16,11 +18,8 @@ import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import type {
   DisneyDayBriefing,
   DisneyParkKey,
-  DisneyParkPublicPreview,
   DisneyShowcaseSnapshot,
 } from "@/lib/types/disney";
-
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
 function ForecastTable({ briefing, title }: { briefing: DisneyDayBriefing; title: string }) {
   const forecast = briefing.forecast;
@@ -123,53 +122,13 @@ function CharacterBriefing({ briefing }: { briefing: DisneyDayBriefing }) {
   );
 }
 
-function PublicCalendar({ preview }: { preview: DisneyParkPublicPreview }) {
-  const calendar = preview.calendarMonth;
-  const leadingBlanks = calendar.startWeekday;
-
-  return (
-    <div className={`${disneyPanelClass} p-4 sm:p-5`}>
-      <h3 className="text-sm font-semibold text-white">混雑予測カレンダー（{calendar.monthLabel}）</h3>
-      <p className="mt-1 text-[11px] text-slate-400">
-        セル内数字 = 混雑スコア（0〜100）
-      </p>
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-slate-500">
-        {WEEKDAYS.map((label, i) => (
-          <div
-            key={label}
-            className={i === 0 ? "text-rose-400/80" : i === 6 ? "text-sky-400/80" : ""}
-          >
-            {label}
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1">
-        {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div key={`b-${i}`} />
-        ))}
-        {calendar.days.map((day) => {
-          const dayNum = Number(day.date.slice(8, 10));
-          return (
-            <div
-              key={day.date}
-              title={`${formatJstDateLabel(day.date)} — ${day.crowdLabel} (${day.crowdScore})`}
-              className={`flex h-9 flex-col items-center justify-center rounded-md border text-xs sm:h-10 ${crowdLevelCellStyles[day.crowdLevel]} ${day.isPast ? "opacity-40" : ""}`}
-            >
-              <span className={`text-sm font-bold ${day.isToday ? "text-fuchsia-100" : "text-white"}`}>
-                {dayNum}
-              </span>
-              <span className="text-[9px] font-semibold">{day.crowdScore}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export default function DisneyPublicPreview() {
   const [data, setData] = useState<DisneyShowcaseSnapshot | null>(null);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [dayBriefing, setDayBriefing] = useState<DisneyDayBriefing | null>(null);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [dayError, setDayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -178,24 +137,82 @@ export default function DisneyPublicPreview() {
         if (!res.ok) throw new Error("データを取得できませんでした");
         return (await res.json()) as DisneyShowcaseSnapshot;
       })
-      .then(setData)
+      .then((payload) => {
+        setData(payload);
+        setSelectedDate(payload.today);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "エラー"));
   }, []);
 
   const preview = park === "tdl" ? data?.tdl : data?.tds;
 
+  const cachedBriefing = useMemo(() => {
+    if (!preview || !selectedDate) return null;
+    if (selectedDate === preview.today.date) return preview.today;
+    if (selectedDate === preview.tomorrow.date) return preview.tomorrow;
+    return null;
+  }, [preview, selectedDate]);
+
+  useEffect(() => {
+    if (!selectedDate || !data) return;
+
+    if (cachedBriefing) {
+      setDayBriefing(cachedBriefing);
+      setDayLoading(false);
+      setDayError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDayLoading(true);
+    setDayError(null);
+
+    fetch(`/api/public/tdr-preview/day?park=${park}&date=${selectedDate}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("日別予測を取得できませんでした");
+        return (await res.json()) as DisneyDayBriefing;
+      })
+      .then((payload) => {
+        if (!cancelled) {
+          setDayBriefing(payload);
+          setDayError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setDayBriefing(null);
+          setDayError(e instanceof Error ? e.message : "エラー");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDayLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, park, data, cachedBriefing]);
+
+  useEffect(() => {
+    if (!data) return;
+    setSelectedDate(data.today);
+  }, [park, data]);
+
   return (
-    <main className={`${PAGE_MAIN_CLASS} min-h-screen bg-gradient-to-b from-indigo-950 via-slate-950 to-black`}>
+    <main
+      className={`${PAGE_MAIN_CLASS} mx-auto min-h-screen max-w-6xl bg-gradient-to-b from-indigo-950 via-slate-950 to-black px-4 py-8 sm:px-6`}
+    >
+      <PublicPreviewNav showcaseAnchor="disney" />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-300/80">
             TDR Public Preview
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
-            混雑予測プレビュー
-          </h1>
+          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">混雑予測プレビュー</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             誰でも無料で閲覧できます（ルールベース予測・AI コストなし）。
+            カレンダーは当月から最大6か月先まで選べます。
             {data ? (
               <>
                 {" "}
@@ -251,40 +268,80 @@ export default function DisneyPublicPreview() {
       {preview && data && (
         <div className="mt-8 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className={`rounded-2xl border p-4 ${crowdLevelColors[preview.today.crowdLevel]}`}>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(preview.today.date)}
+              className={`rounded-2xl border p-4 text-left transition ${crowdLevelColors[preview.today.crowdLevel]} ${
+                selectedDate === preview.today.date ? "ring-2 ring-fuchsia-400" : ""
+              }`}
+            >
               <p className="text-xs uppercase tracking-wider opacity-80">本日</p>
               <p className="mt-1 text-2xl font-bold">{preview.today.crowdLabel}</p>
               <p className="text-sm opacity-90">スコア {preview.today.crowdScore}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 ${crowdLevelColors[preview.tomorrow.crowdLevel]}`}>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(preview.tomorrow.date)}
+              className={`rounded-2xl border p-4 text-left transition ${crowdLevelColors[preview.tomorrow.crowdLevel]} ${
+                selectedDate === preview.tomorrow.date ? "ring-2 ring-fuchsia-400" : ""
+              }`}
+            >
               <p className="text-xs uppercase tracking-wider opacity-80">明日</p>
               <p className="mt-1 text-2xl font-bold">{preview.tomorrow.crowdLabel}</p>
               <p className="text-sm opacity-90">スコア {preview.tomorrow.crowdScore}</p>
+            </button>
+          </div>
+
+          <DisneyCalendar
+            park={park}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            calendarApiPath="/api/public/tdr-preview/calendar"
+          />
+
+          {selectedDate && (
+            <div
+              className={`rounded-2xl border px-4 py-3 ${crowdLevelCellStyles[dayBriefing?.crowdLevel ?? preview.today.crowdLevel]}`}
+            >
+              <p className="text-sm font-medium text-white">
+                選択中: {formatJstDateLabel(selectedDate)}
+                {dayBriefing ? (
+                  <>
+                    {" "}
+                    · 混雑スコア {dayBriefing.crowdScore}（{dayBriefing.crowdLabel}）
+                  </>
+                ) : null}
+              </p>
             </div>
-          </div>
+          )}
 
-          <PublicCalendar preview={preview} />
+          {dayLoading && (
+            <p className="text-center text-sm text-slate-400">日別予測を読み込み中…</p>
+          )}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <DisneyCrowdBreakdownPanel
-              breakdown={preview.today.breakdown}
-              crowdLabel={preview.today.crowdLabel}
-              title="本日 — 混雑スコア内訳"
-            />
-            <DisneyCrowdBreakdownPanel
-              breakdown={preview.tomorrow.breakdown}
-              crowdLabel={preview.tomorrow.crowdLabel}
-              title="明日 — 混雑スコア内訳"
-            />
-          </div>
+          {dayError && (
+            <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {dayError}
+            </p>
+          )}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <CharacterBriefing briefing={preview.today} />
-            <CharacterBriefing briefing={preview.tomorrow} />
-          </div>
+          {dayBriefing && !dayLoading && (
+            <>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <DisneyCrowdBreakdownPanel
+                  breakdown={dayBriefing.breakdown}
+                  crowdLabel={dayBriefing.crowdLabel}
+                  title={`${dayBriefing.characterAdvice.targetDayLabel} — 混雑スコア内訳`}
+                />
+                <CharacterBriefing briefing={dayBriefing} />
+              </div>
 
-          <ForecastTable briefing={preview.today} title="本日 — 時間帯別アトラクション予想" />
-          <ForecastTable briefing={preview.tomorrow} title="明日 — 時間帯別アトラクション予想" />
+              <ForecastTable
+                briefing={dayBriefing}
+                title={`${dayBriefing.characterAdvice.targetDayLabel} — 時間帯別アトラクション予想`}
+              />
+            </>
+          )}
 
           <p className="text-center text-xs text-slate-500">{data.loginNotice}</p>
         </div>

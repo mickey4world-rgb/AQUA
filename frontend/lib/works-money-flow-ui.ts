@@ -119,3 +119,58 @@ export function buildNodeSelectionSummary(
 export function formatMoneyFlowAmount(value: number, unit: string): string {
   return `${value.toLocaleString("ja-JP")} ${unit}`;
 }
+
+/** 府省庁選択時 — 該当府省庁とその事業・支出先だけに絞る */
+export function filterSankeyGraph(
+  nodes: MoneyFlowNode[],
+  links: MoneyFlowLink[],
+  focus: MoneyFlowNode | null,
+): { nodes: MoneyFlowNode[]; links: MoneyFlowLink[] } {
+  if (!focus || focus.kind === "government") {
+    return { nodes, links };
+  }
+  if (focus.kind !== "ministry") {
+    return { nodes, links };
+  }
+
+  const ministryId = focus.id;
+  const keepIds = new Set<string>([ministryId]);
+
+  for (const link of links) {
+    if (link.target === ministryId) keepIds.add(link.source);
+  }
+
+  const projectIds = new Set<string>();
+  for (const link of links) {
+    if (link.source === ministryId) {
+      projectIds.add(link.target);
+      keepIds.add(link.target);
+    }
+  }
+
+  for (const link of links) {
+    if (projectIds.has(link.source)) {
+      keepIds.add(link.target);
+    }
+  }
+
+  return {
+    nodes: nodes.filter((node) => keepIds.has(node.id)),
+    links: links.filter(
+      (link) => keepIds.has(link.source) && keepIds.has(link.target),
+    ),
+  };
+}
+
+/** 複数府省庁表示中に府省庁ノードが選ばれたらサンキーを絞り込む */
+export function resolveSankeyGraphData(
+  nodes: MoneyFlowNode[],
+  links: MoneyFlowLink[],
+  selectedNode: MoneyFlowNode | null,
+): { nodes: MoneyFlowNode[]; links: MoneyFlowLink[] } {
+  const ministryCount = nodes.filter((node) => node.kind === "ministry").length;
+  if (selectedNode?.kind === "ministry" && ministryCount > 1) {
+    return filterSankeyGraph(nodes, links, selectedNode);
+  }
+  return { nodes, links };
+}

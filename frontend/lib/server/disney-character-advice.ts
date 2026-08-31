@@ -1,5 +1,5 @@
 import { DISNEY_PARKS } from "@/lib/disney-constants";
-import { crowdLevelLabels } from "@/lib/disney-utils";
+import { crowdLevelLabels, formatJstDateLabel } from "@/lib/disney-utils";
 import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
 import type {
@@ -39,7 +39,7 @@ function topFactors(breakdown: ReturnType<typeof buildCrowdBreakdown>): string[]
 function baymaxHeadline(
   level: CrowdLevel,
   score: number,
-  dayLabel: "本日" | "明日",
+  dayLabel: string,
 ): string {
   const intro = `こんにちは。私は${BAYMAX_NAME}。${dayLabel}の混雑スコアは ${score} です。`;
   if (level === "extreme") {
@@ -57,7 +57,7 @@ function baymaxHeadline(
 function elsaHeadline(
   level: CrowdLevel,
   score: number,
-  dayLabel: "本日" | "明日",
+  dayLabel: string,
 ): string {
   const intro = `私は${ELSA_NAME}。${dayLabel}の混雑スコアは ${score} よ。`;
   if (level === "extreme") {
@@ -159,13 +159,18 @@ function buildTouringTips(
 export function buildCharacterEveningAdvice(
   park: DisneyParkKey,
   targetDate: string,
-  dayContext: "today" | "tomorrow",
+  dayContext: "today" | "tomorrow" | "other",
   mode: "evening" | "preview" = "preview",
 ): DisneyCharacterEveningAdvice {
   const prediction = predictCrowdForDate(park, targetDate);
   const breakdown = buildCrowdBreakdown(targetDate, park);
   const { characterId, characterNameJa } = parkCharacter(park);
-  const targetDayLabel = dayContext === "today" ? "本日" : "明日";
+  const targetDayLabel =
+    dayContext === "today"
+      ? "本日"
+      : dayContext === "tomorrow"
+        ? "明日"
+        : formatJstDateLabel(targetDate);
   const crowdReasons =
     characterId === "elsa"
       ? elsaCrowdReasons(breakdown)

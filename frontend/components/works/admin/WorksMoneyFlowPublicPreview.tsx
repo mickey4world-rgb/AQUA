@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import PublicPreviewNav from "@/components/public/PublicPreviewNav";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
@@ -10,6 +11,7 @@ import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
   formatMoneyFlowAmount,
+  resolveSankeyGraphData,
 } from "@/lib/works-money-flow-ui";
 
 const SankeyDiagram = dynamic(
@@ -70,6 +72,14 @@ export default function WorksMoneyFlowPublicPreview() {
     );
   }, [data, selectedNode]);
 
+  const sankeyGraph = useMemo(
+    () =>
+      data
+        ? resolveSankeyGraphData(data.nodes, data.links, selectedNode)
+        : { nodes: [], links: [] },
+    [data, selectedNode],
+  );
+
   const pagedRows = useMemo(() => {
     const start = rowPage * ROW_PAGE_SIZE;
     return filteredRows.slice(start, start + ROW_PAGE_SIZE);
@@ -84,12 +94,19 @@ export default function WorksMoneyFlowPublicPreview() {
       setRowPage(0);
       return;
     }
+    if (node.kind === "ministry") {
+      setSelectedNode((current) => (current?.id === node.id ? null : node));
+      setRowPage(0);
+      return;
+    }
     setSelectedNode((current) => (current?.id === node.id ? null : node));
     setRowPage(0);
   }
 
   return (
     <main className={`${PAGE_MAIN_CLASS} mx-auto w-full max-w-6xl px-4 py-8 sm:px-6`}>
+      <PublicPreviewNav showcaseAnchor="sankey" />
+
       <div className="mb-6">
         <p className="eyebrow">WORKS · 行政事業レビュー</p>
         <h1 className="display-section mt-3 text-white">お金の流れ（無料プレビュー）</h1>
@@ -111,12 +128,6 @@ export default function WorksMoneyFlowPublicPreview() {
           >
             ログイン後にフル版（検索・ドリルダウン）
             <span aria-hidden>→</span>
-          </Link>
-          <Link
-            href="/#sankey"
-            className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-500/20"
-          >
-            Showcase に戻る
           </Link>
         </div>
       </div>
@@ -140,7 +151,9 @@ export default function WorksMoneyFlowPublicPreview() {
               <div>
                 <p className="eyebrow">Sankey</p>
                 <p className="mt-1 text-sm text-slate-400">
-                  1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで絞り込み）
+                  {selectedNode?.kind === "ministry"
+                    ? `府省庁「${selectedNode.label}」のみ表示 · 事業・支出先は金額の大きい順`
+                    : "1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（府省庁クリックで絞り込み）"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
@@ -163,8 +176,8 @@ export default function WorksMoneyFlowPublicPreview() {
             </div>
             <div className="overflow-x-auto p-2 sm:p-4">
               <SankeyDiagram
-                nodes={data.nodes}
-                links={data.links}
+                nodes={sankeyGraph.nodes}
+                links={sankeyGraph.links}
                 unit={data.unit}
                 width={960}
                 height={560}

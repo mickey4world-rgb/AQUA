@@ -109,6 +109,7 @@ export default function SankeyDiagram({
       .nodeId((node) => node.id)
       .nodeWidth(nodeWidth)
       .nodePadding(14)
+      .nodeSort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
       .extent([
         [padding, padding],
         [width - padding, height - padding],

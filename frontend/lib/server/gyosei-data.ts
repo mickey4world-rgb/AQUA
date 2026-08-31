@@ -621,8 +621,10 @@ function buildOverviewGraph(
     payeeTotals,
     Math.min(limit, 24),
   );
-  const ministrySet = new Set(
-    topProjects.map((projectIndex) => dataset.projects[projectIndex][0]),
+  const ministryIndices = [
+    ...new Set(topProjects.map((projectIndex) => dataset.projects[projectIndex][0])),
+  ].sort(
+    (a, b) => (ministryTotals.get(b) ?? 0) - (ministryTotals.get(a) ?? 0),
   );
 
   const nodes: MoneyFlowNode[] = [];
@@ -643,7 +645,7 @@ function buildOverviewGraph(
     drillable: false,
   });
 
-  for (const ministryIndex of ministrySet) {
+  for (const ministryIndex of ministryIndices) {
     const id = `m:${ministryIndex}`;
     addNode({
       id,
@@ -659,6 +661,7 @@ function buildOverviewGraph(
     });
   }
 
+  const ministrySet = new Set(ministryIndices);
   for (const projectIndex of topProjects) {
     const project = dataset.projects[projectIndex];
     if (!ministrySet.has(project[0])) continue;
@@ -682,12 +685,24 @@ function buildOverviewGraph(
     });
   }
 
-  for (const [key, amount] of projectToPayee) {
+  const payeeLinks = [...projectToPayee.entries()]
+    .filter(([key, amount]) => {
+      if (amount <= 0) return false;
+      const [projectIndexText, payeeIndexText] = key.split(">");
+      const projectIndex = Number(projectIndexText);
+      const payeeIndex = Number(payeeIndexText);
+      return (
+        projectSet.has(projectIndex) &&
+        payeeSet.has(payeeIndex) &&
+        ministrySet.has(dataset.projects[projectIndex][0])
+      );
+    })
+    .sort((a, b) => b[1] - a[1]);
+
+  for (const [key, amount] of payeeLinks) {
     const [projectIndexText, payeeIndexText] = key.split(">");
     const projectIndex = Number(projectIndexText);
     const payeeIndex = Number(payeeIndexText);
-    if (!projectSet.has(projectIndex) || !payeeSet.has(payeeIndex)) continue;
-    if (!ministrySet.has(dataset.projects[projectIndex][0])) continue;
     const payeeId = `c:${payeeIndex}`;
     addNode({
       id: payeeId,
@@ -708,7 +723,7 @@ function buildOverviewGraph(
     nodes,
     links: links.filter((link) => link.amount > 0),
     truncated:
-      ministryTotals.size > ministrySet.size ||
+      ministryTotals.size > ministryIndices.length ||
       projectTotals.size > topProjects.length ||
       payeeTotals.size > payeeSet.size,
   };
@@ -780,11 +795,20 @@ function buildMinistryDrillGraph(
     });
   }
 
-  for (const [key, amount] of projectToPayee) {
+  const payeeLinks = [...projectToPayee.entries()]
+    .filter(([key, amount]) => {
+      if (amount <= 0) return false;
+      const [projectIndexText, payeeIndexText] = key.split(">");
+      const projectIndex = Number(projectIndexText);
+      const payeeIndex = Number(payeeIndexText);
+      return projectSet.has(projectIndex) && payeeSet.has(payeeIndex);
+    })
+    .sort((a, b) => b[1] - a[1]);
+
+  for (const [key, amount] of payeeLinks) {
     const [projectIndexText, payeeIndexText] = key.split(">");
     const projectIndex = Number(projectIndexText);
     const payeeIndex = Number(payeeIndexText);
-    if (!projectSet.has(projectIndex) || !payeeSet.has(payeeIndex)) continue;
     const payeeId = `c:${payeeIndex}`;
     if (!nodes.some((node) => node.id === payeeId)) {
       nodes.push({

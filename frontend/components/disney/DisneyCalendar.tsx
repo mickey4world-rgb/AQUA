@@ -17,6 +17,8 @@ type DisneyCalendarProps = {
   park: DisneyParkKey;
   selectedDate: string;
   onSelectDate: (date: string) => void;
+  /** 公開プレビューでは /api/public/tdr-preview/calendar */
+  calendarApiPath?: string;
 };
 
 function shiftMonth(year: number, month: number, delta: number) {
@@ -32,6 +34,7 @@ export default function DisneyCalendar({
   park,
   selectedDate,
   onSelectDate,
+  calendarApiPath = "/api/disney/calendar",
 }: DisneyCalendarProps) {
   const initialYear = Number(selectedDate.slice(0, 4));
   const initialMonth = Number(selectedDate.slice(5, 7));
@@ -60,7 +63,7 @@ export default function DisneyCalendar({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/disney/calendar?park=${park}&month=${monthParam}`)
+    fetch(`${calendarApiPath}?park=${park}&month=${monthParam}`)
       .then(async (res) =>
         res.ok ? ((await res.json()) as DisneyCalendarMonth) : null,
       )
@@ -75,7 +78,7 @@ export default function DisneyCalendar({
     return () => {
       cancelled = true;
     };
-  }, [park, monthParam]);
+  }, [park, monthParam, calendarApiPath]);
 
   const canGoPrev = calendar
     ? monthParam >
