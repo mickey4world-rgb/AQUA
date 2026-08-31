@@ -12,11 +12,24 @@ import type {
   DisneyShowcaseSnapshot,
 } from "@/lib/types/disney";
 
-async function buildDayBriefing(
+function resolveDayContext(
+  date: string,
+  today: string,
+  tomorrow: string,
+): "today" | "tomorrow" | "other" {
+  if (date === today) return "today";
+  if (date === tomorrow) return "tomorrow";
+  return "other";
+}
+
+export async function buildPublicDayBriefing(
   park: DisneyParkKey,
   date: string,
-  dayContext: "today" | "tomorrow",
+  options?: { today?: string; tomorrow?: string; skipLiveFetch?: boolean },
 ): Promise<DisneyDayBriefing> {
+  const today = options?.today ?? getJstToday();
+  const tomorrow = options?.tomorrow ?? getTomorrowJst();
+  const dayContext = resolveDayContext(date, today, tomorrow);
   const prediction = predictCrowdForDate(park, date);
   const breakdown = buildCrowdBreakdown(date, park);
   const [forecast, characterAdvice] = await Promise.all([
@@ -33,6 +46,17 @@ async function buildDayBriefing(
     forecast,
     characterAdvice,
   };
+}
+
+async function buildDayBriefing(
+  park: DisneyParkKey,
+  date: string,
+  dayContext: "today" | "tomorrow",
+): Promise<DisneyDayBriefing> {
+  return buildPublicDayBriefing(park, date, {
+    today: getJstToday(),
+    tomorrow: getTomorrowJst(),
+  });
 }
 
 async function buildParkPublicPreview(

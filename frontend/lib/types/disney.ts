@@ -161,7 +161,7 @@ export interface DisneyCharacterEveningAdvice {
   park: DisneyParkKey;
   parkName: string;
   targetDate: string;
-  targetDayLabel: "本日" | "明日";
+  targetDayLabel: string;
   characterId: "baymax" | "elsa";
   characterNameJa: string;
   headline: string;

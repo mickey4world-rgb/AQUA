@@ -299,3 +299,18 @@ export function isMonthNavigable(year: number, month: number): boolean {
   const targetIndex = year * 12 + month;
   return targetIndex >= currentIndex && targetIndex <= currentIndex + CALENDAR_MAX_MONTHS_AHEAD;
 }
+
+export function isDateNavigable(dateStr: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!isMonthNavigable(year, month)) return false;
+
+  const today = getJstToday();
+  if (compareDateStr(dateStr, today) < 0) {
+    const todayParts = parseJstDate(today);
+    return year === todayParts.year && month === todayParts.month;
+  }
+  return true;
+}

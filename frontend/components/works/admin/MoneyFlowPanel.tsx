@@ -12,6 +12,7 @@ import type {
 import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
+  resolveSankeyGraphData,
 } from "@/lib/works-money-flow-ui";
 
 type MetaResponse = {
@@ -216,6 +217,13 @@ export default function MoneyFlowPanel() {
       data.nodes,
     );
   }, [data, selectedNode]);
+  const sankeyGraph = useMemo(
+    () =>
+      data
+        ? resolveSankeyGraphData(data.nodes, data.links, selectedNode)
+        : { nodes: [], links: [] },
+    [data, selectedNode],
+  );
   const ROW_PAGE_SIZE = 20;
   const pagedRows = useMemo(() => {
     const start = rowPage * ROW_PAGE_SIZE;
@@ -440,11 +448,11 @@ export default function MoneyFlowPanel() {
         {!error && data?.yearAvailable && (
           <>
             <SankeyDiagram
-              nodes={data.nodes}
-              links={data.links}
+              nodes={sankeyGraph.nodes}
+              links={sankeyGraph.links}
               unit={data.unit}
               width={960}
-              height={Math.max(520, Math.min(920, data.nodes.length * 28))}
+              height={Math.max(520, Math.min(920, sankeyGraph.nodes.length * 28))}
               fixedColumns
               amountWeightedLinks
               selectedNodeId={selectedNode?.id ?? null}
