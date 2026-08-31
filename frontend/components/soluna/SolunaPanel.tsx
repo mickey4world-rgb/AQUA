@@ -166,6 +166,8 @@ export default function SolunaPanel() {
     const trimmed = text.trim();
     if (!trimmed || sending || !state) return;
 
+    const useVoiceMode = fromVoice || conversationMode || voiceEnabled;
+
     if (fromVoice || conversationMode) {
       pauseForReply();
     }
@@ -173,6 +175,8 @@ export default function SolunaPanel() {
     const resumeIfConversation = () => {
       if (conversationMode) resumeAfterReply();
     };
+
+    const shouldSpeakReply = fromVoice || conversationMode;
 
     setSending(true);
     setError(null);
@@ -201,7 +205,7 @@ export default function SolunaPanel() {
       const res = await fetch("/api/soluna/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, voiceMode: useVoiceMode }),
       });
 
       let data: unknown;
@@ -298,14 +302,18 @@ export default function SolunaPanel() {
       setError(null);
 
       try {
-        speakLines(
-          [
-            { label: "ソル", text: payload.sol.content, character: "sol" },
-            { label: "ルーナ", text: payload.luna.content, character: "luna" },
-          ],
-          resumeIfConversation,
-          { force: fromVoice || conversationMode },
-        );
+        if (shouldSpeakReply) {
+          speakLines(
+            [
+              { label: "ソル", text: payload.sol.content, character: "sol" },
+              { label: "ルーナ", text: payload.luna.content, character: "luna" },
+            ],
+            resumeIfConversation,
+            { force: true },
+          );
+        } else {
+          resumeIfConversation();
+        }
       } catch {
         resumeIfConversation();
       }

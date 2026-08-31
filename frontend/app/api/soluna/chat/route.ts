@@ -7,6 +7,7 @@ export const maxDuration = 60;
 
 type ChatRequestBody = {
   message?: string;
+  voiceMode?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -28,7 +29,9 @@ export async function POST(request: Request) {
     const body = raw as ChatRequestBody;
     const message = sanitizeText(typeof body.message === "string" ? body.message : "", 2000);
 
-    const result = await sendSolunaChat(auth.userId, message);
+    const result = await sendSolunaChat(auth.userId, message, {
+      voiceMode: body.voiceMode === true,
+    });
     if (!result.ok) {
       return Response.json({ error: result.reason }, { status: 422 });
     }
