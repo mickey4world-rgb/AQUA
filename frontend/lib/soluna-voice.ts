@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { stripForTts } from "@/lib/soluna-reply";
 
 type SpeechRecognitionErrorEvent = {
   error: string;
@@ -48,16 +49,10 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function isSpeechRecognitionSupported(): boolean {
-  return getSpeechRecognition() != null;
-}
-
-export function isSpeechSynthesisSupported(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window;
-}
-
-export function isSolunaVoiceSupported(): boolean {
-  return isSpeechRecognitionSupported() && isSpeechSynthesisSupported();
+function isIosSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
 }
 
 function mapSpeechError(code: string): string {
@@ -103,11 +98,78 @@ async function ensureMicrophoneAccess(): Promise<string | null> {
   }
 }
 
+let voicesReadyPromise: Promise<SpeechSynthesisVoice[]> | null = null;
+
+function loadVoices(): Promise<SpeechSynthesisVoice[]> {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    return Promise.resolve([]);
+  }
+  if (voicesReadyPromise) return voicesReadyPromise;
+
+  voicesReadyPromise = new Promise((resolve) => {
+    const pick = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        resolve(voices);
+        return true;
+      }
+      return false;
+    };
+
+    if (pick()) return;
+
+    const onChange = () => {
+      if (pick()) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+    window.speechSynthesis.onvoiceschanged = onChange;
+    setTimeout(() => resolve(window.speechSynthesis.getVoices()), 400);
+  });
+
+  return voicesReadyPromise;
+}
+
+function pickJapaneseVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const ja =
+    voices.find((v) => v.lang === "ja-JP") ??
+    voices.find((v) => v.lang.startsWith("ja")) ??
+    null;
+  return ja;
+}
+
+/** iOS Safari: ユーザー操作のタイミングで TTS をアンロック */
+function unlockSpeechSynthesis(): void {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(" ");
+    utterance.volume = 0.01;
+    utterance.rate = 2;
+    utterance.lang = "ja-JP";
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // ignore
+  }
+}
+
 type SpeakLine = {
   label: string;
   text: string;
   character?: "sol" | "luna";
 };
+
+export function isSpeechRecognitionSupported(): boolean {
+  return getSpeechRecognition() != null;
+}
+
+export function isSpeechSynthesisSupported(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+export function isSolunaVoiceSupported(): boolean {
+  return isSpeechRecognitionSupported() || isSpeechSynthesisSupported();
+}
 
 export function useSolunaVoice() {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -117,12 +179,14 @@ export function useSolunaVoice() {
   const [speakingAs, setSpeakingAs] = useState<"sol" | "luna" | null>(null);
   const [interimTranscript, setInterimTranscript] = useState("");
 
+  const voiceEnabledRef = useRef(false);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speakQueueRef = useRef<SpeakLine[]>([]);
   const speakingRef = useRef(false);
   const intentionalStopRef = useRef(false);
   const gotResultRef = useRef(false);
   const errorFiredRef = useRef(false);
+  const iosKeepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const conversationModeRef = useRef(false);
   const pausedForReplyRef = useRef(false);
@@ -134,6 +198,10 @@ export function useSolunaVoice() {
   const finalTranscriptRef = useRef("");
   const interimTranscriptRef = useRef("");
   const utteranceSentRef = useRef(false);
+
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+  }, [voiceEnabled]);
 
   const clearSilenceTimer = useCallback(() => {
     if (silenceTimerRef.current) {
@@ -149,6 +217,25 @@ export function useSolunaVoice() {
     }
   }, []);
 
+  const stopIosKeepAlive = useCallback(() => {
+    if (iosKeepAliveRef.current) {
+      clearInterval(iosKeepAliveRef.current);
+      iosKeepAliveRef.current = null;
+    }
+  }, []);
+
+  const startIosKeepAlive = useCallback(() => {
+    if (!isIosSafari()) return;
+    stopIosKeepAlive();
+    iosKeepAliveRef.current = setInterval(() => {
+      if (typeof window === "undefined" || !window.speechSynthesis) return;
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 8000);
+  }, [stopIosKeepAlive]);
+
   const resetTranscript = useCallback(() => {
     finalTranscriptRef.current = "";
     interimTranscriptRef.current = "";
@@ -157,6 +244,7 @@ export function useSolunaVoice() {
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    stopIosKeepAlive();
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
@@ -164,55 +252,79 @@ export function useSolunaVoice() {
     speakingRef.current = false;
     setSpeaking(false);
     setSpeakingAs(null);
-  }, []);
+  }, [stopIosKeepAlive]);
 
   const finishSpeaking = useCallback(() => {
+    stopIosKeepAlive();
     speakingRef.current = false;
     setSpeaking(false);
     setSpeakingAs(null);
     const onComplete = onSpeakCompleteRef.current;
     onSpeakCompleteRef.current = null;
     onComplete?.();
-  }, []);
+  }, [stopIosKeepAlive]);
 
-  const speakNext = useCallback(() => {
+  const speakNext = useCallback(async () => {
     const next = speakQueueRef.current.shift();
     if (!next || typeof window === "undefined" || !window.speechSynthesis) {
       finishSpeaking();
       return;
     }
 
+    const voices = await loadVoices();
+    const jaVoice = pickJapaneseVoice(voices);
+    const character = next.character ?? (next.label.includes("ルーナ") ? "luna" : "sol");
+    const speechText = stripForTts(next.text);
+    if (!speechText) {
+      speakNext();
+      return;
+    }
+
     speakingRef.current = true;
     setSpeaking(true);
-    setSpeakingAs(
-      next.character ?? (next.label.includes("ルーナ") ? "luna" : "sol"),
-    );
+    setSpeakingAs(character);
+    startIosKeepAlive();
 
-    const utterance = new SpeechSynthesisUtterance(`${next.label}。${next.text}`);
+    const utterance = new SpeechSynthesisUtterance(speechText);
     utterance.lang = "ja-JP";
-    utterance.rate = 1.02;
-    utterance.pitch = next.label.includes("ルーナ") ? 1.08 : 0.95;
-    utterance.onend = () => speakNext();
-    utterance.onerror = () => speakNext();
+    utterance.rate = character === "luna" ? 1.05 : 1.02;
+    utterance.pitch = character === "luna" ? 1.12 : 0.96;
+    if (jaVoice) utterance.voice = jaVoice;
+
+    utterance.onend = () => {
+      void speakNext();
+    };
+    utterance.onerror = () => {
+      void speakNext();
+    };
+
     window.speechSynthesis.speak(utterance);
-  }, [finishSpeaking]);
+  }, [finishSpeaking, startIosKeepAlive]);
 
   const speakLines = useCallback(
-    (lines: SpeakLine[], onComplete?: () => void) => {
+    (lines: SpeakLine[], onComplete?: () => void, options?: { force?: boolean }) => {
       onSpeakCompleteRef.current = onComplete ?? null;
-      if (!voiceEnabled || !isSpeechSynthesisSupported()) {
+      const shouldSpeak =
+        options?.force ||
+        voiceEnabledRef.current ||
+        conversationModeRef.current;
+      if (!shouldSpeak || !isSpeechSynthesisSupported()) {
         finishSpeaking();
         return;
       }
+
       stopSpeaking();
-      speakQueueRef.current = lines.filter((line) => line.text.trim());
-      if (speakQueueRef.current.length === 0) {
-        finishSpeaking();
-        return;
-      }
-      speakNext();
+      void loadVoices().then(() => {
+        unlockSpeechSynthesis();
+        speakQueueRef.current = lines.filter((line) => stripForTts(line.text));
+        if (speakQueueRef.current.length === 0) {
+          finishSpeaking();
+          return;
+        }
+        void speakNext();
+      });
     },
-    [voiceEnabled, speakNext, stopSpeaking, finishSpeaking],
+    [finishSpeaking, speakNext, stopSpeaking],
   );
 
   const stopRecognition = useCallback(() => {
@@ -365,18 +477,21 @@ export function useSolunaVoice() {
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {
       const Ctor = getSpeechRecognition();
       if (!Ctor) {
-        onError?.("このブラウザは音声入力に未対応です。スマホでは Chrome をお試しください。");
+        onError?.("このブラウザは音声入力に未対応です。iPhone では Safari でお試しください。");
         return;
       }
 
+      unlockSpeechSynthesis();
+      void loadVoices();
       stopSpeaking();
       stopRecognition();
       conversationModeRef.current = true;
       setConversationMode(true);
+      voiceEnabledRef.current = true;
+      setVoiceEnabled(true);
       pausedForReplyRef.current = false;
       onResultRef.current = onResult;
       onErrorRef.current = onError ?? null;
-      setVoiceEnabled(true);
       await beginContinuousRecognition();
     },
     [beginContinuousRecognition, stopRecognition, stopSpeaking],
@@ -390,7 +505,8 @@ export function useSolunaVoice() {
     onErrorRef.current = null;
     resetTranscript();
     stopRecognition();
-  }, [resetTranscript, stopRecognition]);
+    stopSpeaking();
+  }, [resetTranscript, stopRecognition, stopSpeaking]);
 
   const pauseForReply = useCallback(() => {
     pausedForReplyRef.current = true;
@@ -420,6 +536,8 @@ export function useSolunaVoice() {
         return;
       }
 
+      unlockSpeechSynthesis();
+      void loadVoices();
       stopSpeaking();
       stopRecognition();
 
@@ -489,11 +607,13 @@ export function useSolunaVoice() {
   }, [stopRecognition]);
 
   useEffect(() => {
+    void loadVoices();
     return () => {
       intentionalStopRef.current = true;
       conversationModeRef.current = false;
       clearSilenceTimer();
       clearRestartTimer();
+      stopIosKeepAlive();
       try {
         recognitionRef.current?.abort();
       } catch {
@@ -501,7 +621,7 @@ export function useSolunaVoice() {
       }
       stopSpeaking();
     };
-  }, [clearRestartTimer, clearSilenceTimer, stopSpeaking]);
+  }, [clearRestartTimer, clearSilenceTimer, stopIosKeepAlive, stopSpeaking]);
 
   return {
     voiceEnabled,

@@ -31,11 +31,19 @@ export default function SolunaCharacterAvatar({
         ? "soluna-avatar--speaking"
         : "";
 
+  const expression =
+    mood === "thinking" ? "💭" : mood === "speaking" ? (character === "sol" ? "☀️" : "🌙") : null;
+
   return (
     <div
       className={`soluna-avatar ${stageClass} ${moodClass} relative flex shrink-0 items-center justify-center rounded-2xl ${SIZE_CLASS[size]}`}
       aria-hidden
     >
+      {expression ? (
+        <span className="soluna-avatar__expression absolute -right-1 -top-1 text-[10px] leading-none">
+          {expression}
+        </span>
+      ) : null}
       {character === "sol" ? (
         <svg viewBox="0 0 64 64" className="soluna-avatar__svg h-[72%] w-[72%]">
           <circle className="soluna-avatar__sol-core" cx="32" cy="32" r="14" />

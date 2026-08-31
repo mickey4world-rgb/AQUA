@@ -304,6 +304,7 @@ export default function SolunaPanel() {
             { label: "ルーナ", text: payload.luna.content, character: "luna" },
           ],
           resumeIfConversation,
+          { force: fromVoice || conversationMode },
         );
       } catch {
         resumeIfConversation();
@@ -554,12 +555,12 @@ export default function SolunaPanel() {
                     onClick={() => setVoiceEnabled((value) => !value)}
                     disabled={conversationMode}
                     className={`rounded-full border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${
-                      voiceEnabled
+                      voiceEnabled || conversationMode
                         ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
                         : "border-white/10 text-slate-300 hover:bg-white/5"
                     }`}
                   >
-                    {voiceEnabled ? "🔊 音声返答 ON" : "🔇 音声返答 OFF"}
+                    {voiceEnabled || conversationMode ? "🔊 音声返答 ON" : "🔇 音声返答 OFF"}
                   </button>
                 )}
                 {sttSupported && !conversationMode && (
