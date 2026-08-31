@@ -1787,6 +1787,10 @@ body {
   overflow: visible;
 }
 
+.soluna-avatar__portrait {
+  display: block;
+}
+
 .soluna-avatar__sol-core {
   fill: #fcd34d;
   filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
