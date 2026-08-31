@@ -199,7 +199,10 @@ export async function queryMoneyFlow(
   });
 
   const detailByPayee =
-    Boolean(payeeFilter) || focusKind === "payee" || Boolean(sectorFilter);
+    filters.rowMode === "detail" ||
+    Boolean(payeeFilter) ||
+    focusKind === "payee" ||
+    Boolean(sectorFilter);
 
   const rows = detailByPayee
     ? buildFlowDetailRows(dataset, matchingFlowIndexes)

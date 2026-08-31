@@ -48,21 +48,27 @@ const KIND_COLUMN: Record<MoneyFlowNode["kind"], number> = {
   year: 0,
 };
 
+/** 常に4列（国庫・府省庁・事業・支出先）で均等配置 */
+const FIXED_COLUMN_COUNT = 4;
+
 function applyFixedColumns(
   nodes: NodeExtra[],
-  columnCount: number,
   nodeWidth: number,
   padding: number,
   width: number,
 ) {
   const usable = width - padding * 2 - nodeWidth;
-  const step = columnCount <= 1 ? 0 : usable / (columnCount - 1);
+  const step = usable / (FIXED_COLUMN_COUNT - 1);
   for (const node of nodes) {
     const col = KIND_COLUMN[node.kind];
     const x = padding + col * step;
     node.x0 = x;
     node.x1 = x + nodeWidth;
   }
+}
+
+function labelOnLeftSide(kind: MoneyFlowNode["kind"]): boolean {
+  return KIND_COLUMN[kind] >= 2;
 }
 
 export default function SankeyDiagram({
@@ -114,8 +120,7 @@ export default function SankeyDiagram({
     });
 
     if (fixedColumns) {
-      const columns = new Set(graphNodes.map((node) => KIND_COLUMN[node.kind]));
-      applyFixedColumns(result.nodes, columns.size, nodeWidth, padding, width);
+      applyFixedColumns(result.nodes, nodeWidth, padding, width);
     }
 
     return result;
@@ -179,10 +184,10 @@ export default function SankeyDiagram({
           const x1 = node.x1 ?? 0;
           const y0 = node.y0 ?? 0;
           const y1 = node.y1 ?? 0;
-          const labelOnRight = x0 > width * 0.55;
+          const labelOnRight = !labelOnLeftSide(node.kind);
           const isSelected = selectedNodeId === node.id;
           const clickable = Boolean(
-            onNodeClick && node.kind !== "government" && node.drillable !== false,
+            onNodeClick && (node.kind === "government" || node.drillable !== false),
           );
           return (
             <g

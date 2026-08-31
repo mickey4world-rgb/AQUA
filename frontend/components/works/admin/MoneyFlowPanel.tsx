@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import type {
   MoneyFlowFocusKind,
@@ -8,6 +9,10 @@ import type {
   MoneyFlowResponse,
   PayeeDossier,
 } from "@/lib/types/gyosei";
+import {
+  buildNodeSelectionSummary,
+  filterRowsBySelectedNode,
+} from "@/lib/works-money-flow-ui";
 
 type MetaResponse = {
   unit: string;
@@ -54,6 +59,7 @@ export default function MoneyFlowPanel() {
   const [dossierLoading, setDossierLoading] = useState(false);
   const [dossierError, setDossierError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
+  const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +99,7 @@ export default function MoneyFlowPanel() {
     if (!requestKey) return;
     let cancelled = false;
     setRowPage(0);
+    setSelectedNode(null);
     fetchFlow(requestKey)
       .then((payload) => {
         if (cancelled) return;
@@ -132,7 +139,19 @@ export default function MoneyFlowPanel() {
   );
 
   function handleNodeClick(node: MoneyFlowNode) {
-    if (node.kind === "government" || node.drillable === false) return;
+    if (node.kind === "government") {
+      setSelectedNode(null);
+      setRowPage(0);
+      return;
+    }
+    if (node.drillable === false) {
+      setSelectedNode(node);
+      setRowPage(0);
+      return;
+    }
+
+    setSelectedNode(node);
+    setRowPage(0);
 
     if (node.kind === "ministry") {
       setMinistry(node.label);
@@ -184,13 +203,25 @@ export default function MoneyFlowPanel() {
   }
 
   const rowsAreAggregated = Boolean(data?.rows.some((row) => row.aggregated));
+  const filteredRows = useMemo(
+    () => filterRowsBySelectedNode(data?.rows ?? [], selectedNode),
+    [data?.rows, selectedNode],
+  );
+  const selectionSummary = useMemo(() => {
+    if (!data || !selectedNode) return null;
+    return buildNodeSelectionSummary(
+      selectedNode,
+      data.rows,
+      data.links,
+      data.nodes,
+    );
+  }, [data, selectedNode]);
   const ROW_PAGE_SIZE = 20;
   const pagedRows = useMemo(() => {
-    const rows = data?.rows ?? [];
     const start = rowPage * ROW_PAGE_SIZE;
-    return rows.slice(start, start + ROW_PAGE_SIZE);
-  }, [data?.rows, rowPage]);
-  const rowPageCount = Math.max(1, Math.ceil((data?.rows.length ?? 0) / ROW_PAGE_SIZE));
+    return filteredRows.slice(start, start + ROW_PAGE_SIZE);
+  }, [filteredRows, rowPage]);
+  const rowPageCount = Math.max(1, Math.ceil(filteredRows.length / ROW_PAGE_SIZE));
 
   return (
     <div className="space-y-5">
@@ -348,6 +379,8 @@ export default function MoneyFlowPanel() {
             onClick={() => {
               setDrill([]);
               setMinistry(ALL_MINISTRIES);
+              setSelectedNode(null);
+              setRowPage(0);
             }}
             className="rounded-full border border-white/10 px-3 py-1 hover:bg-white/5"
           >
@@ -376,7 +409,7 @@ export default function MoneyFlowPanel() {
               {loading
                 ? "集計中…"
                 : data?.yearAvailable
-                  ? `${data.totals.flowCount.toLocaleString("ja-JP")} 件 / ノードをクリックして深掘り`
+                  ? `1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで詳細・明細絞り込み）`
                   : data?.message ?? "—"}
             </p>
           </div>
@@ -405,12 +438,31 @@ export default function MoneyFlowPanel() {
         )}
 
         {!error && data?.yearAvailable && (
-          <SankeyDiagram
-            nodes={data.nodes}
-            links={data.links}
-            unit={data.unit}
-            onNodeClick={handleNodeClick}
-          />
+          <>
+            <SankeyDiagram
+              nodes={data.nodes}
+              links={data.links}
+              unit={data.unit}
+              width={960}
+              height={Math.max(520, Math.min(920, data.nodes.length * 28))}
+              fixedColumns
+              amountWeightedLinks
+              selectedNodeId={selectedNode?.id ?? null}
+              onNodeClick={handleNodeClick}
+            />
+            {selectionSummary ? (
+              <div className="mt-4">
+                <MoneyFlowSelectionPanel
+                  summary={selectionSummary}
+                  unit={data.unit}
+                  onClear={() => {
+                    setSelectedNode(null);
+                    setRowPage(0);
+                  }}
+                />
+              </div>
+            ) : null}
+          </>
         )}
 
         {data?.totals.truncated && (
@@ -555,16 +607,18 @@ export default function MoneyFlowPanel() {
           <div className="border-b border-white/8 px-5 py-4 sm:px-6">
             <p className="eyebrow">明細</p>
             <p className="mt-1 text-sm text-slate-400">
-              {rowsAreAggregated
-                ? `支出先ごとの合計（金額の大きい順）`
-                : `契約明細（金額の大きい順）`}
+              {selectedNode && selectionSummary
+                ? `${selectionSummary.kindLabel}「${selectionSummary.name}」に関連する明細`
+                : rowsAreAggregated
+                  ? `支出先ごとの合計（金額の大きい順）`
+                  : `契約明細（金額の大きい順）`}
               {" · "}
-              {(data.rows.length === 0
+              {(filteredRows.length === 0
                 ? "0"
                 : `${rowPage * ROW_PAGE_SIZE + 1}–${Math.min(
                     (rowPage + 1) * ROW_PAGE_SIZE,
-                    data.rows.length,
-                  )}`) + ` / ${data.rows.length} 件`}
+                    filteredRows.length,
+                  )}`) + ` / ${filteredRows.length} 件`}
             </p>
           </div>
           <div className="overflow-x-auto">
