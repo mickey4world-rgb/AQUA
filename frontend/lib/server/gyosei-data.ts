@@ -21,6 +21,7 @@ const DATA_DIR = path.join(process.cwd(), "data", "gyosei");
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 80;
 const MAX_ROWS = 200;
+const MIN_OVERVIEW_PROJECTS = 10;
 /** 主要事項DBに無い直近年度。見える化サイト CSV を取り込めば有効化される。 */
 const PENDING_YEARS = [2023, 2024, 2025];
 
@@ -603,12 +604,23 @@ function buildOverviewGraph(
     );
   }
 
-  const topMinistries = topKeys(ministryTotals, focusedPayee ? Math.min(limit, 12) : Math.min(limit, 14));
-  const topProjects = topKeys(projectTotals, focusedPayee ? Math.min(limit, 24) : Math.min(limit, 18));
-  const topPayees = topKeys(payeeTotals, Math.min(limit, 24));
-  const ministrySet = new Set(topMinistries);
+  const maxProjects = focusedPayee ? Math.min(limit, 24) : Math.min(limit, 20);
+  const topProjects = selectProjectsWithPayees(
+    projectTotals,
+    projectToPayee,
+    focusedPayee ? Math.min(MIN_OVERVIEW_PROJECTS, maxProjects) : MIN_OVERVIEW_PROJECTS,
+    maxProjects,
+  );
   const projectSet = new Set(topProjects);
-  const payeeSet = new Set(topPayees);
+  const payeeSet = selectPayeesForProjects(
+    projectSet,
+    projectToPayee,
+    payeeTotals,
+    Math.min(limit, 24),
+  );
+  const ministrySet = new Set(
+    topProjects.map((projectIndex) => dataset.projects[projectIndex][0]),
+  );
 
   const nodes: MoneyFlowNode[] = [];
   const links: MoneyFlowLink[] = [];
@@ -628,7 +640,7 @@ function buildOverviewGraph(
     drillable: false,
   });
 
-  for (const ministryIndex of topMinistries) {
+  for (const ministryIndex of ministrySet) {
     const id = `m:${ministryIndex}`;
     addNode({
       id,
@@ -693,9 +705,9 @@ function buildOverviewGraph(
     nodes,
     links: links.filter((link) => link.amount > 0),
     truncated:
-      ministryTotals.size > topMinistries.length ||
+      ministryTotals.size > ministrySet.size ||
       projectTotals.size > topProjects.length ||
-      payeeTotals.size > topPayees.length,
+      payeeTotals.size > payeeSet.size,
   };
 }
 
@@ -723,10 +735,20 @@ function buildMinistryDrillGraph(
     );
   }
 
-  const topProjects = topKeys(projectTotals, Math.min(limit, 28));
-  const topPayees = topKeys(payeeTotals, Math.min(limit, 28));
+  const maxProjects = Math.min(limit, 28);
+  const topProjects = selectProjectsWithPayees(
+    projectTotals,
+    projectToPayee,
+    Math.min(MIN_OVERVIEW_PROJECTS, maxProjects),
+    maxProjects,
+  );
   const projectSet = new Set(topProjects);
-  const payeeSet = new Set(topPayees);
+  const payeeSet = selectPayeesForProjects(
+    projectSet,
+    projectToPayee,
+    payeeTotals,
+    Math.min(limit, 28),
+  );
   const nodes: MoneyFlowNode[] = [
     {
       id: "root",
@@ -778,7 +800,7 @@ function buildMinistryDrillGraph(
     nodes,
     links,
     truncated:
-      projectTotals.size > topProjects.length || payeeTotals.size > topPayees.length,
+      projectTotals.size > topProjects.length || payeeTotals.size > payeeSet.size,
   };
 }
 
@@ -958,6 +980,74 @@ function buildPayeeDrillGraph(
       ministryTotals.size > topMinistries.length ||
       projectTotals.size > topProjects.length,
   };
+}
+
+function topPayeeForProject(
+  projectIndex: number,
+  projectToPayee: Map<string, number>,
+): { payeeIndex: number; amount: number } | null {
+  let best: { payeeIndex: number; amount: number } | null = null;
+  for (const [key, amount] of projectToPayee) {
+    if (amount <= 0) continue;
+    const [projectIndexText, payeeIndexText] = key.split(">");
+    if (Number(projectIndexText) !== projectIndex) continue;
+    const payeeIndex = Number(payeeIndexText);
+    if (!best || amount > best.amount) {
+      best = { payeeIndex, amount };
+    }
+  }
+  return best;
+}
+
+function selectProjectsWithPayees(
+  projectTotals: Map<number, number>,
+  projectToPayee: Map<string, number>,
+  minProjects: number,
+  maxProjects: number,
+): number[] {
+  const sorted = [...projectTotals.entries()].sort((a, b) => b[1] - a[1]);
+  const selected: number[] = [];
+  for (const [projectIndex] of sorted) {
+    if (!topPayeeForProject(projectIndex, projectToPayee)) continue;
+    selected.push(projectIndex);
+    if (selected.length >= maxProjects) break;
+  }
+  if (selected.length < minProjects) {
+    for (const [projectIndex] of sorted) {
+      if (selected.includes(projectIndex)) continue;
+      if (!topPayeeForProject(projectIndex, projectToPayee)) continue;
+      selected.push(projectIndex);
+      if (selected.length >= minProjects) break;
+    }
+  }
+  return selected;
+}
+
+function selectPayeesForProjects(
+  projectSet: Set<number>,
+  projectToPayee: Map<string, number>,
+  payeeTotals: Map<number, number>,
+  maxPayees: number,
+): Set<number> {
+  const payees = new Set<number>();
+  for (const projectIndex of projectSet) {
+    const top = topPayeeForProject(projectIndex, projectToPayee);
+    if (top) payees.add(top.payeeIndex);
+  }
+  const connected = [...payeeTotals.entries()]
+    .filter(([payeeIndex]) =>
+      [...projectToPayee.entries()].some(([key, amount]) => {
+        if (amount <= 0) return false;
+        const [projectIndexText, payeeIndexText] = key.split(">");
+        return projectSet.has(Number(projectIndexText)) && Number(payeeIndexText) === payeeIndex;
+      }),
+    )
+    .sort((a, b) => b[1] - a[1]);
+  for (const [payeeIndex] of connected) {
+    if (payees.size >= maxPayees) break;
+    payees.add(payeeIndex);
+  }
+  return payees;
 }
 
 function topKeys(map: Map<number, number>, limit: number): number[] {

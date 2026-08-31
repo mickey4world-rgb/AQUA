@@ -65,6 +65,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/works-preview",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/works/*",
       "allowedRoles": ["authenticated"]
     },

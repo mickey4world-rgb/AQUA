@@ -22,6 +22,8 @@ type SankeyDiagramProps = {
   amountWeightedLinks?: boolean;
   /** 流れアニメーション（ショーケース用） */
   flowAnimation?: boolean;
+  /** 府省庁=2列目・事業=3列目・支出先=最右列に固定 */
+  fixedColumns?: boolean;
 };
 
 type NodeExtra = MoneyFlowNode & SankeyExtraProperties;
@@ -36,6 +38,33 @@ const KIND_COLOR: Record<MoneyFlowNode["kind"], string> = {
   year: "#93c5fd",
 };
 
+/** 1列目=国庫 … 2列目=府省庁 … 3列目=事業 … 最右=支出先 */
+const KIND_COLUMN: Record<MoneyFlowNode["kind"], number> = {
+  government: 0,
+  ministry: 1,
+  project: 2,
+  block: 2,
+  payee: 3,
+  year: 0,
+};
+
+function applyFixedColumns(
+  nodes: NodeExtra[],
+  columnCount: number,
+  nodeWidth: number,
+  padding: number,
+  width: number,
+) {
+  const usable = width - padding * 2 - nodeWidth;
+  const step = columnCount <= 1 ? 0 : usable / (columnCount - 1);
+  for (const node of nodes) {
+    const col = KIND_COLUMN[node.kind];
+    const x = padding + col * step;
+    node.x0 = x;
+    node.x1 = x + nodeWidth;
+  }
+}
+
 export default function SankeyDiagram({
   nodes,
   links,
@@ -46,6 +75,7 @@ export default function SankeyDiagram({
   selectedNodeId = null,
   amountWeightedLinks = false,
   flowAnimation = false,
+  fixedColumns = true,
 }: SankeyDiagramProps) {
   const maxLinkAmount = useMemo(
     () => Math.max(1, ...links.map((link) => link.amount)),
@@ -67,20 +97,29 @@ export default function SankeyDiagram({
 
     if (graphLinks.length === 0) return null;
 
+    const nodeWidth = 16;
+    const padding = 16;
     const layoutFn = sankey<NodeExtra, LinkExtra>()
       .nodeId((node) => node.id)
-      .nodeWidth(16)
+      .nodeWidth(nodeWidth)
       .nodePadding(14)
       .extent([
-        [16, 16],
-        [width - 16, height - 16],
+        [padding, padding],
+        [width - padding, height - padding],
       ]);
 
-    return layoutFn({
+    const result = layoutFn({
       nodes: graphNodes,
       links: graphLinks,
     });
-  }, [nodes, links, width, height]);
+
+    if (fixedColumns) {
+      const columns = new Set(graphNodes.map((node) => KIND_COLUMN[node.kind]));
+      applyFixedColumns(result.nodes, columns.size, nodeWidth, padding, width);
+    }
+
+    return result;
+  }, [nodes, links, width, height, fixedColumns]);
 
   if (!layout) {
     return (
