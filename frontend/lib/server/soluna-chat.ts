@@ -31,6 +31,7 @@ import {
   type SolunaRoutePlan,
 } from "@/lib/server/soluna-router";
 import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
+import { finalizeSolunaReply, isOpsStyleQuestion } from "@/lib/soluna-reply";
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
 import { buildHumanChatBriefingSection } from "@/lib/server/soluna-human-context";
 import { formatModelUsedLabel, resolveModelForProvider } from "@/lib/server/soluna-model-registry";
@@ -92,8 +93,9 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 
 ## 話し方
-- 日本語・です/ます調。温かく簡潔
-- 通常は **2〜3行、80〜150文字以内**。状況・ジョブ・他アプリの説明では **4〜6行・約250字まで可**
+- 日本語・です/ます調。**明るく・楽しく・明晰・賢く**。適度に絵文字を1〜2個（☀️🎯✨など）
+- **必ず完結した文で終える**。通常 **2〜3文・60〜140文字以内**（途中で切らない）
+- 状況・ジョブ・他アプリの説明のみ **4文・最大240字まで**
 - 励ましと次の一歩を1つだけ示す（状況質問では事実を先に）
 - ルーナ（月）の話題を否定せず、行動の側から補う
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -104,8 +106,9 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 
 ## 話し方
-- 日本語・です/ます調。やわらかく共感的
-- 通常は **2〜3行、80〜150文字以内**。状況・ジョブ・他アプリの説明では **4〜6行・約250字まで可**
+- 日本語・です/ます調。**やわらかく・温かく・明晰・賢く**。適度に絵文字を1〜2個（🌙💫🌸など）
+- **必ず完結した文で終える**。通常 **2〜3文・60〜140文字以内**（途中で切らない）
+- 状況・ジョブ・他アプリの説明のみ **4文・最大240字まで**
 - 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -149,11 +152,52 @@ function isProviderConfigured(provider: SolunaProvider): boolean {
   }
 }
 
+function formatJstTimestamp(iso?: string): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function buildTemporalContext(): string {
+  const now = new Date();
+  const label = now.toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `## 現在時刻（JST）
+${label}
+
+## 時系列のルール（必須・厳守）
+- 「今日」「明日」「来週」「今週末」は **上記の現在時刻** を基準に解釈する。
+- 会話ログの [日時] と記憶の (記録日) を必ず照合する。**古い予定を「明日」と言い換えない**。
+- 1週間以上前の話（例: 先週のディズニー）が **過去の出来事** なら過去形で。未来の予定なら残り日数を確認してから答える。
+- 日付が曖昧な予定は、断定せず「いつ頃の予定ですか？」と優しく1問だけ確認してよい。
+- **最新のユーザー発言** を最優先。記憶と矛盾する場合は記憶より今の言葉を信じる。`;
+}
+
 function formatMemories(memories: SolunaMemory[]): string {
   if (memories.length === 0) return "（まだ記憶はありません）";
   return memories
     .slice(0, 8)
-    .map((memory) => `- [${memory.category}] ${memory.content}`)
+    .map((memory) => {
+      const when = formatJstTimestamp(memory.createdAt);
+      const dateHint = when ? `(${when}記録)` : "";
+      return `- [${memory.category}] ${dateHint} ${memory.content}`.trim();
+    })
     .join("\n");
 }
 
@@ -167,7 +211,9 @@ function buildTranscript(messages: SolunaMessage[]): string {
           : message.role === "sol"
             ? "ソル"
             : "ルーナ";
-      return `${label}: ${message.content}`;
+      const when = formatJstTimestamp(message.createdAt);
+      const prefix = when ? `[${when}] ` : "";
+      return `${prefix}${label}: ${message.content}`;
     })
     .join("\n");
 }
@@ -201,6 +247,8 @@ function buildSystemPrompt(
     ? `\n\n${briefingSection.trim()}`
     : "";
   return `${enhancePersonaForTier(persona, tier)}
+
+${buildTemporalContext()}
 
 ## 育成状態
 親密度: ${intimacy}/100（${stageLabel}）
@@ -584,8 +632,8 @@ async function extractMemories(
 
 {
   "memories": [
-    { "character": "sol", "category": "goal", "content": "30文字以内" },
-    { "character": "luna", "category": "emotion", "content": "30文字以内" }
+    { "character": "sol", "category": "goal", "content": "30文字以内。日付や時期があれば含める" },
+    { "character": "luna", "category": "emotion", "content": "30文字以内。日付や時期があれば含める" }
   ]
 }`,
       messages: [
@@ -692,16 +740,13 @@ export async function sendSolunaChat(
     listMessages(userId),
     getBriefingForHumanChat(),
   ]);
-  const opsAsk =
-    /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|状況|今日の|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成/i.test(
-      trimmed,
-    );
+  const opsAsk = isOpsStyleQuestion(trimmed);
   const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed, {
     userId,
     detail: opsAsk ? "full" : "compact",
   });
   const userPrompt = opsAsk
-    ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に答えてください。）`
+    ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、240字以内で完結した文で答えてください。）`
     : trimmed;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
@@ -788,10 +833,18 @@ export async function sendSolunaChat(
     return { ok: false, reason: `${solResult.error} / ${lunaResult.error}` };
   }
 
-  const solContent =
+  const solContentRaw =
     "error" in solResult ? "（ソルはいま応答できませんでした）" : solResult.content;
-  const lunaContent =
+  const lunaContentRaw =
     "error" in lunaResult ? "（ルーナはいま応答できませんでした）" : lunaResult.content;
+  const solContent =
+    "error" in solResult
+      ? solContentRaw
+      : finalizeSolunaReply(solContentRaw, { ops: opsAsk });
+  const lunaContent =
+    "error" in lunaResult
+      ? lunaContentRaw
+      : finalizeSolunaReply(lunaContentRaw, { ops: opsAsk });
 
   const gain = estimateIntimacyGain(trimmed.length);
   const nextProfile = await saveProfile({

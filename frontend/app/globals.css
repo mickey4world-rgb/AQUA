@@ -1730,9 +1730,21 @@ body {
 }
 
 @keyframes soluna-speak {
-  0%, 100% { transform: scale(1); }
-  35% { transform: scale(1.08); }
-  70% { transform: scale(0.98); }
+  0%, 100% { transform: translateY(0) scale(1); }
+  25% { transform: translateY(-2px) scale(1.06); }
+  50% { transform: translateY(0) scale(1.02); }
+  75% { transform: translateY(-1px) scale(1.04); }
+}
+
+@keyframes soluna-expression-pop {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.95; }
+}
+
+.soluna-avatar__expression {
+  animation: soluna-expression-pop 0.9s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.35));
+  pointer-events: none;
 }
 
 @keyframes soluna-rays-spin {
@@ -1767,7 +1779,8 @@ body {
 }
 
 .soluna-avatar--speaking {
-  animation: soluna-speak 0.75s ease-in-out infinite;
+  animation: soluna-speak 0.65s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.12);
 }
 
 .soluna-avatar__svg {
