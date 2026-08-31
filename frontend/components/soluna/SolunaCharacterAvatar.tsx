@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import type { SolunaCharacter, SolunaGrowthStage } from "@/lib/types/soluna";
 
 export type SolunaAvatarMood = "idle" | "thinking" | "speaking";
@@ -18,15 +17,10 @@ const SIZE_CLASS = {
   lg: "h-[4.5rem] w-[4.5rem]",
 } as const;
 
+/** /soluna/* は App ルートと衝突するため /images/soluna/ を使う */
 const PORTRAIT = {
-  sol: "/soluna/sol.jpg",
-  luna: "/soluna/luna.jpg",
-} as const;
-
-const PORTRAIT_SIZE = {
-  sm: 40,
-  md: 56,
-  lg: 72,
+  sol: "/images/soluna/sol.jpg",
+  luna: "/images/soluna/luna.jpg",
 } as const;
 
 export default function SolunaCharacterAvatar({
@@ -51,13 +45,13 @@ export default function SolunaCharacterAvatar({
       className={`soluna-avatar ${stageClass} ${moodClass} relative shrink-0 overflow-hidden rounded-2xl ${SIZE_CLASS[size]}`}
       aria-hidden
     >
-      <Image
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
         src={PORTRAIT[character]}
         alt=""
-        width={PORTRAIT_SIZE[size]}
-        height={PORTRAIT_SIZE[size]}
-        className="h-full w-full object-cover object-top"
-        priority={size === "lg"}
+        className="soluna-avatar__portrait h-full w-full object-cover object-top"
+        loading={size === "lg" ? "eager" : "lazy"}
+        decoding="async"
       />
       {expression ? (
         <span className="soluna-avatar__expression absolute -right-0.5 -top-0.5 text-[10px] leading-none">
