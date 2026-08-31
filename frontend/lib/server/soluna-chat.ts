@@ -114,6 +114,19 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 - 記憶した内容があれば1フレーズだけ自然に触れる
 - 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える`;
 
+const VOICE_MODE_ADDON = `
+
+## 音声会話モード（必須・最優先）
+- **1〜2文・35〜70文字**で話す（読み上げ向けに短く口語的に）
+- 絵文字は使わない
+- 爽やか／優しい**会話調**（です・ますは自然に。堅い書き言葉は避ける）
+- 一度に伝えることは1つ。質問は最大1つ
+- 相手の言葉を短く受け止めてから返す`;
+
+type SolunaChatOptions = {
+  voiceMode?: boolean;
+};
+
 type CharacterChatSuccess = {
   content: string;
   model: string;
@@ -242,11 +255,19 @@ function buildSystemPrompt(
   memories: SolunaMemory[],
   tier: SolunaGrowthTier,
   briefingSection?: string,
+  voiceMode?: boolean,
 ): string {
   const briefingBlock = briefingSection?.trim()
     ? `\n\n${briefingSection.trim()}`
     : "";
-  return `${enhancePersonaForTier(persona, tier)}
+  const voiceAddon = voiceMode
+    ? `${VOICE_MODE_ADDON}\n- ${
+        character === "sol"
+          ? "ソルは**爽やかな男の子**の声で話すイメージ（元気・明るい）"
+          : "ルーナは**優しい女の子**の声で話すイメージ（やわらか・温かい）"
+      }`
+    : "";
+  return `${enhancePersonaForTier(persona, tier)}${voiceAddon}
 
 ${buildTemporalContext()}
 
@@ -505,6 +526,7 @@ async function chatWithCharacter(
   costMode: SolunaCostMode,
   blockedProvider?: SolunaProvider,
   briefingSection?: string,
+  voiceMode?: boolean,
 ): Promise<CharacterChatResult> {
   const persona = character === "sol" ? SOL_PERSONA : LUNA_PERSONA;
   const tier = assignment.tier ?? resolveGrowthTier(intimacy);
@@ -516,6 +538,7 @@ async function chatWithCharacter(
     memories,
     tier,
     briefingSection,
+    voiceMode,
   );
   const userMessages = buildUserMessages(history, userMessage);
 
@@ -719,8 +742,10 @@ export type SolunaChatResult =
 export async function sendSolunaChat(
   userId: string,
   message: string,
+  options: SolunaChatOptions = {},
 ): Promise<SolunaChatResult> {
   const trimmed = message.trim();
+  const voiceMode = options.voiceMode === true;
   if (!trimmed) return { ok: false, reason: "メッセージを入力してください。" };
   if (trimmed.length > MAX_MESSAGE_CHARS) {
     return { ok: false, reason: `メッセージは ${MAX_MESSAGE_CHARS} 文字以内です。` };
@@ -745,9 +770,11 @@ export async function sendSolunaChat(
     userId,
     detail: opsAsk ? "full" : "compact",
   });
-  const userPrompt = opsAsk
-    ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、240字以内で完結した文で答えてください。）`
-    : trimmed;
+  const userPrompt = voiceMode
+    ? `${opsAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリの質問です。事実ベースで70字以内。）" : trimmed}\n\n（※音声会話中です。35〜70字・1〜2文・絵文字なしで返してください。）`
+    : opsAsk
+      ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、240字以内で完結した文で答えてください。）`
+      : trimmed;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
@@ -775,6 +802,7 @@ export async function sendSolunaChat(
       costAssessment.mode,
       routePlan.luna.provider,
       briefingSection,
+      voiceMode,
     ),
     chatWithCharacter(
       userId,
@@ -788,6 +816,7 @@ export async function sendSolunaChat(
       costAssessment.mode,
       routePlan.sol.provider,
       briefingSection,
+      voiceMode,
     ),
   ]);
 
@@ -818,6 +847,7 @@ export async function sendSolunaChat(
         costAssessment.mode,
         undefined,
         briefingSection,
+        voiceMode,
       );
       if (!("error" in solResult)) {
         solResult = {
@@ -840,11 +870,11 @@ export async function sendSolunaChat(
   const solContent =
     "error" in solResult
       ? solContentRaw
-      : finalizeSolunaReply(solContentRaw, { ops: opsAsk });
+      : finalizeSolunaReply(solContentRaw, { ops: opsAsk, voice: voiceMode });
   const lunaContent =
     "error" in lunaResult
       ? lunaContentRaw
-      : finalizeSolunaReply(lunaContentRaw, { ops: opsAsk });
+      : finalizeSolunaReply(lunaContentRaw, { ops: opsAsk, voice: voiceMode });
 
   const gain = estimateIntimacyGain(trimmed.length);
   const nextProfile = await saveProfile({
