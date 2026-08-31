@@ -20,9 +20,10 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "Money Flow",
     titleJa: "サンキーダイアグラム",
     description:
-      "行政事業レビューの予算データをサンキー図で可視化。省庁→事業→支出先をドリルダウンし、お金の流れを直感的に追えます。",
+      "行政事業レビューの予算データをサンキー図で可視化。2列目=府省庁、3列目=主要事業、最右=支出先。無料プレビューで明細まで確認できます。",
     accent: "#67e8f9",
     href: "/works/admin/money-flow",
+    publicHref: "/works-preview",
     tag: "WORKS",
   },
   {
