@@ -57,6 +57,15 @@ const panels: Panel[] = [
         points: ["資料選択", "サンプル事件", "争点整理"],
         accent: "#c4b5fd",
       },
+      {
+        title: "PDF Redact",
+        titleJa: "PDF 黒塗り",
+        desc: "企業名・住所・人名などを黒塗りした PDF を生成。語句は自由に編集でき、ブラウザ内で処理。",
+        href: "/works/judicial/pdf-redact",
+        status: "ready",
+        points: ["語句編集", "自動検出", "プレビュー"],
+        accent: "#a78bfa",
+      },
     ],
   },
   {

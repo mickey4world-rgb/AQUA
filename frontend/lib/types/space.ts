@@ -79,6 +79,16 @@ export interface CloseApproach {
   imageCredit?: string;
 }
 
+export type NeoPublicPreviewSnapshot = {
+  generatedAt: string;
+  todayJst: string;
+  mode: "today" | "upcoming";
+  headline: string;
+  featured: CloseApproach;
+  todayApproachCount: number;
+  loginNotice: string;
+};
+
 export type SpaceChatMessage = {
   role: "user" | "assistant";
   content: string;

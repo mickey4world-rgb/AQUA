@@ -69,6 +69,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/neo-preview",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/works/*",
       "allowedRoles": ["authenticated"]
     },

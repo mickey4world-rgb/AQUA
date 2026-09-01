@@ -61,10 +61,12 @@ import type {
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY = 8;
-/** 短い返答向け — 思考モデルのトークン消費を抑える */
-const SOL_CHAT_MAX_OUTPUT_TOKENS = 420;
-const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 280;
-const CLAUDE_CHAT_MAX_TOKENS = 280;
+/** 短い返答向け — 思考モデルのトークン消費を抑える（音声会話） */
+const VOICE_CHAT_MAX_OUTPUT_TOKENS = 140;
+/** テキストチャット — 十分な長さで完結した返答 */
+const TEXT_CHAT_MAX_OUTPUT_TOKENS = 560;
+const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 520;
+const CLAUDE_CHAT_MAX_TOKENS = 520;
 const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 500;
 /** SWA の API 制限（約 45 秒）内に収める。ソルは早めに切ってモデル切替 */
 const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
@@ -94,8 +96,8 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 
 ## 話し方
 - 日本語・です/ます調。**明るく・楽しく・明晰・賢く**。適度に絵文字を1〜2個（☀️🎯✨など）
-- **必ず完結した文で終える**。通常 **2〜3文・60〜140文字以内**（途中で切らない）
-- 状況・ジョブ・他アプリの説明のみ **4文・最大240字まで**
+- **必ず完結した文で終える**。テキストチャットでは **2〜4文・おおよそ200〜400文字**（途中で切らない）
+- 状況・ジョブ・他アプリの説明のみ **最大5文・520字まで**
 - 励ましと次の一歩を1つだけ示す（状況質問では事実を先に）
 - ルーナ（月）の話題を否定せず、行動の側から補う
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -107,8 +109,8 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 
 ## 話し方
 - 日本語・です/ます調。**やわらかく・温かく・明晰・賢く**。適度に絵文字を1〜2個（🌙💫🌸など）
-- **必ず完結した文で終える**。通常 **2〜3文・60〜140文字以内**（途中で切らない）
-- 状況・ジョブ・他アプリの説明のみ **4文・最大240字まで**
+- **必ず完結した文で終える**。テキストチャットでは **2〜4文・おおよそ200〜400文字**（途中で切らない）
+- 状況・ジョブ・他アプリの説明のみ **最大5文・520字まで**
 - 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -122,6 +124,13 @@ const VOICE_MODE_ADDON = `
 - 爽やか／優しい**会話調**（です・ますは自然に。堅い書き言葉は避ける）
 - 一度に伝えることは1つ。質問は最大1つ
 - 相手の言葉を短く受け止めてから返す`;
+
+const TEXT_MODE_ADDON = `
+
+## テキストチャットモード（必須）
+- 音声読み上げはしない。**十分な長さで分かりやすく**書く
+- **2〜4文・おおよそ200〜400文字**を目安に、結論と次の一歩まで含めて**完結**させる
+- 途中で切ったり、要点だけ残して省略したりしない`;
 
 type SolunaChatOptions = {
   voiceMode?: boolean;
@@ -266,7 +275,7 @@ function buildSystemPrompt(
           ? "ソルは**爽やかな男の子**の声で話すイメージ（元気・明るい）"
           : "ルーナは**優しい女の子**の声で話すイメージ（やわらか・温かい）"
       }`
-    : "";
+    : TEXT_MODE_ADDON;
   return `${enhancePersonaForTier(persona, tier)}${voiceAddon}
 
 ${buildTemporalContext()}
@@ -326,9 +335,23 @@ async function callProvider(
   system: string,
   userMessages: Array<{ role: "user"; content: string }>,
   timeoutMs = SOLUNA_PROVIDER_TIMEOUT_MS,
+  voiceMode = false,
 ): Promise<CharacterChatResult> {
   const feature = character === "sol" ? "soluna-sol-chat" : "soluna-luna-chat";
   const { provider, model, tier } = assignment;
+  const geminiMaxTokens = voiceMode
+    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+    : TEXT_CHAT_MAX_OUTPUT_TOKENS;
+  const claudeMaxTokens = voiceMode
+    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+    : tier === "mature"
+      ? TEXT_CHAT_MAX_OUTPUT_TOKENS
+      : CLAUDE_CHAT_MAX_TOKENS;
+  const openAiMaxTokens = voiceMode
+    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+    : tier === "mature"
+      ? TEXT_CHAT_MAX_OUTPUT_TOKENS
+      : OPENAI_CHAT_MAX_COMPLETION_TOKENS;
 
   if (provider === "gemini") {
     if (!isGeminiConfigured()) {
@@ -344,7 +367,7 @@ async function callProvider(
     let result = await generateWithGemini(
       {
         ...request,
-        maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS,
+        maxOutputTokens: geminiMaxTokens,
       },
       { models: [model], timeoutMs, maxAttempts: 1 },
     );
@@ -353,7 +376,7 @@ async function callProvider(
       result = await generateWithGemini(
         {
           ...request,
-          maxOutputTokens: SOL_CHAT_MAX_OUTPUT_TOKENS * 2,
+          maxOutputTokens: geminiMaxTokens * 2,
         },
         { models: [model], timeoutMs, maxAttempts: 1 },
       );
@@ -394,7 +417,7 @@ async function callProvider(
       const result = await generateWithAnthropic({
         system,
         messages: [{ role: "user", content: transcriptParts.join("\n\n") }],
-        maxTokens: tier === "mature" ? 420 : CLAUDE_CHAT_MAX_TOKENS,
+        maxTokens: claudeMaxTokens,
         temperature: character === "sol" ? 0.75 : 0.85,
         model: candidateModel,
         tier: assignment.tier,
@@ -443,7 +466,7 @@ async function callProvider(
     const completion = await withTimeout(
       client.chat.completions.create({
         model: deployment,
-        max_completion_tokens: tier === "mature" ? 420 : OPENAI_CHAT_MAX_COMPLETION_TOKENS,
+        max_completion_tokens: openAiMaxTokens,
         temperature: character === "sol" ? 0.75 : 0.8,
         messages: [
           { role: "system", content: system },
@@ -601,6 +624,7 @@ async function chatWithCharacter(
       system,
       userMessages,
       timeoutMs,
+      voiceMode,
     );
 
     if (!("error" in result)) {
@@ -773,8 +797,8 @@ export async function sendSolunaChat(
   const userPrompt = voiceMode
     ? `${opsAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリの質問です。事実ベースで70字以内。）" : trimmed}\n\n（※音声会話中です。35〜70字・1〜2文・絵文字なしで返してください。）`
     : opsAsk
-      ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、240字以内で完結した文で答えてください。）`
-      : trimmed;
+      ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、520字以内で完結した文で答えてください。）`
+      : `${trimmed}\n\n（※テキストチャットです。2〜4文・200〜400字程度で、途中で切らず完結した返答にしてください。）`;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
