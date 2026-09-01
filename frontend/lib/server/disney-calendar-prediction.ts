@@ -20,6 +20,8 @@ import type {
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
+const monthCache = new Map<string, DisneyCalendarMonth>();
+
 function inRange(month: number, day: number, from: [number, number], to: [number, number]): boolean {
   const value = month * 100 + day;
   return value >= from[0] * 100 + from[1] && value <= to[0] * 100 + to[1];
@@ -250,6 +252,10 @@ export async function predictCalendarMonth(
   month: number,
   options?: { skipLiveFetch?: boolean },
 ): Promise<DisneyCalendarMonth> {
+  const cacheKey = `${park}:${year}-${String(month).padStart(2, "0")}`;
+  const cached = monthCache.get(cacheKey);
+  if (cached) return cached;
+
   const today = getJstToday();
   let liveBias = 0;
 
@@ -280,7 +286,7 @@ export async function predictCalendarMonth(
     };
   });
 
-  return {
+  const payload = {
     park,
     year,
     month,
@@ -289,6 +295,9 @@ export async function predictCalendarMonth(
     days,
     today,
   };
+
+  monthCache.set(cacheKey, payload);
+  return payload;
 }
 
 export const CALENDAR_MAX_MONTHS_AHEAD = 6;

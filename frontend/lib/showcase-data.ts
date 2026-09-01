@@ -1,4 +1,4 @@
-import type { MoneyFlowLink, MoneyFlowNode } from "@/lib/types/gyosei";
+import type { MoneyFlowLink, MoneyFlowNode, MoneyFlowRow } from "@/lib/types/gyosei";
 
 export type ShowcaseSectionMeta = {
   id: string;
@@ -169,6 +169,45 @@ export const SHOWCASE_SANKEY_LINKS: MoneyFlowLink[] = [
   { source: "industry-dx", target: "corp-l", amount: 600 },
   { source: "startup", target: "corp-m", amount: 1000 },
 ];
+
+function buildShowcaseSankeyRows(): MoneyFlowRow[] {
+  const nodeById = new Map(SHOWCASE_SANKEY_NODES.map((node) => [node.id, node]));
+  const ministryByProject = new Map<string, string>();
+
+  for (const link of SHOWCASE_SANKEY_LINKS) {
+    const source = nodeById.get(link.source);
+    const target = nodeById.get(link.target);
+    if (source?.kind === "ministry" && target?.kind === "project") {
+      ministryByProject.set(target.id, source.label);
+    }
+  }
+
+  return SHOWCASE_SANKEY_LINKS.filter((link) => {
+    const source = nodeById.get(link.source);
+    const target = nodeById.get(link.target);
+    return source?.kind === "project" && target?.kind === "payee";
+  })
+    .map((link) => {
+      const project = nodeById.get(link.source)!;
+      const payee = nodeById.get(link.target)!;
+      return {
+        ministry: ministryByProject.get(link.source) ?? "—",
+        project: project.rawLabel ?? project.label,
+        projectNumber: "",
+        payee: payee.rawLabel ?? payee.label,
+        amount: link.amount,
+        block: "デモ",
+        contract: null,
+        work: "",
+        aggregated: false,
+        flowCount: 1,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/** ショーケース用の架空明細（サンキー選択と連動） */
+export const SHOWCASE_SANKEY_ROWS: MoneyFlowRow[] = buildShowcaseSankeyRows();
 
 export type ShowcasePayeeContract = {
   ministry: string;

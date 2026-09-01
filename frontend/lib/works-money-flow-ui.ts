@@ -120,7 +120,39 @@ export function formatMoneyFlowAmount(value: number, unit: string): string {
   return `${value.toLocaleString("ja-JP")} ${unit}`;
 }
 
-/** 府省庁選択時 — 該当府省庁とその事業・支出先だけに絞る */
+/** 選択ノードの上流・下流だけを残す（府省庁・事業・支出先の詳細サンキー） */
+function collectFocusedGraphIds(
+  focusId: string,
+  links: MoneyFlowLink[],
+): Set<string> {
+  const keepIds = new Set<string>([focusId]);
+
+  const upstreamQueue = [focusId];
+  while (upstreamQueue.length > 0) {
+    const id = upstreamQueue.pop()!;
+    for (const link of links) {
+      if (link.target === id && !keepIds.has(link.source)) {
+        keepIds.add(link.source);
+        upstreamQueue.push(link.source);
+      }
+    }
+  }
+
+  const downstreamQueue = [focusId];
+  while (downstreamQueue.length > 0) {
+    const id = downstreamQueue.pop()!;
+    for (const link of links) {
+      if (link.source === id && !keepIds.has(link.target)) {
+        keepIds.add(link.target);
+        downstreamQueue.push(link.target);
+      }
+    }
+  }
+
+  return keepIds;
+}
+
+/** ノード選択時 — 国庫〜支出先の流れを選択範囲だけに絞る */
 export function filterSankeyGraph(
   nodes: MoneyFlowNode[],
   links: MoneyFlowLink[],
@@ -129,30 +161,8 @@ export function filterSankeyGraph(
   if (!focus || focus.kind === "government") {
     return { nodes, links };
   }
-  if (focus.kind !== "ministry") {
-    return { nodes, links };
-  }
 
-  const ministryId = focus.id;
-  const keepIds = new Set<string>([ministryId]);
-
-  for (const link of links) {
-    if (link.target === ministryId) keepIds.add(link.source);
-  }
-
-  const projectIds = new Set<string>();
-  for (const link of links) {
-    if (link.source === ministryId) {
-      projectIds.add(link.target);
-      keepIds.add(link.target);
-    }
-  }
-
-  for (const link of links) {
-    if (projectIds.has(link.source)) {
-      keepIds.add(link.target);
-    }
-  }
+  const keepIds = collectFocusedGraphIds(focus.id, links);
 
   return {
     nodes: nodes.filter((node) => keepIds.has(node.id)),
@@ -162,15 +172,24 @@ export function filterSankeyGraph(
   };
 }
 
-/** 複数府省庁表示中に府省庁ノードが選ばれたらサンキーを絞り込む */
+/** 縦軸ノード選択時に詳細サンキーを表示 */
 export function resolveSankeyGraphData(
   nodes: MoneyFlowNode[],
   links: MoneyFlowLink[],
   selectedNode: MoneyFlowNode | null,
 ): { nodes: MoneyFlowNode[]; links: MoneyFlowLink[] } {
-  const ministryCount = nodes.filter((node) => node.kind === "ministry").length;
-  if (selectedNode?.kind === "ministry" && ministryCount > 1) {
+  if (selectedNode && selectedNode.kind !== "government") {
     return filterSankeyGraph(nodes, links, selectedNode);
   }
   return { nodes, links };
+}
+
+export function sankeyFocusDescription(
+  selectedNode: MoneyFlowNode | null,
+): string {
+  if (!selectedNode || selectedNode.kind === "government") {
+    return "1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで詳細表示・明細絞り込み）";
+  }
+  const name = nodeDisplayName(selectedNode);
+  return `${kindLabelJa(selectedNode.kind)}「${name}」の流れ · 事業・支出先は金額の大きい順`;
 }
