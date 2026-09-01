@@ -294,7 +294,7 @@ export default function DisneyPublicPreview() {
 
           <DisneyCalendar
             park={park}
-            selectedDate={selectedDate}
+            selectedDate={selectedDate || data.today}
             onSelectDate={setSelectedDate}
             calendarApiPath="/api/public/tdr-preview/calendar"
           />

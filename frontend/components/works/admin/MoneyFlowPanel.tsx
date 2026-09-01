@@ -13,6 +13,7 @@ import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
   resolveSankeyGraphData,
+  sankeyFocusDescription,
 } from "@/lib/works-money-flow-ui";
 
 type MetaResponse = {
@@ -417,7 +418,7 @@ export default function MoneyFlowPanel() {
               {loading
                 ? "集計中…"
                 : data?.yearAvailable
-                  ? `1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで詳細・明細絞り込み）`
+                  ? sankeyFocusDescription(selectedNode)
                   : data?.message ?? "—"}
             </p>
           </div>

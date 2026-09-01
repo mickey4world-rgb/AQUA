@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import PublicPreviewNav from "@/components/public/PublicPreviewNav";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
+import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import {
@@ -12,29 +12,26 @@ import {
   filterRowsBySelectedNode,
   formatMoneyFlowAmount,
   resolveSankeyGraphData,
+  sankeyFocusDescription,
 } from "@/lib/works-money-flow-ui";
-
-const SankeyDiagram = dynamic(
-  () => import("@/components/works/admin/SankeyDiagram"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[420px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02] text-sm text-slate-500">
-        サンキー図を描画中…
-      </div>
-    ),
-  },
-);
 
 const ROW_PAGE_SIZE = 25;
 
-export default function WorksMoneyFlowPublicPreview() {
-  const [data, setData] = useState<MoneyFlowResponse | null>(null);
+type WorksMoneyFlowPublicPreviewProps = {
+  initialData?: MoneyFlowResponse | null;
+};
+
+export default function WorksMoneyFlowPublicPreview({
+  initialData = null,
+}: WorksMoneyFlowPublicPreviewProps) {
+  const [data, setData] = useState<MoneyFlowResponse | null>(initialData);
   const [error, setError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
   const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
 
   useEffect(() => {
+    if (initialData) return;
+
     let cancelled = false;
     fetch("/api/public/works-money-flow")
       .then(async (response) => {
@@ -55,7 +52,7 @@ export default function WorksMoneyFlowPublicPreview() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialData]);
 
   const filteredRows = useMemo(
     () => filterRowsBySelectedNode(data?.rows ?? [], selectedNode),
@@ -91,11 +88,6 @@ export default function WorksMoneyFlowPublicPreview() {
   function handleNodeClick(node: MoneyFlowNode) {
     if (node.kind === "government") {
       setSelectedNode(null);
-      setRowPage(0);
-      return;
-    }
-    if (node.kind === "ministry") {
-      setSelectedNode((current) => (current?.id === node.id ? null : node));
       setRowPage(0);
       return;
     }
@@ -151,9 +143,7 @@ export default function WorksMoneyFlowPublicPreview() {
               <div>
                 <p className="eyebrow">Sankey</p>
                 <p className="mt-1 text-sm text-slate-400">
-                  {selectedNode?.kind === "ministry"
-                    ? `府省庁「${selectedNode.label}」のみ表示 · 事業・支出先は金額の大きい順`
-                    : "1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（府省庁クリックで絞り込み）"}
+                  {sankeyFocusDescription(selectedNode)}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">

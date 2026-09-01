@@ -30,55 +30,89 @@ function toMonthParam(year: number, month: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function parseYearMonth(date: string): { year: number; month: number } {
+  const match = /^(\d{4})-(\d{2})/.exec(date);
+  if (match) {
+    return { year: Number(match[1]), month: Number(match[2]) };
+  }
+  const now = new Date();
+  const jst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+  return { year: jst.getFullYear(), month: jst.getMonth() + 1 };
+}
+
+function matchesRequest(
+  data: DisneyCalendarMonth,
+  park: DisneyParkKey,
+  year: number,
+  month: number,
+): boolean {
+  return data.park === park && data.year === year && data.month === month;
+}
+
 export default function DisneyCalendar({
   park,
   selectedDate,
   onSelectDate,
   calendarApiPath = "/api/disney/calendar",
 }: DisneyCalendarProps) {
-  const initialYear = Number(selectedDate.slice(0, 4));
-  const initialMonth = Number(selectedDate.slice(5, 7));
-  const [viewYear, setViewYear] = useState(initialYear);
-  const [viewMonth, setViewMonth] = useState(initialMonth);
+  const initial = parseYearMonth(selectedDate);
+  const [viewYear, setViewYear] = useState(initial.year);
+  const [viewMonth, setViewMonth] = useState(initial.month);
   const [calendar, setCalendar] = useState<DisneyCalendarMonth | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const monthParam = useMemo(
     () => toMonthParam(viewYear, viewMonth),
     [viewYear, viewMonth],
   );
 
-  // 表示中の公園・月と、取得済みのデータがずれている間がローディング。
   const requestKey = `${park}:${monthParam}`;
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const loading = loadedKey !== requestKey;
 
-  // 親が日付を変えたらその月を開く。レンダー中に前回値と比べて調整する React 公式の書き方。
   const [syncedDate, setSyncedDate] = useState(selectedDate);
-  if (syncedDate !== selectedDate) {
+  if (syncedDate !== selectedDate && selectedDate) {
     setSyncedDate(selectedDate);
-    setViewYear(Number(selectedDate.slice(0, 4)));
-    setViewMonth(Number(selectedDate.slice(5, 7)));
+    const next = parseYearMonth(selectedDate);
+    setViewYear(next.year);
+    setViewMonth(next.month);
   }
 
   useEffect(() => {
     let cancelled = false;
+    setLoadedKey(null);
+    setLoadError(null);
 
     fetch(`${calendarApiPath}?park=${park}&month=${monthParam}`)
-      .then(async (res) =>
-        res.ok ? ((await res.json()) as DisneyCalendarMonth) : null,
-      )
-      .catch(() => null)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? "カレンダーの取得に失敗しました");
+        }
+        return (await res.json()) as DisneyCalendarMonth;
+      })
       .then((data) => {
         if (cancelled) return;
-        // 失敗しても前の月の表示は残し、ローディングだけ解除する。
-        if (data) setCalendar(data);
-        setLoadedKey(`${park}:${monthParam}`);
+        if (matchesRequest(data, park, viewYear, viewMonth)) {
+          setCalendar(data);
+          setLoadError(null);
+        } else {
+          setLoadError("カレンダーデータが一致しませんでした");
+        }
+        setLoadedKey(requestKey);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          error instanceof Error ? error.message : "カレンダーの取得に失敗しました",
+        );
+        setLoadedKey(requestKey);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [park, monthParam, calendarApiPath]);
+  }, [park, monthParam, calendarApiPath, requestKey, viewYear, viewMonth]);
 
   const canGoPrev = calendar
     ? monthParam >
@@ -86,16 +120,15 @@ export default function DisneyCalendar({
         Number(calendar.today.slice(0, 4)),
         Number(calendar.today.slice(5, 7)),
       )
-    : false;
+    : viewYear * 12 + viewMonth > initial.year * 12 + initial.month;
 
   const canGoNext = useMemo(() => {
-    if (!calendar) return false;
-    const todayY = Number(calendar.today.slice(0, 4));
-    const todayM = Number(calendar.today.slice(5, 7));
+    const todayY = calendar ? Number(calendar.today.slice(0, 4)) : initial.year;
+    const todayM = calendar ? Number(calendar.today.slice(5, 7)) : initial.month;
     const currentIndex = todayY * 12 + todayM;
     const viewIndex = viewYear * 12 + viewMonth;
     return viewIndex < currentIndex + 6;
-  }, [calendar, viewYear, viewMonth]);
+  }, [calendar, viewYear, viewMonth, initial.year, initial.month]);
 
   function goPrev() {
     if (!canGoPrev) return;
@@ -111,7 +144,9 @@ export default function DisneyCalendar({
     setViewMonth(next.month);
   }
 
-  const leadingBlanks = calendar?.startWeekday ?? 0;
+  const displayCalendar =
+    calendar && matchesRequest(calendar, park, viewYear, viewMonth) ? calendar : null;
+  const leadingBlanks = displayCalendar?.startWeekday ?? 0;
 
   return (
     <div className={`${disneyPanelClass} p-4 sm:p-5`}>
@@ -127,7 +162,7 @@ export default function DisneyCalendar({
           </div>
           <button
             type="button"
-            onClick={() => onSelectDate(calendar?.today ?? selectedDate)}
+            onClick={() => onSelectDate(displayCalendar?.today ?? selectedDate)}
             className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300 hover:bg-white/10"
           >
             今日
@@ -144,7 +179,7 @@ export default function DisneyCalendar({
             ←
           </button>
           <p className="text-sm font-medium text-white">
-            {calendar?.monthLabel ?? `${viewYear}年${viewMonth}月`}
+            {displayCalendar?.monthLabel ?? `${viewYear}年${viewMonth}月`}
           </p>
           <button
             type="button"
@@ -173,12 +208,16 @@ export default function DisneyCalendar({
           <p className="mt-6 text-sm text-slate-400">
             カレンダーを読み込み中...
           </p>
-        ) : calendar ? (
+        ) : loadError ? (
+          <p className="mt-6 rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+            {loadError}
+          </p>
+        ) : displayCalendar ? (
           <div className="mt-2 grid grid-cols-7 gap-1">
             {Array.from({ length: leadingBlanks }).map((_, i) => (
               <div key={`blank-${i}`} />
             ))}
-            {calendar.days.map((day) => {
+            {displayCalendar.days.map((day) => {
               const isSelected = day.date === selectedDate;
               const dayNum = Number(day.date.slice(8, 10));
               return (
@@ -219,7 +258,9 @@ export default function DisneyCalendar({
               );
             })}
           </div>
-        ) : null}
+        ) : (
+          <p className="mt-6 text-sm text-slate-400">カレンダーを表示できませんでした。</p>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {LEGEND_LEVELS.map((level) => (
