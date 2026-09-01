@@ -77,9 +77,10 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "NEO Simulator",
     titleJa: "小惑星 3D シミュレーター",
     description:
-      "JPL 接近データを 3D 軌道で再現。地球への最接近距離とリスクを、インタラクティブに確認できます。",
+      "JPL 接近データを 3D 軌道で再現。本日最接近の小惑星を無料プレビューで表示。地球への最接近距離とリスクをインタラクティブに確認できます。",
     accent: "#818cf8",
     href: "/space",
+    publicHref: "/neo-preview",
     tag: "Cosmos",
   },
   {
@@ -88,7 +89,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "Soluna",
     titleJa: "ソルーナ",
     description:
-      "ソル（☀）とルーナ（🌙）が同時に伴走。性格・記憶はそのまま、問い合わせと成長に合わせて OpenAI / Claude / Gemini の最新モデルを自動選択するフレームワークです。",
+      "ソル（☀）とルーナ（🌙）が同時に伴走。性格・記憶はそのまま、問い合わせと成長に合わせて OpenAI / Claude / Gemini の最新モデルを自動選択するフレームワークです。毎日、ニュースを解析し2人が討論。自動投資・自動社会貢献・自動日記も行っています。",
     accent: "#fbbf24",
     href: "/soluna",
     tag: "Companion",

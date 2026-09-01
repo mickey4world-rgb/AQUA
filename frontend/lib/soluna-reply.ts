@@ -3,8 +3,11 @@ const EMOJI_RE =
   /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu;
 
 export const SOLUNA_REPLY_LIMITS = {
-  normal: 150,
-  ops: 240,
+  /** テキストチャット（通常） */
+  normal: 420,
+  /** 状況・ジョブなど説明が必要な質問 */
+  ops: 560,
+  /** 音声会話モード */
   voice: 72,
   voiceOps: 110,
 } as const;
@@ -75,31 +78,46 @@ function trimAtSentence(text: string, maxChars: number): string {
     slice.lastIndexOf("!"),
     slice.lastIndexOf("?"),
     slice.lastIndexOf("…"),
+    slice.lastIndexOf("、"),
     slice.lastIndexOf("\n"),
   ];
   const best = Math.max(...breakPoints);
   if (best >= Math.floor(maxChars * 0.45)) {
-    return slice.slice(0, best + 1).trim();
+    const trimmed = slice.slice(0, best + 1).trim();
+    return SENTENCE_END.test(trimmed) ? trimmed : `${trimmed}。`;
   }
 
   return `${slice.trim()}…`;
 }
 
-/** モデル出力を完結した短文に整える（途中切れ防止） */
+function ensureCompleteSentence(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return "うけとりました。";
+  return SENTENCE_END.test(normalized) ? normalized : `${normalized}。`;
+}
+
+/** モデル出力を完結した返答に整える（音声のみ短文に切り詰め） */
 export function finalizeSolunaReply(
   text: string,
   options: { ops?: boolean; voice?: boolean } = {},
 ): string {
-  const maxChars = options.voice
-    ? options.ops
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return "うけとりました。";
+
+  if (options.voice) {
+    const maxChars = options.ops
       ? SOLUNA_REPLY_LIMITS.voiceOps
-      : SOLUNA_REPLY_LIMITS.voice
-    : options.ops
-      ? SOLUNA_REPLY_LIMITS.ops
-      : SOLUNA_REPLY_LIMITS.normal;
-  const trimmed = trimAtSentence(text, maxChars);
-  if (!trimmed) return options.voice ? "うけとりました。" : "うけとりました。";
-  return trimmed;
+      : SOLUNA_REPLY_LIMITS.voice;
+    return trimAtSentence(normalized, maxChars);
+  }
+
+  const maxChars = options.ops
+    ? SOLUNA_REPLY_LIMITS.ops
+    : SOLUNA_REPLY_LIMITS.normal;
+  if (normalized.length <= maxChars) {
+    return ensureCompleteSentence(normalized);
+  }
+  return trimAtSentence(normalized, maxChars);
 }
 
 export function isOpsStyleQuestion(message: string): boolean {

@@ -12,6 +12,14 @@ const apps = [
     accent: "#c4b5fd",
     ready: true,
   },
+  {
+    title: "PDF Redact",
+    titleJa: "PDF 黒塗り",
+    desc: "PDF 内の企業名・住所・人名などを黒塗りし、プレビューとダウンロードができるマスキングツール。",
+    href: "/works/judicial/pdf-redact",
+    accent: "#a78bfa",
+    ready: true,
+  },
 ];
 
 export default function WorksJudicialPage() {

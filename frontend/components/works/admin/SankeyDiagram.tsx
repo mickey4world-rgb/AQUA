@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import {
   sankey,
-  sankeyLinkHorizontal,
   type SankeyExtraProperties,
   type SankeyNode,
 } from "d3-sankey";
@@ -71,6 +70,46 @@ function labelOnLeftSide(kind: MoneyFlowNode["kind"]): boolean {
   return KIND_COLUMN[kind] >= 2;
 }
 
+/** 帯状リンク（幅 = 流量）。ストローク線ではなく塗りつぶしで途切れない */
+function sankeyLinkRibbon(
+  link: {
+    source: { x1?: number };
+    target: { x0?: number };
+    y0?: number;
+    y1?: number;
+    width?: number;
+  },
+): string {
+  const x0 = link.source.x1 ?? 0;
+  const x1 = link.target.x0 ?? 0;
+  const y0 = link.y0 ?? 0;
+  const y1 = link.y1 ?? 0;
+  const w = Math.max(0.5, link.width ?? 1);
+  const mx = (x0 + x1) / 2;
+  return [
+    `M${x0},${y0}`,
+    `C${mx},${y0} ${mx},${y1} ${x1},${y1}`,
+    `L${x1},${y1 + w}`,
+    `C${mx},${y1 + w} ${mx},${y0 + w} ${x0},${y0 + w}`,
+    "Z",
+  ].join(" ");
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((ch) => ch + ch)
+          .join("")
+      : normalized;
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export default function SankeyDiagram({
   nodes,
   links,
@@ -103,13 +142,13 @@ export default function SankeyDiagram({
 
     if (graphLinks.length === 0) return null;
 
-    const nodeWidth = 16;
-    const padding = 16;
+    const nodeWidth = 18;
+    const padding = 20;
     const layoutFn = sankey<NodeExtra, LinkExtra>()
       .nodeId((node) => node.id)
       .nodeWidth(nodeWidth)
-      .nodePadding(14)
-      .nodeSort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+      .nodePadding(10)
+      .nodeSort((a, b) => (b.value ?? 0) - (a.value ?? 0))
       .extent([
         [padding, padding],
         [width - padding, height - padding],
@@ -122,6 +161,9 @@ export default function SankeyDiagram({
 
     if (fixedColumns) {
       applyFixedColumns(result.nodes, nodeWidth, padding, width);
+      if (typeof layoutFn.update === "function") {
+        layoutFn.update(result);
+      }
     }
 
     return result;
@@ -135,8 +177,6 @@ export default function SankeyDiagram({
     );
   }
 
-  const path = sankeyLinkHorizontal();
-
   return (
     <div className="overflow-x-auto">
       <svg
@@ -145,41 +185,34 @@ export default function SankeyDiagram({
         role="img"
         aria-label="行政事業レビューのお金の流れサンキー図"
       >
-        <defs>
-          <linearGradient id="link-fade" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgba(103,232,249,0.35)" />
-            <stop offset="100%" stopColor="rgba(252,211,77,0.28)" />
-          </linearGradient>
-        </defs>
+        <g className="sankey-links">
+          {layout.links.map((link, index) => {
+            const source = link.source as SankeyNode<NodeExtra, LinkExtra>;
+            const target = link.target as SankeyNode<NodeExtra, LinkExtra>;
+            const weight = link.amount / maxLinkAmount;
+            const baseColor = KIND_COLOR[source.kind];
+            const fillOpacity = amountWeightedLinks
+              ? 0.32 + weight * 0.38
+              : 0.48;
+            return (
+              <path
+                key={`link-${index}`}
+                d={sankeyLinkRibbon(link as Parameters<typeof sankeyLinkRibbon>[0])}
+                fill={hexToRgba(baseColor, fillOpacity)}
+                stroke={hexToRgba(baseColor, Math.min(0.72, fillOpacity + 0.12))}
+                strokeWidth={0.35}
+                className={flowAnimation ? "showcase-sankey-link-flow" : undefined}
+              >
+                <title>
+                  {`${source.label} → ${target.label}: ${formatAmount(link.amount)} ${unit}`}
+                </title>
+              </path>
+            );
+          })}
+        </g>
 
-        {layout.links.map((link, index) => {
-          const source = link.source as SankeyNode<NodeExtra, LinkExtra>;
-          const target = link.target as SankeyNode<NodeExtra, LinkExtra>;
-          const weight = link.amount / maxLinkAmount;
-          const strokeOpacity = amountWeightedLinks
-            ? 0.22 + weight * 0.72
-            : 0.55;
-          const strokeWidth = amountWeightedLinks
-            ? Math.max(1.5, (link.width ?? 1) * (0.85 + weight * 0.35))
-            : Math.max(1.2, link.width ?? 1);
-          return (
-            <path
-              key={`link-${index}`}
-              d={path(link) ?? undefined}
-              fill="none"
-              stroke="url(#link-fade)"
-              strokeOpacity={strokeOpacity}
-              strokeWidth={strokeWidth}
-              className={flowAnimation ? "showcase-sankey-link-flow" : undefined}
-            >
-              <title>
-                {`${source.label} → ${target.label}: ${formatAmount(link.amount)} ${unit}`}
-              </title>
-            </path>
-          );
-        })}
-
-        {layout.nodes.map((node) => {
+        <g className="sankey-nodes">
+          {layout.nodes.map((node) => {
           const color = KIND_COLOR[node.kind];
           const x0 = node.x0 ?? 0;
           const x1 = node.x1 ?? 0;
@@ -227,6 +260,7 @@ export default function SankeyDiagram({
             </g>
           );
         })}
+        </g>
       </svg>
     </div>
   );

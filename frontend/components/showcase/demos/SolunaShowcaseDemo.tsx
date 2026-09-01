@@ -40,6 +40,9 @@ export default function SolunaShowcaseDemo() {
           は固定。問い合わせ内容・親密度・コスト状況に応じて、
           <strong className="font-medium text-white"> OpenAI / Claude / Gemini </strong>
           の最新利用可能モデルを自動選択。
+          <span className="mt-1.5 block text-amber-100/90">
+            毎日、ニュースを解析し2人が討論。自動投資・自動社会貢献・自動日記も行っています。
+          </span>
         </div>
 
         <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">

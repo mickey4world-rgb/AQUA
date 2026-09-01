@@ -579,6 +579,125 @@ function buildGraph(args: {
   return buildOverviewGraph(dataset, matchingFlowIndexes, Boolean(payeeFilter), limit);
 }
 
+const OTHER_FLOW_MIN = 0.5;
+
+function sumOutgoingLinks(links: MoneyFlowLink[], sourceId: string): number {
+  return links
+    .filter((link) => link.source === sourceId)
+    .reduce((sum, link) => sum + link.amount, 0);
+}
+
+function appendOverviewOtherFlows(args: {
+  dataset: GyoseiYearDataset;
+  matchingFlowIndexes: number[];
+  ministryIndices: number[];
+  topProjects: number[];
+  projectTotals: Map<number, number>;
+  ministryTotals: Map<number, number>;
+  ministryToProject: Map<string, number>;
+  links: MoneyFlowLink[];
+  addNode: (node: MoneyFlowNode) => void;
+}) {
+  const {
+    dataset,
+    matchingFlowIndexes,
+    ministryIndices,
+    topProjects,
+    projectTotals,
+    ministryTotals,
+    ministryToProject,
+    links,
+    addNode,
+  } = args;
+  const topProjectSet = new Set(topProjects);
+  const displayedProjectIds: string[] = [];
+
+  for (const projectIndex of topProjects) {
+    displayedProjectIds.push(`p:${projectIndex}`);
+  }
+
+  for (const ministryIndex of ministryIndices) {
+    const ministryId = `m:${ministryIndex}`;
+    let shownProjects = 0;
+    for (const projectIndex of topProjects) {
+      if (dataset.projects[projectIndex][0] !== ministryIndex) continue;
+      shownProjects +=
+        ministryToProject.get(`${ministryIndex}>${projectIndex}`) ??
+        projectTotals.get(projectIndex) ??
+        0;
+    }
+    const ministryTotal = ministryTotals.get(ministryIndex) ?? 0;
+    const projectRemainder = ministryTotal - shownProjects;
+    if (projectRemainder <= OTHER_FLOW_MIN) continue;
+
+    const otherProjectId = `p:other:m${ministryIndex}`;
+    addNode({
+      id: otherProjectId,
+      label: "その他の事業",
+      rawLabel: "その他の事業",
+      kind: "project",
+      amount: round1(projectRemainder),
+      drillable: true,
+    });
+    links.push({
+      source: ministryId,
+      target: otherProjectId,
+      amount: round1(projectRemainder),
+    });
+    displayedProjectIds.push(otherProjectId);
+
+    let otherPayeeTotal = 0;
+    for (const index of matchingFlowIndexes) {
+      const [projectIndex, , amount] = dataset.flows[index];
+      if (dataset.projects[projectIndex][0] !== ministryIndex) continue;
+      if (topProjectSet.has(projectIndex)) continue;
+      otherPayeeTotal += amount;
+    }
+    if (otherPayeeTotal > OTHER_FLOW_MIN) {
+      const otherPayeeId = `c:other:m${ministryIndex}`;
+      addNode({
+        id: otherPayeeId,
+        label: "その他の支出先",
+        rawLabel: "その他の支出先",
+        kind: "payee",
+        amount: round1(otherPayeeTotal),
+        drillable: true,
+      });
+      links.push({
+        source: otherProjectId,
+        target: otherPayeeId,
+        amount: round1(otherPayeeTotal),
+      });
+    }
+  }
+
+  for (const projectId of displayedProjectIds) {
+    const projectTotal =
+      projectId.startsWith("p:other:m")
+        ? links.find((link) => link.target === projectId)?.amount ?? 0
+        : projectTotals.get(Number(projectId.slice(2))) ?? 0;
+    const payeeShown = sumOutgoingLinks(links, projectId);
+    const payeeRemainder = projectTotal - payeeShown;
+    if (payeeRemainder <= OTHER_FLOW_MIN) continue;
+
+    const suffix = projectId.replace(/^p:/, "");
+    const otherPayeeId = `c:other:${suffix}`;
+    addNode({
+      id: otherPayeeId,
+      label: "その他の支出先",
+      rawLabel: "その他の支出先",
+      kind: "payee",
+      amount: round1(payeeRemainder),
+      drillable: true,
+    });
+    links.push({
+      source: projectId,
+      target: otherPayeeId,
+      amount: round1(payeeRemainder),
+    });
+  }
+}
+
 function buildOverviewGraph(
   dataset: GyoseiYearDataset,
   matchingFlowIndexes: number[],
@@ -621,9 +740,7 @@ function buildOverviewGraph(
     payeeTotals,
     Math.min(limit, 24),
   );
-  const ministryIndices = [
-    ...new Set(topProjects.map((projectIndex) => dataset.projects[projectIndex][0])),
-  ].sort(
+  const ministryIndices = [...ministryTotals.keys()].sort(
     (a, b) => (ministryTotals.get(b) ?? 0) - (ministryTotals.get(a) ?? 0),
   );
 
@@ -718,6 +835,18 @@ function buildOverviewGraph(
       amount: round1(amount),
     });
   }
+
+  appendOverviewOtherFlows({
+    dataset,
+    matchingFlowIndexes,
+    ministryIndices,
+    topProjects,
+    projectTotals,
+    ministryTotals,
+    ministryToProject,
+    links,
+    addNode,
+  });
 
   return {
     nodes,
@@ -821,6 +950,77 @@ function buildMinistryDrillGraph(
       });
     }
     links.push({ source: `p:${projectIndex}`, target: payeeId, amount: round1(amount) });
+  }
+
+  let shownProjectAmount = 0;
+  for (const projectIndex of topProjects) {
+    shownProjectAmount += projectTotals.get(projectIndex) ?? 0;
+  }
+  const projectRemainder = ministryAmount - shownProjectAmount;
+  if (projectRemainder > OTHER_FLOW_MIN) {
+    const otherProjectId = "p:other";
+    nodes.push({
+      id: otherProjectId,
+      label: "その他の事業",
+      rawLabel: "その他の事業",
+      kind: "project",
+      amount: round1(projectRemainder),
+      drillable: true,
+    });
+    links.push({ source: "root", target: otherProjectId, amount: round1(projectRemainder) });
+
+    let otherPayeeTotal = 0;
+    for (const index of matchingFlowIndexes) {
+      const [projectIndex, , amount] = dataset.flows[index];
+      if (projectSet.has(projectIndex)) continue;
+      otherPayeeTotal += amount;
+    }
+    if (otherPayeeTotal > OTHER_FLOW_MIN) {
+      const otherPayeeId = "c:other";
+      nodes.push({
+        id: otherPayeeId,
+        label: "その他の支出先",
+        rawLabel: "その他の支出先",
+        kind: "payee",
+        amount: round1(otherPayeeTotal),
+        drillable: true,
+      });
+      links.push({
+        source: otherProjectId,
+        target: otherPayeeId,
+        amount: round1(otherPayeeTotal),
+      });
+    }
+  }
+
+  const displayedProjectIds = [
+    ...topProjects.map((projectIndex) => `p:${projectIndex}`),
+    ...(projectRemainder > OTHER_FLOW_MIN ? ["p:other"] : []),
+  ];
+  for (const projectId of displayedProjectIds) {
+    const projectTotal =
+      projectId === "p:other"
+        ? projectRemainder
+        : projectTotals.get(Number(projectId.slice(2))) ?? 0;
+    const payeeShown = sumOutgoingLinks(links, projectId);
+    const payeeRemainder = projectTotal - payeeShown;
+    if (payeeRemainder <= OTHER_FLOW_MIN) continue;
+    const otherPayeeId = `c:other:${projectId}`;
+    if (!nodes.some((node) => node.id === otherPayeeId)) {
+      nodes.push({
+        id: otherPayeeId,
+        label: "その他の支出先",
+        rawLabel: "その他の支出先",
+        kind: "payee",
+        amount: round1(payeeRemainder),
+        drillable: true,
+      });
+    }
+    links.push({
+      source: projectId,
+      target: otherPayeeId,
+      amount: round1(payeeRemainder),
+    });
   }
 
   return {
