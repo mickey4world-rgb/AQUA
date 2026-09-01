@@ -3,7 +3,10 @@ export function getNasaApiKey(): string {
 }
 
 export async function fetchNasaJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { next: { revalidate: 3600 } });
+  const res = await fetch(url, {
+    next: { revalidate: 3600 },
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) {
     throw new Error(`NASA API error: ${res.status}`);
   }
@@ -11,7 +14,10 @@ export async function fetchNasaJson<T>(url: string): Promise<T> {
 }
 
 export async function fetchJplJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { next: { revalidate: 1800 } });
+  const res = await fetch(url, {
+    next: { revalidate: 1800 },
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) {
     throw new Error(`JPL API error: ${res.status}`);
   }
