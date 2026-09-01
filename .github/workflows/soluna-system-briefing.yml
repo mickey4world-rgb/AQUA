@@ -5,6 +5,9 @@ on:
     # GitHub Actions の schedule は混雑で遅延・取りこぼしし得るため、朝〜夜まで複数枠
     # （API 側は当日ブリーフィング＋討伐が揃っていればスキップ）
     # JST = UTC+9
+    - cron: "0 18 * * *" # 3:00 JST
+    - cron: "0 19 * * *" # 4:00 JST
+    - cron: "0 20 * * *" # 5:00 JST
     - cron: "0 21 * * *" # 6:00 JST
     - cron: "0 22 * * *" # 7:00 JST
     - cron: "0 23 * * *" # 8:00 JST
