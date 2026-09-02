@@ -104,20 +104,32 @@ export interface DisneyCalendarDay {
 export interface DisneyCrowdBreakdown {
   calendar: number;
   seasonal: number;
+  schoolK12: number;
+  universityBreak: number;
   weather: number;
   event: number;
+  regionalPassport: number;
+  otherThemeParks: number;
+  metroEvents: number;
   newsBuzz: number;
   merchandise: number;
   historical: number;
+  disasterImpact: number;
   total: number;
   labels: {
     calendar: string;
     seasonal: string;
+    schoolK12: string;
+    universityBreak: string;
     weather: string;
     event: string;
+    regionalPassport: string;
+    otherThemeParks: string;
+    metroEvents: string;
     newsBuzz: string;
     merchandise: string;
     historical: string;
+    disasterImpact: string;
   };
 }
 

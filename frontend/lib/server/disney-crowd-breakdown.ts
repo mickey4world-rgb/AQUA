@@ -1,9 +1,17 @@
 import { parseJstDate, isJapanHoliday, isHolidayEve } from "@/lib/disney-holidays";
+import {
+  inMonthDayRange,
+  scoreDisasterImpact,
+  scoreMetroEvents,
+  scoreOtherThemeParks,
+  scoreRegionalPassport,
+  scoreSchoolK12,
+  scoreUniversityBreak,
+} from "@/lib/disney-crowd-extra-factors";
 import type { DisneyCrowdBreakdown, DisneyParkKey } from "@/lib/types/disney";
 
 function inRange(month: number, day: number, from: [number, number], to: [number, number]): boolean {
-  const value = month * 100 + day;
-  return value >= from[0] * 100 + from[1] && value <= to[0] * 100 + to[1];
+  return inMonthDayRange(month, day, from, to);
 }
 
 function clamp(n: number): number {
@@ -219,39 +227,63 @@ export function buildCrowdBreakdown(
 ): DisneyCrowdBreakdown {
   const calendar = scoreCalendar(dateStr);
   const seasonal = scoreSeasonal(dateStr);
+  const schoolK12 = scoreSchoolK12(dateStr);
+  const universityBreak = scoreUniversityBreak(dateStr);
   const weather = scoreWeather(dateStr);
   const event = scoreEvent(dateStr, park);
+  const regionalPassport = scoreRegionalPassport(dateStr);
+  const otherThemeParks = scoreOtherThemeParks(dateStr);
+  const metroEvents = scoreMetroEvents(dateStr);
   const newsBuzz = scoreNewsBuzz(dateStr);
   const merchandise = scoreMerchandise(dateStr);
   const historical = scoreHistorical(dateStr, park);
+  const disasterImpact = scoreDisasterImpact(dateStr);
 
   const total = clamp(
-    calendar.score * 0.22 +
-      seasonal.score * 0.18 +
-      weather.score * 0.1 +
-      event.score * 0.16 +
-      newsBuzz.score * 0.1 +
-      merchandise.score * 0.1 +
-      historical.score * 0.14,
+    calendar.score * 0.11 +
+      seasonal.score * 0.09 +
+      schoolK12.score * 0.12 +
+      universityBreak.score * 0.08 +
+      weather.score * 0.07 +
+      event.score * 0.09 +
+      regionalPassport.score * 0.08 +
+      otherThemeParks.score * 0.08 +
+      metroEvents.score * 0.09 +
+      newsBuzz.score * 0.05 +
+      merchandise.score * 0.05 +
+      historical.score * 0.06 +
+      disasterImpact.score * 0.05,
   );
 
   return {
     calendar: calendar.score,
     seasonal: seasonal.score,
+    schoolK12: schoolK12.score,
+    universityBreak: universityBreak.score,
     weather: weather.score,
     event: event.score,
+    regionalPassport: regionalPassport.score,
+    otherThemeParks: otherThemeParks.score,
+    metroEvents: metroEvents.score,
     newsBuzz: newsBuzz.score,
     merchandise: merchandise.score,
     historical: historical.score,
+    disasterImpact: disasterImpact.score,
     total,
     labels: {
       calendar: calendar.label,
       seasonal: seasonal.label,
+      schoolK12: schoolK12.label,
+      universityBreak: universityBreak.label,
       weather: weather.label,
       event: event.label,
+      regionalPassport: regionalPassport.label,
+      otherThemeParks: otherThemeParks.label,
+      metroEvents: metroEvents.label,
       newsBuzz: newsBuzz.label,
       merchandise: merchandise.label,
       historical: historical.label,
+      disasterImpact: disasterImpact.label,
     },
   };
 }

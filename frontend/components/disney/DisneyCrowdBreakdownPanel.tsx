@@ -9,11 +9,17 @@ const BREAKDOWN_ITEMS: Array<{
 }> = [
   { key: "calendar", label: "曜日・祝日" },
   { key: "seasonal", label: "季節・長休み" },
+  { key: "schoolK12", label: "小中高・休み" },
+  { key: "universityBreak", label: "大学・休み" },
   { key: "weather", label: "天候影響" },
-  { key: "event", label: "イベント" },
+  { key: "event", label: "TDRイベント" },
+  { key: "regionalPassport", label: "地域限定パス" },
+  { key: "otherThemeParks", label: "他テーマパーク" },
+  { key: "metroEvents", label: "都内イベント" },
   { key: "newsBuzz", label: "世間の注目" },
   { key: "merchandise", label: "グッズ販売" },
   { key: "historical", label: "過去傾向" },
+  { key: "disasterImpact", label: "災害・荒天" },
 ];
 
 type DisneyCrowdBreakdownPanelProps = {
