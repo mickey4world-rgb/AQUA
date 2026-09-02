@@ -7,6 +7,7 @@ import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelection
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
+import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
 import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
@@ -33,14 +34,7 @@ export default function WorksMoneyFlowPublicPreview({
     if (initialData) return;
 
     let cancelled = false;
-    fetch("/api/public/works-money-flow")
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? "データの取得に失敗しました");
-        }
-        return (await response.json()) as MoneyFlowResponse;
-      })
+    fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow")
       .then((payload) => {
         if (!cancelled) setData(payload);
       })
