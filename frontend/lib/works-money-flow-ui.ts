@@ -188,7 +188,7 @@ export function sankeyFocusDescription(
   selectedNode: MoneyFlowNode | null,
 ): string {
   if (!selectedNode || selectedNode.kind === "government") {
-    return "1列目=国庫 · 2列目=府省庁 · 3列目=事業 · 最右=支出先（クリックで詳細表示・明細絞り込み）";
+    return "各列の総量は同じ高さ · 列内は金額の大きい順 · クリックで詳細表示";
   }
   const name = nodeDisplayName(selectedNode);
   return `${kindLabelJa(selectedNode.kind)}「${name}」の流れ · 事業・支出先は金額の大きい順`;

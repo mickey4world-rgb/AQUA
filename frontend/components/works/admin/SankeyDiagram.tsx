@@ -8,6 +8,7 @@ import {
   type SankeyLink,
   type SankeyNode,
 } from "d3-sankey";
+import { buildFixedColumnLayout } from "@/lib/sankey-fixed-layout";
 import type { MoneyFlowLink, MoneyFlowNode } from "@/lib/types/gyosei";
 
 type SankeyDiagramProps = {
@@ -32,6 +33,9 @@ type LayoutResult =
       nodes: SankeyNode<NodeExtra, LinkExtra>[];
       links: SankeyLink<NodeExtra, LinkExtra>[];
       height: number;
+      bandTop: number;
+      bandHeight: number;
+      labelMarginRight: number;
     }
   | { ok: false; message: string };
 
@@ -56,6 +60,9 @@ const KIND_COLUMN: Record<MoneyFlowNode["kind"], number> = {
 const COLUMN_LABELS = ["国庫", "府省庁", "事業", "支出先"];
 const FIXED_COLUMN_COUNT = 4;
 const MAX_LAYOUT_LINKS = 160;
+const LABEL_MARGIN_RIGHT = 196;
+const NODE_WIDTH = 18;
+const PADDING = 28;
 
 function applyFixedColumns(
   nodes: NodeExtra[],
@@ -63,7 +70,7 @@ function applyFixedColumns(
   padding: number,
   width: number,
 ) {
-  const usable = width - padding * 2 - nodeWidth;
+  const usable = width - padding * 2 - LABEL_MARGIN_RIGHT - nodeWidth;
   const step = usable / (FIXED_COLUMN_COUNT - 1);
   for (const node of nodes) {
     const col = KIND_COLUMN[node.kind];
@@ -74,18 +81,104 @@ function applyFixedColumns(
 }
 
 function labelOnLeftSide(kind: MoneyFlowNode["kind"]): boolean {
-  return KIND_COLUMN[kind] >= 2;
+  return kind === "project" || kind === "block";
 }
 
-function truncateLabel(label: string, max = 14): string {
-  const trimmed = label.trim();
-  if (trimmed.length <= max) return trimmed;
-  return `${trimmed.slice(0, max - 1)}…`;
+function wrapLabel(text: string, maxChars: number, maxLines: number): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [""];
+  if (trimmed.length <= maxChars) return [trimmed];
+
+  const lines: string[] = [];
+  let rest = trimmed;
+
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (rest.length <= maxChars) {
+      lines.push(rest);
+      break;
+    }
+    if (lines.length === maxLines - 1) {
+      lines.push(`${rest.slice(0, maxChars - 1)}…`);
+      break;
+    }
+    let breakAt = rest.lastIndexOf("　", maxChars);
+    if (breakAt <= 0) breakAt = rest.lastIndexOf(" ", maxChars);
+    if (breakAt <= 0) breakAt = maxChars;
+    lines.push(rest.slice(0, breakAt).trim());
+    rest = rest.slice(breakAt).trim();
+  }
+
+  return lines.length > 0 ? lines : [`${trimmed.slice(0, maxChars - 1)}…`];
 }
 
-function computeHeight(nodeCount: number, baseHeight: number): number {
-  const adaptive = Math.max(460, nodeCount * 16);
-  return Math.min(860, Math.max(baseHeight, adaptive));
+function labelLinesForNode(node: MoneyFlowNode): string[] {
+  const text = node.rawLabel ?? node.label;
+  if (node.kind === "payee") {
+    return wrapLabel(text, 22, 2);
+  }
+  if (node.kind === "project") {
+    return wrapLabel(text, 16, 2);
+  }
+  return wrapLabel(text, 14, 1);
+}
+
+function buildD3Layout(
+  nodes: MoneyFlowNode[],
+  links: MoneyFlowLink[],
+  width: number,
+  baseHeight: number,
+  fixedColumns: boolean,
+): LayoutResult {
+  const available = new Set(nodes.map((node) => node.id));
+  const graphNodes: NodeExtra[] = nodes.map((node) => ({ ...node }));
+  const graphLinks = links
+    .filter((link) => available.has(link.source) && available.has(link.target))
+    .map((link) => ({
+      source: link.source,
+      target: link.target,
+      value: Math.max(0.001, link.amount),
+      amount: link.amount,
+    }));
+
+  if (graphLinks.length === 0) {
+    return { ok: false, message: "リンクを構成できませんでした。" };
+  }
+
+  const nodeWidth = NODE_WIDTH;
+  const padding = PADDING;
+  const height = Math.max(460, Math.min(860, baseHeight));
+  const layoutFn = sankey<NodeExtra, LinkExtra>()
+    .nodeId((node) => node.id)
+    .nodeWidth(nodeWidth)
+    .nodePadding(16)
+    .nodeSort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+    .extent([
+      [padding, padding + 18],
+      [width - padding, height - padding],
+    ]);
+
+  const result = layoutFn({
+    nodes: graphNodes,
+    links: graphLinks,
+  });
+
+  if (fixedColumns) {
+    applyFixedColumns(result.nodes, nodeWidth, padding, width);
+  }
+
+  const sortedLinks = [...result.links].sort(
+    (a, b) => (a.width ?? 0) - (b.width ?? 0),
+  );
+
+  return {
+    ok: true,
+    nodes: result.nodes,
+    links: sortedLinks,
+    height,
+    bandTop: padding + 18,
+    bandHeight: height - padding * 2,
+    labelMarginRight: 0,
+  };
 }
 
 function buildLayout(
@@ -107,53 +200,31 @@ function buildLayout(
   }
 
   try {
-    const available = new Set(nodes.map((node) => node.id));
-    const graphNodes: NodeExtra[] = nodes.map((node) => ({ ...node }));
-    const graphLinks = links
-      .filter((link) => available.has(link.source) && available.has(link.target))
-      .map((link) => ({
-        source: link.source,
-        target: link.target,
-        value: Math.max(0.001, link.amount),
-        amount: link.amount,
-      }));
-
-    if (graphLinks.length === 0) {
-      return { ok: false, message: "リンクを構成できませんでした。" };
-    }
-
-    const nodeWidth = 16;
-    const padding = 28;
-    const height = computeHeight(graphNodes.length, baseHeight);
-    const layoutFn = sankey<NodeExtra, LinkExtra>()
-      .nodeId((node) => node.id)
-      .nodeWidth(nodeWidth)
-      .nodePadding(16)
-      .nodeSort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
-      .extent([
-        [padding, padding + 18],
-        [width - padding, height - padding],
-      ]);
-
-    const result = layoutFn({
-      nodes: graphNodes,
-      links: graphLinks,
-    });
-
     if (fixedColumns) {
-      applyFixedColumns(result.nodes, nodeWidth, padding, width);
+      const fixed = buildFixedColumnLayout({
+        nodes,
+        links,
+        width,
+        baseHeight,
+        nodeWidth: NODE_WIDTH,
+        padding: PADDING,
+        labelMarginRight: LABEL_MARGIN_RIGHT,
+      });
+      if (!fixed) {
+        return { ok: false, message: "リンクを構成できませんでした。" };
+      }
+      return {
+        ok: true,
+        nodes: fixed.nodes as SankeyNode<NodeExtra, LinkExtra>[],
+        links: fixed.links as SankeyLink<NodeExtra, LinkExtra>[],
+        height: fixed.height,
+        bandTop: fixed.bandTop,
+        bandHeight: fixed.bandHeight,
+        labelMarginRight: LABEL_MARGIN_RIGHT,
+      };
     }
 
-    const sortedLinks = [...result.links].sort(
-      (a, b) => (a.width ?? 0) - (b.width ?? 0),
-    );
-
-    return {
-      ok: true,
-      nodes: result.nodes,
-      links: sortedLinks,
-      height,
-    };
+    return buildD3Layout(nodes, links, width, baseHeight, fixedColumns);
   } catch {
     return { ok: false, message: "サンキー図のレイアウトに失敗しました。" };
   }
@@ -163,7 +234,7 @@ export default function SankeyDiagram({
   nodes,
   links,
   unit,
-  width = 960,
+  width = 1040,
   height = 520,
   onNodeClick,
   selectedNodeId = null,
@@ -191,13 +262,15 @@ export default function SankeyDiagram({
   }
 
   const path = sankeyLinkHorizontal();
-  const columnStep = (width - 56 - 16) / (FIXED_COLUMN_COUNT - 1);
+  const columnStep =
+    (width - PADDING * 2 - layout.labelMarginRight - NODE_WIDTH) /
+    (FIXED_COLUMN_COUNT - 1);
 
   return (
     <div className="overflow-x-auto">
       <svg
         viewBox={`0 0 ${width} ${layout.height}`}
-        className="h-auto min-w-[720px] w-full"
+        className="h-auto min-w-[780px] w-full"
         role="img"
         aria-label="行政事業レビューのお金の流れサンキー図"
       >
@@ -210,7 +283,8 @@ export default function SankeyDiagram({
         </defs>
 
         {COLUMN_LABELS.map((label, index) => {
-          const x = 28 + index * columnStep + (index === FIXED_COLUMN_COUNT - 1 ? 16 : 0);
+          const x =
+            PADDING + index * columnStep + (index === FIXED_COLUMN_COUNT - 1 ? NODE_WIDTH : 0);
           return (
             <text
               key={label}
@@ -225,20 +299,31 @@ export default function SankeyDiagram({
           );
         })}
 
-        {Array.from({ length: FIXED_COLUMN_COUNT }, (_, index) => {
-          const x = 28 + index * columnStep;
-          return (
-            <line
-              key={`guide-${index}`}
-              x1={x}
-              y1={24}
-              x2={x}
-              y2={layout.height - 24}
-              stroke="rgba(148,163,184,0.08)"
-              strokeDasharray="3 5"
-            />
-          );
-        })}
+        {fixedColumns
+          ? Array.from({ length: FIXED_COLUMN_COUNT }, (_, index) => {
+              const x = PADDING + index * columnStep;
+              return (
+                <g key={`band-${index}`}>
+                  <line
+                    x1={x}
+                    y1={24}
+                    x2={x}
+                    y2={layout.bandTop + layout.bandHeight}
+                    stroke="rgba(148,163,184,0.08)"
+                    strokeDasharray="3 5"
+                  />
+                  <rect
+                    x={x - 2}
+                    y={layout.bandTop}
+                    width={NODE_WIDTH + 4}
+                    height={layout.bandHeight}
+                    fill="rgba(148,163,184,0.03)"
+                    rx={6}
+                  />
+                </g>
+              );
+            })
+          : null}
 
         <g className="sankey-links">
           {layout.links.map((link, index) => {
@@ -247,10 +332,10 @@ export default function SankeyDiagram({
             const weight = link.amount / maxLinkAmount;
             const strokeOpacity = amountWeightedLinks
               ? 0.28 + weight * 0.62
-              : 0.52;
+              : 0.48;
             const strokeWidth = amountWeightedLinks
-              ? Math.max(1.5, (link.width ?? 1) * (0.9 + weight * 0.25))
-              : Math.max(1.4, link.width ?? 1);
+              ? Math.max(1.8, (link.width ?? 1) * (0.95 + weight * 0.2))
+              : Math.max(1.6, link.width ?? 1);
 
             return (
               <path
@@ -284,6 +369,10 @@ export default function SankeyDiagram({
             const clickable = Boolean(
               onNodeClick && (node.kind === "government" || node.drillable !== false),
             );
+            const labelLines = labelLinesForNode(node);
+            const lineHeight = node.kind === "payee" ? 13 : 12;
+            const labelStartY =
+              nodeHeight / 2 - ((labelLines.length - 1) * lineHeight) / 2;
 
             return (
               <g
@@ -304,20 +393,42 @@ export default function SankeyDiagram({
                   strokeWidth={isSelected ? 2 : 0.6}
                 >
                   <title>
-                    {`${node.label}: ${formatAmount(node.amount)} ${unit}${
+                    {`${node.rawLabel ?? node.label}: ${formatAmount(node.amount)} ${unit}${
                       clickable ? "（クリックで深掘り）" : ""
                     }`}
                   </title>
                 </rect>
                 <text
                   x={labelOnRight ? -10 : x1 - x0 + 10}
-                  y={nodeHeight / 2}
-                  dy="0.35em"
+                  y={labelStartY}
                   textAnchor={labelOnRight ? "end" : "start"}
                   className="fill-slate-100"
-                  style={{ fontSize: 11, fontWeight: 500, pointerEvents: "none" }}
+                  style={{
+                    fontSize: node.kind === "payee" ? 11 : 10.5,
+                    fontWeight: node.kind === "payee" ? 600 : 500,
+                    pointerEvents: "none",
+                  }}
                 >
-                  {truncateLabel(node.label)}
+                  {labelLines.map((line, lineIndex) => (
+                    <tspan
+                      key={`${node.id}-line-${lineIndex}`}
+                      x={labelOnRight ? -10 : x1 - x0 + 10}
+                      dy={lineIndex === 0 ? "0.35em" : lineHeight}
+                    >
+                      {line}
+                    </tspan>
+                  ))}
+                  {node.kind === "payee" && nodeHeight >= 36 ? (
+                    <tspan
+                      x={labelOnRight ? -10 : x1 - x0 + 10}
+                      dy={lineHeight}
+                      className="fill-amber-200/75"
+                      style={{ fontSize: 9.5, fontWeight: 400 }}
+                    >
+                      {formatAmount(node.amount)}
+                      {unit}
+                    </tspan>
+                  ) : null}
                 </text>
               </g>
             );

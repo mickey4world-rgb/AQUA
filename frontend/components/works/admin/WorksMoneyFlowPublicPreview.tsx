@@ -163,7 +163,7 @@ export default function WorksMoneyFlowPublicPreview({
                 nodes={sankeyGraph.nodes}
                 links={sankeyGraph.links}
                 unit={data.unit}
-                width={960}
+                width={1040}
                 height={560}
                 amountWeightedLinks
                 fixedColumns
