@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import PdfRedactPreview from "@/components/works/judicial/PdfRedactPreview";
 import { worksPanelClass } from "@/lib/works-utils";
 import {
   DEFAULT_REDACT_TERMS,
   PATTERN_PRESETS,
+  type PdfInspectResult,
   type RedactPatternKey,
   type RedactResult,
+  formatRedactError,
+  inspectPdf,
   parseCustomTerms,
   redactPdf,
   suggestTermsFromPdf,
@@ -46,6 +50,8 @@ export default function PdfRedactPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceBytes, setSourceBytes] = useState<ArrayBuffer | null>(null);
+  const [inspectResult, setInspectResult] = useState<PdfInspectResult | null>(null);
+  const [inspecting, setInspecting] = useState(false);
   const [termsText, setTermsText] = useState(loadStoredTerms);
   const [patterns, setPatterns] = useState<RedactPatternKey[]>(loadStoredPatterns);
   const [processing, setProcessing] = useState(false);
@@ -53,7 +59,6 @@ export default function PdfRedactPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<RedactResult | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const customTerms = useMemo(() => parseCustomTerms(termsText), [termsText]);
 
@@ -65,20 +70,34 @@ export default function PdfRedactPanel() {
     localStorage.setItem(PATTERNS_STORAGE_KEY, JSON.stringify(patterns));
   }, [patterns]);
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
+  async function inspectUploadedPdf(bytes: ArrayBuffer, fileName: string, fileSize: number) {
+    setInspecting(true);
+    setError(null);
+    try {
+      const inspected = await inspectPdf(bytes);
+      setInspectResult(inspected);
+      if (inspected.charCount === 0) {
+        setNotice(
+          `${fileName} を読み込みましたが、テキスト情報が検出できませんでした。スキャン画像のみの PDF の可能性があります。`,
+        );
+      } else {
+        setNotice(
+          `${fileName} を読み込みました（${formatFileSize(fileSize)} / ${inspected.pageCount} ページ / テキスト ${inspected.charCount.toLocaleString()} 文字）。`,
+        );
+      }
+    } catch (err) {
+      setInspectResult(null);
+      setError(formatRedactError(err));
+    } finally {
+      setInspecting(false);
+    }
+  }
 
   async function handleFileChange(file: File | null) {
     setError(null);
     setNotice(null);
     setResult(null);
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+    setInspectResult(null);
 
     if (!file) {
       setSourceFile(null);
@@ -99,7 +118,7 @@ export default function PdfRedactPanel() {
     const bytes = await file.arrayBuffer();
     setSourceFile(file);
     setSourceBytes(bytes);
-    setNotice(`${file.name} を読み込みました（${formatFileSize(file.size)}）。ブラウザ内で処理します。`);
+    await inspectUploadedPdf(bytes, file.name, file.size);
   }
 
   function togglePattern(key: RedactPatternKey) {
@@ -133,8 +152,8 @@ export default function PdfRedactPanel() {
       const suffix = fresh.join("\n");
       setTermsText((current) => `${current.trimEnd()}\n${suffix}\n`);
       setNotice(`${fresh.length} 件の語句をリストに追加しました。`);
-    } catch {
-      setError("語句の自動検出に失敗しました。");
+    } catch (err) {
+      setError(formatRedactError(err));
     } finally {
       setScanning(false);
     }
@@ -151,6 +170,11 @@ export default function PdfRedactPanel() {
       return;
     }
 
+    if (inspectResult?.charCount === 0) {
+      setError("テキスト情報のない PDF には黒塗りを適用できません。");
+      return;
+    }
+
     setProcessing(true);
     setError(null);
     setNotice(null);
@@ -162,22 +186,19 @@ export default function PdfRedactPanel() {
         patterns,
       });
 
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-
-      const blob = new Blob([new Uint8Array(output.pdfBytes)], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
       setResult(output);
 
       if (output.matchCount === 0) {
         setNotice(
-          "マスキング対象は見つかりませんでした。語句リストやパターンを見直してください。",
+          "マスキング対象は見つかりませんでした。語句リストやパターンを見直すか、「PDF から語句を検出」をお試しください。",
         );
       } else {
-        setNotice(`${output.matchCount} 箇所を黒塗りしました。プレビューとダウンロードが利用できます。`);
+        setNotice(
+          `${output.matchCount} 箇所を黒塗りしました（${output.matchedTerms.slice(0, 5).join("、")}${output.matchedTerms.length > 5 ? " など" : ""}）。`,
+        );
       }
-    } catch {
-      setError("PDF のマスキング処理に失敗しました。別の PDF でお試しください。");
+    } catch (err) {
+      setError(formatRedactError(err));
     } finally {
       setProcessing(false);
     }
@@ -230,12 +251,30 @@ export default function PdfRedactPanel() {
           <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
             <p className="font-medium text-white">{sourceFile.name}</p>
             <p className="mt-1 text-slate-400">{formatFileSize(sourceFile.size)}</p>
+            {inspecting ? (
+              <p className="mt-2 text-xs text-violet-200">テキストを解析しています…</p>
+            ) : inspectResult ? (
+              <p className="mt-2 text-xs text-slate-400">
+                {inspectResult.pageCount} ページ / テキスト {inspectResult.charCount.toLocaleString()} 文字
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
             ここに PDF をドロップするか、上のボタンから選択してください
           </div>
         )}
+
+        {inspectResult && inspectResult.textSample ? (
+          <details className="mt-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+            <summary className="cursor-pointer text-sm text-slate-300">
+              読み取ったテキストの抜粋を表示
+            </summary>
+            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-400">
+              {inspectResult.textSample}
+            </pre>
+          </details>
+        ) : null}
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -249,7 +288,7 @@ export default function PdfRedactPanel() {
             </div>
             <button
               type="button"
-              disabled={!sourceBytes || scanning}
+              disabled={!sourceBytes || scanning || inspecting}
               onClick={() => void handleScanSuggestions()}
               className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/5 disabled:opacity-40"
             >
@@ -305,7 +344,7 @@ export default function PdfRedactPanel() {
 
           <button
             type="button"
-            disabled={!sourceBytes || processing}
+            disabled={!sourceBytes || processing || inspecting}
             onClick={() => void handleRedact()}
             className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-violet-400 disabled:opacity-40"
           >
@@ -318,7 +357,7 @@ export default function PdfRedactPanel() {
             <div>
               <h2 className="text-lg font-medium text-white">プレビュー</h2>
               <p className="mt-2 text-sm text-slate-400">
-                生成後にここで確認し、ダウンロードできます。
+                生成後にページ単位で確認し、ダウンロードできます。
               </p>
             </div>
             {result ? (
@@ -350,12 +389,10 @@ export default function PdfRedactPanel() {
           ) : null}
 
           <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
-            {previewUrl ? (
-              <iframe
-                title="マスキング済み PDF プレビュー"
-                src={previewUrl}
-                className="h-[min(72vh,720px)] w-full bg-white"
-              />
+            {result ? (
+              <div className="p-2 sm:p-3">
+                <PdfRedactPreview pdfBytes={result.pdfBytes} pageCount={result.pageCount} />
+              </div>
             ) : (
               <div className="flex h-[min(52vh,520px)] items-center justify-center px-6 text-center text-sm text-slate-500">
                 黒塗り PDF を生成すると、ここにプレビューが表示されます
