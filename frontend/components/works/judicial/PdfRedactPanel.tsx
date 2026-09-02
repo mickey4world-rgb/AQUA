@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PdfRedactPreview from "@/components/works/judicial/PdfRedactPreview";
 import { worksPanelClass } from "@/lib/works-utils";
 import {
+  DEFAULT_PATTERN_KEYS,
   DEFAULT_REDACT_TERMS,
   PATTERN_PRESETS,
   type PdfInspectResult,
@@ -27,16 +28,15 @@ function loadStoredTerms(): string {
 }
 
 function loadStoredPatterns(): RedactPatternKey[] {
-  if (typeof window === "undefined") {
-    return ["email", "phone", "postal", "company"];
-  }
+  if (typeof window === "undefined") return DEFAULT_PATTERN_KEYS;
   try {
     const raw = localStorage.getItem(PATTERNS_STORAGE_KEY);
-    if (!raw) return ["email", "phone", "postal", "company"];
+    if (!raw) return DEFAULT_PATTERN_KEYS;
     const parsed = JSON.parse(raw) as RedactPatternKey[];
-    return parsed.filter((key) => ALL_PATTERN_KEYS.includes(key));
+    const valid = parsed.filter((key) => ALL_PATTERN_KEYS.includes(key));
+    return valid.length > 0 ? valid : DEFAULT_PATTERN_KEYS;
   } catch {
-    return ["email", "phone", "postal", "company"];
+    return DEFAULT_PATTERN_KEYS;
   }
 }
 
@@ -46,10 +46,17 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function cloneArrayBuffer(bytes: ArrayBuffer): ArrayBuffer {
+  return bytes.slice(0);
+}
+
 export default function PdfRedactPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [sourceBytes, setSourceBytes] = useState<ArrayBuffer | null>(null);
+  /** 初回アップロード原本（語句検索は常にここから） */
+  const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
+  /** 黒塗り適用のたびに更新される作業用 PDF */
+  const [workingBytes, setWorkingBytes] = useState<ArrayBuffer | null>(null);
   const [inspectResult, setInspectResult] = useState<PdfInspectResult | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [termsText, setTermsText] = useState(loadStoredTerms);
@@ -59,6 +66,7 @@ export default function PdfRedactPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<RedactResult | null>(null);
+  const [runCount, setRunCount] = useState(0);
 
   const customTerms = useMemo(() => parseCustomTerms(termsText), [termsText]);
 
@@ -98,10 +106,12 @@ export default function PdfRedactPanel() {
     setNotice(null);
     setResult(null);
     setInspectResult(null);
+    setRunCount(0);
 
     if (!file) {
       setSourceFile(null);
-      setSourceBytes(null);
+      setOriginalBytes(null);
+      setWorkingBytes(null);
       return;
     }
 
@@ -116,9 +126,11 @@ export default function PdfRedactPanel() {
     }
 
     const bytes = await file.arrayBuffer();
+    const cloned = cloneArrayBuffer(bytes);
     setSourceFile(file);
-    setSourceBytes(bytes);
-    await inspectUploadedPdf(bytes, file.name, file.size);
+    setOriginalBytes(cloned);
+    setWorkingBytes(cloneArrayBuffer(cloned));
+    await inspectUploadedPdf(cloned, file.name, file.size);
   }
 
   function togglePattern(key: RedactPatternKey) {
@@ -128,7 +140,7 @@ export default function PdfRedactPanel() {
   }
 
   async function handleScanSuggestions() {
-    if (!sourceBytes) {
+    if (!originalBytes) {
       setError("先に PDF をアップロードしてください。");
       return;
     }
@@ -136,14 +148,14 @@ export default function PdfRedactPanel() {
     setScanning(true);
     setError(null);
     try {
-      const suggestions = await suggestTermsFromPdf(sourceBytes);
+      const suggestions = await suggestTermsFromPdf(originalBytes);
       if (suggestions.length === 0) {
         setNotice("自動検出できる語句は見つかりませんでした。手動で追記してください。");
         return;
       }
 
-      const existing = new Set(customTerms);
-      const fresh = suggestions.filter((item) => !existing.has(item));
+      const existing = new Set(customTerms.map((term) => term.trim()));
+      const fresh = suggestions.filter((item) => !existing.has(item.trim()));
       if (fresh.length === 0) {
         setNotice("検出語句はすでにリストに含まれています。");
         return;
@@ -160,12 +172,14 @@ export default function PdfRedactPanel() {
   }
 
   async function handleRedact() {
-    if (!sourceBytes || !sourceFile) {
+    if (!originalBytes || !workingBytes || !sourceFile) {
       setError("先に PDF をアップロードしてください。");
       return;
     }
 
-    if (customTerms.length === 0 && patterns.length === 0) {
+    const termsNow = parseCustomTerms(termsText);
+
+    if (termsNow.length === 0 && patterns.length === 0) {
       setError("黒塗りする語句または自動検出パターンを1つ以上指定してください。");
       return;
     }
@@ -181,20 +195,24 @@ export default function PdfRedactPanel() {
 
     try {
       const output = await redactPdf({
-        fileBytes: sourceBytes,
-        customTerms,
+        fileBytes: workingBytes,
+        textSourceBytes: originalBytes,
+        customTerms: termsNow,
         patterns,
       });
 
       setResult(output);
+      setWorkingBytes(output.pdfBytes.slice().buffer);
+      setRunCount((count) => count + 1);
 
       if (output.matchCount === 0) {
         setNotice(
           "マスキング対象は見つかりませんでした。語句リストやパターンを見直すか、「PDF から語句を検出」をお試しください。",
         );
       } else {
+        const runLabel = runCount > 0 ? "（追記分を追加）" : "";
         setNotice(
-          `${output.matchCount} 箇所を黒塗りしました（${output.matchedTerms.slice(0, 5).join("、")}${output.matchedTerms.length > 5 ? " など" : ""}）。`,
+          `${output.matchCount} 箇所を黒塗りしました${runLabel}（${output.matchedTerms.slice(0, 5).join("、")}${output.matchedTerms.length > 5 ? " など" : ""}）。`,
         );
       }
     } catch (err) {
@@ -224,6 +242,7 @@ export default function PdfRedactPanel() {
             <h2 className="text-lg font-medium text-white">PDF アップロード</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
               アップロードした PDF はブラウザ内だけで処理します。サーバーへ送信されません。
+              2回目以降の黒塗りも、原本のテキストを読み取って追記語句を反映します。
             </p>
           </div>
           <button
@@ -256,6 +275,7 @@ export default function PdfRedactPanel() {
             ) : inspectResult ? (
               <p className="mt-2 text-xs text-slate-400">
                 {inspectResult.pageCount} ページ / テキスト {inspectResult.charCount.toLocaleString()} 文字
+                {runCount > 0 ? ` / 黒塗り ${runCount} 回実行済み` : ""}
               </p>
             ) : null}
           </div>
@@ -283,12 +303,12 @@ export default function PdfRedactPanel() {
             <div>
               <h2 className="text-lg font-medium text-white">黒塗りする内容</h2>
               <p className="mt-2 text-sm text-slate-400">
-                1行に1語句。企業名・住所・人名など、自由に追加・編集できます。
+                まず自動検出パターンを選び、必要な語句を下の欄に追記してください。
               </p>
             </div>
             <button
               type="button"
-              disabled={!sourceBytes || scanning || inspecting}
+              disabled={!originalBytes || scanning || inspecting}
               onClick={() => void handleScanSuggestions()}
               className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/5 disabled:opacity-40"
             >
@@ -296,21 +316,11 @@ export default function PdfRedactPanel() {
             </button>
           </div>
 
-          <textarea
-            value={termsText}
-            onChange={(event) => setTermsText(event.target.value)}
-            rows={14}
-            spellCheck={false}
-            className="mt-4 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 font-mono text-sm leading-relaxed text-slate-200 outline-none transition focus:border-violet-400/40"
-            placeholder={"山田太郎\n株式会社サンプル\n東京都千代田区丸の内1-1-1"}
-          />
-
-          <p className="mt-2 text-xs text-slate-500">
-            登録語句: {customTerms.length} 件（# で始まる行はコメント）
-          </p>
-
-          <div className="mt-6 border-t border-white/10 pt-5">
+          <div className="mt-4">
             <h3 className="text-sm font-medium text-white">自動検出パターン</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              氏名・住所・組織名（官公庁）・会社名などを自動で黒塗りします。
+            </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {ALL_PATTERN_KEYS.map((key) => {
                 const preset = PATTERN_PRESETS[key];
@@ -342,13 +352,27 @@ export default function PdfRedactPanel() {
             </div>
           </div>
 
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <h3 className="text-sm font-medium text-white">手動で追記する語句</h3>
+            <p className="mt-1 text-xs text-slate-500">1行に1語句。# で始まる行はコメントです。</p>
+            <textarea
+              value={termsText}
+              onChange={(event) => setTermsText(event.target.value)}
+              rows={12}
+              spellCheck={false}
+              className="mt-3 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 font-mono text-sm leading-relaxed text-slate-200 outline-none transition focus:border-violet-400/40"
+              placeholder={"山田 太郎\n株式会社サンプル\n東京都千代田区丸の内1-1-1\n経済産業省"}
+            />
+            <p className="mt-2 text-xs text-slate-500">登録語句: {customTerms.length} 件</p>
+          </div>
+
           <button
             type="button"
-            disabled={!sourceBytes || processing || inspecting}
+            disabled={!originalBytes || processing || inspecting}
             onClick={() => void handleRedact()}
             className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-violet-400 disabled:opacity-40"
           >
-            {processing ? "マスキング中…" : "黒塗り PDF を生成"}
+            {processing ? "マスキング中…" : runCount > 0 ? "追記語句を追加して黒塗り" : "黒塗り PDF を生成"}
           </button>
         </section>
 
