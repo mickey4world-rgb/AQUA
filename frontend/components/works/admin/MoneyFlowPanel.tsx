@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import type {
@@ -65,11 +66,7 @@ export default function MoneyFlowPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/works/money-flow?meta=1")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("meta");
-        return (await response.json()) as MetaResponse;
-      })
+    fetchJsonWithTimeout<MetaResponse>("/api/works/money-flow?meta=1")
       .then((payload) => {
         if (cancelled) return;
         setMeta(payload);
@@ -1047,9 +1044,10 @@ async function fetchFlow(key: string): Promise<MoneyFlowResponse> {
   if (sectorText) params.set("sector", sectorText);
   if (focusKind) params.set("focusKind", focusKind);
   if (focusValue) params.set("focusValue", focusValue);
-  const response = await fetch(`/api/works/money-flow?${params}`);
-  if (!response.ok) throw new Error("flow");
-  return (await response.json()) as MoneyFlowResponse;
+  const response = await fetchJsonWithTimeout<MoneyFlowResponse>(
+    `/api/works/money-flow?${params}`,
+  );
+  return response;
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {

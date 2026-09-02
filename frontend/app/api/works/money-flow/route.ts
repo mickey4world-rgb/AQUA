@@ -62,7 +62,11 @@ export async function GET(request: Request) {
         focusValue,
         limit,
       });
-      return Response.json(result);
+      return Response.json(result, {
+        headers: {
+          "Cache-Control": "private, max-age=120, stale-while-revalidate=600",
+        },
+      });
     } catch (error) {
       console.error("[money-flow]", error);
       return Response.json(

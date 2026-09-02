@@ -38,9 +38,14 @@ export async function getWorksMoneyFlowPublicPreview(options: {
   }
 
   if (!buildPromise) {
-    buildPromise = buildFreshSnapshot().finally(() => {
-      buildPromise = null;
-    });
+    buildPromise = buildFreshSnapshot()
+      .catch((error) => {
+        memoryCache = null;
+        throw error;
+      })
+      .finally(() => {
+        buildPromise = null;
+      });
   }
   return buildPromise;
 }
