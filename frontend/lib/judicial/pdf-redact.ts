@@ -1,6 +1,13 @@
 import type { PDFDocumentProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 
-export type RedactPatternKey = "email" | "phone" | "postal" | "company";
+export type RedactPatternKey =
+  | "email"
+  | "phone"
+  | "postal"
+  | "address"
+  | "name"
+  | "company"
+  | "organization";
 
 export const PATTERN_PRESETS: Record<
   RedactPatternKey,
@@ -21,13 +28,41 @@ export const PATTERN_PRESETS: Record<
     description: "〒100-0001 など",
     regex: /〒?\s?\d{3}[-‐−]?\d{4}/g,
   },
+  address: {
+    label: "住所",
+    description: "都道府県・市区町村・番地など",
+    regex:
+      /(?:〒?\s?\d{3}[-‐−]?\d{4}\s*)?[\u3000-\u9fff]{2,8}[都道府県](?:[\u3000-\u9fff]+?[市区町村])?[\u3000-\u9fff\d０-９\-ー−‐丁目番地号\s]{2,56}/g,
+  },
+  name: {
+    label: "氏名",
+    description: "漢字姓名・姓 名（スペース区切り）など",
+    regex:
+      /(?:[一-龯々ヶ\u3400-\u9fff]{1,4}[　\s][一-龯々ヶ\u3400-\u9fff]{1,4}|[一-龯々\u3400-\u9fff]{2,4}(?:氏|様|殿|君))/g,
+  },
   company: {
     label: "会社名",
     description: "株式会社・有限会社・（株）など",
     regex:
       /(?:株式会社|有限会社|合同会社|一般社団法人|一般財団法人|（株）|㈱)[\u3000-\u9fff\u3040-\u309f\u30a0-\u30ff\w\s・.-]{0,48}/g,
   },
+  organization: {
+    label: "組織名・官公庁",
+    description: "◯◯省・◯◯庁・◯◯局・裁判所・市役所など",
+    regex:
+      /(?:独立行政法人|地方独立行政法人|国立[^\s、。]{1,20}|[^\s、。]{1,22}(?:省|庁|局|委員会|裁判所|検察庁|警察署|市役所|区役所|町役場|村役場|議会|公庁|本部|支局|支庁|研究所|センター|機構|協会|組合|連合|財団|社団|病院|大学|学院|学校))/g,
+  },
 };
+
+export const DEFAULT_PATTERN_KEYS: RedactPatternKey[] = [
+  "name",
+  "address",
+  "organization",
+  "company",
+  "email",
+  "phone",
+  "postal",
+];
 
 export const DEFAULT_REDACT_TERMS = `# 1行に1つずつ記載（# で始まる行はコメント）
 # 企業名・住所・人名など、黒塗りしたい語句を追加してください
@@ -83,10 +118,23 @@ function isTextItem(item: unknown): item is TextItem {
 }
 
 export function parseCustomTerms(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"));
+  const seen = new Set<string>();
+  const terms: string[] = [];
+
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    const normalized = normalizeMatchText(trimmed);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    terms.push(trimmed);
+  }
+
+  return terms;
+}
+
+function stripSpaces(value: string): string {
+  return value.replace(/[\s\u3000]+/g, "");
 }
 
 export function normalizeMatchText(value: string): string {
@@ -205,6 +253,18 @@ function findLiteralMatches(page: PageText, term: string): RedactRect[] {
   const needle = normalizeMatchText(term);
   if (!needle) return [];
 
+  const exact = findLiteralMatchesInNormalized(page, needle);
+  if (exact.length > 0) return exact;
+
+  const compactNeedle = stripSpaces(needle);
+  if (compactNeedle.length >= 2 && compactNeedle !== needle) {
+    return findLiteralMatchesCompact(page, compactNeedle);
+  }
+
+  return [];
+}
+
+function findLiteralMatchesInNormalized(page: PageText, needle: string): RedactRect[] {
   const rects: RedactRect[] = [];
   let from = 0;
 
@@ -212,18 +272,56 @@ function findLiteralMatches(page: PageText, term: string): RedactRect[] {
     const index = page.normalizedText.indexOf(needle, from);
     if (index < 0) break;
 
-    const start = page.normToOrig[index] ?? index;
-    const endIndex = index + needle.length - 1;
-    const end = (page.normToOrig[endIndex] ?? endIndex) + 1;
-
-    rects.push(
-      ...rectsFromRange(page.pageHeight, page.pageIndex, start, end, page.segments),
-    );
-
+    rects.push(...rectsFromNormalizedRange(page, index, index + needle.length));
     from = index + Math.max(1, needle.length);
   }
 
   return rects;
+}
+
+function buildCompactMap(text: string): { compact: string; compactToOrig: number[] } {
+  let compact = "";
+  const compactToOrig: number[] = [];
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (/[\s\u3000]/.test(ch)) continue;
+    const normalized = normalizeMatchText(ch);
+    for (let j = 0; j < normalized.length; j += 1) {
+      compact += normalized[j];
+      compactToOrig.push(i);
+    }
+  }
+
+  return { compact, compactToOrig };
+}
+
+/** スペースの有無を無視して語句を探す（追記語句の取りこぼし防止） */
+function findLiteralMatchesCompact(page: PageText, compactNeedle: string): RedactRect[] {
+  const { compact, compactToOrig } = buildCompactMap(page.text);
+  const rects: RedactRect[] = [];
+  let from = 0;
+
+  while (from < compact.length) {
+    const index = compact.indexOf(compactNeedle, from);
+    if (index < 0) break;
+
+    const start = compactToOrig[index] ?? 0;
+    const endIndex = index + compactNeedle.length - 1;
+    const end = (compactToOrig[endIndex] ?? endIndex) + 1;
+
+    rects.push(...rectsFromRange(page.pageHeight, page.pageIndex, start, end, page.segments));
+    from = index + Math.max(1, compactNeedle.length);
+  }
+
+  return rects;
+}
+
+function rectsFromNormalizedRange(page: PageText, normStart: number, normEnd: number): RedactRect[] {
+  const start = page.normToOrig[normStart] ?? normStart;
+  const endIndex = Math.max(normStart, normEnd - 1);
+  const end = (page.normToOrig[endIndex] ?? endIndex) + 1;
+  return rectsFromRange(page.pageHeight, page.pageIndex, start, end, page.segments);
 }
 
 function rectsFromRange(
@@ -369,17 +467,23 @@ export async function inspectPdf(fileBytes: ArrayBuffer): Promise<PdfInspectResu
 }
 
 export async function redactPdf(args: {
+  /** 黒塗りを描画する PDF（再実行時は前回出力を渡す） */
   fileBytes: ArrayBuffer;
+  /** 語句検索に使う PDF（常に初回アップロード原本） */
+  textSourceBytes?: ArrayBuffer;
   customTerms: string[];
   patterns: RedactPatternKey[];
 }): Promise<RedactResult> {
-  const pdf = await openPdf(args.fileBytes);
+  const textBytes = args.textSourceBytes ?? args.fileBytes;
+  const pdf = await openPdf(textBytes);
   const pageTexts = await extractPageTexts(pdf);
   const allRects: RedactRect[] = [];
   const matchedTerms = new Set<string>();
 
+  const terms = args.customTerms.map((t) => t.trim()).filter(Boolean);
+
   for (const page of pageTexts) {
-    for (const term of args.customTerms) {
+    for (const term of terms) {
       const rects = findLiteralMatches(page, term);
       if (rects.length > 0) matchedTerms.add(term);
       allRects.push(...rects);
