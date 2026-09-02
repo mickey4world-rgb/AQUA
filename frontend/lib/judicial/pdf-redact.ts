@@ -467,20 +467,31 @@ export async function inspectPdf(fileBytes: ArrayBuffer): Promise<PdfInspectResu
 }
 
 export async function redactPdf(args: {
-  /** 黒塗りを描画する PDF（再実行時は前回出力を渡す） */
+  /** 黒塗りを描画する PDF（常に初回アップロード原本を渡す） */
   fileBytes: ArrayBuffer;
-  /** 語句検索に使う PDF（常に初回アップロード原本） */
+  /** @deprecated 原本と同一のため省略可 */
   textSourceBytes?: ArrayBuffer;
   customTerms: string[];
   patterns: RedactPatternKey[];
 }): Promise<RedactResult> {
-  const textBytes = args.textSourceBytes ?? args.fileBytes;
-  const pdf = await openPdf(textBytes);
+  const sourceBytes = args.textSourceBytes ?? args.fileBytes;
+  const terms = args.customTerms.map((t) => t.trim()).filter(Boolean);
+
+  if (terms.length === 0 && args.patterns.length === 0) {
+    const pdf = await openPdf(sourceBytes);
+    return {
+      pdfBytes: cloneBytes(args.fileBytes),
+      matchCount: 0,
+      pageCount: pdf.numPages,
+      matchesByPage: Array.from({ length: pdf.numPages }, () => 0),
+      matchedTerms: [],
+    };
+  }
+
+  const pdf = await openPdf(sourceBytes);
   const pageTexts = await extractPageTexts(pdf);
   const allRects: RedactRect[] = [];
   const matchedTerms = new Set<string>();
-
-  const terms = args.customTerms.map((t) => t.trim()).filter(Boolean);
 
   for (const page of pageTexts) {
     for (const term of terms) {

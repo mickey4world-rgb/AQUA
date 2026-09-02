@@ -53,10 +53,8 @@ function cloneArrayBuffer(bytes: ArrayBuffer): ArrayBuffer {
 export default function PdfRedactPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
-  /** 初回アップロード原本（語句検索は常にここから） */
+  /** 初回アップロード原本（黒塗りは常にここから再生成） */
   const [originalBytes, setOriginalBytes] = useState<ArrayBuffer | null>(null);
-  /** 黒塗り適用のたびに更新される作業用 PDF */
-  const [workingBytes, setWorkingBytes] = useState<ArrayBuffer | null>(null);
   const [inspectResult, setInspectResult] = useState<PdfInspectResult | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [termsText, setTermsText] = useState(loadStoredTerms);
@@ -111,7 +109,6 @@ export default function PdfRedactPanel() {
     if (!file) {
       setSourceFile(null);
       setOriginalBytes(null);
-      setWorkingBytes(null);
       return;
     }
 
@@ -129,7 +126,6 @@ export default function PdfRedactPanel() {
     const cloned = cloneArrayBuffer(bytes);
     setSourceFile(file);
     setOriginalBytes(cloned);
-    setWorkingBytes(cloneArrayBuffer(cloned));
     await inspectUploadedPdf(cloned, file.name, file.size);
   }
 
@@ -172,19 +168,14 @@ export default function PdfRedactPanel() {
   }
 
   async function handleRedact() {
-    if (!originalBytes || !workingBytes || !sourceFile) {
+    if (!originalBytes || !sourceFile) {
       setError("先に PDF をアップロードしてください。");
       return;
     }
 
     const termsNow = parseCustomTerms(termsText);
 
-    if (termsNow.length === 0 && patterns.length === 0) {
-      setError("黒塗りする語句または自動検出パターンを1つ以上指定してください。");
-      return;
-    }
-
-    if (inspectResult?.charCount === 0) {
+    if (inspectResult?.charCount === 0 && (termsNow.length > 0 || patterns.length > 0)) {
       setError("テキスト情報のない PDF には黒塗りを適用できません。");
       return;
     }
@@ -195,22 +186,22 @@ export default function PdfRedactPanel() {
 
     try {
       const output = await redactPdf({
-        fileBytes: workingBytes,
-        textSourceBytes: originalBytes,
+        fileBytes: originalBytes,
         customTerms: termsNow,
         patterns,
       });
 
       setResult(output);
-      setWorkingBytes(output.pdfBytes.slice().buffer);
       setRunCount((count) => count + 1);
 
-      if (output.matchCount === 0) {
+      if (termsNow.length === 0 && patterns.length === 0) {
+        setNotice("黒塗り設定をすべて外したため、原本を表示しています。");
+      } else if (output.matchCount === 0) {
         setNotice(
           "マスキング対象は見つかりませんでした。語句リストやパターンを見直すか、「PDF から語句を検出」をお試しください。",
         );
       } else {
-        const runLabel = runCount > 0 ? "（追記分を追加）" : "";
+        const runLabel = runCount > 0 ? "（設定を反映して再生成）" : "";
         setNotice(
           `${output.matchCount} 箇所を黒塗りしました${runLabel}（${output.matchedTerms.slice(0, 5).join("、")}${output.matchedTerms.length > 5 ? " など" : ""}）。`,
         );
@@ -242,7 +233,7 @@ export default function PdfRedactPanel() {
             <h2 className="text-lg font-medium text-white">PDF アップロード</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
               アップロードした PDF はブラウザ内だけで処理します。サーバーへ送信されません。
-              2回目以降の黒塗りも、原本のテキストを読み取って追記語句を反映します。
+              設定を変更したら「黒塗りを更新」を押すと、原本から現在の設定で再生成されます。
             </p>
           </div>
           <button
@@ -372,7 +363,7 @@ export default function PdfRedactPanel() {
             onClick={() => void handleRedact()}
             className="mt-6 w-full rounded-xl bg-violet-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-violet-400 disabled:opacity-40"
           >
-            {processing ? "マスキング中…" : runCount > 0 ? "追記語句を追加して黒塗り" : "黒塗り PDF を生成"}
+            {processing ? "マスキング中…" : runCount > 0 ? "黒塗りを更新" : "黒塗り PDF を生成"}
           </button>
         </section>
 
