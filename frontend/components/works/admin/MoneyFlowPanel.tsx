@@ -449,8 +449,8 @@ export default function MoneyFlowPanel() {
               nodes={sankeyGraph.nodes}
               links={sankeyGraph.links}
               unit={data.unit}
-              width={960}
-              height={Math.max(520, Math.min(920, sankeyGraph.nodes.length * 28))}
+              width={1040}
+              height={Math.max(560, Math.min(980, sankeyGraph.nodes.length * 30))}
               fixedColumns
               amountWeightedLinks
               selectedNodeId={selectedNode?.id ?? null}

@@ -80,8 +80,8 @@ export default function SankeyShowcaseDemo() {
             nodes={sankeyGraph.nodes}
             links={sankeyGraph.links}
             unit="億円"
-            width={880}
-            height={440}
+            width={1040}
+            height={480}
             amountWeightedLinks
             fixedColumns
             selectedNodeId={selectedNode?.id ?? null}
