@@ -57,7 +57,8 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
       "img-src 'self' data: blob: https:",
       "connect-src 'self' https:",
-      "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+      "frame-src blob: https://www.youtube.com https://www.youtube-nocookie.com",
+      "worker-src 'self' blob:",
       "font-src 'self' data: https://cdn.jsdelivr.net",
     ].join("; "),
   );

@@ -46,6 +46,14 @@ export type RedactResult = {
   matchCount: number;
   pageCount: number;
   matchesByPage: number[];
+  matchedTerms: string[];
+};
+
+export type PdfInspectResult = {
+  pageCount: number;
+  charCount: number;
+  textSample: string;
+  pageSummaries: Array<{ page: number; chars: number; preview: string }>;
 };
 
 type TextSegment = {
@@ -61,9 +69,14 @@ type TextSegment = {
 type PageText = {
   pageIndex: number;
   pageHeight: number;
+  pageWidth: number;
   text: string;
+  normalizedText: string;
+  normToOrig: number[];
   segments: TextSegment[];
 };
+
+let pdfJsModule: typeof import("pdfjs-dist") | null = null;
 
 function isTextItem(item: unknown): item is TextItem {
   return Boolean(item && typeof item === "object" && "str" in item);
@@ -76,42 +89,90 @@ export function parseCustomTerms(text: string): string[] {
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
+export function normalizeMatchText(value: string): string {
+  return value.normalize("NFKC");
+}
+
+function cloneBytes(fileBytes: ArrayBuffer): Uint8Array {
+  return new Uint8Array(fileBytes).slice();
+}
+
 async function loadPdfJs() {
+  if (pdfJsModule) return pdfJsModule;
+
   const pdfjs = await import("pdfjs-dist");
-  if (typeof window !== "undefined" && !pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  if (typeof window !== "undefined") {
+    pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
   }
+  pdfJsModule = pdfjs;
   return pdfjs;
 }
 
-function multiplyTransform(a: number[], b: number[]): number[] {
-  return [
-    a[0] * b[0] + a[2] * b[1],
-    a[1] * b[0] + a[3] * b[1],
-    a[0] * b[2] + a[2] * b[3],
-    a[1] * b[2] + a[3] * b[3],
-    a[0] * b[4] + a[2] * b[5] + a[4],
-    a[1] * b[4] + a[3] * b[5] + a[5],
-  ];
+async function openPdf(fileBytes: ArrayBuffer): Promise<PDFDocumentProxy> {
+  const pdfjs = await loadPdfJs();
+  const task = pdfjs.getDocument({
+    data: cloneBytes(fileBytes),
+    useSystemFonts: true,
+  });
+  return task.promise;
+}
+
+function itemGeometry(
+  item: TextItem,
+  viewport: { transform: number[]; height: number },
+  pdfjs: typeof import("pdfjs-dist"),
+) {
+  const tx = pdfjs.Util.transform(viewport.transform, item.transform);
+  const fontHeight = Math.max(Math.hypot(tx[2], tx[3]), Math.hypot(tx[0], tx[1]), 8);
+  const width =
+    item.width > 0 ? item.width : Math.max(fontHeight * 0.5, item.str.length * fontHeight * 0.55);
+  const height = fontHeight * 1.2;
+  const x = tx[4];
+  const baselineY = tx[5];
+  const yTop = baselineY - height * 0.85;
+
+  return { x, yTop, width, height, baselineY };
+}
+
+function buildNormalizedMap(original: string): { normalizedText: string; normToOrig: number[] } {
+  let normalizedText = "";
+  const normToOrig: number[] = [];
+
+  for (let i = 0; i < original.length; i += 1) {
+    const normalizedChunk = original[i]!.normalize("NFKC");
+    for (let j = 0; j < normalizedChunk.length; j += 1) {
+      normalizedText += normalizedChunk[j];
+      normToOrig.push(i);
+    }
+  }
+
+  return { normalizedText, normToOrig };
 }
 
 function buildPageText(
   items: unknown[],
-  viewport: { transform: number[]; height: number },
+  viewport: { transform: number[]; height: number; width: number },
   pageIndex: number,
+  pdfjs: typeof import("pdfjs-dist"),
 ): PageText {
   let text = "";
   const segments: TextSegment[] = [];
+  let prev: { x: number; width: number; yTop: number } | null = null;
 
   for (const raw of items) {
     if (!isTextItem(raw) || !raw.str) continue;
 
-    const tx = multiplyTransform(viewport.transform, raw.transform);
-    const fontHeight = Math.hypot(tx[2], tx[3]) || 10;
-    const width = raw.width > 0 ? raw.width : raw.str.length * fontHeight * 0.55;
-    const height = fontHeight * 1.15;
-    const x = tx[4];
-    const yTop = tx[5] - height;
+    const { x, yTop, width, height } = itemGeometry(raw, viewport, pdfjs);
+
+    if (prev) {
+      const gap = x - (prev.x + prev.width);
+      const newLine = Math.abs(yTop - prev.yTop) > height * 0.45;
+      if (newLine) {
+        text += "\n";
+      } else if (gap > height * 0.2) {
+        text += " ";
+      }
+    }
 
     const charStart = text.length;
     text += raw.str;
@@ -124,14 +185,45 @@ function buildPageText(
       height,
       pageIndex,
     });
+    prev = { x, yTop, width };
   }
+
+  const { normalizedText, normToOrig } = buildNormalizedMap(text);
 
   return {
     pageIndex,
     pageHeight: viewport.height,
+    pageWidth: viewport.width,
     text,
+    normalizedText,
+    normToOrig,
     segments,
   };
+}
+
+function findLiteralMatches(page: PageText, term: string): RedactRect[] {
+  const needle = normalizeMatchText(term);
+  if (!needle) return [];
+
+  const rects: RedactRect[] = [];
+  let from = 0;
+
+  while (from < page.normalizedText.length) {
+    const index = page.normalizedText.indexOf(needle, from);
+    if (index < 0) break;
+
+    const start = page.normToOrig[index] ?? index;
+    const endIndex = index + needle.length - 1;
+    const end = (page.normToOrig[endIndex] ?? endIndex) + 1;
+
+    rects.push(
+      ...rectsFromRange(page.pageHeight, page.pageIndex, start, end, page.segments),
+    );
+
+    from = index + Math.max(1, needle.length);
+  }
+
+  return rects;
 }
 
 function rectsFromRange(
@@ -142,8 +234,8 @@ function rectsFromRange(
   segments: TextSegment[],
 ): RedactRect[] {
   const rects: RedactRect[] = [];
-  const padX = 1.5;
-  const padY = 1;
+  const padX = 2;
+  const padY = 1.5;
 
   for (const segment of segments) {
     if (segment.charEnd <= start || segment.charStart >= end) continue;
@@ -156,36 +248,11 @@ function rectsFromRange(
 
     const width = Math.max(2, segment.width * (ratioEnd - ratioStart) + padX * 2);
     const height = segment.height + padY * 2;
-    const x = segment.x + segment.width * ratioStart - padX;
+    const x = Math.max(0, segment.x + segment.width * ratioStart - padX);
     const yTop = segment.yTop - padY;
-    const y = pageHeight - yTop - height;
+    const y = Math.max(0, pageHeight - yTop - height);
 
     rects.push({ pageIndex, x, y, width, height });
-  }
-
-  return rects;
-}
-
-function findLiteralMatches(page: PageText, term: string): RedactRect[] {
-  if (!term) return [];
-  const haystack = page.text;
-  const rects: RedactRect[] = [];
-  const needle = term;
-  let from = 0;
-
-  while (from < haystack.length) {
-    const index = haystack.indexOf(needle, from);
-    if (index < 0) break;
-    rects.push(
-      ...rectsFromRange(
-        page.pageHeight,
-        page.pageIndex,
-        index,
-        index + needle.length,
-        page.segments,
-      ),
-    );
-    from = index + Math.max(1, needle.length);
   }
 
   return rects;
@@ -216,21 +283,89 @@ function findRegexMatches(page: PageText, regex: RegExp): RedactRect[] {
 }
 
 async function extractPageTexts(pdf: PDFDocumentProxy): Promise<PageText[]> {
+  const pdfjs = await loadPdfJs();
   const pages: PageText[] = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
-    const textContent = await page.getTextContent();
-    const built = buildPageText(textContent.items, viewport, pageNumber - 1);
-    pages.push(built);
+    const textContent = await page.getTextContent({ includeMarkedContent: false });
+    pages.push(buildPageText(textContent.items, viewport, pageNumber - 1, pdfjs));
   }
 
   return pages;
 }
 
 function mergeRects(rects: RedactRect[]): RedactRect[] {
-  return rects;
+  const byPage = new Map<number, RedactRect[]>();
+
+  for (const rect of rects) {
+    const list = byPage.get(rect.pageIndex) ?? [];
+    list.push(rect);
+    byPage.set(rect.pageIndex, list);
+  }
+
+  const merged: RedactRect[] = [];
+
+  for (const [pageIndex, pageRects] of byPage) {
+    const sorted = [...pageRects].sort((a, b) => b.y - a.y || a.x - b.x);
+    const used = new Array(sorted.length).fill(false);
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      if (used[i]) continue;
+      let current = { ...sorted[i] };
+
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        if (used[j]) continue;
+        const other = sorted[j];
+        const sameLine = Math.abs(current.y - other.y) < 3 && Math.abs(current.height - other.height) < 4;
+        const overlapsX =
+          other.x <= current.x + current.width + 4 && other.x + other.width >= current.x - 4;
+
+        if (sameLine && overlapsX) {
+          const minX = Math.min(current.x, other.x);
+          const maxX = Math.max(current.x + current.width, other.x + other.width);
+          const minY = Math.min(current.y, other.y);
+          const maxY = Math.max(current.y + current.height, other.y + other.height);
+          current = {
+            pageIndex,
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+          };
+          used[j] = true;
+        }
+      }
+
+      merged.push(current);
+    }
+  }
+
+  return merged;
+}
+
+export async function inspectPdf(fileBytes: ArrayBuffer): Promise<PdfInspectResult> {
+  const pdf = await openPdf(fileBytes);
+  const pages = await extractPageTexts(pdf);
+  const pageSummaries = pages.map((page) => ({
+    page: page.pageIndex + 1,
+    chars: page.text.length,
+    preview: page.text.replace(/\s+/g, " ").trim().slice(0, 120),
+  }));
+  const charCount = pages.reduce((sum, page) => sum + page.text.length, 0);
+  const textSample = pages
+    .map((page) => page.text)
+    .join("\n\n")
+    .trim()
+    .slice(0, 800);
+
+  return {
+    pageCount: pdf.numPages,
+    charCount,
+    textSample,
+    pageSummaries,
+  };
 }
 
 export async function redactPdf(args: {
@@ -238,57 +373,83 @@ export async function redactPdf(args: {
   customTerms: string[];
   patterns: RedactPatternKey[];
 }): Promise<RedactResult> {
-  const pdfjs = await loadPdfJs();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(args.fileBytes) });
-  const pdf = await loadingTask.promise;
+  const pdf = await openPdf(args.fileBytes);
   const pageTexts = await extractPageTexts(pdf);
-
   const allRects: RedactRect[] = [];
+  const matchedTerms = new Set<string>();
 
   for (const page of pageTexts) {
     for (const term of args.customTerms) {
-      allRects.push(...findLiteralMatches(page, term));
+      const rects = findLiteralMatches(page, term);
+      if (rects.length > 0) matchedTerms.add(term);
+      allRects.push(...rects);
     }
     for (const key of args.patterns) {
       const preset = PATTERN_PRESETS[key];
+      const before = allRects.length;
       allRects.push(...findRegexMatches(page, preset.regex));
+      if (allRects.length > before) matchedTerms.add(preset.label);
     }
   }
 
   const rects = mergeRects(allRects);
   const { PDFDocument, rgb } = await import("pdf-lib");
-  const doc = await PDFDocument.load(args.fileBytes);
+
+  let doc;
+  try {
+    doc = await PDFDocument.load(cloneBytes(args.fileBytes), {
+      ignoreEncryption: true,
+      updateMetadata: false,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "PDF の解析に失敗しました";
+    throw new Error(`PDF を開けませんでした: ${message}`);
+  }
+
   const pages = doc.getPages();
   const matchesByPage = Array.from({ length: pages.length }, () => 0);
 
   for (const rect of rects) {
     const page = pages[rect.pageIndex];
     if (!page) continue;
+
+    const { width: pageWidth, height: pageHeight } = page.getSize();
+    const x = Math.min(Math.max(0, rect.x), Math.max(0, pageWidth - 1));
+    const y = Math.min(Math.max(0, rect.y), Math.max(0, pageHeight - 1));
+    const width = Math.min(rect.width, pageWidth - x);
+    const height = Math.min(rect.height, pageHeight - y);
+    if (width <= 0 || height <= 0) continue;
+
     page.drawRectangle({
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
+      x,
+      y,
+      width,
+      height,
       color: rgb(0, 0, 0),
       borderWidth: 0,
     });
     matchesByPage[rect.pageIndex] += 1;
   }
 
-  const pdfBytes = await doc.save();
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await doc.save({ useObjectStreams: false });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "PDF の保存に失敗しました";
+    throw new Error(`黒塗り PDF の生成に失敗しました: ${message}`);
+  }
 
   return {
     pdfBytes,
     matchCount: rects.length,
     pageCount: pages.length,
     matchesByPage,
+    matchedTerms: Array.from(matchedTerms),
   };
 }
 
 export async function suggestTermsFromPdf(fileBytes: ArrayBuffer): Promise<string[]> {
-  const pdfjs = await loadPdfJs();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(fileBytes) });
-  const pdf = await loadingTask.promise;
+  const pdf = await openPdf(fileBytes);
   const pageTexts = await extractPageTexts(pdf);
   const suggestions = new Set<string>();
 
@@ -303,4 +464,35 @@ export async function suggestTermsFromPdf(fileBytes: ArrayBuffer): Promise<strin
   }
 
   return Array.from(suggestions).slice(0, 40);
+}
+
+export async function renderPdfPageToCanvas(args: {
+  pdfBytes: Uint8Array;
+  pageNumber: number;
+  scale?: number;
+}): Promise<HTMLCanvasElement> {
+  const pdfjs = await loadPdfJs();
+  const pdf = await pdfjs.getDocument({ data: args.pdfBytes.slice() }).promise;
+  const page = await pdf.getPage(args.pageNumber);
+  const scale = args.scale ?? 1.25;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas が利用できません");
+
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  const renderTask = page.render({
+    canvasContext: context,
+    viewport,
+    canvas,
+  });
+  await renderTask.promise;
+  return canvas;
+}
+
+export function formatRedactError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "PDF の処理中に不明なエラーが発生しました";
 }
