@@ -24,7 +24,13 @@ function topFactors(breakdown: ReturnType<typeof buildCrowdBreakdown>): string[]
   const entries = [
     { score: breakdown.calendar, label: breakdown.labels.calendar },
     { score: breakdown.seasonal, label: breakdown.labels.seasonal },
+    { score: breakdown.schoolK12, label: breakdown.labels.schoolK12 },
+    { score: breakdown.universityBreak, label: breakdown.labels.universityBreak },
     { score: breakdown.event, label: breakdown.labels.event },
+    { score: breakdown.regionalPassport, label: breakdown.labels.regionalPassport },
+    { score: breakdown.otherThemeParks, label: breakdown.labels.otherThemeParks },
+    { score: breakdown.metroEvents, label: breakdown.labels.metroEvents },
+    { score: breakdown.disasterImpact, label: breakdown.labels.disasterImpact },
     { score: breakdown.weather, label: breakdown.labels.weather },
     { score: breakdown.merchandise, label: breakdown.labels.merchandise },
     { score: breakdown.newsBuzz, label: breakdown.labels.newsBuzz },
