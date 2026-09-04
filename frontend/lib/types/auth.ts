@@ -9,6 +9,8 @@ export interface ClientPrincipal {
   userDetails: string;
   userRoles: string[];
   claims?: ClientPrincipalClaim[];
+  /** SWA 生の userId（IdP リンク前）。リンク解決後に付与 */
+  rawUserId?: string;
 }
 
 export interface AuthMeResponse {
