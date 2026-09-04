@@ -1,6 +1,7 @@
 import { APP_LABELS, featureLabel } from "@/lib/analytics-constants";
 import {
   getAccessStatsByUserAndFeature,
+  listAccessLogsInRange,
   listRecentAccessLogsAllUsers,
 } from "@/lib/server/access-log";
 import { listAllUsers } from "@/lib/server/users";
@@ -47,13 +48,29 @@ export async function buildAccessAnalyticsReport(
   const start = monthStartIso(monthDate);
   const end = monthEndIso(monthDate);
 
-  const [rows, recentAccess, users] = await Promise.all([
+  const [rows, recentAccess, users, monthLogs] = await Promise.all([
     getAccessStatsByUserAndFeature(start, end),
     listRecentAccessLogsAllUsers(start, end, 80),
     listAllUsers(),
+    listAccessLogsInRange(start, end, 8000),
   ]);
 
   const usersById = new Map(users.map((user) => [user.userId, user]));
+
+  const byDayMap = new Map<string, { apiCalls: number; users: Set<string> }>();
+  const byAppMap = new Map<string, { apiCalls: number; users: Set<string> }>();
+  for (const log of monthLogs) {
+    const day = log.createdAt.slice(0, 10);
+    const dayEntry = byDayMap.get(day) ?? { apiCalls: 0, users: new Set<string>() };
+    dayEntry.apiCalls += 1;
+    dayEntry.users.add(log.userId);
+    byDayMap.set(day, dayEntry);
+
+    const appEntry = byAppMap.get(log.app) ?? { apiCalls: 0, users: new Set<string>() };
+    appEntry.apiCalls += 1;
+    appEntry.users.add(log.userId);
+    byAppMap.set(log.app, appEntry);
+  }
 
   const byUserMap = new Map<
     string,
@@ -176,6 +193,21 @@ export async function buildAccessAnalyticsReport(
     byUser,
     byPage,
     byUserPage,
+    byDay: [...byDayMap.entries()]
+      .map(([date, value]) => ({
+        date,
+        apiCalls: value.apiCalls,
+        uniqueUsers: value.users.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    byApp: [...byAppMap.entries()]
+      .map(([app, value]) => ({
+        app,
+        appLabel: APP_LABELS[app as AppKey] ?? app,
+        apiCalls: value.apiCalls,
+        uniqueUsers: value.users.size,
+      }))
+      .sort((a, b) => b.apiCalls - a.apiCalls),
     recentAccess: recentAccess.map((row) => ({
       ...row,
       displayName: resolveUserLabel(row.userId, usersById),
