@@ -16,7 +16,8 @@ async function buildFreshSnapshot(): Promise<MoneyFlowResponse> {
   const snapshot = await queryMoneyFlow({
     year,
     limit: 40,
-    rowMode: "detail",
+    // 全件 detail ソートは重い。公開プレビューは集約明細で十分。
+    rowMode: "aggregate",
   });
   memoryCache = { year, snapshot, builtAt: Date.now() };
   return snapshot;

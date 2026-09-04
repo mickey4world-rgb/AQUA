@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
+import {
+  moneyFlowMetaCacheKey,
+  moneyFlowQueryCacheKey,
+  readMoneyFlowCache,
+  writeMoneyFlowCache,
+} from "@/lib/money-flow-client-cache";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import type {
@@ -66,14 +72,27 @@ export default function MoneyFlowPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchJsonWithTimeout<MetaResponse>("/api/works/money-flow?meta=1")
+    const metaKey = moneyFlowMetaCacheKey();
+    const cachedMeta = readMoneyFlowCache<MetaResponse>(metaKey);
+    if (cachedMeta) {
+      setMeta(cachedMeta);
+      setYear(cachedMeta.years[cachedMeta.years.length - 1]?.fiscalYear ?? null);
+    }
+
+    fetchJsonWithTimeout<MetaResponse>("/api/works/money-flow?meta=1", {
+      timeoutMs: 90_000,
+    })
       .then((payload) => {
         if (cancelled) return;
+        writeMoneyFlowCache(metaKey, payload);
         setMeta(payload);
         setYear(payload.years[payload.years.length - 1]?.fiscalYear ?? null);
+        setMetaError(null);
       })
       .catch(() => {
-        if (!cancelled) setMetaError("データの読み込みに失敗しました。");
+        if (!cancelled && !cachedMeta) {
+          setMetaError("データの読み込みに失敗しました。");
+        }
       });
     return () => {
       cancelled = true;
@@ -99,14 +118,36 @@ export default function MoneyFlowPanel() {
     let cancelled = false;
     setRowPage(0);
     setSelectedNode(null);
+
+    const [yearText, ministryText, payeeText, sectorText, focusKind, focusValue] =
+      requestKey.split("|");
+    const cacheKey = moneyFlowQueryCacheKey({
+      year: yearText,
+      ministry: ministryText,
+      payee: payeeText,
+      sector: sectorText,
+      focusKind,
+      focusValue,
+    });
+    const cached = readMoneyFlowCache<MoneyFlowResponse>(cacheKey);
+    if (cached) {
+      setFlow({ key: requestKey, data: cached, error: null });
+    }
+
     fetchFlow(requestKey)
       .then((payload) => {
         if (cancelled) return;
+        writeMoneyFlowCache(cacheKey, payload);
         setFlow({ key: requestKey, data: payload, error: null });
       })
       .catch(() => {
         if (cancelled) return;
-        setFlow({ key: requestKey, data: null, error: "お金の流れの取得に失敗しました。" });
+        if (cached) return;
+        setFlow({
+          key: requestKey,
+          data: null,
+          error: "お金の流れの取得に失敗しました。",
+        });
       });
     return () => {
       cancelled = true;
@@ -1046,6 +1087,7 @@ async function fetchFlow(key: string): Promise<MoneyFlowResponse> {
   if (focusValue) params.set("focusValue", focusValue);
   const response = await fetchJsonWithTimeout<MoneyFlowResponse>(
     `/api/works/money-flow?${params}`,
+    { timeoutMs: 90_000 },
   );
   return response;
 }

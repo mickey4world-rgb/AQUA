@@ -9,6 +9,11 @@ import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
 import {
+  moneyFlowPublicCacheKey,
+  readMoneyFlowCache,
+  writeMoneyFlowCache,
+} from "@/lib/money-flow-client-cache";
+import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
   formatMoneyFlowAmount,
@@ -17,6 +22,7 @@ import {
 } from "@/lib/works-money-flow-ui";
 
 const ROW_PAGE_SIZE = 25;
+const PUBLIC_CACHE_KEY = moneyFlowPublicCacheKey();
 
 type WorksMoneyFlowPublicPreviewProps = {
   initialData?: MoneyFlowResponse | null;
@@ -25,18 +31,53 @@ type WorksMoneyFlowPublicPreviewProps = {
 export default function WorksMoneyFlowPublicPreview({
   initialData = null,
 }: WorksMoneyFlowPublicPreviewProps) {
-  const [data, setData] = useState<MoneyFlowResponse | null>(initialData);
+  const [data, setData] = useState<MoneyFlowResponse | null>(
+    () => initialData ?? readMoneyFlowCache<MoneyFlowResponse>(PUBLIC_CACHE_KEY),
+  );
   const [error, setError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
   const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (initialData) return;
+    if (initialData) {
+      writeMoneyFlowCache(PUBLIC_CACHE_KEY, initialData);
+      return;
+    }
 
     let cancelled = false;
-    fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow")
+    const cached = readMoneyFlowCache<MoneyFlowResponse>(PUBLIC_CACHE_KEY);
+    if (cached) {
+      setData(cached);
+      // キャッシュがある場合は裏で更新（失敗しても表示は維持）
+      setRefreshing(true);
+      fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow", {
+        timeoutMs: 90_000,
+      })
+        .then((payload) => {
+          if (cancelled) return;
+          writeMoneyFlowCache(PUBLIC_CACHE_KEY, payload);
+          setData(payload);
+          setError(null);
+        })
+        .catch(() => {
+          /* keep cached */
+        })
+        .finally(() => {
+          if (!cancelled) setRefreshing(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow", {
+      timeoutMs: 90_000,
+    })
       .then((payload) => {
-        if (!cancelled) setData(payload);
+        if (cancelled) return;
+        writeMoneyFlowCache(PUBLIC_CACHE_KEY, payload);
+        setData(payload);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -104,6 +145,7 @@ export default function WorksMoneyFlowPublicPreview({
               {" "}
               {data.year}年度 · 主要事業 {projectCount} 件 · 合計{" "}
               {formatMoneyFlowAmount(data.totals.amount, data.unit)}
+              {refreshing ? " · 最新を確認中…" : ""}
             </>
           ) : null}
         </p>
