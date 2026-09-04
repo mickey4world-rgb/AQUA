@@ -2,7 +2,7 @@ import { isDateNavigable } from "@/lib/server/disney-calendar-prediction";
 import { buildPublicDayBriefing } from "@/lib/server/disney-public-preview";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 /** 認証不要 · 指定日の混雑予測（内訳・アトラクション・キャラアドバイス） */
 export async function GET(request: Request) {

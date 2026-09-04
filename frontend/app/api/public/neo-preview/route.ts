@@ -1,6 +1,7 @@
 import { getNeoPublicPreview } from "@/lib/server/neo-public-preview";
 
-export const revalidate = 3600;
+/** ビルド時に NASA API を叩かない。実行時 Cache-Control でキャッシュ。 */
+export const dynamic = "force-dynamic";
 
 /** 認証不要 · 当日最接近小惑星の公開プレビュー */
 export async function GET() {

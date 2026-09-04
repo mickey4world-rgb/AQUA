@@ -1,6 +1,7 @@
 import { getDisneyShowcaseSnapshot } from "@/lib/server/disney-showcase-cache";
 
-export const revalidate = 3600;
+/** ビルド時プレビュー生成を避ける。実行時 Cache-Control / Cosmos キャッシュ。 */
+export const dynamic = "force-dynamic";
 
 /** @deprecated 互換用。新規は /api/public/tdr-preview を使用 */
 export async function GET() {

@@ -4,7 +4,7 @@ import {
 } from "@/lib/server/disney-calendar-prediction";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 /** 認証不要 · 混雑予測カレンダー（当月〜6か月先） */
 export async function GET(request: Request) {
