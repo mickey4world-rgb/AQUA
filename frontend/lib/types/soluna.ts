@@ -261,7 +261,12 @@ export interface SolunaSettlementState {
 }
 
 /** 資産運用での1回の取引記録 */
-export type SolunaTradeProduct = "BTC_JPY" | "ETH_JPY" | "XRP_JPY" | "ZPG_JPY";
+export type SolunaTradeProduct =
+  | "BTC_JPY"
+  | "ETH_JPY"
+  | "XRP_JPY"
+  | "XLM_JPY"
+  | "ZPG_JPY";
 
 export interface SolunaTradeRecord {
   id: string;
@@ -281,9 +286,9 @@ export interface SolunaMonthlyAssetSummary {
   /** "2026-08" 形式 */
   month: string;
   openingBalanceYen: number;   // 月初総資産
-  targetProfitYen: number;     // 月利益目標（月初残高 × 2%）
+  targetProfitYen: number;     // 月利益目標（月初×2%、下限2000円）
   realizedPnlYen: number;      // 当月累計実現損益
-  goalReached: boolean;        // 月次目標（2%）達成フラグ
+  goalReached: boolean;        // 月次目標達成フラグ
   goalReachedAt?: string;      // 達成日時
 }
 
@@ -293,7 +298,7 @@ export interface SolunaAssetLedger {
   principalYen: number;
   /** 先月末総資産（初回は principalYen） */
   lastMonthTotalYen: number;
-  /** 今月利益目標 = lastMonthTotalYen × 0.02 */
+  /** 今月利益目標（月初×2%、元本10万未満は一律2000円） */
   monthlyTargetYen: number;
   /** 当月累計実現損益（＝討伐報酬ゴールド） */
   monthlyRealizedPnlYen: number;
@@ -305,11 +310,13 @@ export interface SolunaAssetLedger {
   ethHeld: number;
   /** 現在の XRP 保有量（銀濤の海竜） */
   xrpHeld?: number;
+  /** 現在の XLM 保有量（星屑の銀帆船） */
+  xlmHeld?: number;
   /** ジパングコイン(ZPG) 保有量 — Lightning 自動売買不可のため投資カテゴリ外 */
   zpgHeld?: number;
   /** 現在の現金残高（円）＝黄金の守護巨兵の防衛魔力 */
   cashYen: number;
-  /** 総資産（現金 + BTC/ETH/XRP 時価）＝総魔力 MP */
+  /** 総資産（現金 + BTC/ETH/XRP/XLM 時価）＝総魔力 MP */
   totalYen: number;
   /** 前回記録時の総資産（前日比用） */
   previousTotalYen: number;
@@ -323,6 +330,8 @@ export interface SolunaAssetLedger {
   ethPriceYen: number;
   /** 最新 XRP 価格 */
   xrpPriceYen?: number;
+  /** 最新 XLM 価格 */
+  xlmPriceYen?: number;
   /** ZPG 参考価格（Lightning 非対応時は 0） */
   zpgPriceYen?: number;
   /** 前日比に基づくバトルモード（翌日の会話用） */

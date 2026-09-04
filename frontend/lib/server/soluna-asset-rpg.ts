@@ -6,6 +6,7 @@
  * 現金防衛枠 → 黄金の守護巨兵（ゴールデン・ゴーレム）
  * ETH → 蒼穹の不死鳥
  * XRP → 銀濤の海竜
+ * XLM → 星屑の銀帆船
  * 実現利益 → 討伐報酬ゴールド（召喚獣のエサ＝魔力結晶）
  * 前日比プラス → 攻撃バフ / マイナス → 防御モード
  * 1万円評価 ＝ Lv.1
@@ -20,6 +21,7 @@ export const RPG_BTC_NAME = "🐉 雷轟の蒼竜（ライトニング・バハ�
 export const RPG_GOLEM_NAME = "🤖 黄金の守護巨兵（ゴールデン・ゴーレム）";
 export const RPG_ETH_NAME = "🦅 蒼穹の不死鳥（イーサリアム）";
 export const RPG_XRP_NAME = "🌊 銀濤の海竜（リップル）";
+export const RPG_XLM_NAME = "⛵ 星屑の銀帆船（ステラ）";
 export const RPG_MP_TANK = "聖なる魔力タンク";
 
 export function mpToLevel(mp: number): number {
@@ -60,10 +62,12 @@ export type GuildRpgSnapshot = {
   golemMp: number;
   ethMp: number;
   xrpMp: number;
+  xlmMp: number;
   btcLevel: number;
   golemLevel: number;
   ethLevel: number;
   xrpLevel: number;
+  xlmLevel: number;
   btcLevelDelta: number;
   golemLevelDelta: number;
   buffActive: boolean;
@@ -77,12 +81,14 @@ export function buildGuildRpgSnapshot(assets: SolunaAssetLedger): GuildRpgSnapsh
   const golemMp = Math.round(assets.cashYen);
   const ethMp = valuationMp(assets.ethHeld || 0, assets.ethPriceYen || 0);
   const xrpMp = valuationMp(assets.xrpHeld || 0, assets.xrpPriceYen || 0);
+  const xlmMp = valuationMp(assets.xlmHeld || 0, assets.xlmPriceYen || 0);
   const prevBtcMp = assets.previousBtcValueYen ?? btcMp;
   const prevGolemMp = assets.previousCashYen ?? golemMp;
   const btcLevel = mpToLevel(btcMp);
   const golemLevel = mpToLevel(golemMp);
   const ethLevel = mpToLevel(ethMp);
   const xrpLevel = mpToLevel(xrpMp);
+  const xlmLevel = mpToLevel(xlmMp);
   return {
     dayChangeYen,
     battleMode,
@@ -90,10 +96,12 @@ export function buildGuildRpgSnapshot(assets: SolunaAssetLedger): GuildRpgSnapsh
     golemMp,
     ethMp,
     xrpMp,
+    xlmMp,
     btcLevel,
     golemLevel,
     ethLevel,
     xrpLevel,
+    xlmLevel,
     btcLevelDelta: Math.round((btcLevel - mpToLevel(prevBtcMp)) * 10) / 10,
     golemLevelDelta: Math.round((golemLevel - mpToLevel(prevGolemMp)) * 10) / 10,
     buffActive: battleMode === "attack",
@@ -195,21 +203,27 @@ ${
 所持: ${Math.floor(assets.xrpHeld || 0).toLocaleString("ja-JP")} XRP`
       : `\n${RPG_XRP_NAME}: 未召喚（分散枠が空けば召喚候補）`;
 
+  const xlmBlock =
+    (assets.xlmHeld || 0) >= 1
+      ? `\n${RPG_XLM_NAME}: Lv. ${snap.xlmLevel.toFixed(1)} （戦力: ${snap.xlmMp.toLocaleString("ja-JP")} MP）
+所持: ${Math.floor(assets.xlmHeld || 0).toLocaleString("ja-JP")} XLM`
+      : `\n${RPG_XLM_NAME}: 未召喚（分散枠が空けば召喚候補）`;
+
   const sleepLine = assets.sleepMode
     ? "🌙 月次利益が10%を超えたためおやすみモード（新規召喚停止・防衛専念）"
-    : `討伐報酬ゴールド: ${gold.toLocaleString("ja-JP")} / 目標(2%) ${goldTarget.toLocaleString("ja-JP")}（おやすみは10%超）`;
+    : `討伐報酬ゴールド: ${gold.toLocaleString("ja-JP")} / 目標 ${goldTarget.toLocaleString("ja-JP")}（月初×2%・下限2,000／おやすみは10%超）`;
 
   return `${buffBanner}
 ## 📊 召喚獣の育成ステータス（現在のポートフォリオ）
 
 現在のギルド総資産：${Math.round(assets.totalYen).toLocaleString("ja-JP")} MP（${dayChangeLabel}）
 ${RPG_MP_TANK}（元本）: ${Math.round(assets.principalYen).toLocaleString("ja-JP")} MP
-分散ルール: 現金下限28% / 単一銘柄上限42% / 暗号合計上限72%（BTC・ETH・XRP）
+分散ルール: 現金下限28% / 単一銘柄上限42% / 暗号合計上限72%（BTC・ETH・XRP・XLM）
 ${sleepLine}
 
 ${btcBlock}
 
-${golemBlock}${ethBlock}${xrpBlock}
+${golemBlock}${ethBlock}${xrpBlock}${xlmBlock}
 
 ⚔️ ソル「${assets.solComment}」
 📖 ルーナの賢者投資メモ:
