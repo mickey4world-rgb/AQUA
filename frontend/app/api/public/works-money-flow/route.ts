@@ -2,9 +2,6 @@ import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-previ
 
 export const revalidate = 3600;
 
-// コールドスタート対策: モジュール読込時に既定スナップショットを先読み
-void getWorksMoneyFlowPublicPreview().catch(() => undefined);
-
 /** 認証不要・行政事業レビューのサンキー公開プレビュー */
 export async function GET() {
   try {
