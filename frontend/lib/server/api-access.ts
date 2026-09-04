@@ -25,6 +25,7 @@ export function finalizeApiResponse(
 export async function withApiAccessLog(
   request: Request,
   handler: (auth: ClientPrincipal) => Promise<Response>,
+  options?: { skipAccessLog?: boolean },
 ): Promise<Response> {
   const startedAt = getRequestStartedAt();
   const auth = requireAuthOrResponse(request);
@@ -32,6 +33,7 @@ export async function withApiAccessLog(
 
   try {
     const response = await handler(auth);
+    if (options?.skipAccessLog) return response;
     return finalizeApiResponse(request, auth.userId, response, startedAt);
   } catch (error) {
     console.error("[api]", new URL(request.url).pathname, error);
@@ -44,6 +46,7 @@ export async function withApiAccessLog(
       },
       { status: 500 },
     );
+    if (options?.skipAccessLog) return response;
     return finalizeApiResponse(request, auth.userId, response, startedAt);
   }
 }

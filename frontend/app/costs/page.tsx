@@ -9,6 +9,13 @@ import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
 import SolunaOpsAnalyticsPanels from "@/components/costs/SolunaOpsAnalyticsPanels";
 import UsageHistory from "@/components/costs/UsageHistory";
+import {
+  costsAzureCacheKey,
+  costsDashboardCacheKey,
+  costsSolunaOpsCacheKey,
+  readCostsClientCache,
+  writeCostsClientCache,
+} from "@/lib/costs-client-cache";
 import type {
   AzureInfraCostSummary,
   CostDashboard,
@@ -39,23 +46,57 @@ function shiftMonth(month: string, delta: number): string {
 export default function CostsPage() {
   const [tab, setTab] = useState<CostsTab>("ai");
   const [month, setMonth] = useState(currentMonthParam());
-  const [dashboard, setDashboard] = useState<CostDashboard | null>(null);
-  const [azureInfra, setAzureInfra] = useState<AzureInfraCostSummary | null>(null);
-  const [solunaOps, setSolunaOps] = useState<SolunaOpsAnalyticsReport | null>(null);
-  const [loadedMonth, setLoadedMonth] = useState<string | null>(null);
-  const [azureLoadedMonth, setAzureLoadedMonth] = useState<string | null>(null);
-  const [solunaLoadedMonth, setSolunaLoadedMonth] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<CostDashboard | null>(() =>
+    readCostsClientCache<CostDashboard>(costsDashboardCacheKey(currentMonthParam()), {
+      allowStale: true,
+    }),
+  );
+  const [azureInfra, setAzureInfra] = useState<AzureInfraCostSummary | null>(() =>
+    readCostsClientCache<AzureInfraCostSummary>(costsAzureCacheKey(currentMonthParam()), {
+      allowStale: true,
+    }),
+  );
+  const [solunaOps, setSolunaOps] = useState<SolunaOpsAnalyticsReport | null>(() =>
+    readCostsClientCache<SolunaOpsAnalyticsReport>(
+      costsSolunaOpsCacheKey(currentMonthParam()),
+      { allowStale: true },
+    ),
+  );
+  const [loadedMonth, setLoadedMonth] = useState<string | null>(() =>
+    readCostsClientCache(costsDashboardCacheKey(currentMonthParam()), { allowStale: true })
+      ? currentMonthParam()
+      : null,
+  );
+  const [azureLoadedMonth, setAzureLoadedMonth] = useState<string | null>(() =>
+    readCostsClientCache(costsAzureCacheKey(currentMonthParam()), { allowStale: true })
+      ? currentMonthParam()
+      : null,
+  );
+  const [solunaLoadedMonth, setSolunaLoadedMonth] = useState<string | null>(() =>
+    readCostsClientCache(costsSolunaOpsCacheKey(currentMonthParam()), { allowStale: true })
+      ? currentMonthParam()
+      : null,
+  );
   const [solunaError, setSolunaError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadingAi = tab === "ai" && loadedMonth !== month;
-  const azureLoading = tab === "ai" && azureLoadedMonth !== month;
-  const loadingSoluna = tab === "soluna" && solunaLoadedMonth !== month;
+  const loadingAi = tab === "ai" && loadedMonth !== month && !dashboard;
+  const azureLoading = tab === "ai" && azureLoadedMonth !== month && !azureInfra;
+  const loadingSoluna = tab === "soluna" && solunaLoadedMonth !== month && !solunaOps;
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
   useEffect(() => {
     if (tab !== "ai") return;
     let cancelled = false;
 
+    const cacheKey = costsDashboardCacheKey(month);
+    const cached = readCostsClientCache<CostDashboard>(cacheKey, { allowStale: true });
+    if (cached) {
+      setDashboard(cached);
+      setLoadedMonth(month);
+    }
+
+    setRefreshing(true);
     fetch(`/api/costs/dashboard?month=${month}`)
       .then(async (res) =>
         res.ok ? ((await res.json()) as CostDashboard) : null,
@@ -63,8 +104,14 @@ export default function CostsPage() {
       .catch(() => null)
       .then((data) => {
         if (cancelled) return;
-        if (data) setDashboard(data);
+        if (data) {
+          writeCostsClientCache(cacheKey, data);
+          setDashboard(data);
+        }
         setLoadedMonth(month);
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
 
     return () => {
@@ -76,6 +123,15 @@ export default function CostsPage() {
     if (tab !== "ai") return;
     let cancelled = false;
 
+    const cacheKey = costsAzureCacheKey(month);
+    const cached = readCostsClientCache<AzureInfraCostSummary>(cacheKey, {
+      allowStale: true,
+    });
+    if (cached) {
+      setAzureInfra(cached);
+      setAzureLoadedMonth(month);
+    }
+
     fetch(`/api/costs/azure-infra?month=${month}`)
       .then(async (res) =>
         res.ok ? ((await res.json()) as AzureInfraCostSummary | null) : null,
@@ -83,7 +139,10 @@ export default function CostsPage() {
       .catch(() => null)
       .then((data) => {
         if (cancelled) return;
-        setAzureInfra(data);
+        if (data) {
+          writeCostsClientCache(cacheKey, data);
+          setAzureInfra(data);
+        }
         setAzureLoadedMonth(month);
       });
 
@@ -97,6 +156,16 @@ export default function CostsPage() {
     let cancelled = false;
     setSolunaError(null);
 
+    const cacheKey = costsSolunaOpsCacheKey(month);
+    const cached = readCostsClientCache<SolunaOpsAnalyticsReport>(cacheKey, {
+      allowStale: true,
+    });
+    if (cached) {
+      setSolunaOps(cached);
+      setSolunaLoadedMonth(month);
+    }
+
+    setRefreshing(true);
     fetch(`/api/costs/soluna-ops?month=${month}`)
       .then(async (res) => {
         if (!res.ok) {
@@ -107,13 +176,19 @@ export default function CostsPage() {
       })
       .then((data) => {
         if (cancelled) return;
+        writeCostsClientCache(cacheKey, data);
         setSolunaOps(data);
         setSolunaLoadedMonth(month);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setSolunaError(err instanceof Error ? err.message : "読み込みに失敗しました");
+        if (!cached) {
+          setSolunaError(err instanceof Error ? err.message : "読み込みに失敗しました");
+        }
         setSolunaLoadedMonth(month);
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
 
     return () => {
@@ -138,8 +213,9 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              AI トークン・Azure 実績に加え、Soluna の Note・資産運用（BTC/ETH/XRP）と BOINC
-              社会貢献の詳細も確認できます。
+              AI トークン・Azure 実績に加え、Soluna の Note・資産運用（BTC/ETH/XRP/XLM）と BOINC
+              社会貢献の詳細も確認できます。表示はキャッシュ優先で、重い外部取得は裏のバッチ更新です。
+              {refreshing ? " · 最新を確認中…" : ""}
             </p>
             <a
               href="/costs/access"
