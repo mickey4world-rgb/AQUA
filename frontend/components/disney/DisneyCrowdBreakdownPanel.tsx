@@ -14,6 +14,7 @@ const BREAKDOWN_ITEMS: Array<{
   { key: "weather", label: "天候影響" },
   { key: "event", label: "TDRイベント" },
   { key: "regionalPassport", label: "地域限定パス" },
+  { key: "shareholderPassport", label: "株主優待パス" },
   { key: "otherThemeParks", label: "他テーマパーク" },
   { key: "metroEvents", label: "都内イベント" },
   { key: "newsBuzz", label: "世間の注目" },

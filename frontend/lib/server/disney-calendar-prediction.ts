@@ -9,7 +9,13 @@ import {
   isJapanHoliday,
   parseJstDate,
 } from "@/lib/disney-holidays";
+import {
+  getAccuracyMapForMonth,
+  summarizeAccuracy,
+} from "@/lib/server/disney-accuracy";
+import { loadCrowdAdjustments } from "@/lib/server/disney-crowd-adjustments";
 import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
+import { getLatestMonthlyReview } from "@/lib/server/disney-monthly-review";
 import type {
   CrowdLevel,
   DisneyCalendarDay,
@@ -40,6 +46,11 @@ function collectPeriodFactors(month: number, day: number): string[] {
   if (inRange(month, day, [12, 26], [1, 7])) factors.push("小中高・冬休み");
   if (inRange(month, day, [3, 1], [5, 15])) factors.push("地域限定パスポート");
   if (inRange(month, day, [9, 1], [11, 30])) factors.push("地域限定パスポート");
+  if (inRange(month, day, [6, 1], [6, 20])) factors.push("株主優待パス配布期");
+  if (inRange(month, day, [12, 10], [12, 25])) factors.push("株主優待パス配布期");
+  if (inRange(month, day, [5, 1], [5, 31])) factors.push("株主優待パス期限前");
+  if (inRange(month, day, [8, 1], [8, 31])) factors.push("株主優待パス期限前");
+  if (inRange(month, day, [11, 1], [11, 30])) factors.push("株主優待パス期限前");
   if (month === 10 && day >= 15) factors.push("ハロウィーンシーズン");
   if (month === 2 && day >= 1 && day <= 14) factors.push("比較的落ち着きやすい時期");
   if (inRange(month, day, [8, 20], [10, 15])) factors.push("台風シーズン");
@@ -153,6 +164,9 @@ function buildVisitTips(level: CrowdLevel, factors: string[]): string[] {
   if (factors.some((f) => f.includes("地域限定パス") || f.includes("パスポート"))) {
     tips.push("地域限定パスポート利用期は地元来園者が増えやすいです。人気アトラクションは午前中の優先がおすすめです。");
   }
+  if (factors.some((f) => f.includes("株主") || f.includes("優待"))) {
+    tips.push("株主優待パスの配布直後・期限前は平日でも来園が増えやすいです。日付指定枠が埋まりやすい点に注意してください。");
+  }
   if (factors.some((f) => f.includes("台風") || f.includes("豪雨") || f.includes("災害"))) {
     tips.push("荒天時は運休・短縮営業の可能性があります。公式情報と天気予報を前日までに確認してください。");
   }
@@ -183,6 +197,9 @@ export function predictCrowdForDate(
   if (breakdown.labels.schoolK12 !== "小中高・通常期") factors.push(breakdown.labels.schoolK12);
   if (breakdown.labels.universityBreak !== "大学・通常期") factors.push(breakdown.labels.universityBreak);
   if (breakdown.labels.regionalPassport !== "通常チケット期") factors.push(breakdown.labels.regionalPassport);
+  if (breakdown.labels.shareholderPassport !== "株主優待・平常") {
+    factors.push(breakdown.labels.shareholderPassport);
+  }
   if (breakdown.labels.otherThemeParks !== "他園・通常") factors.push(breakdown.labels.otherThemeParks);
   if (breakdown.labels.metroEvents !== "都内イベント平常") factors.push(breakdown.labels.metroEvents);
   if (breakdown.labels.disasterImpact !== "災害影響小") factors.push(breakdown.labels.disasterImpact);
@@ -221,6 +238,8 @@ export async function predictCalendarMonth(
   const cached = monthCache.get(cacheKey);
   if (cached) return cached;
 
+  await loadCrowdAdjustments();
+
   const today = getJstToday();
   let liveBias = 0;
 
@@ -234,9 +253,27 @@ export async function predictCalendarMonth(
     }
   }
 
+  const accuracyMap = await getAccuracyMapForMonth(park, year, month);
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+
+  // 過去日でスナップショットがあるが未記録ならバックフィル（最大8日）
+  const pastWithoutRecord = getMonthDays(year, month)
+    .filter((dateStr) => compareDateStr(dateStr, today) < 0 && !accuracyMap.has(dateStr))
+    .slice(-8);
+  if (pastWithoutRecord.length > 0) {
+    const { upsertDayAccuracy } = await import("@/lib/server/disney-accuracy");
+    await Promise.all(
+      pastWithoutRecord.map(async (dateStr) => {
+        const record = await upsertDayAccuracy(park, dateStr);
+        if (record) accuracyMap.set(dateStr, record);
+      }),
+    );
+  }
+
   const days = getMonthDays(year, month).map((dateStr): DisneyCalendarDay => {
     const prediction = predictCrowdForDate(park, dateStr, liveBias);
     const breakdown = buildCrowdBreakdown(dateStr, park);
+    const acc = accuracyMap.get(dateStr);
     return {
       date: dateStr,
       crowdLevel: prediction.crowdLevel,
@@ -248,10 +285,29 @@ export async function predictCalendarMonth(
       isFuture: compareDateStr(dateStr, today) > 0,
       factors: prediction.factors.slice(0, 3),
       breakdown,
+      accuracy: acc
+        ? {
+            predictedLevel: acc.predictedLevel,
+            predictedScore: acc.predictedScore,
+            actualLevel: acc.actualLevel,
+            actualScore: acc.actualScore,
+            actualAverageWait: acc.actualAverageWait,
+            scoreDelta: acc.scoreDelta,
+            levelHit: acc.levelHit,
+          }
+        : null,
     };
   });
 
-  const payload = {
+  const monthRecords = [...accuracyMap.values()];
+  const stats = summarizeAccuracy(monthRecords);
+  const latestReview = await getLatestMonthlyReview();
+  const monthReview =
+    latestReview?.month === monthKey
+      ? latestReview
+      : latestReview;
+
+  const payload: DisneyCalendarMonth = {
     park,
     year,
     month,
@@ -259,6 +315,22 @@ export async function predictCalendarMonth(
     startWeekday: getMonthStartWeekday(year, month),
     days,
     today,
+    accuracySummary: {
+      evaluatedDays: stats.evaluatedDays,
+      hits: stats.hits,
+      hitRate: stats.hitRate,
+      meanAbsScoreError: stats.meanAbsScoreError,
+      latestReviewSummary: monthReview?.summary ?? null,
+      reviewNewsFindings: monthReview?.newsFindings?.slice(0, 4),
+      rulesChanged: [
+        ...(monthReview?.rulesAdded ?? []).map(
+          (r) => `追加 ${r.label}（Δ${r.scoreDelta > 0 ? "+" : ""}${r.scoreDelta}）`,
+        ),
+        ...(monthReview?.rulesUpdated ?? []).map(
+          (r) => `見直 ${r.label}（Δ${r.scoreDelta > 0 ? "+" : ""}${r.scoreDelta}）`,
+        ),
+      ].slice(0, 6),
+    },
   };
 
   monthCache.set(cacheKey, payload);
@@ -266,12 +338,16 @@ export async function predictCalendarMonth(
 }
 
 export const CALENDAR_MAX_MONTHS_AHEAD = 6;
+export const CALENDAR_MAX_MONTHS_BACK = 2;
 
 export function isMonthNavigable(year: number, month: number): boolean {
   const today = parseJstDate(getJstToday());
   const currentIndex = today.year * 12 + today.month;
   const targetIndex = year * 12 + month;
-  return targetIndex >= currentIndex && targetIndex <= currentIndex + CALENDAR_MAX_MONTHS_AHEAD;
+  return (
+    targetIndex >= currentIndex - CALENDAR_MAX_MONTHS_BACK &&
+    targetIndex <= currentIndex + CALENDAR_MAX_MONTHS_AHEAD
+  );
 }
 
 export function isDateNavigable(dateStr: string): boolean {
@@ -279,12 +355,9 @@ export function isDateNavigable(dateStr: string): boolean {
   if (!match) return false;
   const year = Number(match[1]);
   const month = Number(match[2]);
-  if (!isMonthNavigable(year, month)) return false;
+  return isMonthNavigable(year, month);
+}
 
-  const today = getJstToday();
-  if (compareDateStr(dateStr, today) < 0) {
-    const todayParts = parseJstDate(today);
-    return year === todayParts.year && month === todayParts.month;
-  }
-  return true;
+export function clearCalendarMonthCache(): void {
+  monthCache.clear();
 }

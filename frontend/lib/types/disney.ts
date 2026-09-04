@@ -87,6 +87,16 @@ export interface DisneyDatePrediction {
   mode: "live" | "forecast";
 }
 
+export interface DisneyCalendarDayAccuracy {
+  predictedLevel: CrowdLevel;
+  predictedScore: number;
+  actualLevel: CrowdLevel;
+  actualScore: number;
+  actualAverageWait: number;
+  scoreDelta: number;
+  levelHit: boolean;
+}
+
 export interface DisneyCalendarDay {
   date: string;
   crowdLevel: CrowdLevel;
@@ -98,6 +108,18 @@ export interface DisneyCalendarDay {
   isFuture: boolean;
   factors: string[];
   breakdown: DisneyCrowdBreakdown;
+  /** 過去日のみ: 予測 vs 実績 */
+  accuracy?: DisneyCalendarDayAccuracy | null;
+}
+
+export interface DisneyCalendarAccuracySummary {
+  evaluatedDays: number;
+  hits: number;
+  hitRate: number;
+  meanAbsScoreError: number;
+  latestReviewSummary: string | null;
+  reviewNewsFindings?: string[];
+  rulesChanged?: string[];
 }
 
 /** 混雑要因の数値内訳（0〜100、高いほど混雑寄り） */
@@ -109,6 +131,7 @@ export interface DisneyCrowdBreakdown {
   weather: number;
   event: number;
   regionalPassport: number;
+  shareholderPassport: number;
   otherThemeParks: number;
   metroEvents: number;
   newsBuzz: number;
@@ -124,6 +147,7 @@ export interface DisneyCrowdBreakdown {
     weather: string;
     event: string;
     regionalPassport: string;
+    shareholderPassport: string;
     otherThemeParks: string;
     metroEvents: string;
     newsBuzz: string;
@@ -223,6 +247,7 @@ export interface DisneyCalendarMonth {
   startWeekday: number;
   days: DisneyCalendarDay[];
   today: string;
+  accuracySummary?: DisneyCalendarAccuracySummary;
 }
 
 export type DisneyChatMessage = {

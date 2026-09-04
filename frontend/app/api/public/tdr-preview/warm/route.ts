@@ -1,4 +1,6 @@
 import { warmDisneyShowcaseCache } from "@/lib/server/disney-showcase-cache";
+import { finalizeYesterdayAccuracy } from "@/lib/server/disney-accuracy";
+import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 
 export const maxDuration = 120;
 
@@ -17,8 +19,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    let accuracyCount = 0;
+    try {
+      const accuracy = await finalizeYesterdayAccuracy();
+      accuracyCount = accuracy.records.length;
+      clearCalendarMonthCache();
+    } catch (error) {
+      console.warn("[tdr-preview/warm] accuracy finalize skipped", error);
+    }
+
     const result = await warmDisneyShowcaseCache();
-    return Response.json({ ok: true, ...result });
+    return Response.json({ ok: true, accuracyCount, ...result });
   } catch (error) {
     console.error("[tdr-preview/warm]", error);
     return Response.json(
