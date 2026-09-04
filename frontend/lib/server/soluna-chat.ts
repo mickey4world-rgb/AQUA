@@ -31,9 +31,10 @@ import {
   type SolunaRoutePlan,
 } from "@/lib/server/soluna-router";
 import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-cost-policy";
-import { finalizeSolunaReply, isOpsStyleQuestion } from "@/lib/soluna-reply";
+import { finalizeSolunaReply, isOpsStyleQuestion, isWorldInfoQuestion } from "@/lib/soluna-reply";
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
 import { buildHumanChatBriefingSection } from "@/lib/server/soluna-human-context";
+import { fetchLiveWorldContextForChat } from "@/lib/server/soluna-web-context";
 import { formatModelUsedLabel, resolveModelForProvider } from "@/lib/server/soluna-model-registry";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
@@ -93,11 +94,12 @@ const LUNA_CATEGORIES = new Set<SolunaMemoryCategory>([
 const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性の AI コンパニオンです。
 ユーザーの「目標」「タスク」「成功体験」「趣味（アクティビティ）」を大切に記憶し、前向きに伴走します。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
+世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」があればそれを根拠に答える（無いときは推測で埋めない）。
 
 ## 話し方
 - 日本語・です/ます調。**明るく・楽しく・明晰・賢く**。適度に絵文字を1〜2個（☀️🎯✨など）
 - **必ず完結した文で終える**。テキストチャットでは **2〜4文・おおよそ200〜400文字**（途中で切らない）
-- 状況・ジョブ・他アプリの説明のみ **最大5文・520字まで**
+- 状況・ジョブ・他アプリ・世間ニュースの説明のみ **最大5文・520字まで**
 - 励ましと次の一歩を1つだけ示す（状況質問では事実を先に）
 - ルーナ（月）の話題を否定せず、行動の側から補う
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -106,11 +108,12 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性の AI コンパニオンです。
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
+世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」があればそれを根拠に答える（無いときは推測で埋めない）。
 
 ## 話し方
 - 日本語・です/ます調。**やわらかく・温かく・明晰・賢く**。適度に絵文字を1〜2個（🌙💫🌸など）
 - **必ず完結した文で終える**。テキストチャットでは **2〜4文・おおよそ200〜400文字**（途中で切らない）
-- 状況・ジョブ・他アプリの説明のみ **最大5文・520字まで**
+- 状況・ジョブ・他アプリ・世間ニュースの説明のみ **最大5文・520字まで**
 - 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる
@@ -783,21 +786,30 @@ export async function sendSolunaChat(
   }
 
   const profile = await getOrCreateProfile(userId);
-  const [solMemories, lunaMemories, history, briefing] = await Promise.all([
-    listMemories(userId, "sol"),
-    listMemories(userId, "luna"),
-    listMessages(userId),
-    getBriefingForHumanChat(),
-  ]);
   const opsAsk = isOpsStyleQuestion(trimmed);
-  const briefingSection = await buildHumanChatBriefingSection(briefing, trimmed, {
-    userId,
-    detail: opsAsk ? "full" : "compact",
-  });
+  const worldAsk = isWorldInfoQuestion(trimmed);
+  const [solMemories, lunaMemories, history, briefing, worldContext] =
+    await Promise.all([
+      listMemories(userId, "sol"),
+      listMemories(userId, "luna"),
+      listMessages(userId),
+      getBriefingForHumanChat(),
+      fetchLiveWorldContextForChat(trimmed, { voiceMode }),
+    ]);
+  const briefingSection = [
+    await buildHumanChatBriefingSection(briefing, trimmed, {
+      userId,
+      detail: opsAsk ? "full" : "compact",
+    }),
+    worldContext,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const explainAsk = opsAsk || worldAsk;
   const userPrompt = voiceMode
-    ? `${opsAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリの質問です。事実ベースで70字以内。）" : trimmed}\n\n（※音声会話中です。35〜70字・1〜2文・絵文字なしで返してください。）`
-    : opsAsk
-      ? `${trimmed}\n\n（※状況・ジョブ・他アプリの質問です。system の「ギルド作戦状況」「他アプリの最近の動き」の事実だけを根拠に、520字以内で完結した文で答えてください。）`
+    ? `${explainAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリ・最新情報の質問です。事実ベースで70字以内。）" : trimmed}\n\n（※音声会話中です。35〜70字・1〜2文・絵文字なしで返してください。）`
+    : explainAsk
+      ? `${trimmed}\n\n（※状況・ジョブ・他アプリ・世間の最新情報の質問です。system の「ギルド作戦状況」「他アプリの最近の動き」「最新ウェブ／SNS情報」の事実を根拠に、520字以内で完結した文で答えてください。世間の話題では討伐ネタでごまかさないでください。）`
       : `${trimmed}\n\n（※テキストチャットです。2〜4文・200〜400字程度で、途中で切らず完結した返答にしてください。）`;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
@@ -894,11 +906,11 @@ export async function sendSolunaChat(
   const solContent =
     "error" in solResult
       ? solContentRaw
-      : finalizeSolunaReply(solContentRaw, { ops: opsAsk, voice: voiceMode });
+      : finalizeSolunaReply(solContentRaw, { ops: explainAsk, voice: voiceMode });
   const lunaContent =
     "error" in lunaResult
       ? lunaContentRaw
-      : finalizeSolunaReply(lunaContentRaw, { ops: opsAsk, voice: voiceMode });
+      : finalizeSolunaReply(lunaContentRaw, { ops: explainAsk, voice: voiceMode });
 
   const gain = estimateIntimacyGain(trimmed.length);
   const nextProfile = await saveProfile({

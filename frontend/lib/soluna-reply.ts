@@ -125,3 +125,10 @@ export function isOpsStyleQuestion(message: string): boolean {
     message,
   );
 }
+
+/** 世間ニュース・最新情報を求める質問（返答をやや長くしてよい） */
+export function isWorldInfoQuestion(message: string): boolean {
+  return /ニュース|最新|世間|世の中|トレンド|話題|SNS|ツイッター|Twitter|\bX\b|インスタ|速報|円安|円高|日経|為替|選挙|地震|台風|天気|戦争|停戦|炎上|バズ|発表|リリース/i.test(
+    message,
+  );
+}
