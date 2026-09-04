@@ -1,5 +1,6 @@
 import type { ClientPrincipal } from "@/lib/types/auth";
 import { requireAllowedAuth } from "@/lib/server/auth";
+import { resolveCanonicalPrincipal } from "@/lib/server/users";
 import { logApiAccess } from "@/lib/server/access-log";
 
 export function getRequestStartedAt(): number {
@@ -28,8 +29,10 @@ export async function withApiAccessLog(
   options?: { skipAccessLog?: boolean },
 ): Promise<Response> {
   const startedAt = getRequestStartedAt();
-  const auth = requireAuthOrResponse(request);
-  if (auth instanceof Response) return auth;
+  const authOrResponse = requireAuthOrResponse(request);
+  if (authOrResponse instanceof Response) return authOrResponse;
+
+  const auth = await resolveCanonicalPrincipal(authOrResponse);
 
   try {
     const response = await handler(auth);

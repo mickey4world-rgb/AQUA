@@ -6,6 +6,10 @@ export interface User {
   authProvider: string;
   notifyEmail: string;
   monthlyTokenLimit: number;
+  /** SWA principal.userId の別名（GitHub / Microsoft など） */
+  linkedAuthIds?: string[];
+  /** これまでに使った IdP */
+  authProviders?: string[];
   createdAt: string;
   updatedAt: string;
 }

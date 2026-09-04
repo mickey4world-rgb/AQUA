@@ -1,9 +1,10 @@
-import { isAllowedLogin } from "@/lib/allowed-users";
+import { collectLoginCandidates, isAllowedLogin } from "@/lib/allowed-users";
+import { findLinkedIdentity } from "@/lib/identity-links";
 import type { ClientPrincipal } from "@/lib/types/auth";
 import type { UpdateUserRequest, User } from "@/lib/types/user";
 import { DEFAULT_MONTHLY_TOKEN_LIMIT, getEffectiveMonthlyTokenLimit } from "@/lib/types/user";
-import { getEmailFromPrincipal } from "@/lib/server/auth";
-import { COSMOS_CONTAINERS, getContainer } from "@/lib/server/cosmos";
+import { getEmailFromPrincipal } from "@/lib/client-principal";
+import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 
 export async function getUserById(userId: string): Promise<User | null> {
   try {
@@ -60,6 +61,39 @@ function loginNameFromPrincipal(
   return principal.userDetails;
 }
 
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  const set = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    const trimmed = value.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  return [...set];
+}
+
+async function findUserByEmail(email: string): Promise<User | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) return null;
+  const { resources } = await getContainer(COSMOS_CONTAINERS.users)
+    .items.query<User>({
+      query:
+        "SELECT * FROM c WHERE LOWER(c.email) = @email OR LOWER(c.notifyEmail) = @email",
+      parameters: [{ name: "@email", value: normalized }],
+    })
+    .fetchAll();
+  return resources[0] ?? null;
+}
+
+async function findUserByLinkedAuthId(authId: string): Promise<User | null> {
+  const { resources } = await getContainer(COSMOS_CONTAINERS.users)
+    .items.query<User>({
+      query: "SELECT * FROM c WHERE ARRAY_CONTAINS(c.linkedAuthIds, @authId)",
+      parameters: [{ name: "@authId", value: authId }],
+    })
+    .fetchAll();
+  return resources[0] ?? null;
+}
+
 async function findSeededUserByLoginName(
   loginName: string,
   email: string,
@@ -79,6 +113,32 @@ async function findSeededUserByLoginName(
   return resources[0] ?? null;
 }
 
+/**
+ * 同一人物の既存プロファイルを探す（GitHub / Microsoft を束ねる）。
+ * 正規メールのユーザーを最優先し、既存データの userId を維持する。
+ */
+export async function findCanonicalUserForPrincipal(
+  principal: ClientPrincipal,
+): Promise<User | null> {
+  const rawEmail = getEmailFromPrincipal(principal);
+  const link = findLinkedIdentity(
+    principal.userDetails,
+    rawEmail,
+    ...collectLoginCandidates(principal.userDetails, rawEmail),
+  );
+  const canonicalEmail = link?.email ?? (rawEmail.includes("@") ? rawEmail : "");
+  const canonicalLogin =
+    link?.canonicalLogin ?? loginNameFromPrincipal(principal, rawEmail);
+
+  const byPrincipal = await getUserById(principal.userId);
+  const byLinked = await findUserByLinkedAuthId(principal.userId);
+  const byEmail = canonicalEmail ? await findUserByEmail(canonicalEmail) : null;
+  const bySeed = await findSeededUserByLoginName(canonicalLogin, canonicalEmail || rawEmail);
+
+  // 正規メールのプロファイルを優先（Microsoft 側の既存データ）
+  return byEmail ?? byLinked ?? byPrincipal ?? bySeed;
+}
+
 async function migrateSeededUser(
   seeded: User,
   principal: ClientPrincipal,
@@ -93,6 +153,12 @@ async function migrateSeededUser(
     authProvider: principal.identityProvider,
     notifyEmail: seeded.notifyEmail || email,
     monthlyTokenLimit: seeded.monthlyTokenLimit,
+    linkedAuthIds: uniqueStrings([...(seeded.linkedAuthIds ?? []), principal.userId]),
+    authProviders: uniqueStrings([
+      ...(seeded.authProviders ?? []),
+      seeded.authProvider,
+      principal.identityProvider,
+    ]),
     createdAt: seeded.createdAt,
     updatedAt: now,
   };
@@ -106,43 +172,100 @@ async function migrateSeededUser(
   return resource!;
 }
 
+/**
+ * SWA principal をアプリ内の正規 userId に付け替える。
+ * GitHub mickey4world-rgb → aquaiot@outlook.com の既存プロファイルなど。
+ */
+export async function resolveCanonicalPrincipal(
+  principal: ClientPrincipal,
+): Promise<ClientPrincipal> {
+  if (!isCosmosConfigured()) return principal;
+
+  try {
+    const existing = await findCanonicalUserForPrincipal(principal);
+    if (!existing || existing.userId === principal.userId) {
+      return {
+        ...principal,
+        rawUserId: principal.rawUserId ?? principal.userId,
+      };
+    }
+    return {
+      ...principal,
+      rawUserId: principal.rawUserId ?? principal.userId,
+      userId: existing.userId,
+    };
+  } catch (error) {
+    console.warn("[auth] resolveCanonicalPrincipal failed", error);
+    return principal;
+  }
+}
+
 export async function syncUser(principal: ClientPrincipal): Promise<User> {
-  const email = getEmailFromPrincipal(principal);
-  if (!isAllowedLogin(principal.userDetails, email)) {
+  const rawEmail = getEmailFromPrincipal(principal);
+  if (!isAllowedLogin(principal.userDetails, rawEmail)) {
     throw new Error("FORBIDDEN_USER");
   }
 
+  const link = findLinkedIdentity(
+    principal.userDetails,
+    rawEmail,
+    ...collectLoginCandidates(principal.userDetails, rawEmail),
+  );
+  const email = link?.email ?? rawEmail;
   const now = new Date().toISOString();
-  const existing = await getUserById(principal.userId);
+  const authId = principal.rawUserId ?? principal.userId;
+  const existing = await findCanonicalUserForPrincipal({
+    ...principal,
+    userId: authId,
+  });
 
-  if (existing) {
+  if (existing && !existing.userId.startsWith("user-")) {
     const updated: User = {
       ...existing,
       email,
+      notifyEmail: existing.notifyEmail || email,
       authProvider: principal.identityProvider,
-      monthlyTokenLimit: Math.max(existing.monthlyTokenLimit, DEFAULT_MONTHLY_TOKEN_LIMIT),
+      monthlyTokenLimit: Math.max(
+        existing.monthlyTokenLimit,
+        DEFAULT_MONTHLY_TOKEN_LIMIT,
+      ),
+      linkedAuthIds: uniqueStrings([
+        ...(existing.linkedAuthIds ?? []),
+        authId,
+        existing.userId,
+      ]),
+      authProviders: uniqueStrings([
+        ...(existing.authProviders ?? []),
+        existing.authProvider,
+        principal.identityProvider,
+      ]),
       updatedAt: now,
     };
     const { resource } = await getContainer(COSMOS_CONTAINERS.users)
-      .item(principal.userId, principal.userId)
+      .item(existing.userId, existing.userId)
       .replace(updated);
     return resource!;
   }
 
-  const loginName = loginNameFromPrincipal(principal, email);
-  const seeded = await findSeededUserByLoginName(loginName, email);
-  if (seeded) {
-    return migrateSeededUser(seeded, principal, email, now);
+  if (existing?.userId.startsWith("user-")) {
+    return migrateSeededUser(
+      existing,
+      { ...principal, userId: authId },
+      email,
+      now,
+    );
   }
 
   const newUser: User = {
-    id: principal.userId,
-    userId: principal.userId,
+    id: authId,
+    userId: authId,
     email,
-    displayName: principal.userDetails,
+    displayName: link ? "Mickey" : principal.userDetails,
     authProvider: principal.identityProvider,
     notifyEmail: email,
     monthlyTokenLimit: DEFAULT_MONTHLY_TOKEN_LIMIT,
+    linkedAuthIds: [authId],
+    authProviders: [principal.identityProvider],
     createdAt: now,
     updatedAt: now,
   };

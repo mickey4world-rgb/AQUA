@@ -1,3 +1,5 @@
+import { findLinkedIdentity } from "@/lib/identity-links";
+
 export const ALLOWED_LOGIN_NAMES = [
   "aquaiot",
   "aya_tink",
@@ -30,7 +32,17 @@ export function collectLoginCandidates(
     candidates.add(normalizedEmail.split("@")[0] ?? normalizedEmail);
   }
 
-  return [...candidates];
+  const linked = findLinkedIdentity(...candidates, userDetails, email);
+  if (linked) {
+    candidates.add(normalizeLoginName(linked.canonicalLogin));
+    candidates.add(normalizeLoginName(linked.email));
+    candidates.add(normalizeLoginName(linked.email.split("@")[0] ?? ""));
+    for (const alias of linked.aliases) {
+      candidates.add(normalizeLoginName(alias));
+    }
+  }
+
+  return [...candidates].filter(Boolean);
 }
 
 export function isAllowedLogin(userDetails: string, email?: string): boolean {

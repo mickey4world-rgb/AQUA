@@ -165,8 +165,30 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
         </div>
         <div className="flex gap-2">
           <dt className="font-medium">プロバイダ:</dt>
-          <dd>{user?.authProvider ?? principal.identityProvider}</dd>
+          <dd>
+            {(user?.authProviders?.length
+              ? user.authProviders
+              : [user?.authProvider ?? principal.identityProvider]
+            ).join(" / ")}
+          </dd>
         </div>
+        {user?.authProviders && user.authProviders.length > 1 && (
+            <div className="flex gap-2">
+              <dt className="font-medium">同一アカウント:</dt>
+              <dd>
+                Microsoft / GitHub を同じプロファイルで利用中
+                {user.email ? `（${user.email}）` : ""}
+              </dd>
+            </div>
+          )}
+          {(!user?.authProviders || user.authProviders.length <= 1) &&
+            user?.email === "aquaiot@outlook.com" &&
+            principal.userDetails.toLowerCase() === "mickey4world-rgb" && (
+              <div className="flex gap-2">
+                <dt className="font-medium">同一アカウント:</dt>
+                <dd>GitHub mickey4world-rgb ≒ Microsoft aquaiot@outlook.com</dd>
+              </div>
+            )}
         <div className="flex gap-2">
           <dt className="font-medium">登録日:</dt>
           <dd>
