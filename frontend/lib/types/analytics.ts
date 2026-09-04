@@ -312,16 +312,20 @@ export interface SolunaOpsAnalyticsReport {
     btcHeld: number;
     ethHeld: number;
     xrpHeld: number;
+    xlmHeld: number;
     btcPriceYen: number;
     ethPriceYen: number;
     xrpPriceYen: number;
+    xlmPriceYen: number;
     btcValueYen: number;
     ethValueYen: number;
     xrpValueYen: number;
+    xlmValueYen: number;
     cashAllocationPct: number;
     btcAllocationPct: number;
     ethAllocationPct: number;
     xrpAllocationPct: number;
+    xlmAllocationPct: number;
     previousTotalYen: number;
     dayChangeYen: number;
     monthlyTargetYen: number;
@@ -331,6 +335,7 @@ export interface SolunaOpsAnalyticsReport {
     dragonLevel: number;
     phoenixLevel: number;
     seaDragonLevel: number;
+    silverShipLevel: number;
     monthBuyYen: number;
     monthSellYen: number;
     monthTradeCount: number;

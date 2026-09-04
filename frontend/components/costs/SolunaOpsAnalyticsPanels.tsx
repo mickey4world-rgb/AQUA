@@ -40,7 +40,7 @@ function signedYen(n: number): string {
 
 function formatUnitPrice(product: string | undefined, price: number): string {
   const code = (product ?? "BTC_JPY").replace("_JPY", "");
-  if (code === "XRP") {
+  if (code === "XRP" || code === "XLM") {
     return `${price.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}円`;
   }
   return formatCurrency(price);
@@ -49,6 +49,9 @@ function formatUnitPrice(product: string | undefined, price: number): string {
 function formatHeld(product: string, held: number): string {
   if (product === "XRP_JPY" || product === "XRP") {
     return `${Math.floor(held || 0).toLocaleString("ja-JP")} XRP`;
+  }
+  if (product === "XLM_JPY" || product === "XLM") {
+    return `${Math.floor(held || 0).toLocaleString("ja-JP")} XLM`;
   }
   if (product === "ETH_JPY" || product === "ETH") {
     return `${(held || 0).toFixed(4)} ETH`;
@@ -435,14 +438,14 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 hint={`Lv.${assets.golemLevel.toFixed(1)} · ${formatPercent(assets.cashAllocationPct)}`}
               />
               <Stat
-                label="月次目標(2%)進捗"
+                label="月次目標進捗"
                 value={formatPercent(assets.targetProgressPct)}
-                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}`}
+                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}（下限2,000）`}
               />
               <Stat
                 label="分散ルール"
                 value="下限28%"
-                hint="単一42% / 暗号合計72%（BTC・ETH・XRP）"
+                hint="単一42% / 暗号合計72%（BTC・ETH・XRP・XLM）"
               />
             </div>
 
@@ -471,6 +474,11 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                   style={{ width: `${Math.max(0, assets.xrpAllocationPct)}%` }}
                   title={`XRP ${assets.xrpAllocationPct}%`}
                 />
+                <div
+                  className="bg-emerald-300/80"
+                  style={{ width: `${Math.max(0, assets.xlmAllocationPct)}%` }}
+                  title={`XLM ${assets.xlmAllocationPct}%`}
+                />
               </div>
               <p className="mt-2 text-[11px] text-slate-400">
                 <span className="text-amber-200">現金 {formatPercent(assets.cashAllocationPct)}</span>
@@ -480,10 +488,12 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 <span className="text-violet-200">ETH {formatPercent(assets.ethAllocationPct)}</span>
                 {" · "}
                 <span className="text-cyan-200">XRP {formatPercent(assets.xrpAllocationPct)}</span>
+                {" · "}
+                <span className="text-emerald-200">XLM {formatPercent(assets.xlmAllocationPct)}</span>
               </p>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Stat
                 label="BTC（蒼竜）"
                 value={formatHeld("BTC", assets.btcHeld)}
@@ -498,6 +508,11 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                 label="XRP（海竜）"
                 value={formatHeld("XRP", assets.xrpHeld)}
                 hint={`${formatCurrency(assets.xrpValueYen)} · Lv.${assets.seaDragonLevel.toFixed(1)} · ${formatUnitPrice("XRP_JPY", assets.xrpPriceYen)}`}
+              />
+              <Stat
+                label="XLM（銀帆船）"
+                value={formatHeld("XLM", assets.xlmHeld)}
+                hint={`${formatCurrency(assets.xlmValueYen)} · Lv.${assets.silverShipLevel.toFixed(1)} · ${formatUnitPrice("XLM_JPY", assets.xlmPriceYen)}`}
               />
             </div>
 
@@ -597,10 +612,14 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               />
             </div>
 
-            {(assets.btcPriceYen > 0 || assets.ethPriceYen > 0 || assets.xrpPriceYen > 0) && (
+            {(assets.btcPriceYen > 0 ||
+              assets.ethPriceYen > 0 ||
+              assets.xrpPriceYen > 0 ||
+              assets.xlmPriceYen > 0) && (
               <div className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
                 BTC {formatCurrency(assets.btcPriceYen)} · ETH {formatCurrency(assets.ethPriceYen)} ·
-                XRP {formatUnitPrice("XRP_JPY", assets.xrpPriceYen)}
+                XRP {formatUnitPrice("XRP_JPY", assets.xrpPriceYen)} · XLM{" "}
+                {formatUnitPrice("XLM_JPY", assets.xlmPriceYen)}
                 {" · "}元本 {formatCurrency(assets.principalYen)}
               </div>
             )}
