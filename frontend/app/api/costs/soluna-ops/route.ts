@@ -1,5 +1,5 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
-import { buildSolunaOpsAnalyticsReport } from "@/lib/server/soluna-ops-analytics";
+import { getSolunaOpsAnalyticsReport } from "@/lib/server/soluna-ops-analytics";
 import { isSolunaSystemStorageConfigured } from "@/lib/server/soluna-system-store";
 
 function parseMonth(raw: string | null): string {
@@ -11,33 +11,38 @@ function parseMonth(raw: string | null): string {
 }
 
 export async function GET(request: Request) {
-  return withApiAccessLog(request, async () => {
-    if (!isSolunaSystemStorageConfigured()) {
-      return Response.json(
-        { error: "Cosmos DB が未設定のため Soluna 運用分析を読み込めません。" },
-        { status: 503 },
-      );
-    }
+  return withApiAccessLog(
+    request,
+    async () => {
+      if (!isSolunaSystemStorageConfigured()) {
+        return Response.json(
+          { error: "Cosmos DB が未設定のため Soluna 運用分析を読み込めません。" },
+          { status: 503 },
+        );
+      }
 
-    const month = parseMonth(new URL(request.url).searchParams.get("month"));
-    try {
-      const report = await buildSolunaOpsAnalyticsReport(month);
-      return Response.json(report, {
-        headers: {
-          "Cache-Control": "private, max-age=180, stale-while-revalidate=600",
-        },
-      });
-    } catch (error) {
-      console.error("[api/costs/soluna-ops]", error);
-      return Response.json(
-        {
-          error:
-            error instanceof Error
-              ? `Soluna 運用分析の取得に失敗しました: ${error.message}`
-              : "Soluna 運用分析の取得に失敗しました。",
-        },
-        { status: 500 },
-      );
-    }
-  });
+      const month = parseMonth(new URL(request.url).searchParams.get("month"));
+      try {
+        const report = await getSolunaOpsAnalyticsReport(month);
+        return Response.json(report, {
+          headers: {
+            "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
+            "X-Costs-Source": "soluna-ops-cache",
+          },
+        });
+      } catch (error) {
+        console.error("[api/costs/soluna-ops]", error);
+        return Response.json(
+          {
+            error:
+              error instanceof Error
+                ? `Soluna 運用分析の取得に失敗しました: ${error.message}`
+                : "Soluna 運用分析の取得に失敗しました。",
+          },
+          { status: 500 },
+        );
+      }
+    },
+    { skipAccessLog: true },
+  );
 }

@@ -38,12 +38,24 @@ export async function POST(request: Request) {
 
   try {
     const assets = await runAssetTradeTick();
+    // コスト画面用スナップショットをバッチ更新（開くたびに外部 API を叩かない）
+    try {
+      const { warmSolunaOpsAnalyticsReport } = await import(
+        "@/lib/server/soluna-ops-analytics"
+      );
+      await warmSolunaOpsAnalyticsReport();
+    } catch (warmError) {
+      console.warn("[cron/asset-trade] soluna-ops warm failed", warmError);
+    }
     return Response.json({
       ok: true,
       sleepMode: assets.sleepMode,
       battleMode: assets.battleMode,
       totalYen: assets.totalYen,
       btcPriceYen: assets.btcPriceYen,
+      ethPriceYen: assets.ethPriceYen,
+      xrpPriceYen: assets.xrpPriceYen,
+      xlmPriceYen: assets.xlmPriceYen,
       monthlyRealizedPnlYen: assets.monthlyRealizedPnlYen,
       monthlyTargetYen: assets.monthlyTargetYen,
       lastTrade: assets.trades[assets.trades.length - 1] ?? null,

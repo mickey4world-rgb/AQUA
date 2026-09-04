@@ -187,14 +187,25 @@ function buildHourlyBuckets(
   return [...byHour.values()].sort((a, b) => a.hour - b.hour);
 }
 
+export type BuildSolunaOpsOptions = {
+  /** true: 公開板で価格を補完（バッチ更新時） */
+  refreshLivePrices?: boolean;
+  /** true: Note PV/詳細を取得（バッチ更新時） */
+  includeLiveNoteStats?: boolean;
+};
+
 export async function buildSolunaOpsAnalyticsReport(
   month: string,
+  options: BuildSolunaOpsOptions = {},
 ): Promise<SolunaOpsAnalyticsReport> {
+  const refreshLivePrices = options.refreshLivePrices === true;
+  const includeLiveNoteStats = options.includeLiveNoteStats === true;
+
   const [assets, settlement, boincRuns, note] = await Promise.all([
     getSystemAssets(),
     getSystemSettlement(),
     listSystemBoincRuns(90),
-    buildSolunaNoteOpsReport(month),
+    buildSolunaNoteOpsReport(month, { includeLiveStats: includeLiveNoteStats }),
   ]);
 
   const allTrades = assets?.trades ?? [];
@@ -214,13 +225,26 @@ export async function buildSolunaOpsAnalyticsReport(
   const todayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === todayKey);
   const yesterdayTrades = allTrades.filter((t) => jstDateKey(t.createdAt) === yesterdayKey);
 
-  // 台帳に価格がまだ無い場合でも公開板で補完し、配分を正しく出す
-  const [liveBtc, liveEth, liveXrp, liveXlm] = await Promise.all([
-    fetchPublicLtp("BTC_JPY"),
-    fetchPublicLtp("ETH_JPY"),
-    fetchPublicLtp("XRP_JPY"),
-    fetchPublicLtp("XLM_JPY"),
-  ]);
+  // 画面表示時は台帳価格を優先。バッチ更新時、または台帳に価格が無いときだけ公開板へ。
+  let liveBtc = 0;
+  let liveEth = 0;
+  let liveXrp = 0;
+  let liveXlm = 0;
+  const hasLedgerPrices =
+    (assets?.btcPriceYen ?? 0) > 0 ||
+    (assets?.ethPriceYen ?? 0) > 0 ||
+    (assets?.xrpPriceYen ?? 0) > 0 ||
+    (assets?.xlmPriceYen ?? 0) > 0;
+
+  if (refreshLivePrices || !hasLedgerPrices) {
+    [liveBtc, liveEth, liveXrp, liveXlm] = await Promise.all([
+      fetchPublicLtp("BTC_JPY"),
+      fetchPublicLtp("ETH_JPY"),
+      fetchPublicLtp("XRP_JPY"),
+      fetchPublicLtp("XLM_JPY"),
+    ]);
+  }
+
   const btcPrice = (assets?.btcPriceYen && assets.btcPriceYen > 0 ? assets.btcPriceYen : liveBtc) || 0;
   const ethPrice = (assets?.ethPriceYen && assets.ethPriceYen > 0 ? assets.ethPriceYen : liveEth) || 0;
   const xrpPrice = (assets?.xrpPriceYen && assets.xrpPriceYen > 0 ? assets.xrpPriceYen : liveXrp) || 0;
@@ -368,4 +392,41 @@ export async function buildSolunaOpsAnalyticsReport(
         }
       : null,
   };
+}
+
+function currentUtcMonth(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** コスト画面用: キャッシュ優先で返す（外部 API は叩かない） */
+export async function getSolunaOpsAnalyticsReport(
+  month: string,
+): Promise<SolunaOpsAnalyticsReport> {
+  const { readSolunaOpsCache, writeCosmosSolunaOpsCache } = await import(
+    "@/lib/server/soluna-ops-cache"
+  );
+
+  const cached = await readSolunaOpsCache(month, true);
+  if (cached) return cached;
+
+  const report = await buildSolunaOpsAnalyticsReport(month, {
+    refreshLivePrices: false,
+    includeLiveNoteStats: false,
+  });
+  await writeCosmosSolunaOpsCache(month, report);
+  return report;
+}
+
+/** バッチ更新: 公開板・Note を含めて再構築してキャッシュする */
+export async function warmSolunaOpsAnalyticsReport(
+  month = currentUtcMonth(),
+): Promise<SolunaOpsAnalyticsReport> {
+  const { writeCosmosSolunaOpsCache } = await import("@/lib/server/soluna-ops-cache");
+  const report = await buildSolunaOpsAnalyticsReport(month, {
+    refreshLivePrices: true,
+    includeLiveNoteStats: true,
+  });
+  await writeCosmosSolunaOpsCache(month, report);
+  return report;
 }

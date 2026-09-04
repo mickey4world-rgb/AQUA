@@ -402,6 +402,17 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">Assets</p>
             <h3 className="mt-1 text-lg font-semibold text-white">資産運用分析</h3>
+            {report.updatedAt ? (
+              <p className="mt-1 text-[11px] text-slate-500">
+                スナップショット更新:{" "}
+                {new Date(report.updatedAt).toLocaleString("ja-JP", {
+                  timeZone: "Asia/Tokyo",
+                })}
+                （BTC/ETH/XRP/XLM · 裏稼働バッチ）
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-slate-500">BTC / ETH / XRP / XLM</p>
+            )}
           </div>
           {assets && (
             <div className="flex flex-wrap gap-2 text-[11px]">

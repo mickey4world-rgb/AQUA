@@ -103,7 +103,11 @@ function inMonth(iso: string | undefined, month: string): boolean {
   return iso.slice(0, 7) === month;
 }
 
-export async function buildSolunaNoteOpsReport(month: string): Promise<SolunaOpsNoteReport> {
+export async function buildSolunaNoteOpsReport(
+  month: string,
+  options?: { includeLiveStats?: boolean },
+): Promise<SolunaOpsNoteReport> {
+  const includeLiveStats = options?.includeLiveStats !== false;
   const articles = await listSystemNoteArticles(60);
   const monthArticles = articles.filter((a) => inMonth(a.createdAt, month));
   const publishedMonth = monthArticles.filter((a) => a.published);
@@ -114,7 +118,7 @@ export async function buildSolunaNoteOpsReport(month: string): Promise<SolunaOps
   let monthPvTotal = 0;
   let allPvTotal = 0;
 
-  if (isNotePublishConfigured()) {
+  if (includeLiveStats && isNotePublishConfigured()) {
     try {
       const [monthly, all] = await Promise.all([
         fetchNotePvRows("monthly"),
@@ -135,23 +139,26 @@ export async function buildSolunaNoteOpsReport(month: string): Promise<SolunaOps
   }
 
   const topFromStats: SolunaOpsNoteArticleRow[] = [];
-  for (const row of pvRows.slice(0, 12)) {
-    const key = pickKey(row);
-    if (!key) continue;
-    const detail = await fetchNoteDetailStats(key);
-    topFromStats.push({
-      id: key,
-      title: row.name || row.title || key,
-      createdAt: detail.publishAt || row.publish_at || row.published_at || null,
-      published: true,
-      noteKey: key,
-      noteUrl: `https://note.com/n/${key}`,
-      priceYen: detail.priceYen ?? row.price ?? null,
-      error: null,
-      viewCount: pickPv(row),
-      likeCount: detail.likeCount ?? row.like_count ?? null,
-      commentCount: row.comment_count ?? null,
-    });
+  if (includeLiveStats) {
+    // 詳細 API は件数を抑えてコストを抑える（バッチ更新時のみ）
+    for (const row of pvRows.slice(0, 6)) {
+      const key = pickKey(row);
+      if (!key) continue;
+      const detail = await fetchNoteDetailStats(key);
+      topFromStats.push({
+        id: key,
+        title: row.name || row.title || key,
+        createdAt: detail.publishAt || row.publish_at || row.published_at || null,
+        published: true,
+        noteKey: key,
+        noteUrl: `https://note.com/n/${key}`,
+        priceYen: detail.priceYen ?? row.price ?? null,
+        error: null,
+        viewCount: pickPv(row),
+        likeCount: detail.likeCount ?? row.like_count ?? null,
+        commentCount: row.comment_count ?? null,
+      });
+    }
   }
 
   const fromLedger: SolunaOpsNoteArticleRow[] = monthArticles.slice(0, 20).map((a) => {

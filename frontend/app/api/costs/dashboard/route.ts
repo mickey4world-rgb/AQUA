@@ -7,14 +7,18 @@ export async function GET(request: Request) {
     return Response.json({ error: "ServiceUnavailable" }, { status: 503 });
   }
 
-  return withApiAccessLog(request, async (auth) => {
-    const { searchParams } = new URL(request.url);
-    const month = searchParams.get("month");
-    const dashboard = await buildCostDashboard(auth.userId, month);
-    return Response.json(dashboard, {
-      headers: {
-        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
-      },
-    });
-  });
+  return withApiAccessLog(
+    request,
+    async (auth) => {
+      const { searchParams } = new URL(request.url);
+      const month = searchParams.get("month");
+      const dashboard = await buildCostDashboard(auth.userId, month);
+      return Response.json(dashboard, {
+        headers: {
+          "Cache-Control": "private, max-age=600, stale-while-revalidate=1800",
+        },
+      });
+    },
+    { skipAccessLog: true },
+  );
 }
