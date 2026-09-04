@@ -50,6 +50,10 @@ export async function GET(request: Request) {
           sectors: PAYEE_SECTORS.map((item) => ({ id: item.id, label: item.label })),
           topPayees: summary.topPayees.slice(0, 20),
           houjinEnabled: isAddressLookupReady(),
+        }, {
+          headers: {
+            "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
+          },
         });
       }
 
@@ -64,7 +68,7 @@ export async function GET(request: Request) {
       });
       return Response.json(result, {
         headers: {
-          "Cache-Control": "private, max-age=120, stale-while-revalidate=600",
+          "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
         },
       });
     } catch (error) {

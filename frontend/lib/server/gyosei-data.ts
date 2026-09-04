@@ -28,6 +28,27 @@ const PENDING_YEARS = [2023, 2024, 2025];
 let summaryCache: GyoseiSummary | null = null;
 const yearCache = new Map<number, GyoseiYearDataset>();
 
+/** フィルタ結果のメモリキャッシュ（同梱データは静的） */
+const QUERY_TTL_MS = 60 * 60 * 1000;
+const queryResultCache = new Map<
+  string,
+  { builtAt: number; result: MoneyFlowResponse }
+>();
+const queryInflight = new Map<string, Promise<MoneyFlowResponse>>();
+
+function moneyFlowCacheKey(filters: MoneyFlowFilters): string {
+  return [
+    filters.year,
+    filters.ministry?.trim() ?? "",
+    filters.payee?.trim() ?? "",
+    filters.sector?.trim() ?? "",
+    filters.focusKind ?? "",
+    filters.focusValue?.trim() ?? "",
+    filters.limit ?? "",
+    filters.rowMode ?? "",
+  ].join("|");
+}
+
 export function loadGyoseiSummary(): GyoseiSummary {
   if (!summaryCache) {
     summaryCache = JSON.parse(
@@ -62,6 +83,30 @@ export function loadGyoseiYear(year: number): GyoseiYearDataset | null {
 }
 
 export async function queryMoneyFlow(
+  filters: MoneyFlowFilters,
+): Promise<MoneyFlowResponse> {
+  const cacheKey = moneyFlowCacheKey(filters);
+  const cached = queryResultCache.get(cacheKey);
+  if (cached && Date.now() - cached.builtAt < QUERY_TTL_MS) {
+    return cached.result;
+  }
+
+  const inflight = queryInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const promise = queryMoneyFlowUncached(filters)
+    .then((result) => {
+      queryResultCache.set(cacheKey, { builtAt: Date.now(), result });
+      return result;
+    })
+    .finally(() => {
+      queryInflight.delete(cacheKey);
+    });
+  queryInflight.set(cacheKey, promise);
+  return promise;
+}
+
+async function queryMoneyFlowUncached(
   filters: MoneyFlowFilters,
 ): Promise<MoneyFlowResponse> {
   const summary = loadGyoseiSummary();
@@ -319,31 +364,76 @@ function buildFlowDetailRows(
   dataset: GyoseiYearDataset,
   matchingFlowIndexes: number[],
 ) {
-  return matchingFlowIndexes
-    .slice()
-    .sort((a, b) => dataset.flows[b][2] - dataset.flows[a][2])
-    .slice(0, MAX_ROWS)
-    .map((index) => {
-      const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, rawWork] =
-        dataset.flows[index];
-      const project = dataset.projects[projectIndex];
-      const { work, address } = splitWorkAndAddress(rawWork || "");
-      return {
-        ministry: dataset.dictionaries.ministries[project[0]],
-        project: project[1],
-        projectNumber: project[5],
-        payee: dataset.dictionaries.payees[payeeIndex],
-        amount,
-        block,
-        contract:
-          contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null,
-        work,
-        address: address || undefined,
-        corpNumber: corpNumber || undefined,
-        aggregated: false,
-        flowCount: 1,
-      };
-    });
+  // 全件ソートは重いので上位 MAX_ROWS だけ抽出
+  const topIndexes =
+    matchingFlowIndexes.length <= MAX_ROWS
+      ? matchingFlowIndexes
+          .slice()
+          .sort((a, b) => dataset.flows[b][2] - dataset.flows[a][2])
+      : pickTopFlowIndexes(dataset, matchingFlowIndexes, MAX_ROWS);
+
+  return topIndexes.map((index) => {
+    const [projectIndex, payeeIndex, amount, block, contractIndex, corpNumber, rawWork] =
+      dataset.flows[index];
+    const project = dataset.projects[projectIndex];
+    const { work, address } = splitWorkAndAddress(rawWork || "");
+    return {
+      ministry: dataset.dictionaries.ministries[project[0]],
+      project: project[1],
+      projectNumber: project[5],
+      payee: dataset.dictionaries.payees[payeeIndex],
+      amount,
+      block,
+      contract:
+        contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null,
+      work,
+      address: address || undefined,
+      corpNumber: corpNumber || undefined,
+      aggregated: false,
+      flowCount: 1,
+    };
+  });
+}
+
+function pickTopFlowIndexes(
+  dataset: GyoseiYearDataset,
+  indexes: number[],
+  limit: number,
+): number[] {
+  const heap: number[] = [];
+  const amountOf = (index: number) => dataset.flows[index][2];
+
+  for (const index of indexes) {
+    if (heap.length < limit) {
+      heap.push(index);
+      if (heap.length === limit) {
+        heap.sort((a, b) => amountOf(a) - amountOf(b));
+      }
+      continue;
+    }
+    if (amountOf(index) <= amountOf(heap[0]!)) continue;
+    heap[0] = index;
+    // 最小を先頭に戻す（簡易 heapify）
+    let i = 0;
+    while (true) {
+      const left = i * 2 + 1;
+      const right = left + 1;
+      let smallest = i;
+      if (left < heap.length && amountOf(heap[left]!) < amountOf(heap[smallest]!)) {
+        smallest = left;
+      }
+      if (right < heap.length && amountOf(heap[right]!) < amountOf(heap[smallest]!)) {
+        smallest = right;
+      }
+      if (smallest === i) break;
+      const tmp = heap[i]!;
+      heap[i] = heap[smallest]!;
+      heap[smallest] = tmp;
+      i = smallest;
+    }
+  }
+
+  return heap.sort((a, b) => amountOf(b) - amountOf(a));
 }
 
 function buildPayeeAggregateRows(
