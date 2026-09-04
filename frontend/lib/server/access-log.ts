@@ -268,6 +268,31 @@ export async function getDailyAccessCounts(
   }
 }
 
+export async function listAccessLogsInRange(
+  monthStart: string,
+  monthEnd: string,
+  limit = 8000,
+): Promise<AccessLog[]> {
+  if (!isCosmosConfigured()) return [];
+
+  try {
+    const { resources } = await accessLogContainer()
+      .items.query<AccessLog>({
+        query:
+          "SELECT * FROM c WHERE c.createdAt >= @monthStart AND c.createdAt < @monthEnd ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
+        parameters: [
+          { name: "@monthStart", value: monthStart },
+          { name: "@monthEnd", value: monthEnd },
+          { name: "@limit", value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  } catch {
+    return [];
+  }
+}
+
 export function logApiAccess(
   request: Request,
   userId: string,

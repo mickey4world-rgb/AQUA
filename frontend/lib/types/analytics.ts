@@ -140,12 +140,22 @@ export interface AccessAnalyticsReport {
   byUser: AccessAnalyticsUserSummary[];
   byPage: AccessAnalyticsPageSummary[];
   byUserPage: AccessAnalyticsUserPageRow[];
+  byDay: Array<{ date: string; apiCalls: number; uniqueUsers: number }>;
+  byApp: Array<{
+    app: string;
+    appLabel: string;
+    apiCalls: number;
+    uniqueUsers: number;
+  }>;
   recentAccess: AccessAnalyticsRecentRow[];
 }
 
 export interface PublicAccessAnalyticsPageSummary {
   pathname: string;
   pageLabel: string;
+  pageGroup: string;
+  pageGroupLabel: string;
+  section: string | null;
   pageViews: number;
   uniqueVisitors: number;
 }
@@ -161,13 +171,30 @@ export interface PublicAccessAnalyticsReferrerRow {
   count: number;
 }
 
+export interface PublicAccessAnalyticsBucketRow {
+  key: string;
+  label: string;
+  pageViews: number;
+  uniqueVisitors: number;
+}
+
 export interface PublicAccessAnalyticsRecentRow {
   id: string;
   pathname: string;
   pageLabel: string;
+  pageGroup: string;
+  section: string | null;
   visitorMask: string;
   referrer: string;
   device: string;
+  browser: string;
+  os: string;
+  language: string;
+  timezone: string;
+  screen: string;
+  country: string;
+  region: string;
+  city: string;
   createdAt: string;
 }
 
@@ -179,11 +206,23 @@ export interface PublicAccessAnalyticsReport {
     pageViews: number;
     uniqueVisitors: number;
     uniquePages: number;
+    /** 同一訪問者を含む PV（= pageViews） */
+    pageViewsIncludingRepeats: number;
+    /** 同一訪問者を除いた UU */
+    uniqueVisitorsExcludingRepeats: number;
   };
   byPage: PublicAccessAnalyticsPageSummary[];
+  byGroup: PublicAccessAnalyticsBucketRow[];
   byDay: PublicAccessAnalyticsDayPoint[];
   byReferrer: PublicAccessAnalyticsReferrerRow[];
+  byBrowser: PublicAccessAnalyticsBucketRow[];
+  byOs: PublicAccessAnalyticsBucketRow[];
+  byDevice: PublicAccessAnalyticsBucketRow[];
+  byCountry: PublicAccessAnalyticsBucketRow[];
+  byLanguage: PublicAccessAnalyticsBucketRow[];
+  byTimezone: PublicAccessAnalyticsBucketRow[];
   recentViews: PublicAccessAnalyticsRecentRow[];
+  notes: string[];
 }
 
 /** Soluna 資産運用・BOINC 運用分析（コストダッシュボード用） */

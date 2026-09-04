@@ -238,6 +238,100 @@ function RecentAccessList({ report }: { report: AccessAnalyticsReport }) {
   );
 }
 
+function InternalCharts({ report }: { report: AccessAnalyticsReport }) {
+  const maxDay = Math.max(1, ...report.byDay.map((d) => d.apiCalls));
+  const maxApp = Math.max(1, ...report.byApp.map((d) => d.apiCalls));
+  const maxUser = Math.max(1, ...report.byUser.map((d) => d.apiCalls));
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className={`${costsPanelClass} overflow-hidden`}>
+        <div className="border-b border-white/10 px-5 py-4">
+          <h2 className="text-sm font-semibold text-white">日別 API 呼び出し</h2>
+          <p className="mt-1 text-xs text-slate-500">同一ユーザー含む · 棒の長さは呼び出し回数</p>
+        </div>
+        {report.byDay.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-slate-500">データがありません。</p>
+        ) : (
+          <div className="space-y-2 px-5 py-4">
+            {report.byDay.map((row) => (
+              <div key={row.date}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-mono text-slate-400">{row.date}</span>
+                  <span className="text-slate-300">
+                    {row.apiCalls} 回 · {row.uniqueUsers} 人
+                  </span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-300 to-orange-400"
+                    style={{ width: `${(row.apiCalls / maxDay) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={`${costsPanelClass} overflow-hidden`}>
+        <div className="border-b border-white/10 px-5 py-4">
+          <h2 className="text-sm font-semibold text-white">アプリ別利用</h2>
+          <p className="mt-1 text-xs text-slate-500">モジュールごとの内部 API 集計</p>
+        </div>
+        {report.byApp.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-slate-500">データがありません。</p>
+        ) : (
+          <div className="space-y-2 px-5 py-4">
+            {report.byApp.map((row) => (
+              <div key={row.app}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-slate-300">{row.appLabel}</span>
+                  <span className="font-mono text-amber-200">
+                    {row.apiCalls} · UU {row.uniqueUsers}
+                  </span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-amber-300"
+                    style={{ width: `${(row.apiCalls / maxApp) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={`${costsPanelClass} overflow-hidden lg:col-span-2`}>
+        <div className="border-b border-white/10 px-5 py-4">
+          <h2 className="text-sm font-semibold text-white">ユーザー別利用量</h2>
+        </div>
+        {report.byUser.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-slate-500">データがありません。</p>
+        ) : (
+          <div className="space-y-2 px-5 py-4">
+            {report.byUser.slice(0, 12).map((row) => (
+              <div key={row.userId}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-slate-300">{row.displayName}</span>
+                  <span className="font-mono text-amber-200">{row.apiCalls}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-amber-300"
+                    style={{ width: `${(row.apiCalls / maxUser) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type AccessAnalyticsPanelsProps = {
   report: AccessAnalyticsReport;
 };
@@ -246,6 +340,7 @@ export default function AccessAnalyticsPanels({ report }: AccessAnalyticsPanelsP
   return (
     <div className="space-y-6">
       <SummaryCards report={report} />
+      <InternalCharts report={report} />
       <UserTable rows={report.byUser} />
       <PageTable rows={report.byPage} />
       <UserPageMatrix rows={report.byUserPage} />

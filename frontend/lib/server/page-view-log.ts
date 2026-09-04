@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "crypto";
-import { publicPageLabel } from "@/lib/public-pages";
+import {
+  parseUserAgent,
+  primaryLanguage,
+} from "@/lib/client-hints";
+import {
+  publicPageGroup,
+  publicPageLabel,
+} from "@/lib/public-pages";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { PageViewLog, RecordPageViewInput } from "@/lib/types/page-view-log";
 
@@ -15,13 +22,31 @@ export function maskVisitorKey(visitorKey: string): string {
 export async function recordPageView(input: RecordPageViewInput): Promise<void> {
   if (!isCosmosConfigured()) return;
 
+  const ua = parseUserAgent(input.userAgent);
+  const section = input.section?.trim() || null;
+  const language =
+    input.language?.trim() ||
+    primaryLanguage(input.acceptLanguage) ||
+    null;
+
   const record: PageViewLog = {
     id: randomUUID(),
     pathname: input.pathname,
-    pageLabel: publicPageLabel(input.pathname),
+    pageLabel: publicPageLabel(input.pathname, section),
+    pageGroup: publicPageGroup(input.pathname, section),
+    section,
     visitorKey: input.visitorKey.slice(0, 128),
     referrer: input.referrer?.slice(0, 512) ?? null,
-    userAgent: input.userAgent?.slice(0, 256) ?? null,
+    userAgent: input.userAgent?.slice(0, 320) ?? null,
+    browser: ua.browser,
+    os: ua.os,
+    deviceType: ua.deviceType,
+    language: language?.slice(0, 32) ?? null,
+    timezone: input.timezone?.slice(0, 64) ?? null,
+    screen: input.screen?.slice(0, 32) ?? null,
+    country: input.country?.slice(0, 8) ?? null,
+    region: input.region?.slice(0, 64) ?? null,
+    city: input.city?.slice(0, 64) ?? null,
     createdAt: new Date().toISOString(),
   };
 
@@ -29,6 +54,31 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
     await pageViewContainer().items.create(record);
   } catch {
     // Logging must not break page loads.
+  }
+}
+
+export async function listPageViewsInRange(
+  monthStart: string,
+  monthEnd: string,
+  limit = 8000,
+): Promise<PageViewLog[]> {
+  if (!isCosmosConfigured()) return [];
+
+  try {
+    const { resources } = await pageViewContainer()
+      .items.query<PageViewLog>({
+        query:
+          "SELECT * FROM c WHERE c.createdAt >= @monthStart AND c.createdAt < @monthEnd ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
+        parameters: [
+          { name: "@monthStart", value: monthStart },
+          { name: "@monthEnd", value: monthEnd },
+          { name: "@limit", value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  } catch {
+    return [];
   }
 }
 
@@ -176,23 +226,5 @@ export async function listRecentPageViews(
   monthEnd: string,
   limit = 80,
 ): Promise<PageViewLog[]> {
-  if (!isCosmosConfigured()) return [];
-
-  try {
-    const { resources } = await pageViewContainer()
-      .items.query<PageViewLog>({
-        query:
-          "SELECT * FROM c WHERE c.createdAt >= @monthStart AND c.createdAt < @monthEnd ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit",
-        parameters: [
-          { name: "@monthStart", value: monthStart },
-          { name: "@monthEnd", value: monthEnd },
-          { name: "@limit", value: limit },
-        ],
-      })
-      .fetchAll();
-
-    return resources;
-  } catch {
-    return [];
-  }
+  return listPageViewsInRange(monthStart, monthEnd, limit);
 }

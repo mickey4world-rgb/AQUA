@@ -1,19 +1,19 @@
+import { parseUserAgent } from "@/lib/client-hints";
+import { PAGE_GROUP_LABELS, publicPageGroup, publicPageLabel } from "@/lib/public-pages";
 import {
-  getDailyPageViewCounts,
-  getDailyPageViewVisitorKeys,
-  getPageViewStatsByPath,
-  getPageViewVisitorRows,
-  getReferrerStats,
-  listRecentPageViews,
+  listPageViewsInRange,
   maskVisitorKey,
 } from "@/lib/server/page-view-log";
-import { publicPageLabel } from "@/lib/public-pages";
 import {
   monthEndIso,
   monthStartIso,
   parseMonthParam,
 } from "@/lib/server/token-usage";
-import type { PublicAccessAnalyticsReport } from "@/lib/types/analytics";
+import type {
+  PublicAccessAnalyticsBucketRow,
+  PublicAccessAnalyticsReport,
+} from "@/lib/types/analytics";
+import type { PageViewLog } from "@/lib/types/page-view-log";
 
 function monthLabel(date: Date): string {
   return date.toLocaleDateString("ja-JP", {
@@ -39,15 +39,47 @@ function normalizeReferrer(referrer: string | null): string {
   }
 }
 
-function simplifyUserAgent(userAgent: string | null): string {
-  if (!userAgent) return "不明";
-  if (/iPhone|iPad/i.test(userAgent)) return "iOS";
-  if (/Android/i.test(userAgent)) return "Android";
-  if (/Edg\//i.test(userAgent)) return "Edge";
-  if (/Chrome/i.test(userAgent)) return "Chrome";
-  if (/Safari/i.test(userAgent)) return "Safari";
-  if (/Firefox/i.test(userAgent)) return "Firefox";
-  return "その他";
+function pageKey(view: PageViewLog): string {
+  return view.section ? `${view.pathname}#${view.section}` : view.pathname;
+}
+
+function accumulateBucket(
+  map: Map<string, { pageViews: number; visitors: Set<string> }>,
+  key: string,
+  visitorKey: string,
+) {
+  const entry = map.get(key) ?? { pageViews: 0, visitors: new Set<string>() };
+  entry.pageViews += 1;
+  entry.visitors.add(visitorKey);
+  map.set(key, entry);
+}
+
+function toBucketRows(
+  map: Map<string, { pageViews: number; visitors: Set<string> }>,
+  labelOf?: (key: string) => string,
+  limit = 12,
+): PublicAccessAnalyticsBucketRow[] {
+  return [...map.entries()]
+    .map(([key, value]) => ({
+      key,
+      label: labelOf ? labelOf(key) : key,
+      pageViews: value.pageViews,
+      uniqueVisitors: value.visitors.size,
+    }))
+    .sort((a, b) => b.pageViews - a.pageViews)
+    .slice(0, limit);
+}
+
+function resolveBrowser(view: PageViewLog): string {
+  return view.browser || parseUserAgent(view.userAgent).browser;
+}
+
+function resolveOs(view: PageViewLog): string {
+  return view.os || parseUserAgent(view.userAgent).os;
+}
+
+function resolveDevice(view: PageViewLog): string {
+  return view.deviceType || parseUserAgent(view.userAgent).deviceType;
 }
 
 export async function buildPublicAccessAnalyticsReport(
@@ -57,51 +89,73 @@ export async function buildPublicAccessAnalyticsReport(
   const start = monthStartIso(monthDate);
   const end = monthEndIso(monthDate);
 
-  const [byPathRaw, visitorRows, dailyRaw, dailyVisitorKeys, referrerRaw, recentRaw] =
-    await Promise.all([
-      getPageViewStatsByPath(start, end),
-      getPageViewVisitorRows(start, end),
-      getDailyPageViewCounts(start, end),
-      getDailyPageViewVisitorKeys(start, end),
-      getReferrerStats(start, end),
-      listRecentPageViews(start, end, 80),
-    ]);
+  const views = await listPageViewsInRange(start, end, 8000);
 
-  const uniqueByPath = new Map<string, Set<string>>();
+  const byPageMap = new Map<
+    string,
+    {
+      pathname: string;
+      section: string | null;
+      pageLabel: string;
+      pageGroup: string;
+      pageViews: number;
+      visitors: Set<string>;
+    }
+  >();
+  const byGroup = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byDay = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byReferrer = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byBrowser = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byOs = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byDevice = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byCountry = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byLanguage = new Map<string, { pageViews: number; visitors: Set<string> }>();
+  const byTimezone = new Map<string, { pageViews: number; visitors: Set<string> }>();
   const globalVisitors = new Set<string>();
 
-  for (const row of visitorRows) {
-    globalVisitors.add(row.visitorKey);
-    const set = uniqueByPath.get(row.pathname) ?? new Set<string>();
-    set.add(row.visitorKey);
-    uniqueByPath.set(row.pathname, set);
+  for (const view of views) {
+    globalVisitors.add(view.visitorKey);
+    const section = view.section ?? null;
+    const group = view.pageGroup || publicPageGroup(view.pathname, section);
+    const label = view.pageLabel || publicPageLabel(view.pathname, section);
+    const key = pageKey(view);
+
+    const pageEntry = byPageMap.get(key) ?? {
+      pathname: view.pathname,
+      section,
+      pageLabel: label,
+      pageGroup: group,
+      pageViews: 0,
+      visitors: new Set<string>(),
+    };
+    pageEntry.pageViews += 1;
+    pageEntry.visitors.add(view.visitorKey);
+    byPageMap.set(key, pageEntry);
+
+    accumulateBucket(byGroup, group, view.visitorKey);
+    accumulateBucket(byDay, view.createdAt.slice(0, 10), view.visitorKey);
+    accumulateBucket(byReferrer, normalizeReferrer(view.referrer), view.visitorKey);
+    accumulateBucket(byBrowser, resolveBrowser(view), view.visitorKey);
+    accumulateBucket(byOs, resolveOs(view), view.visitorKey);
+    accumulateBucket(byDevice, resolveDevice(view), view.visitorKey);
+    accumulateBucket(byCountry, view.country || "不明", view.visitorKey);
+    accumulateBucket(byLanguage, view.language || "不明", view.visitorKey);
+    accumulateBucket(byTimezone, view.timezone || "不明", view.visitorKey);
   }
 
-  const dailyUnique = new Map<string, Set<string>>();
-  for (const row of dailyVisitorKeys) {
-    const set = dailyUnique.get(row.date) ?? new Set<string>();
-    set.add(row.visitorKey);
-    dailyUnique.set(row.date, set);
-  }
-
-  const byPage = byPathRaw
+  const byPage = [...byPageMap.values()]
     .map((row) => ({
       pathname: row.pathname,
-      pageLabel: row.pageLabel || publicPageLabel(row.pathname),
-      pageViews: row.pageViews ?? 0,
-      uniqueVisitors: uniqueByPath.get(row.pathname)?.size ?? 0,
+      pageLabel: row.pageLabel,
+      pageGroup: row.pageGroup,
+      pageGroupLabel: PAGE_GROUP_LABELS[row.pageGroup] ?? row.pageGroup,
+      section: row.section,
+      pageViews: row.pageViews,
+      uniqueVisitors: row.visitors.size,
     }))
     .sort((a, b) => b.pageViews - a.pageViews);
 
-  const byDay = dailyRaw
-    .map((row) => ({
-      date: row.date,
-      pageViews: row.pageViews ?? 0,
-      uniqueVisitors: dailyUnique.get(row.date)?.size ?? 0,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const totalPageViews = byPage.reduce((sum, row) => sum + row.pageViews, 0);
+  const totalPageViews = views.length;
 
   return {
     month: monthParam(monthDate),
@@ -111,24 +165,55 @@ export async function buildPublicAccessAnalyticsReport(
       pageViews: totalPageViews,
       uniqueVisitors: globalVisitors.size,
       uniquePages: byPage.length,
+      pageViewsIncludingRepeats: totalPageViews,
+      uniqueVisitorsExcludingRepeats: globalVisitors.size,
     },
     byPage,
-    byDay,
-    byReferrer: referrerRaw
-      .map((row) => ({
-        referrer: normalizeReferrer(row.referrer),
-        count: row.count ?? 0,
+    byGroup: toBucketRows(byGroup, (key) => PAGE_GROUP_LABELS[key] ?? key, 10),
+    byDay: [...byDay.entries()]
+      .map(([date, value]) => ({
+        date,
+        pageViews: value.pageViews,
+        uniqueVisitors: value.visitors.size,
       }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 12),
-    recentViews: recentRaw.map((view) => ({
-      id: view.id,
-      pathname: view.pathname,
-      pageLabel: view.pageLabel,
-      visitorMask: maskVisitorKey(view.visitorKey),
-      referrer: normalizeReferrer(view.referrer),
-      device: simplifyUserAgent(view.userAgent),
-      createdAt: view.createdAt,
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    byReferrer: toBucketRows(byReferrer).map((row) => ({
+      referrer: row.label,
+      count: row.pageViews,
     })),
+    byBrowser: toBucketRows(byBrowser),
+    byOs: toBucketRows(byOs),
+    byDevice: toBucketRows(byDevice),
+    byCountry: toBucketRows(byCountry),
+    byLanguage: toBucketRows(byLanguage),
+    byTimezone: toBucketRows(byTimezone),
+    recentViews: views.slice(0, 100).map((view) => {
+      const ua = parseUserAgent(view.userAgent);
+      return {
+        id: view.id,
+        pathname: view.pathname,
+        pageLabel: view.pageLabel || publicPageLabel(view.pathname, view.section),
+        pageGroup: view.pageGroup || publicPageGroup(view.pathname, view.section),
+        section: view.section,
+        visitorMask: maskVisitorKey(view.visitorKey),
+        referrer: normalizeReferrer(view.referrer),
+        device: view.deviceType || ua.deviceType,
+        browser: view.browser || ua.browser,
+        os: view.os || ua.os,
+        language: view.language || "—",
+        timezone: view.timezone || "—",
+        screen: view.screen || "—",
+        country: view.country || "—",
+        region: view.region || "—",
+        city: view.city || "—",
+        createdAt: view.createdAt,
+      };
+    }),
+    notes: [
+      "PV = 同一訪問者を含むアクセス回数。UU = 端末ローカル UUID ベースのユニーク訪問者。",
+      "国・都市は CDN / エッジが付与するヘッダーがある場合のみ取得（Azure SWA 単体では空のことがあります）。",
+      "ブラウザ・OS・画面・タイムゾーン・言語は User-Agent とクライアントヒントから推定します。",
+      "SHOWCASE 詳細はセクション表示時に計測（サンキー／訴訟／合議／株／ディズニー／小惑星／Soluna）。",
+    ],
   };
 }

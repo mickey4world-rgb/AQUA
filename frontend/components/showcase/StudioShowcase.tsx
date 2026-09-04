@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { trackPublicPageView } from "@/components/analytics/PublicPageTracker";
 import AsteroidShowcaseDemo from "@/components/showcase/demos/AsteroidShowcaseDemo";
 import CouncilShowcaseDemo from "@/components/showcase/demos/CouncilShowcaseDemo";
 import DisneyShowcaseDemo from "@/components/showcase/demos/DisneyShowcaseDemo";
@@ -94,6 +95,15 @@ export default function StudioShowcase() {
   const [activeId, setActiveId] = useState<string>("intro");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    trackPublicPageView({ pathname: "/sample", section: "intro" });
+  }, []);
+
+  const onSectionVisible = useCallback((id: string) => {
+    setActiveId(id);
+    trackPublicPageView({ pathname: "/sample", section: id });
+  }, []);
+
   return (
     <div ref={containerRef} className="showcase-scroll">
       <nav className="showcase-progress" aria-label="セクション">
@@ -146,7 +156,7 @@ export default function StudioShowcase() {
       {SHOWCASE_SECTIONS.map((section) => {
         const Demo = DEMO_MAP[section.id as keyof typeof DEMO_MAP];
         return (
-          <ShowcaseSection key={section.id} section={section} onVisible={setActiveId}>
+          <ShowcaseSection key={section.id} section={section} onVisible={onSectionVisible}>
             <Demo />
           </ShowcaseSection>
         );
