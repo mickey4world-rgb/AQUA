@@ -31,16 +31,27 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      # Build on the runner (npm cache) instead of Oryx inside the SWA container.
-      # Oryx was re-running a cold `npm install` (~7 min) after our own `npm ci`.
+      - name: Cache frontend node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-nm-${{ runner.os }}-node22-${{ hashFiles('frontend/package-lock.json') }}
+
+      # Build on the runner (npm / node_modules cache) instead of Oryx inside SWA.
+      # Oryx was re-running a cold `npm install` (~7 min) after our own install.
       - name: Install and build frontend
         working-directory: frontend
         run: |
-          npm ci
+          if [ "${{ steps.nm-cache.outputs.cache-hit }}" != "true" ]; then
+            npm ci
+          else
+            node scripts/copy-pdf-worker.mjs
+          fi
           npm run build
 
       - name: Deploy to Azure Static Web Apps

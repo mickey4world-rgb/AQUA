@@ -62,7 +62,15 @@ type EagleEyeViewerProps = {
   onStateChange?: (state: EagleEyeViewerState) => void;
 };
 
-type CesiumModule = typeof import("cesium");
+type CesiumModule = {
+  // CDN global; keep intentionally loose (no npm cesium package).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CesiumViewer = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CesiumEntity = any;
 
 const NEAREST_COLOR = "#fbbf24";
 const PAST_COLOR = "#64748b";
@@ -121,7 +129,7 @@ function satColor(idx: number): string {
 }
 
 function addMapImagery(
-  viewer: import("cesium").Viewer,
+  viewer: CesiumViewer,
   Cesium: CesiumModule,
   withLabels: boolean,
   preferSatellite = true,
@@ -176,11 +184,11 @@ export default function EagleEyeViewer({
   onStateChange,
 }: EagleEyeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<import("cesium").Viewer | null>(null);
+  const viewerRef = useRef<CesiumViewer | null>(null);
   const cesiumRef = useRef<CesiumModule | null>(null);
   const tracksRef = useRef<SatelliteTrackDto[]>([]);
   const satellitesRef = useRef<EagleEyeSatelliteDef[]>([]);
-  const footprintRef = useRef<import("cesium").Entity | null>(null);
+  const footprintRef = useRef<CesiumEntity | null>(null);
   const activeFootprintRef = useRef<EagleEyeFootprint | null>(null);
   const nearestIdRef = useRef<string | null>(null);
   const selectedSatRef = useRef<EagleEyeSatelliteDef | null>(null);
@@ -534,7 +542,7 @@ export default function EagleEyeViewer({
     if (!containerRef.current) return;
 
     let destroyed = false;
-    let viewer: import("cesium").Viewer | null = null;
+    let viewer: CesiumViewer | null = null;
     let tickHandler: (() => void) | null = null;
 
     loadCesium()
@@ -759,7 +767,7 @@ export default function EagleEyeViewer({
         };
         viewer.clock.onTick.addEventListener(tickHandler);
 
-        viewer.selectedEntityChanged.addEventListener((entity) => {
+        viewer.selectedEntityChanged.addEventListener((entity: CesiumEntity) => {
           if (!entity?.id || typeof entity.id !== "string") return;
           if (entity.id.startsWith("cam-fov-")) return;
 
