@@ -1,6 +1,7 @@
 import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
 
-export const revalidate = 3600;
+/** ビルド時に巨大な gyosei を展開しない。実行時 Cache-Control でキャッシュ。 */
+export const dynamic = "force-dynamic";
 
 /** 認証不要・行政事業レビューのサンキー公開プレビュー */
 export async function GET() {

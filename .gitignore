@@ -48,3 +48,7 @@ tools/inspect-*.txt
 tools/headers-*.txt
 tools/probe-*.txt
 tools/verify-*.txt
+
+# Local cleanup / deploy backups
+backups/
+
