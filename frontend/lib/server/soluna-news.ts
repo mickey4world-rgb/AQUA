@@ -1,8 +1,8 @@
 import {
   generateWithGemini,
-  isGeminiConfigured,
   stripJsonFence,
 } from "@/lib/server/gemini";
+import { generateWithGoogleSearch } from "@/lib/server/gemini-grounding";
 import { SOLUNA_SYSTEM_KEYWORDS } from "@/lib/server/soluna-system-config";
 import {
   briefingDocIdForDate,
@@ -13,114 +13,6 @@ import { enrichBriefingWithMonsters, formatEncounterForPrompt, monsterizeNewsIte
 import type { SolunaNewsBriefing, SolunaNewsItem } from "@/lib/types/soluna";
 
 const NEWS_TIMEOUT_MS = 25_000;
-
-/** Google Search grounding が使えるモデルを優先（gemini-flash-latest エイリアスは非対応のことがある） */
-function getGroundingModelCandidates(): string[] {
-  const env = process.env.SOLUNA_NEWS_GEMINI_MODEL?.trim();
-  const defaults = ["gemini-3.6-flash", "gemini-flash-latest"];
-  return env ? [...new Set([env, ...defaults])] : defaults;
-}
-
-function getRelay(): { url: string; key: string } | null {
-  const url = process.env.GEMINI_RELAY_URL?.trim();
-  const key = process.env.GEMINI_RELAY_KEY?.trim();
-  return url && key ? { url, key } : null;
-}
-
-async function generateWithGroundingOnce(
-  model: string,
-  system: string,
-  userPrompt: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const relay = getRelay();
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    tools: [{ google_search: {} }],
-    generationConfig: {
-      temperature: 0.25,
-      maxOutputTokens: 4096,
-    },
-  };
-
-  const target: { url: string; headers: Record<string, string>; body: string } = relay
-    ? {
-        url: relay.url,
-        headers: {
-          "Content-Type": "application/json",
-          "x-functions-key": relay.key,
-        },
-        body: JSON.stringify({ model, body }),
-      }
-    : {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey as string,
-        },
-        body: JSON.stringify(body),
-      };
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), NEWS_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(target.url, {
-      method: "POST",
-      headers: target.headers,
-      signal: controller.signal,
-      body: target.body,
-    });
-
-    const payload = (await response.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      error?: { message?: string };
-    };
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        reason: payload.error?.message ?? `Gemini ニュース取得失敗（HTTP ${response.status}）`,
-      };
-    }
-
-    const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-    if (!text.trim()) {
-      return { ok: false, reason: "ニュース検索の結果が空でした。" };
-    }
-
-    return { ok: true, text: text.trim(), model };
-  } catch (error) {
-    const aborted = error instanceof Error && error.name === "AbortError";
-    return {
-      ok: false,
-      reason: aborted ? "ニュース検索がタイムアウトしました。" : "ニュース検索に失敗しました。",
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function generateWithGrounding(
-  system: string,
-  userPrompt: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  if (!isGeminiConfigured()) {
-    return { ok: false, reason: "Gemini が未設定です。" };
-  }
-
-  let lastReason = "ニュース検索に失敗しました。";
-  for (const model of getGroundingModelCandidates()) {
-    const result = await generateWithGroundingOnce(model, system, userPrompt);
-    if (result.ok) return result;
-    lastReason = result.reason;
-    console.warn(`[soluna-news] grounding failed for ${model}:`, result.reason);
-  }
-
-  return { ok: false, reason: lastReason };
-}
 
 async function generateNewsWithoutGrounding(
   system: string,
@@ -144,7 +36,11 @@ async function fetchNewsContent(
   system: string,
   userPrompt: string,
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const grounded = await generateWithGrounding(system, userPrompt);
+  const grounded = await generateWithGoogleSearch({
+    system,
+    userPrompt,
+    timeoutMs: NEWS_TIMEOUT_MS,
+  });
   if (grounded.ok) return grounded;
   console.warn("[soluna-news] grounding failed, fallback:", grounded.reason);
   return generateNewsWithoutGrounding(system, userPrompt);
