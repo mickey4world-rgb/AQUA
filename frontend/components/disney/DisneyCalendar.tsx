@@ -114,13 +114,13 @@ export default function DisneyCalendar({
     };
   }, [park, monthParam, calendarApiPath, requestKey, viewYear, viewMonth]);
 
-  const canGoPrev = calendar
-    ? monthParam >
-      toMonthParam(
-        Number(calendar.today.slice(0, 4)),
-        Number(calendar.today.slice(5, 7)),
-      )
-    : viewYear * 12 + viewMonth > initial.year * 12 + initial.month;
+  const canGoPrev = useMemo(() => {
+    const todayY = calendar ? Number(calendar.today.slice(0, 4)) : initial.year;
+    const todayM = calendar ? Number(calendar.today.slice(5, 7)) : initial.month;
+    const currentIndex = todayY * 12 + todayM;
+    const viewIndex = viewYear * 12 + viewMonth;
+    return viewIndex > currentIndex - 2;
+  }, [calendar, viewYear, viewMonth, initial.year, initial.month]);
 
   const canGoNext = useMemo(() => {
     const todayY = calendar ? Number(calendar.today.slice(0, 4)) : initial.year;
@@ -220,15 +220,35 @@ export default function DisneyCalendar({
             {displayCalendar.days.map((day) => {
               const isSelected = day.date === selectedDate;
               const dayNum = Number(day.date.slice(8, 10));
+              const hitMark =
+                day.isPast && day.accuracy
+                  ? day.accuracy.levelHit
+                    ? "的中"
+                    : "外れ"
+                  : null;
+              const titleParts = [
+                formatJstDateLabel(day.date),
+                `予測 ${day.crowdLabel}（${day.crowdScore}）`,
+              ];
+              if (day.accuracy) {
+                titleParts.push(
+                  `実績スコア ${day.accuracy.actualScore}（差 ${day.accuracy.scoreDelta > 0 ? "+" : ""}${day.accuracy.scoreDelta}）`,
+                  hitMark ?? "",
+                );
+              }
               return (
                 <button
                   key={day.date}
                   type="button"
                   onClick={() => onSelectDate(day.date)}
-                  title={`${formatJstDateLabel(day.date)} — ${day.crowdLabel}`}
+                  title={titleParts.filter(Boolean).join(" — ")}
                   className={`flex h-9 flex-col items-center justify-center rounded-md border text-xs transition sm:h-10 ${
                     crowdLevelCellStyles[day.crowdLevel]
-                  } ${day.isPast ? "opacity-45" : ""} ${
+                  } ${day.isPast && !day.accuracy ? "opacity-45" : ""} ${
+                    day.isPast && day.accuracy && !day.accuracy.levelHit
+                      ? "opacity-80"
+                      : ""
+                  } ${
                     isSelected
                       ? "ring-2 ring-fuchsia-400 ring-offset-1 ring-offset-indigo-950"
                       : ""
@@ -243,16 +263,22 @@ export default function DisneyCalendar({
                   </span>
                   <span
                     className={`mt-0.5 text-[9px] font-semibold leading-none ${
-                      day.crowdLevel === "low"
-                        ? "text-emerald-200"
-                        : day.crowdLevel === "moderate"
-                          ? "text-amber-200"
-                          : day.crowdLevel === "high"
-                            ? "text-orange-200"
-                            : "text-rose-200"
+                      day.accuracy
+                        ? day.accuracy.levelHit
+                          ? "text-emerald-200"
+                          : "text-rose-200"
+                        : day.crowdLevel === "low"
+                          ? "text-emerald-200"
+                          : day.crowdLevel === "moderate"
+                            ? "text-amber-200"
+                            : day.crowdLevel === "high"
+                              ? "text-orange-200"
+                              : "text-rose-200"
                     }`}
                   >
-                    {day.crowdScore}
+                    {day.accuracy
+                      ? `${day.accuracy.scoreDelta > 0 ? "+" : ""}${day.accuracy.scoreDelta}`
+                      : day.crowdScore}
                   </span>
                 </button>
               );
@@ -278,8 +304,48 @@ export default function DisneyCalendar({
           ))}
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          祝日・曜日・季節・イベント・天候・グッズ・過去傾向から数値化（0〜100）。セル内数字が混雑スコアです。
+          未来日は予測スコア（0〜100）。過去日で実績があるセルは点数差（予測−実績）を表示し、緑＝的中・赤＝外れです。
         </p>
+        {displayCalendar?.accuracySummary &&
+          displayCalendar.accuracySummary.evaluatedDays > 0 && (
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <p className="text-xs font-medium text-sky-200">
+                今月の的中率{" "}
+                <span className="text-white">
+                  {displayCalendar.accuracySummary.hitRate}%
+                </span>
+                <span className="ml-1 font-normal text-slate-400">
+                  （{displayCalendar.accuracySummary.hits}/
+                  {displayCalendar.accuracySummary.evaluatedDays}日 · 平均誤差{" "}
+                  {displayCalendar.accuracySummary.meanAbsScoreError}点）
+                </span>
+              </p>
+            </div>
+          )}
+        {displayCalendar?.accuracySummary?.latestReviewSummary && (
+          <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/5 px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-amber-300/80">
+              月次見直しサマリー
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-200">
+              {displayCalendar.accuracySummary.latestReviewSummary}
+            </p>
+            {displayCalendar.accuracySummary.reviewNewsFindings &&
+              displayCalendar.accuracySummary.reviewNewsFindings.length > 0 && (
+                <ul className="mt-2 space-y-1 text-[11px] text-slate-400">
+                  {displayCalendar.accuracySummary.reviewNewsFindings.map((line) => (
+                    <li key={line}>・{line}</li>
+                  ))}
+                </ul>
+              )}
+            {displayCalendar.accuracySummary.rulesChanged &&
+              displayCalendar.accuracySummary.rulesChanged.length > 0 && (
+                <p className="mt-2 text-[11px] text-amber-100/90">
+                  {displayCalendar.accuracySummary.rulesChanged.join(" / ")}
+                </p>
+              )}
+          </div>
+        )}
       </div>
     </div>
   );

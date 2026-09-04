@@ -93,11 +93,8 @@ export async function getSnapshotsForDate(
     const { resources } = await container.items
       .query<DisneyWaitSnapshot>({
         query:
-          "SELECT * FROM c WHERE c.park = @park AND c.date = @date ORDER BY c.hour ASC",
-        parameters: [
-          { name: "@park", value: park },
-          { name: "@date", value: date },
-        ],
+          "SELECT * FROM c WHERE STARTSWITH(c.id, @prefix) ORDER BY c.hour ASC",
+        parameters: [{ name: "@prefix", value: prefix }],
       })
       .fetchAll();
 

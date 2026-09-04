@@ -8,6 +8,8 @@ import {
   scoreSchoolK12,
   scoreUniversityBreak,
 } from "@/lib/disney-crowd-extra-factors";
+import { scoreShareholderPassport } from "@/lib/disney-shareholder-passport";
+import { getCachedAdjustmentForDate } from "@/lib/server/disney-crowd-adjustments";
 import type { DisneyCrowdBreakdown, DisneyParkKey } from "@/lib/types/disney";
 
 function inRange(month: number, day: number, from: [number, number], to: [number, number]): boolean {
@@ -232,28 +234,37 @@ export function buildCrowdBreakdown(
   const weather = scoreWeather(dateStr);
   const event = scoreEvent(dateStr, park);
   const regionalPassport = scoreRegionalPassport(dateStr);
+  const shareholderPassport = scoreShareholderPassport(dateStr);
   const otherThemeParks = scoreOtherThemeParks(dateStr);
   const metroEvents = scoreMetroEvents(dateStr);
   const newsBuzz = scoreNewsBuzz(dateStr);
   const merchandise = scoreMerchandise(dateStr);
   const historical = scoreHistorical(dateStr, park);
   const disasterImpact = scoreDisasterImpact(dateStr);
+  const adjustment = getCachedAdjustmentForDate(dateStr, park);
 
   const total = clamp(
-    calendar.score * 0.11 +
-      seasonal.score * 0.09 +
-      schoolK12.score * 0.12 +
-      universityBreak.score * 0.08 +
-      weather.score * 0.07 +
-      event.score * 0.09 +
-      regionalPassport.score * 0.08 +
-      otherThemeParks.score * 0.08 +
-      metroEvents.score * 0.09 +
+    calendar.score * 0.1 +
+      seasonal.score * 0.08 +
+      schoolK12.score * 0.11 +
+      universityBreak.score * 0.07 +
+      weather.score * 0.06 +
+      event.score * 0.08 +
+      regionalPassport.score * 0.07 +
+      shareholderPassport.score * 0.08 +
+      otherThemeParks.score * 0.07 +
+      metroEvents.score * 0.08 +
       newsBuzz.score * 0.05 +
       merchandise.score * 0.05 +
-      historical.score * 0.06 +
-      disasterImpact.score * 0.05,
+      historical.score * 0.05 +
+      disasterImpact.score * 0.05 +
+      adjustment.delta,
   );
+
+  const historicalLabel =
+    adjustment.labels.length > 0
+      ? `${historical.label}・${adjustment.labels.slice(0, 2).join("・")}`
+      : historical.label;
 
   return {
     calendar: calendar.score,
@@ -263,6 +274,7 @@ export function buildCrowdBreakdown(
     weather: weather.score,
     event: event.score,
     regionalPassport: regionalPassport.score,
+    shareholderPassport: shareholderPassport.score,
     otherThemeParks: otherThemeParks.score,
     metroEvents: metroEvents.score,
     newsBuzz: newsBuzz.score,
@@ -278,11 +290,12 @@ export function buildCrowdBreakdown(
       weather: weather.label,
       event: event.label,
       regionalPassport: regionalPassport.label,
+      shareholderPassport: shareholderPassport.label,
       otherThemeParks: otherThemeParks.label,
       metroEvents: metroEvents.label,
       newsBuzz: newsBuzz.label,
       merchandise: merchandise.label,
-      historical: historical.label,
+      historical: historicalLabel,
       disasterImpact: disasterImpact.label,
     },
   };

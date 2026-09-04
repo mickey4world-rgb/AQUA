@@ -6,7 +6,7 @@ import type { DisneyParkKey } from "@/lib/types/disney";
 
 export const dynamic = "force-dynamic";
 
-/** 認証不要 · 混雑予測カレンダー（当月〜6か月先） */
+/** 認証不要 · 混雑予測カレンダー（過去2か月〜6か月先） */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;

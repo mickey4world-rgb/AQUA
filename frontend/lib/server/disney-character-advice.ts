@@ -28,6 +28,7 @@ function topFactors(breakdown: ReturnType<typeof buildCrowdBreakdown>): string[]
     { score: breakdown.universityBreak, label: breakdown.labels.universityBreak },
     { score: breakdown.event, label: breakdown.labels.event },
     { score: breakdown.regionalPassport, label: breakdown.labels.regionalPassport },
+    { score: breakdown.shareholderPassport, label: breakdown.labels.shareholderPassport },
     { score: breakdown.otherThemeParks, label: breakdown.labels.otherThemeParks },
     { score: breakdown.metroEvents, label: breakdown.labels.metroEvents },
     { score: breakdown.disasterImpact, label: breakdown.labels.disasterImpact },
