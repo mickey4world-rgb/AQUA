@@ -23,7 +23,7 @@ function isProtectedPath(pathname: string): boolean {
   );
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   if (!isProtectedPath(request.nextUrl.pathname)) {
     return applySecurityHeaders(NextResponse.next());
   }
@@ -33,16 +33,12 @@ export function proxy(request: NextRequest) {
   );
 
   if (!principal) {
-    return applySecurityHeaders(
-      NextResponse.redirect(new URL("/login", request.url)),
-    );
+    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   const email = getEmailFromPrincipal(principal);
   if (!isAllowedLogin(principal.userDetails, email)) {
-    return applySecurityHeaders(
-      NextResponse.redirect(new URL("/login", request.url)),
-    );
+    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   return applySecurityHeaders(NextResponse.next());
@@ -52,10 +48,7 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(self), geolocation=()",
-  );
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.headers.set(
     "Content-Security-Policy",
     [

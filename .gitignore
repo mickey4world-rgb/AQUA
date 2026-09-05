@@ -42,6 +42,7 @@ gemini-proxy*.zip
 # 行政事業レビューの生データ（XLSX は大きいので同梱しない。前処理済み gzip のみ frontend/data に置く）
 data-src/
 tools/node_modules/
+tools/package-lock.json
 tools/*.txt
 tools/inspect-*.txt
 tools/headers-*.txt

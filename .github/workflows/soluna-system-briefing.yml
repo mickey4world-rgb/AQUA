@@ -22,6 +22,19 @@ jobs:
   run_system_briefing:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps (scripts only)
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
       - name: Check daily briefing status
         id: status
         env:
@@ -40,22 +53,6 @@ jobs:
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
           COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
           echo "complete=${COMPLETE}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v4
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
-
-      - name: Setup Node.js
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend deps (scripts only)
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
-        working-directory: frontend
-        run: npm ci --ignore-scripts
 
       - name: Fetch news briefing (Gemini → RSS fallback)
         if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'

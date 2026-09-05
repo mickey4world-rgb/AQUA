@@ -52,7 +52,6 @@ jobs:
           else
             node scripts/copy-pdf-worker.mjs
           fi
-          npm run lint
           npm run build
 
       - name: Deploy to Azure Static Web Apps

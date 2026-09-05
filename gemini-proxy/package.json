@@ -5,7 +5,7 @@
   "description": "Japan East relay for the Gemini API. Azure Static Web Apps runs in East Asia, where Google refuses the request with 'User location is not supported for the API use.'",
   "main": "src/functions/*.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "dependencies": {
     "@azure/functions": "^4.7.0"
