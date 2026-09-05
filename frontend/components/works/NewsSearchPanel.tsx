@@ -18,6 +18,7 @@ function attentionTone(score: number): string {
 
 function isEnriched(item: NewsSearchItem): boolean {
   if (!item.outlook?.trim()) return false;
+  if (item.outlook.includes("AI解説は未生成")) return false;
   if (item.outlook.includes("今夜の解説生成")) return false;
   if (item.outlook.includes("「今すぐ再取得」で詳細化")) return false;
   if (item.deepDive === item.summary && item.explanation === item.summary) return false;
@@ -120,6 +121,15 @@ export default function NewsSearchPanel() {
         latest = data.digest;
         setDigest(data.digest);
       }
+      const stillNeeds = NEWS_SEARCH_CATEGORIES.some((c) =>
+        (latest.categories[c] ?? []).some((item) => !isEnriched(item)),
+      );
+      if (stillNeeds) {
+        setError(
+          "一部カテゴリの解説が未完了のままです。成功扱いせず再試行してください。",
+        );
+        return;
+      }
       setEnrichProgress(null);
     } catch {
       setError("解説生成に失敗しました。しばらくして再試行してください。");
@@ -169,7 +179,7 @@ export default function NewsSearchPanel() {
           </p>
           <p className="mt-1 text-sm text-slate-400">
             {digest
-              ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source}${digest.solunaSynced ? " · Soluna連携済" : ""}`
+              ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source} · 解説 ${digest.enrichmentStatus ?? (needsEnrichment ? "pending" : "complete")}${digest.solunaSynced ? " · Soluna連携済" : ""}`
               : "深夜に Google / Bing / 公的・専門フィードから集約します。"}
           </p>
           {enrichProgress && (
@@ -188,7 +198,7 @@ export default function NewsSearchPanel() {
 
       {needsEnrichment && digest && !enriching && (
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/5 px-4 py-3 text-sm text-amber-50">
-          いまは見出し一覧のみです。「AIで解説を生成」を押すと、カテゴリごとに深堀・今後の予想・官公庁向け示唆を作成します（合計1〜2分程度）。
+          いまは見出し一覧のみ（解説未完了）です。「AIで解説を生成」でカテゴリごとに深堀・見通しを作ります。失敗時は成功扱いせずエラーを出します。深夜ジョブも同様に解説完了まで失敗扱いです。
         </div>
       )}
 

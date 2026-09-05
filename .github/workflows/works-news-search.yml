@@ -26,7 +26,7 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Build news search digest (RSS in Actions → ingest)
+      - name: Build news search digest (RSS → ingest → enrich per category)
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -36,3 +36,4 @@ jobs:
           else
             node frontend/scripts/fetch-works-news-search.mjs
           fi
+        # enrichmentOk must be true; RSS-only green is forbidden

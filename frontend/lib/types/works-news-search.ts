@@ -42,6 +42,13 @@ export type NewsSearchItem = {
   publishedAt?: string;
 };
 
+/** pending = RSS only; partial = some categories; complete = AI 解説そろい; failed = 生成試行後も未完 */
+export type NewsSearchEnrichmentStatus =
+  | "pending"
+  | "partial"
+  | "complete"
+  | "failed";
+
 export type NewsSearchDigest = {
   id: string;
   fetchedAt: string;
@@ -49,6 +56,9 @@ export type NewsSearchDigest = {
   categories: Record<NewsSearchCategory, NewsSearchItem[]>;
   solunaSynced: boolean;
   summary: string;
+  /** AI 解説の完成度。未設定の旧ドキュメントは pending 扱い */
+  enrichmentStatus?: NewsSearchEnrichmentStatus;
+  enrichmentErrors?: string[];
 };
 
 export type NewsSearchChatMessage = {

@@ -1,10 +1,20 @@
-import { buildWorksNewsDigest } from "@/lib/server/works-news-search";
+import {
+  buildWorksNewsDigest,
+  computeEnrichmentStatus,
+  digestNeedsEnrichment,
+  enrichWorksNewsDigestCategory,
+  withEnrichmentMeta,
+} from "@/lib/server/works-news-search";
 import { saveWorksNewsDigest } from "@/lib/server/works-news-search-store";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { recordSecurityEvent } from "@/lib/server/security-event";
-import type { NewsSearchDigest } from "@/lib/types/works-news-search";
+import {
+  NEWS_SEARCH_CATEGORIES,
+  type NewsSearchCategory,
+  type NewsSearchDigest,
+} from "@/lib/types/works-news-search";
 
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 function authorizeCron(request: Request): boolean {
   const secret =
@@ -27,6 +37,13 @@ function isValidDigest(value: unknown): value is NewsSearchDigest {
   );
 }
 
+function parseCategory(value: unknown): NewsSearchCategory | null {
+  if (typeof value !== "string") return null;
+  return (NEWS_SEARCH_CATEGORIES as readonly string[]).includes(value)
+    ? (value as NewsSearchCategory)
+    : null;
+}
+
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
     await recordSecurityEvent({
@@ -46,35 +63,98 @@ export async function POST(request: Request) {
   }
 
   let force = false;
+  let step = "build";
   let ingest: NewsSearchDigest | null = null;
+  let category: NewsSearchCategory | null = null;
   try {
     const body = (await request.json()) as {
       force?: boolean;
       step?: string;
       digest?: NewsSearchDigest;
+      category?: string;
     };
     force = body.force === true;
+    if (typeof body.step === "string") step = body.step;
     if (body.step === "ingest" && isValidDigest(body.digest)) {
       ingest = body.digest;
     }
+    category = parseCategory(body.category);
   } catch {
     /* empty ok */
   }
 
   if (ingest) {
-    await saveWorksNewsDigest(ingest);
+    const digest = withEnrichmentMeta({
+      ...ingest,
+      source: "rss",
+      enrichmentStatus: "pending",
+    });
+    await saveWorksNewsDigest(digest);
     return Response.json({
       ok: true,
       step: "ingest",
-      digestId: ingest.id,
-      source: ingest.source,
-      summary: ingest.summary,
+      digestId: digest.id,
+      source: digest.source,
+      enrichmentStatus: digest.enrichmentStatus,
+      needsEnrichment: digestNeedsEnrichment(digest),
+      summary: digest.summary,
       counts: {
-        ai: ingest.categories.ai.length,
-        systems: ingest.categories.systems.length,
-        economy: ingest.categories.economy.length,
-        government: ingest.categories.government.length,
+        ai: digest.categories.ai.length,
+        systems: digest.categories.systems.length,
+        economy: digest.categories.economy.length,
+        government: digest.categories.government.length,
       },
+    });
+  }
+
+  if (step === "enrich") {
+    if (!category) {
+      return Response.json(
+        { ok: false, error: "enrich には category が必要です。" },
+        { status: 400 },
+      );
+    }
+    const enriched = await enrichWorksNewsDigestCategory(category);
+    if (!enriched.ok) {
+      return Response.json(
+        {
+          ok: false,
+          step: "enrich",
+          category,
+          error: enriched.reason,
+          enrichmentOk: false,
+        },
+        { status: 422 },
+      );
+    }
+    return Response.json({
+      ok: true,
+      step: "enrich",
+      category,
+      digestId: enriched.digest.id,
+      enrichedCount: enriched.enrichedCount,
+      enrichmentStatus: enriched.digest.enrichmentStatus,
+      needsEnrichment: digestNeedsEnrichment(enriched.digest),
+      enrichmentOk: enriched.digest.enrichmentStatus === "complete",
+    });
+  }
+
+  if (step === "status") {
+    const { getLatestWorksNewsDigest } = await import(
+      "@/lib/server/works-news-search-store"
+    );
+    const latest = await getLatestWorksNewsDigest();
+    if (!latest) {
+      return Response.json({ ok: false, error: "digest missing" }, { status: 404 });
+    }
+    const meta = withEnrichmentMeta(latest);
+    return Response.json({
+      ok: true,
+      step: "status",
+      digestId: meta.id,
+      enrichmentStatus: computeEnrichmentStatus(meta),
+      needsEnrichment: digestNeedsEnrichment(meta),
+      enrichmentOk: computeEnrichmentStatus(meta) === "complete",
     });
   }
 
@@ -88,6 +168,10 @@ export async function POST(request: Request) {
     step: "build",
     digestId: result.digest.id,
     source: result.digest.source,
+    enrichmentStatus: result.digest.enrichmentStatus,
+    needsEnrichment: digestNeedsEnrichment(result.digest),
+    // RSS のみ成功。解説完了は enrichmentOk で別判定（ごまかさない）
+    enrichmentOk: false,
     counts: {
       ai: result.digest.categories.ai.length,
       systems: result.digest.categories.systems.length,

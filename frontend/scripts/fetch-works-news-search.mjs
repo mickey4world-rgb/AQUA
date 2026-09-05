@@ -281,7 +281,7 @@ function buildDigest(seeds) {
         title: seed.title,
         summary: seed.summary,
         deepDive: seed.summary,
-        outlook: "今夜の解説生成で見通しを補完します（「今すぐ再取得」で詳細化可能）。",
+        outlook: "AI解説は未生成です。生成に失敗した場合はエラーが表示されます。",
         explanation: seed.summary,
         govRelevance:
           "司法クラウド基盤・政府事業管理AIの観点では、一次情報の確認と影響範囲の洗い出しから。",
@@ -302,20 +302,21 @@ function buildDigest(seeds) {
     source: "rss",
     categories,
     solunaSynced: false,
+    enrichmentStatus: "pending",
     summary: CATEGORIES.map((c) => `${LABELS[c]}: ${categories[c][0]?.title ?? "—"}`).join(
       " / ",
     ),
   };
 }
 
-async function ingest(digest) {
+async function postCron(body) {
   const response = await fetch(`${baseUrl}/api/works/news-search/cron`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${cronSecret}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ step: "ingest", digest, force }),
+    body: JSON.stringify(body),
   });
   const text = await response.text();
   let payload = {};
@@ -325,11 +326,42 @@ async function ingest(digest) {
     payload = { raw: text.slice(0, 400) };
   }
   console.log(JSON.stringify(payload, null, 2));
-  console.log(`ingest HTTP ${response.status}`);
+  console.log(`cron HTTP ${response.status} step=${body.step ?? "build"}`);
+  return { response, payload };
+}
+
+async function ingest(digest) {
+  const { response, payload } = await postCron({ step: "ingest", digest, force });
   if (!response.ok || payload.ok !== true) {
     throw new Error(`ingest failed HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function enrichAllCategories() {
+  const errors = [];
+  for (const category of CATEGORIES) {
+    const { response, payload } = await postCron({ step: "enrich", category });
+    if (!response.ok || payload.ok !== true) {
+      errors.push(`${category}: ${payload.error ?? `HTTP ${response.status}`}`);
+      console.error(`[works-news] enrich fail ${category}`, payload.error);
+      continue;
+    }
+    console.log(
+      `[works-news] enrich ok ${category} count=${payload.enrichedCount} status=${payload.enrichmentStatus}`,
+    );
+  }
+
+  const { response, payload } = await postCron({ step: "status" });
+  if (!response.ok) {
+    throw new Error(`status failed HTTP ${response.status}`);
+  }
+  if (payload.enrichmentOk !== true || payload.enrichmentStatus !== "complete") {
+    throw new Error(
+      `enrichment incomplete status=${payload.enrichmentStatus} errors=${errors.join(" | ") || "none"}`,
+    );
+  }
+  console.log("[works-news] enrichment complete", payload.digestId);
 }
 
 const { seeds, errors } = await collectSeeds();
@@ -340,3 +372,5 @@ for (const key of CATEGORIES) {
 }
 await ingest(digest);
 console.log("[works-news] ingest ok", digest.id);
+await enrichAllCategories();
+console.log("[works-news] pipeline ok", digest.id);
