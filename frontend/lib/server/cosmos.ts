@@ -65,6 +65,7 @@ export async function ensureContainer(containerId: string): Promise<Container> {
 
 /**
  * DisneyRecords を優先。未作成・権限不足なら SolunaRecords にフォールバック。
+ * 公開プレビュー／待ち時間／的中率など Disney 系の永続化はすべてここを使う。
  */
 export async function getPublicCacheContainer(): Promise<{
   container: Container;
@@ -84,4 +85,10 @@ export async function getPublicCacheContainer(): Promise<{
     const container = await ensureContainer(fallback);
     return { container, containerId: fallback };
   }
+}
+
+/** DisneyRecords 系の読み書き用（ensure + fallback 済み） */
+export async function getDisneyRecordsContainer(): Promise<Container> {
+  const { container } = await getPublicCacheContainer();
+  return container;
 }

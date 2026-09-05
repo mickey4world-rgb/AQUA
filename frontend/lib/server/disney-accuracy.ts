@@ -18,7 +18,7 @@ import {
   seedEmpiricalSnapshotsForDate,
   type DisneyWaitSnapshot,
 } from "@/lib/server/disney-historical-store";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { CrowdLevel, DisneyParkKey } from "@/lib/types/disney";
 import type {
   DisneyAccuracyActualSource,
@@ -186,7 +186,7 @@ export async function upsertDayAccuracy(
   if (!isCosmosConfigured()) return record;
 
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     try {
       const { resource } = await container
         .item(record.id, record.id)
@@ -304,7 +304,7 @@ export async function listAccuracyForMonth(
   const end = endDate.toISOString().slice(0, 10);
 
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resources } = await container.items
       .query<DisneyDayAccuracyRecord>({
         query: `

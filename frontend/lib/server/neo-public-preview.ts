@@ -1,5 +1,5 @@
 import { fetchCloseApproaches } from "@/lib/server/nasa-neo";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { CloseApproach, NeoPublicPreviewSnapshot } from "@/lib/types/space";
 
 export type { NeoPublicPreviewSnapshot };
@@ -68,7 +68,7 @@ async function readCosmosNeo(dateKey: string): Promise<NeoPublicPreviewSnapshot 
   if (!isCosmosConfigured()) return null;
   try {
     const id = cacheDocId(dateKey);
-    const { resource } = await getContainer(COSMOS_CONTAINERS.disneyRecords)
+    const { resource } = await (await getDisneyRecordsContainer())
       .item(id, id)
       .read<CachedNeo>();
     return resource?.snapshot ?? null;
@@ -91,7 +91,7 @@ async function writeCosmosNeo(
       snapshot,
       builtAt: new Date().toISOString(),
     };
-    await getContainer(COSMOS_CONTAINERS.disneyRecords).items.upsert(doc);
+    await (await getDisneyRecordsContainer()).items.upsert(doc);
     return true;
   } catch (error) {
     console.error("[neo-public-preview] cosmos write failed", error);
