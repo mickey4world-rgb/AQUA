@@ -159,30 +159,68 @@ export async function fetchGlobalNewsBriefing(options?: {
   let items: SolunaNewsItem[] = [];
   let summary = "";
 
-  const grounded = await fetchNewsFromGrounding(uniqueKeywords);
-  if (grounded.ok) {
-    try {
-      const parsed = JSON.parse(stripJsonFence(grounded.text)) as {
-        summary?: string;
-        items?: unknown;
-      };
-      items = normalizeItems(parsed, uniqueKeywords);
-      summary =
-        typeof parsed.summary === "string" && parsed.summary.trim()
-          ? parsed.summary.trim()
-          : "";
-      if (!itemsLookGrounded(items)) {
-        console.warn(
-          "[soluna-news] grounding returned weak/unverified items; preferring RSS",
+  // WORKS ニュースサーチと重なる場合は、そちらを討伐の元ネタにする
+  try {
+    const {
+      getLatestWorksNewsDigest,
+    } = await import("@/lib/server/works-news-search-store");
+    const {
+      mapDigestToSolunaSeedItems,
+      markWorksNewsSolunaSynced,
+    } = await import("@/lib/server/works-news-search");
+    const digest = await getLatestWorksNewsDigest();
+    if (digest && digest.id.endsWith(jstDateString())) {
+      const seeds = mapDigestToSolunaSeedItems(digest);
+      const mapped = seeds
+        .filter((seed) => seed.title && seed.summary)
+        .map((seed) =>
+          monsterizeNewsItem({
+            title: seed.title,
+            summary: seed.summary,
+            keyword: seed.keyword,
+            sourceUrl: seed.sourceUrl,
+            publishedAt: seed.publishedAt,
+          }),
         );
+      if (itemsLookGrounded(mapped) || mapped.length >= 2) {
+        items = mapped;
+        source = "works-news-search";
+        summary = digest.summary || mapped.map((item) => item.title).join(" / ");
+        await markWorksNewsSolunaSynced(digest).catch((error) => {
+          console.warn("[soluna-news] mark solunaSynced failed", error);
+        });
+      }
+    }
+  } catch (error) {
+    console.warn("[soluna-news] works-news-search bridge skipped", error);
+  }
+
+  if (items.length === 0) {
+    const grounded = await fetchNewsFromGrounding(uniqueKeywords);
+    if (grounded.ok) {
+      try {
+        const parsed = JSON.parse(stripJsonFence(grounded.text)) as {
+          summary?: string;
+          items?: unknown;
+        };
+        items = normalizeItems(parsed, uniqueKeywords);
+        summary =
+          typeof parsed.summary === "string" && parsed.summary.trim()
+            ? parsed.summary.trim()
+            : "";
+        if (!itemsLookGrounded(items)) {
+          console.warn(
+            "[soluna-news] grounding returned weak/unverified items; preferring RSS",
+          );
+          items = [];
+        }
+      } catch {
+        console.warn("[soluna-news] grounding JSON parse failed; preferring RSS");
         items = [];
       }
-    } catch {
-      console.warn("[soluna-news] grounding JSON parse failed; preferring RSS");
-      items = [];
+    } else {
+      console.warn("[soluna-news] grounding failed, RSS fallback:", grounded.reason);
     }
-  } else {
-    console.warn("[soluna-news] grounding failed, RSS fallback:", grounded.reason);
   }
 
   if (items.length === 0) {
@@ -258,6 +296,7 @@ export function assertTodayLiveBriefing(
       reason: `ライブ非対応ソースのブリーフィングは使えない（source=${briefing.source}）。学習データ由来の古いネタの可能性がある。`,
     };
   }
+  // works-news-search / gemini-grounding / rss は許可
   if (!briefing.items?.length) {
     return { ok: false, reason: "ブリーフィングにニュース項目がありません。" };
   }

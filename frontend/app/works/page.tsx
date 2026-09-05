@@ -27,9 +27,18 @@ const panels: Panel[] = [
     index: "01",
     label: "Consult",
     labelJa: "AI 相談",
-    description: "Gemini の無料枠で IT・AI・Claude Code の実装方針を相談し、結論をメモに残せます。",
+    description: "最新ニュースの俯瞰と、Gemini 無料枠での IT・AI・実装方針相談。",
     accent: "#5eead4",
     apps: [
+      {
+        title: "News Search",
+        titleJa: "ニュースサーチ",
+        desc: "毎晩、AI・開発・経済・官公庁の注目ニュースを複数ソースから集約。深堀・予想・出典・注目指数付きで相談できます。",
+        href: "/works/consult/news-search",
+        status: "ready",
+        points: ["複数ソース", "注目指数", "AI相談", "Soluna連携"],
+        accent: "#67e8f9",
+      },
       {
         title: "Gemini Consult",
         titleJa: "AI 相談ボード",

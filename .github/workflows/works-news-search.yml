@@ -1,0 +1,32 @@
+name: Works News Search Digest
+
+on:
+  schedule:
+    # 毎日深夜〜早朝に確実取得（JST）
+    - cron: "30 15 * * *" # 0:30 JST
+    - cron: "0 16 * * *"  # 1:00 JST
+    - cron: "30 16 * * *" # 1:30 JST
+    - cron: "0 17 * * *"  # 2:00 JST キャッチアップ
+  workflow_dispatch:
+
+jobs:
+  build_digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build news search digest
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            node frontend/scripts/fetch-works-news-search.mjs --force
+          else
+            node frontend/scripts/fetch-works-news-search.mjs
+          fi
