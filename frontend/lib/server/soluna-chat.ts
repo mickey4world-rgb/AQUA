@@ -34,14 +34,17 @@ import { assessSolunaCostMode, type SolunaCostMode } from "@/lib/server/soluna-c
 import { finalizeSolunaReply, isOpsStyleQuestion, isWorldInfoQuestion } from "@/lib/soluna-reply";
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
 import { buildHumanChatBriefingSection } from "@/lib/server/soluna-human-context";
-import { fetchLiveWorldContextForChat } from "@/lib/server/soluna-web-context";
+import { fetchLiveWorldContextForChat, needsLiveWorldContext } from "@/lib/server/soluna-web-context";
 import {
   fetchAmbientWeatherBrief,
   isWeatherQuestion,
 } from "@/lib/server/soluna-weather";
 import {
   COMPETENCE_ADDON,
+  INTENT_INFERENCE_ADDON,
+  JARVIS_HAYATO_ADDON,
   NATURAL_SPEECH_ADDON,
+  buildLunaFailoverLine,
   selectVoiceLead,
   VOICE_LEAD_ADDON,
   VOICE_SUPPORT_ADDON,
@@ -73,8 +76,11 @@ import type {
 
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY = 14;
-/** 音声掛け合い（1回の応答で二人分） */
-const VOICE_CHAT_MAX_OUTPUT_TOKENS = 260;
+const MAX_HISTORY_FAST = 6;
+/** 音声掛け合い（1回の応答で二人分）— 短く即答 */
+const VOICE_CHAT_MAX_OUTPUT_TOKENS = 180;
+/** テキスト掛け合い（1呼び出し） */
+const TEXT_DUO_MAX_OUTPUT_TOKENS = 420;
 /** テキストチャット — 十分な長さで完結した返答 */
 const TEXT_CHAT_MAX_OUTPUT_TOKENS = 560;
 const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 520;
@@ -82,13 +88,19 @@ const CLAUDE_CHAT_MAX_TOKENS = 520;
 const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 500;
 /** SWA の API 制限（約 45 秒）内に収める。ソルは早めに切ってモデル切替 */
 const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
-const SOL_PRIMARY_TIMEOUT_MS = 11_000;
-const SOL_FALLBACK_TIMEOUT_MS = 14_000;
-/** 音声は即答優先で短めに切る */
-const VOICE_PROVIDER_TIMEOUT_MS = 10_000;
+const SOL_PRIMARY_TIMEOUT_MS = 9_000;
+const SOL_FALLBACK_TIMEOUT_MS = 11_000;
+/** 会話即答: Gemini Flash 優先の短タイムアウト */
+const VOICE_PROVIDER_TIMEOUT_MS = 6_500;
+const DUO_PROVIDER_TIMEOUT_MS = 8_000;
 const MAX_PROVIDER_ATTEMPTS_SOL = 3;
-const MAX_PROVIDER_ATTEMPTS_LUNA = 2;
+const MAX_PROVIDER_ATTEMPTS_LUNA = 3;
 const MAX_CLAUDE_MODEL_ATTEMPTS = 3;
+const FAST_GEMINI_MODELS = [
+  "gemini-flash-latest",
+  "gemini-3.6-flash",
+  "gemini-2.0-flash",
+] as const;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
   "goal",
@@ -118,34 +130,41 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 - 記憶した内容があれば1フレーズだけ自然に触れる
 - 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える
 
-${COMPETENCE_ADDON}`;
+${COMPETENCE_ADDON}
 
-const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性の AI コンパニオンです。
+${INTENT_INFERENCE_ADDON}
+
+${JARVIS_HAYATO_ADDON}`;
+
+const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する、明るく若い女性の AI コンパニオンです。
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」や「天気予報」「周辺状況」があればそれを根拠に答える。
 
 ## 話し方
-- 日本語・です/ます調。**やわらかく・温かく・明晰・賢く**。適度に絵文字を1〜2個（🌙💫🌸など）
+- 日本語・です/ます調。**明るく・軽やか・明晰・賢く**（落ち着きすぎた年配口調は禁止）。適度に絵文字を1〜2個（🌙💫🌸など）
 - **必ず完結した文で終える**。テキストチャットでは **2〜4文・おおよそ200〜400文字**（途中で切らない）
 - 状況・ジョブ・他アプリ・世間ニュースの説明のみ **最大5文・520字まで**
-- 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
+- 真意の気持ちを受け止めてから、短い一言と次の安心材料を添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる
-- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える
+- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える。沈黙・応答不能は禁止
 
-${COMPETENCE_ADDON}`;
+${COMPETENCE_ADDON}
+
+${INTENT_INFERENCE_ADDON}
+
+${JARVIS_HAYATO_ADDON}`;
 
 const VOICE_MODE_ADDON = `
 
 ## 音声会話モード（必須・最優先）
-- **2文前後**で、友人と話すような口調にする
-- 絵文字・記号・箇条書き・カッコ書きは使わない
-- 「検索できません」「確認できません」「わかりません」だけで終わらない。分かったことを先に話し、足りない点だけ優しく添える
-- 機械の読み上げ文ではなく、息づかいのある自然な会話
-- 一度に伝えることは1〜2つ。質問は最大1つ
-- ソルとルーナは掛け合いで話す。同じ答えを二人で言わない
-${NATURAL_SPEECH_ADDON}`;
+- **短く鋭く**。友人と話す口調。絵文字・箇条書き禁止
+- 真意→答え→先回り提案。確認質問はしない
+- ソルとルーナは掛け合い。同じ答えを言わない
+${NATURAL_SPEECH_ADDON}
+${INTENT_INFERENCE_ADDON}
+${JARVIS_HAYATO_ADDON}`;
 
 const TEXT_MODE_ADDON = `
 
@@ -233,10 +252,10 @@ ${label}
 - **最新のユーザー発言** を最優先。記憶と矛盾する場合は記憶より今の言葉を信じる。`;
 }
 
-function formatMemories(memories: SolunaMemory[]): string {
+function formatMemories(memories: SolunaMemory[], limit = 8): string {
   if (memories.length === 0) return "（まだ記憶はありません）";
   return memories
-    .slice(0, 8)
+    .slice(0, limit)
     .map((memory) => {
       const when = formatJstTimestamp(memory.createdAt);
       const dateHint = when ? `(${when}記録)` : "";
@@ -245,9 +264,9 @@ function formatMemories(memories: SolunaMemory[]): string {
     .join("\n");
 }
 
-function buildTranscript(messages: SolunaMessage[]): string {
+function buildTranscript(messages: SolunaMessage[], historyLimit = MAX_HISTORY): string {
   return messages
-    .slice(-MAX_HISTORY)
+    .slice(-historyLimit)
     .map((message) => {
       const label =
         message.role === "user"
@@ -319,8 +338,9 @@ ${formatMemories(memories)}${briefingBlock}`;
 function buildUserMessages(
   history: SolunaMessage[],
   userMessage: string,
+  historyLimit = MAX_HISTORY,
 ): Array<{ role: "user"; content: string }> {
-  const transcript = buildTranscript(history);
+  const transcript = buildTranscript(history, historyLimit);
   return [
     ...(transcript
       ? [{ role: "user" as const, content: `【これまでの会話】\n${transcript}` }]
@@ -365,22 +385,27 @@ async function callProvider(
   userMessages: Array<{ role: "user"; content: string }>,
   timeoutMs = SOLUNA_PROVIDER_TIMEOUT_MS,
   voiceMode = false,
+  maxOutputTokens?: number,
 ): Promise<CharacterChatResult> {
   const feature = character === "sol" ? "soluna-sol-chat" : "soluna-luna-chat";
   const { provider, model, tier } = assignment;
-  const geminiMaxTokens = voiceMode
-    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
-    : TEXT_CHAT_MAX_OUTPUT_TOKENS;
-  const claudeMaxTokens = voiceMode
-    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
-    : tier === "mature"
-      ? TEXT_CHAT_MAX_OUTPUT_TOKENS
-      : CLAUDE_CHAT_MAX_TOKENS;
-  const openAiMaxTokens = voiceMode
-    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
-    : tier === "mature"
-      ? TEXT_CHAT_MAX_OUTPUT_TOKENS
-      : OPENAI_CHAT_MAX_COMPLETION_TOKENS;
+  const geminiMaxTokens =
+    maxOutputTokens ??
+    (voiceMode ? VOICE_CHAT_MAX_OUTPUT_TOKENS : TEXT_CHAT_MAX_OUTPUT_TOKENS);
+  const claudeMaxTokens =
+    maxOutputTokens ??
+    (voiceMode
+      ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+      : tier === "mature"
+        ? TEXT_CHAT_MAX_OUTPUT_TOKENS
+        : CLAUDE_CHAT_MAX_TOKENS);
+  const openAiMaxTokens =
+    maxOutputTokens ??
+    (voiceMode
+      ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+      : tier === "mature"
+        ? TEXT_CHAT_MAX_OUTPUT_TOKENS
+        : OPENAI_CHAT_MAX_COMPLETION_TOKENS);
 
   if (provider === "gemini") {
     if (!isGeminiConfigured()) {
@@ -596,8 +621,8 @@ async function chatWithCharacter(
   );
   const userMessages = buildUserMessages(history, userMessage);
 
-  // ソルは応答不能を避けるため、失敗時は相手のプロバイダも含め全候補へ即切替
-  const allowPartnerProviderOnFailover = character === "sol";
+  // ソル／ルーナとも応答不能を避けるため、失敗時は相手プロバイダも含め切替
+  const allowPartnerProviderOnFailover = true;
   const maxAttempts =
     character === "sol" ? MAX_PROVIDER_ATTEMPTS_SOL : MAX_PROVIDER_ATTEMPTS_LUNA;
 
@@ -642,11 +667,7 @@ async function chatWithCharacter(
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i]!;
     const timeoutMs =
-      character === "sol"
-        ? i === 0
-          ? SOL_PRIMARY_TIMEOUT_MS
-          : SOL_FALLBACK_TIMEOUT_MS
-        : SOLUNA_PROVIDER_TIMEOUT_MS;
+      i === 0 ? SOL_PRIMARY_TIMEOUT_MS : SOL_FALLBACK_TIMEOUT_MS;
 
     const result = await callProvider(
       userId,
@@ -794,24 +815,37 @@ export type SolunaChatResult =
   | { ok: true; data: SolunaChatResponse }
   | { ok: false; reason: string };
 
-function parseVoiceDuoReply(text: string): { sol: string; luna: string } | null {
+function parseVoiceDuoReply(
+  text: string,
+  userMessage: string,
+): { sol: string; luna: string } | null {
   const cleaned = stripJsonFence(text).trim();
   try {
     const parsed = JSON.parse(cleaned) as { sol?: unknown; luna?: unknown };
-    if (typeof parsed.sol === "string" && typeof parsed.luna === "string") {
+    if (typeof parsed.sol === "string" && parsed.sol.trim()) {
       const sol = parsed.sol.trim();
-      const luna = parsed.luna.trim();
-      if (sol && luna) return { sol, luna };
+      const luna =
+        typeof parsed.luna === "string" && parsed.luna.trim()
+          ? parsed.luna.trim()
+          : buildLunaFailoverLine(userMessage, sol);
+      return { sol, luna };
     }
   } catch {
     // fall through
   }
   const solMatch = cleaned.match(/"sol"\s*:\s*"((?:\\.|[^"\\])*)"/);
   const lunaMatch = cleaned.match(/"luna"\s*:\s*"((?:\\.|[^"\\])*)"/);
-  if (solMatch?.[1] && lunaMatch?.[1]) {
+  if (solMatch?.[1]) {
     const sol = solMatch[1].replace(/\\"/g, '"').trim();
-    const luna = lunaMatch[1].replace(/\\"/g, '"').trim();
-    if (sol && luna) return { sol, luna };
+    const luna = lunaMatch?.[1]
+      ? lunaMatch[1].replace(/\\"/g, '"').trim()
+      : "";
+    if (sol) {
+      return {
+        sol,
+        luna: luna || buildLunaFailoverLine(userMessage, sol),
+      };
+    }
   }
   return null;
 }
@@ -823,33 +857,37 @@ function buildVoiceDuoSystem(
   lunaMemories: SolunaMemory[],
   solIntimacy: number,
   lunaIntimacy: number,
+  voiceMode: boolean,
 ): string {
   const leadName = voiceLead === "sol" ? "ソル" : "ルーナ";
   const supportName = voiceLead === "sol" ? "ルーナ" : "ソル";
-  return `あなたはソル（太陽・行動）とルーナ（月・感情）の二人組 AI の掛け合い脚本家です。
-1回の応答で二人分の短い話し言葉を JSON だけで返します。
+  const lengthRule = voiceMode
+    ? "主担当60〜100字、相手35〜55字。話し言葉。"
+    : "主担当120〜220字、相手60〜120字。テキストでも完結。";
+  return `あなたはソルとルーナの二人組AIの脚本家。Jarvis／優秀な作戦AIを超える伴走で、JSONだけ返す。
 
 ${COMPETENCE_ADDON}
-${NATURAL_SPEECH_ADDON}
+${INTENT_INFERENCE_ADDON}
+${JARVIS_HAYATO_ADDON}
+${voiceMode ? NATURAL_SPEECH_ADDON : ""}
 
 ${buildTemporalContext()}
 
 ## 役割
-- 主担当（1人目）: ${leadName} — ${VOICE_LEAD_ADDON}
-- 掛け合い（2人目）: ${supportName} — ${VOICE_SUPPORT_ADDON}
-- 二人は同じ内容を言わない。2人目は賛同・やさしい反論・結論のいずれか。
+- 主担当: ${leadName} — 真意への答え＋具体提案
+- 相手: ${supportName} — 糸の接続／心／別視点／提案の確定（繰り返し禁止）
 
-## 記憶
-ソル親密度 ${solIntimacy}/100:
-${formatMemories(solMemories)}
-ルーナ親密度 ${lunaIntimacy}/100:
-${formatMemories(lunaMemories)}
+## 記憶（要点のみ）
+ソル(${solIntimacy}):
+${formatMemories(solMemories, 4)}
+ルーナ(${lunaIntimacy}):
+${formatMemories(lunaMemories, 4)}
 
 ${briefingSection.trim()}
 
-## 出力（JSONのみ・他の文字禁止）
-{"sol":"ソルの話し言葉","luna":"ルーナの話し言葉"}
-- 絵文字・箇条書き禁止。主担当80〜120字、相手50〜80字。`;
+## 出力（JSONのみ）
+{"sol":"...","luna":"..."}
+${lengthRule} 絵文字禁止。確認質問禁止。`;
 }
 
 async function chatVoiceDuo(params: {
@@ -864,6 +902,8 @@ async function chatVoiceDuo(params: {
   solIntimacy: number;
   lunaIntimacy: number;
   explainAsk: boolean;
+  voiceMode: boolean;
+  costMode: SolunaCostMode;
 }): Promise<
   | {
       ok: true;
@@ -883,52 +923,66 @@ async function chatVoiceDuo(params: {
     params.lunaMemories,
     params.solIntimacy,
     params.lunaIntimacy,
+    params.voiceMode,
   );
   const prompt = `${params.userMessage}
 
-（※音声掛け合い。主担当は${params.voiceLead === "sol" ? "ソル" : "ルーナ"}。
-${params.explainAsk ? "事実ベースで自然な話し言葉。" : ""}
-JSONのみで sol と luna の両方を返す。）`;
+（※掛け合い。主担当=${params.voiceLead === "sol" ? "ソル" : "ルーナ"}。
+真意→答え→先回り提案。糸を組む。確認質問禁止。JSONのみ。）`;
 
-  const userMessages = buildUserMessages(params.history, prompt);
-  const providers: SolunaProvider[] = [];
-  // 即答優先: Gemini → 主担当の割当 → その他
-  if (isGeminiConfigured()) providers.push("gemini");
-  if (!providers.includes(params.assignment.provider)) {
-    providers.push(params.assignment.provider);
+  const historyLimit = params.voiceMode ? MAX_HISTORY_FAST : 10;
+  const userMessages = buildUserMessages(params.history, prompt, historyLimit);
+
+  // 即答: Gemini Flash を最優先（1試行で決める）
+  const attempts: SolunaRouteAssignment[] = [];
+  if (isGeminiConfigured()) {
+    for (const modelId of FAST_GEMINI_MODELS) {
+      attempts.push({
+        ...buildFallbackAssignment(
+          params.voiceLead,
+          "gemini",
+          params.assignment.tier,
+          params.assignment.tierLevel,
+          params.costMode,
+        ),
+        model: modelId,
+        modelDisplayName: modelId,
+        modelLabel: formatModelUsedLabel("gemini", modelId, modelId),
+        reason: "即答Flash",
+      });
+    }
   }
-  for (const p of getAvailableSolunaProviders()) {
-    if (!providers.includes(p)) providers.push(p);
+  if (
+    params.assignment.provider !== "gemini" ||
+    !attempts.some((a) => a.model === params.assignment.model)
+  ) {
+    attempts.push(params.assignment);
   }
 
-  let lastError = "音声応答を取得できませんでした。";
-  for (const provider of providers.slice(0, 2)) {
-    const assignment =
-      provider === params.assignment.provider
-        ? params.assignment
-        : buildFallbackAssignment(
-            params.voiceLead,
-            provider,
-            params.assignment.tier,
-            params.assignment.tierLevel,
-            "normal",
-          );
+  let lastError = "応答を取得できませんでした。";
+  const timeoutMs = params.voiceMode ? VOICE_PROVIDER_TIMEOUT_MS : DUO_PROVIDER_TIMEOUT_MS;
+  const maxTokens = params.voiceMode
+    ? VOICE_CHAT_MAX_OUTPUT_TOKENS
+    : TEXT_DUO_MAX_OUTPUT_TOKENS;
+
+  for (const assignment of attempts.slice(0, 2)) {
     const result = await callProvider(
       params.userId,
       params.voiceLead,
       assignment,
       system,
       userMessages,
-      VOICE_PROVIDER_TIMEOUT_MS,
-      true,
+      timeoutMs,
+      params.voiceMode,
+      maxTokens,
     );
     if ("error" in result) {
       lastError = result.error;
       continue;
     }
-    const parsed = parseVoiceDuoReply(result.content);
+    const parsed = parseVoiceDuoReply(result.content, params.userMessage);
     if (!parsed) {
-      lastError = "音声掛け合いの形式が不正でした。";
+      lastError = "掛け合い形式が不正でした。";
       continue;
     }
     return {
@@ -938,7 +992,7 @@ JSONのみで sol と luna の両方を返す。）`;
       model: result.model,
       modelLabel: result.modelLabel || assignment.modelLabel,
       provider: result.provider,
-      reason: result.reason || "音声掛け合い（1呼び出し）",
+      reason: result.reason || "掛け合い（1呼び出し・即答）",
     };
   }
   return { ok: false, error: lastError };
@@ -966,44 +1020,70 @@ export async function sendSolunaChat(
   const profile = await getOrCreateProfile(userId);
   const opsAsk = isOpsStyleQuestion(trimmed);
   const worldAsk = isWorldInfoQuestion(trimmed);
-  const voiceLead = voiceMode ? selectVoiceLead(trimmed) : undefined;
-  const wantAmbientWeather = voiceMode && isWeatherQuestion(trimmed);
-  const [solMemories, lunaMemories, history, briefing, worldContext, ambientWeather] =
+  const explainAsk = opsAsk || worldAsk;
+  const fastPath = voiceMode || !opsAsk;
+  const voiceLead = selectVoiceLead(trimmed);
+  const wantWorld = needsLiveWorldContext(trimmed);
+  const wantAmbientWeather = isWeatherQuestion(trimmed);
+  const historyLimit = voiceMode ? 10 : fastPath ? 16 : 40;
+
+  const [solMemories, lunaMemories, history, worldContext, ambientWeather, costAssessment] =
     await Promise.all([
       listMemories(userId, "sol"),
       listMemories(userId, "luna"),
-      listMessages(userId),
-      getBriefingForHumanChat(),
-      fetchLiveWorldContextForChat(trimmed, { voiceMode }),
+      listMessages(userId, historyLimit),
+      wantWorld
+        ? Promise.race([
+            fetchLiveWorldContextForChat(trimmed, { voiceMode }),
+            new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), voiceMode ? 4500 : 8000),
+            ),
+          ])
+        : Promise.resolve(null),
       wantAmbientWeather ? fetchAmbientWeatherBrief(trimmed) : Promise.resolve(null),
+      fastPath && !opsAsk
+        ? Promise.resolve({
+            mode: "normal" as const,
+            monthlyCostUsd: 0,
+            monthlyTokens: 0,
+            tokenLimit: 0,
+            usageRatio: 0,
+            reason: "即答優先",
+          })
+        : assessSolunaCostMode(userId),
     ]);
-  const briefingSection = [
-    await buildHumanChatBriefingSection(briefing, trimmed, {
-      userId,
-      detail: voiceMode ? "compact" : opsAsk ? "full" : "compact",
-    }),
-    worldContext,
-    ambientWeather &&
-    !(worldContext && /天気予報|周辺状況（天気/.test(worldContext))
-      ? ambientWeather
-      : null,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  const explainAsk = opsAsk || worldAsk;
+
+  let briefingSection = "";
+  if (opsAsk) {
+    const briefing = await getBriefingForHumanChat();
+    briefingSection = [
+      await buildHumanChatBriefingSection(briefing, trimmed, {
+        userId,
+        detail: voiceMode ? "compact" : "full",
+      }),
+      worldContext,
+      ambientWeather,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  } else {
+    briefingSection = [worldContext, ambientWeather].filter(Boolean).join("\n\n");
+  }
+
+  const intentHint =
+    "真意に先に応え、糸を組み、具体的な一手を提案する。確認キャッチボールはしない。";
   const textUserPrompt = explainAsk
-    ? `${trimmed}\n\n（※状況・ジョブ・他アプリ・世間の最新情報の質問です。system の「ギルド作戦状況」「他アプリの最近の動き」「最新ウェブ／SNS情報」「天気予報」の事実を根拠に、520字以内で完結した文で答えてください。世間の話題では討伐ネタでごまかさないでください。）`
-    : `${trimmed}\n\n（※テキストチャットです。2〜4文・200〜400字程度で、途中で切らず完結した返答にしてください。）`;
+    ? `${trimmed}\n\n（※状況・最新情報。事実根拠で完結。${intentHint}）`
+    : `${trimmed}\n\n（※${intentHint}）`;
   const userPromptLead = voiceMode
-    ? `${explainAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリ・最新情報の質問です。事実ベースで自然な話し言葉。）" : trimmed}\n\n（※音声の掛け合い・あなたが1人目（主担当）。ユーザーに結論から話す。2文・80〜120字・絵文字なし。パートナーが続くので全部言い切らない。）`
+    ? `${trimmed}\n\n（※音声・主担当。${intentHint} 60〜100字・絵文字なし。）`
     : textUserPrompt;
   const userPromptSupport = voiceMode
-    ? `${trimmed}\n\n（※音声の掛け合い・あなたが2人目。主担当が答える前提で、同じ答えを繰り返さず賛同・やさしい反論・結論のいずれか1つ。50〜80字・絵文字なし・話し言葉。）`
+    ? `${trimmed}\n\n（※音声・2人目。繰り返し禁止。糸／別視点／結論。35〜55字。）`
     : textUserPrompt;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
-  const costAssessment = await assessSolunaCostMode(userId);
   const routePlan: SolunaRoutePlan = routeSolunaModels(
     trimmed,
     profile.solIntimacy,
@@ -1014,38 +1094,54 @@ export async function sendSolunaChat(
     },
   );
 
-  const solVoiceRole =
-    voiceMode && voiceLead ? (voiceLead === "sol" ? "lead" : "support") : undefined;
-  const lunaVoiceRole =
-    voiceMode && voiceLead ? (voiceLead === "luna" ? "lead" : "support") : undefined;
+  const solVoiceRole = voiceMode
+    ? voiceLead === "sol"
+      ? ("lead" as const)
+      : ("support" as const)
+    : undefined;
+  const lunaVoiceRole = voiceMode
+    ? voiceLead === "luna"
+      ? ("lead" as const)
+      : ("support" as const)
+    : undefined;
 
-  const retrySolEmergency = async (
+  const retryCharacterEmergency = async (
+    character: SolunaCharacter,
     failed: CharacterChatResult & { error: string },
     prompt: string,
     role: "lead" | "support" | undefined,
   ): Promise<CharacterChatResult> => {
-    console.warn(`[soluna] sol emergency retry after: ${failed.error}`);
+    const primary =
+      character === "sol" ? routePlan.sol.provider : routePlan.luna.provider;
+    console.warn(`[soluna] ${character} emergency retry after: ${failed.error}`);
     const emergencyProviders = getAvailableSolunaProviders().filter(
-      (provider) => provider !== routePlan.sol.provider,
+      (provider) => provider !== primary,
     );
+    // Gemini を最優先で試す（安定・即応）
+    emergencyProviders.sort((a, b) => Number(b === "gemini") - Number(a === "gemini"));
     let result: CharacterChatResult = failed;
+    const assignmentBase = character === "sol" ? routePlan.sol : routePlan.luna;
+    const memories = character === "sol" ? solMemories : lunaMemories;
+    const intimacy =
+      character === "sol" ? profile.solIntimacy : profile.lunaIntimacy;
+    const stageLabel = character === "sol" ? solStage.label : lunaStage.label;
     for (const provider of emergencyProviders) {
       const emergencyAssignment = buildFallbackAssignment(
-        "sol",
+        character,
         provider,
-        routePlan.sol.tier,
-        routePlan.sol.tierLevel,
+        assignmentBase.tier,
+        assignmentBase.tierLevel,
         costAssessment.mode,
       );
       result = await chatWithCharacter(
         userId,
-        "sol",
+        character,
         emergencyAssignment,
         prompt,
-        solMemories,
+        memories,
         history,
-        profile.solIntimacy,
-        solStage.label,
+        intimacy,
+        stageLabel,
         costAssessment.mode,
         undefined,
         briefingSection,
@@ -1055,7 +1151,7 @@ export async function sendSolunaChat(
       if (!("error" in result)) {
         return {
           ...result,
-          reason: `緊急フェイルオーバー（${routePlan.sol.provider}→${result.provider}/${result.model}）`,
+          reason: `緊急フェイルオーバー（${primary}→${result.provider}/${result.model}）`,
         };
       }
     }
@@ -1065,8 +1161,8 @@ export async function sendSolunaChat(
   let solResult: CharacterChatResult;
   let lunaResult: CharacterChatResult;
 
-  if (voiceMode && voiceLead) {
-    // 即答: 1回の呼び出しで二人分の掛け合いを生成
+  // 原則1呼び出しの掛け合い（音声・通常とも即答優先）
+  {
     const duo = await chatVoiceDuo({
       userId,
       assignment: voiceLead === "sol" ? routePlan.sol : routePlan.luna,
@@ -1079,6 +1175,8 @@ export async function sendSolunaChat(
       solIntimacy: profile.solIntimacy,
       lunaIntimacy: profile.lunaIntimacy,
       explainAsk,
+      voiceMode,
+      costMode: costAssessment.mode,
     });
 
     if (duo.ok) {
@@ -1097,7 +1195,7 @@ export async function sendSolunaChat(
         reason: duo.reason,
       };
     } else {
-      console.warn("[soluna] voice duo failed, parallel fallback:", duo.error);
+      console.warn("[soluna] duo failed, parallel fallback:", duo.error);
       const solPrompt = solVoiceRole === "support" ? userPromptSupport : userPromptLead;
       const lunaPrompt = lunaVoiceRole === "support" ? userPromptSupport : userPromptLead;
       const [solRaw, lunaRaw] = await Promise.all([
@@ -1111,9 +1209,9 @@ export async function sendSolunaChat(
           profile.solIntimacy,
           solStage.label,
           costAssessment.mode,
-          routePlan.luna.provider,
+          undefined,
           briefingSection,
-          true,
+          voiceMode,
           solVoiceRole,
         ),
         chatWithCharacter(
@@ -1126,58 +1224,42 @@ export async function sendSolunaChat(
           profile.lunaIntimacy,
           lunaStage.label,
           costAssessment.mode,
-          routePlan.sol.provider,
+          undefined,
           briefingSection,
-          true,
+          voiceMode,
           lunaVoiceRole,
         ),
       ]);
       solResult = solRaw;
       lunaResult = lunaRaw;
       if ("error" in solResult) {
-        solResult = await retrySolEmergency(solResult, solPrompt, solVoiceRole);
+        solResult = await retryCharacterEmergency("sol", solResult, solPrompt, solVoiceRole);
       }
-    }
-  } else {
-    const [solResultRaw, lunaResultRaw] = await Promise.all([
-      chatWithCharacter(
-        userId,
-        "sol",
-        routePlan.sol,
-        textUserPrompt,
-        solMemories,
-        history,
-        profile.solIntimacy,
-        solStage.label,
-        costAssessment.mode,
-        routePlan.luna.provider,
-        briefingSection,
-        false,
-      ),
-      chatWithCharacter(
-        userId,
-        "luna",
-        routePlan.luna,
-        textUserPrompt,
-        lunaMemories,
-        history,
-        profile.lunaIntimacy,
-        lunaStage.label,
-        costAssessment.mode,
-        routePlan.sol.provider,
-        briefingSection,
-        false,
-      ),
-    ]);
-    solResult = solResultRaw;
-    lunaResult = lunaResultRaw;
-    if ("error" in solResult) {
-      solResult = await retrySolEmergency(solResult, textUserPrompt, undefined);
+      if ("error" in lunaResult) {
+        lunaResult = await retryCharacterEmergency(
+          "luna",
+          lunaResult,
+          lunaPrompt,
+          lunaVoiceRole,
+        );
+      }
     }
   }
 
   if ("error" in solResult && "error" in lunaResult) {
     return { ok: false, reason: `${solResult.error} / ${lunaResult.error}` };
+  }
+
+  // ルーナだけ落ちた場合は沈黙せず伴走文を必ず返す
+  if ("error" in lunaResult && !("error" in solResult)) {
+    const failover = buildLunaFailoverLine(trimmed, solResult.content);
+    lunaResult = {
+      content: failover,
+      model: solResult.model,
+      modelLabel: solResult.modelLabel,
+      provider: solResult.provider,
+      reason: `ルーナ緊急伴走（${lunaResult.error}）`,
+    };
   }
 
   const solContentRaw =
@@ -1192,7 +1274,7 @@ export async function sendSolunaChat(
           voice: voiceMode,
           voiceSupport: solVoiceRole === "support",
         });
-  const lunaContent =
+  let lunaContent =
     "error" in lunaResult
       ? lunaContentRaw
       : finalizeSolunaReply(lunaContentRaw, {
@@ -1200,6 +1282,13 @@ export async function sendSolunaChat(
           voice: voiceMode,
           voiceSupport: lunaVoiceRole === "support",
         });
+  if (!lunaContent.trim() || /応答できません/.test(lunaContent)) {
+    lunaContent = finalizeSolunaReply(buildLunaFailoverLine(trimmed, solContent), {
+      ops: explainAsk,
+      voice: voiceMode,
+      voiceSupport: true,
+    });
+  }
 
   const gain = estimateIntimacyGain(trimmed.length);
   const nextProfile = await saveProfile({
@@ -1235,7 +1324,7 @@ export async function sendSolunaChat(
     }),
   ];
   await appendMessages(userId, batch);
-  const messages = await listMessages(userId);
+  const messages = [...history, ...batch];
 
   return {
     ok: true,

@@ -190,6 +190,7 @@ const CHARACTER_VOICE: Record<"sol" | "luna", CharacterVoiceProfile> = {
     prefer: [
       /neural/i,
       /natural/i,
+      /online/i,
       /google/i,
       /otoya/i,
       /ichiro/i,
@@ -199,16 +200,7 @@ const CHARACTER_VOICE: Record<"sol" | "luna", CharacterVoiceProfile> = {
       /男/i,
       /male/i,
     ],
-    avoid: [/kyoko/i, /haruka/i, /nanami/i, /ayumi/i, /moira/i, /samantha/i, /女/i, /female/i],
-    // 少しゆっくり・抑揚をつけて読み上げ感を抑える
-    rate: 0.96,
-    pitch: 1.0,
-  },
-  luna: {
-    prefer: [
-      /neural/i,
-      /natural/i,
-      /google/i,
+    avoid: [
       /kyoko/i,
       /haruka/i,
       /nanami/i,
@@ -218,9 +210,39 @@ const CHARACTER_VOICE: Record<"sol" | "luna", CharacterVoiceProfile> = {
       /女/i,
       /female/i,
     ],
-    avoid: [/otoya/i, /ichiro/i, /keita/i, /hattori/i, /takeru/i, /男/i, /male/i, /boy/i],
-    rate: 0.93,
-    pitch: 1.08,
+    rate: 0.98,
+    pitch: 0.98,
+  },
+  luna: {
+    // 若い・明るい・綺麗めの声を優先（Kyoko/Haruka 等の「おばさん声」は避ける）
+    prefer: [
+      /nanami/i,
+      /online/i,
+      /natural/i,
+      /neural/i,
+      /google\s*日本語/i,
+      /日本語.*google/i,
+      /microsoft\s*nanami/i,
+      /sayaka/i,
+      /soft/i,
+    ],
+    avoid: [
+      /kyoko/i,
+      /ayumi/i,
+      /haruka/i,
+      /otoya/i,
+      /ichiro/i,
+      /keita/i,
+      /hattori/i,
+      /takeru/i,
+      /男/i,
+      /male/i,
+      /boy/i,
+      /mizuki/i,
+    ],
+    // 明るく若く聞こえるよう、やや速め・高め
+    rate: 1.04,
+    pitch: 1.24,
   },
 };
 
@@ -228,16 +250,26 @@ function scoreVoice(voice: SpeechSynthesisVoice, character: "sol" | "luna"): num
   const profile = CHARACTER_VOICE[character];
   const label = `${voice.name} ${voice.voiceURI}`;
   let score = 0;
-  if (voice.lang.startsWith("ja")) score += 12;
-  if (voice.lang === "ja-JP") score += 6;
-  // クラウド／ニューラル系を優先（ローカルの機械音声より自然）
-  if (!voice.localService) score += 8;
-  else score += 1;
+  if (voice.lang.startsWith("ja")) score += 14;
+  if (voice.lang === "ja-JP") score += 8;
+
+  // クラウド／ニューラル系を強く優先（ローカル機械音声はおばさん声になりやすい）
+  if (!voice.localService) score += character === "luna" ? 28 : 12;
+  else score += character === "luna" ? -6 : 1;
+
+  if (character === "luna") {
+    if (/nanami/i.test(label)) score += 48;
+    if (/online|natural|neural/i.test(label)) score += 22;
+    if (/google/i.test(label) && voice.lang.startsWith("ja")) score += 36;
+    if (/kyoko|ayumi|haruka/i.test(label)) score -= 55;
+    if (voice.localService && /microsoft/i.test(label)) score -= 20;
+  }
+
   for (const pattern of profile.prefer) {
     if (pattern.test(label)) score += 24;
   }
   for (const pattern of profile.avoid) {
-    if (pattern.test(label)) score -= 18;
+    if (pattern.test(label)) score -= 28;
   }
   return score;
 }
@@ -445,10 +477,15 @@ export function useSolunaVoice() {
 
     const utterance = new SpeechSynthesisUtterance(speechText);
     utterance.lang = "ja-JP";
-    // ごく小さなゆらぎで棒読み感を減らす
-    const jitter = (Math.random() - 0.5) * 0.04;
-    utterance.rate = Math.min(1.05, Math.max(0.88, profile.rate + jitter));
-    utterance.pitch = Math.min(1.15, Math.max(0.92, profile.pitch + jitter * 0.5));
+    // ごく小さなゆらぎで棒読み感を減らす（ルーナは明るめ寄り）
+    const jitter = (Math.random() - 0.5) * 0.03;
+    const baseRate = profile.rate;
+    const basePitch = profile.pitch;
+    utterance.rate = Math.min(1.12, Math.max(0.9, baseRate + jitter));
+    utterance.pitch = Math.min(
+      character === "luna" ? 1.35 : 1.12,
+      Math.max(character === "luna" ? 1.12 : 0.9, basePitch + jitter * 0.4),
+    );
     utterance.volume = 1;
     if (jaVoice) utterance.voice = jaVoice;
 

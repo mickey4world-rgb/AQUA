@@ -115,8 +115,10 @@ function scoreProvider(
     if (provider === "gemini") score += 1;
     if (REFLECTIVE_HINTS.test(message) && provider === "claude") score += 2;
   } else {
+    // ルーナも Gemini を候補に入れて「応答できません」を減らす
+    if (provider === "gemini") score += 2;
     if (provider === "claude" && LUNA_CLAUDE_HINTS.test(message)) score += 3;
-    if (provider === "openai" && LUNA_OPENAI_HINTS.test(message)) score += 3;
+    if (provider === "openai" && LUNA_OPENAI_HINTS.test(message)) score += 2;
     if (provider === "openai") score += 1;
     if (provider === "claude") score += 1;
     if (REFLECTIVE_HINTS.test(message) && provider === "claude") score += 2;
@@ -240,23 +242,8 @@ export function routeSolunaModels(
   }
 
   const sol = pickBestProvider("sol", message, solIntimacy, available, costMode);
-  const luna = pickBestProvider("luna", message, lunaIntimacy, available, costMode, sol.provider);
-
-  if (luna.provider === sol.provider) {
-    const alternate = available.find((provider) => provider !== sol.provider);
-    if (alternate) {
-      return {
-        sol,
-        luna: buildAssignment(
-          "luna",
-          alternate,
-          lunaIntimacy,
-          `${defaultReason("luna", alternate)}${costNote}`,
-          costMode,
-        ),
-      };
-    }
-  }
+  // ルーナはソルと別プロバイダを強制しない（別系統が落ちると「答えられない」が増えるため）
+  const luna = pickBestProvider("luna", message, lunaIntimacy, available, costMode);
 
   if (costNote) {
     return {

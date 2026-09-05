@@ -329,10 +329,13 @@ export default function SolunaPanel() {
                   text: payload.luna.content,
                   character: "luna" as const,
                 };
-          // 掛け合い: 主担当 → 相手（賛同／反論／結論）の順で二人とも話す
-          const lines = [leadLine, supportLine].filter(
-            (line) => line.text.trim().length > 0,
-          );
+          // 会話テンポ優先: 主担当 → 短い相手（長いサポートは切る）
+          const supportOk =
+            supportLine.text.trim().length > 0 &&
+            supportLine.text.trim().length <= (useVoiceMode ? 70 : 160);
+          const lines = supportOk
+            ? [leadLine, supportLine]
+            : [leadLine];
           speakLines(lines, resumeIfConversation, { force: true });
         } else {
           resumeIfConversation();

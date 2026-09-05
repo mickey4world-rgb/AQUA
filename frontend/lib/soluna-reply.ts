@@ -7,11 +7,11 @@ export const SOLUNA_REPLY_LIMITS = {
   normal: 420,
   /** 状況・ジョブなど説明が必要な質問 */
   ops: 560,
-  /** 音声会話モード — 短すぎると機械的になるので余裕を持たせる */
-  voice: 140,
-  voiceOps: 180,
-  /** 音声掛け合いの2人目（賛同／反論／結論） */
-  voiceSupport: 90,
+  /** 音声会話モード — 即答のため短め */
+  voice: 100,
+  voiceOps: 120,
+  /** 音声掛け合いの2人目 */
+  voiceSupport: 60,
 } as const;
 
 /** TTS 用 — 絵文字を除き、読み上げやすい句読点に整える */
