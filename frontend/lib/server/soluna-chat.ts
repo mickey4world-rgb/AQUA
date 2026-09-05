@@ -81,26 +81,30 @@ const MAX_HISTORY_FAST = 6;
 /** 音声掛け合い（1回の応答で二人分）— 短く即答 */
 const VOICE_CHAT_MAX_OUTPUT_TOKENS = 180;
 /** テキスト掛け合い（1呼び出し） */
-const TEXT_DUO_MAX_OUTPUT_TOKENS = 420;
+const TEXT_DUO_MAX_OUTPUT_TOKENS = 360;
 /** テキストチャット — 十分な長さで完結した返答 */
-const TEXT_CHAT_MAX_OUTPUT_TOKENS = 560;
-const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 520;
-const CLAUDE_CHAT_MAX_TOKENS = 520;
+const TEXT_CHAT_MAX_OUTPUT_TOKENS = 480;
+const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 420;
+const CLAUDE_CHAT_MAX_TOKENS = 420;
 const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 500;
-/** SWA の API 制限（約 45 秒）内に収める。ソルは早めに切ってモデル切替 */
-const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
-const SOL_PRIMARY_TIMEOUT_MS = 9_000;
-const SOL_FALLBACK_TIMEOUT_MS = 11_000;
+/**
+ * Azure SWA の API 実効上限（〜30–45秒）を超えるとクライアントは HTTP 500 を見る。
+ * 全体予算を厳守し、切れても必ず会話可能な返答を返す。
+ */
+const CHAT_HARD_DEADLINE_MS = 26_000;
+const SOLUNA_PROVIDER_TIMEOUT_MS = 10_000;
+const SOL_PRIMARY_TIMEOUT_MS = 6_500;
+const SOL_FALLBACK_TIMEOUT_MS = 7_500;
 /** 会話即答: Gemini Flash 優先の短タイムアウト */
-const VOICE_PROVIDER_TIMEOUT_MS = 6_500;
-const DUO_PROVIDER_TIMEOUT_MS = 8_000;
-const MAX_PROVIDER_ATTEMPTS_SOL = 3;
-const MAX_PROVIDER_ATTEMPTS_LUNA = 3;
-const MAX_CLAUDE_MODEL_ATTEMPTS = 3;
+const VOICE_PROVIDER_TIMEOUT_MS = 5_500;
+const DUO_PROVIDER_TIMEOUT_MS = 6_500;
+const MAX_PROVIDER_ATTEMPTS_SOL = 2;
+const MAX_PROVIDER_ATTEMPTS_LUNA = 2;
+const MAX_CLAUDE_MODEL_ATTEMPTS = 2;
 const FAST_GEMINI_MODELS = [
   "gemini-flash-latest",
-  "gemini-3.6-flash",
   "gemini-2.0-flash",
+  "gemini-3.6-flash",
 ] as const;
 
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
@@ -209,6 +213,24 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
         reject(error);
       });
   });
+}
+
+function remainingMs(startedAt: number, budgetMs = CHAT_HARD_DEADLINE_MS): number {
+  return Math.max(0, budgetMs - (Date.now() - startedAt));
+}
+
+function buildDegradedDuo(userMessage: string): { sol: string; luna: string } {
+  const short = userMessage.trim().slice(0, 40);
+  return {
+    sol: finalizeSolunaReply(
+      `いま回線が少し混んでるね。『${short || "いまの話"}』は受けとったよ。もう一度送ってくれればすぐ続きを組む☀️`,
+      {},
+    ),
+    luna: finalizeSolunaReply(
+      buildLunaFailoverLine(userMessage, "回線が混んでるみたい"),
+      { voiceSupport: true },
+    ),
+  };
 }
 
 function isProviderConfigured(provider: SolunaProvider): boolean {
@@ -433,13 +455,14 @@ async function callProvider(
       { models: [model], timeoutMs, maxAttempts: 1 },
     );
 
-    if (result.ok && result.finishReason === "MAX_TOKENS") {
+    // 時間に余裕があるときだけ MAX_TOKENS 再試行（遅延の主因を避ける）
+    if (result.ok && result.finishReason === "MAX_TOKENS" && timeoutMs >= 8_000) {
       result = await generateWithGemini(
         {
           ...request,
           maxOutputTokens: geminiMaxTokens * 2,
         },
-        { models: [model], timeoutMs, maxAttempts: 1 },
+        { models: [model], timeoutMs: Math.min(timeoutMs, 8_000), maxAttempts: 1 },
       );
     }
 
@@ -911,6 +934,8 @@ async function chatVoiceDuo(params: {
   explainAsk: boolean;
   voiceMode: boolean;
   costMode: SolunaCostMode;
+  timeoutMs?: number;
+  maxAttempts?: number;
 }): Promise<
   | {
       ok: true;
@@ -971,15 +996,17 @@ async function chatVoiceDuo(params: {
   const maxTokens = params.voiceMode
     ? VOICE_CHAT_MAX_OUTPUT_TOKENS
     : TEXT_DUO_MAX_OUTPUT_TOKENS;
+  // 即答: 1モデルで決める（逐次2試行は遅延と500の主因）
+  const attemptBudget = params.maxAttempts ?? 1;
 
-  for (const assignment of attempts.slice(0, 2)) {
+  for (const assignment of attempts.slice(0, attemptBudget)) {
     const result = await callProvider(
       params.userId,
       params.voiceLead,
       assignment,
       system,
       userMessages,
-      timeoutMs,
+      params.timeoutMs ?? timeoutMs,
       params.voiceMode,
       maxTokens,
     );
@@ -1024,6 +1051,163 @@ export async function sendSolunaChat(
     };
   }
 
+  const startedAt = Date.now();
+
+  try {
+    return await sendSolunaChatWithinBudget(userId, trimmed, voiceMode, startedAt);
+  } catch (error) {
+    console.error("[soluna] sendSolunaChat fatal — returning degraded reply", error);
+    return buildDegradedChatResult(userId, trimmed, voiceMode);
+  }
+}
+
+async function buildDegradedChatResult(
+  userId: string,
+  trimmed: string,
+  voiceMode: boolean,
+): Promise<SolunaChatResult> {
+  const degraded = buildDegradedDuo(trimmed);
+  const solContent = finalizeSolunaReply(degraded.sol, { voice: voiceMode });
+  const lunaContent = finalizeSolunaReply(degraded.luna, {
+    voice: voiceMode,
+    voiceSupport: true,
+  });
+  try {
+    const profile = await getOrCreateProfile(userId);
+    const history = await listMessages(userId, MAX_HISTORY_FAST);
+    const batch = [
+      createMessage(userId, "user", trimmed),
+      createMessage(userId, "sol", solContent, {
+        provider: "gemini",
+        model: "degraded",
+        modelLabel: "緊急伴走",
+        routeReason: "ハードデッドライン／例外回避",
+      }),
+      createMessage(userId, "luna", lunaContent, {
+        provider: "gemini",
+        model: "degraded",
+        modelLabel: "緊急伴走",
+        routeReason: "ハードデッドライン／例外回避",
+      }),
+    ];
+    await appendMessages(userId, batch).catch((err) => {
+      console.warn("[soluna] degraded appendMessages failed", err);
+    });
+    const solStage = resolveGrowthStage("sol", profile.solIntimacy);
+    const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
+    return {
+      ok: true,
+      data: {
+        sol: {
+          character: "sol",
+          content: solContent,
+          model: "degraded",
+          modelLabel: "緊急伴走",
+          provider: "gemini",
+          growthTier: resolveGrowthTier(profile.solIntimacy),
+          tierLevel: 1,
+          routeReason: "緊急伴走",
+        },
+        luna: {
+          character: "luna",
+          content: lunaContent,
+          model: "degraded",
+          modelLabel: "緊急伴走",
+          provider: "gemini",
+          growthTier: resolveGrowthTier(profile.lunaIntimacy),
+          tierLevel: 1,
+          routeReason: "緊急伴走",
+        },
+        routePlan: {
+          sol: {
+            provider: "gemini",
+            model: "degraded",
+            tier: resolveGrowthTier(profile.solIntimacy),
+            tierLevel: 1,
+            reason: "緊急伴走",
+          },
+          luna: {
+            provider: "gemini",
+            model: "degraded",
+            tier: resolveGrowthTier(profile.lunaIntimacy),
+            tierLevel: 1,
+            reason: "緊急伴走",
+          },
+        },
+        solIntimacy: profile.solIntimacy,
+        lunaIntimacy: profile.lunaIntimacy,
+        solStage,
+        lunaStage,
+        newMemories: [],
+        messages: [...history, ...batch],
+        voiceLead: selectVoiceLead(trimmed),
+        costMode: "normal",
+      },
+    };
+  } catch (error) {
+    console.error("[soluna] degraded chat assembly failed", error);
+    return {
+      ok: true,
+      data: {
+        sol: {
+          character: "sol",
+          content: solContent,
+          model: "degraded",
+          modelLabel: "緊急伴走",
+          provider: "gemini",
+          growthTier: "budding",
+          tierLevel: 1,
+          routeReason: "緊急伴走",
+        },
+        luna: {
+          character: "luna",
+          content: lunaContent,
+          model: "degraded",
+          modelLabel: "緊急伴走",
+          provider: "gemini",
+          growthTier: "budding",
+          tierLevel: 1,
+          routeReason: "緊急伴走",
+        },
+        routePlan: {
+          sol: {
+            provider: "gemini",
+            model: "degraded",
+            tier: "budding",
+            tierLevel: 1,
+            reason: "緊急伴走",
+          },
+          luna: {
+            provider: "gemini",
+            model: "degraded",
+            tier: "budding",
+            tierLevel: 1,
+            reason: "緊急伴走",
+          },
+        },
+        solIntimacy: 0,
+        lunaIntimacy: 0,
+        solStage: resolveGrowthStage("sol", 0),
+        lunaStage: resolveGrowthStage("luna", 0),
+        newMemories: [],
+        messages: [
+          createMessage(userId, "user", trimmed),
+          createMessage(userId, "sol", solContent),
+          createMessage(userId, "luna", lunaContent),
+        ],
+        voiceLead: selectVoiceLead(trimmed),
+        costMode: "normal",
+      },
+    };
+  }
+}
+
+async function sendSolunaChatWithinBudget(
+  userId: string,
+  trimmed: string,
+  voiceMode: boolean,
+  startedAt: number,
+): Promise<SolunaChatResult> {
   const profile = await getOrCreateProfile(userId);
   const opsAsk = isOpsStyleQuestion(trimmed);
   const worldAsk = isWorldInfoQuestion(trimmed);
@@ -1032,16 +1216,32 @@ export async function sendSolunaChat(
   const voiceLead = selectVoiceLead(trimmed);
   const wantWorld = needsLiveWorldContext(trimmed);
   const wantAmbientWeather = isWeatherQuestion(trimmed);
-  const historyLimit = voiceMode ? 10 : fastPath ? 16 : 40;
+  const historyLimit = voiceMode ? 10 : fastPath ? 12 : 24;
+
+  const worldBudgetMs = Math.min(
+    voiceMode ? 3_500 : 5_000,
+    Math.max(1_200, remainingMs(startedAt) - 16_000),
+  );
 
   const [solMemories, lunaMemories, history, worldContext, ambientWeather, costAssessment] =
     await Promise.all([
       listMemories(userId, "sol"),
       listMemories(userId, "luna"),
       listMessages(userId, historyLimit),
-      // 時事は途中打ち切りしない（首相誤答の主因だった）
       wantWorld
-        ? fetchLiveWorldContextForChat(trimmed, { voiceMode })
+        ? Promise.race([
+            fetchLiveWorldContextForChat(trimmed, { voiceMode }),
+            new Promise<string | null>((resolve) => {
+              setTimeout(() => resolve(null), worldBudgetMs);
+            }),
+          ]).then((value) => {
+            if (value == null && wantWorld) {
+              console.warn("[soluna] world context budget skipped");
+              return `## 最新ウェブ／SNS情報
+（検索を会話優先で省略。現職・数値は断定しない。）`;
+            }
+            return value;
+          })
         : Promise.resolve(null),
       wantAmbientWeather ? fetchAmbientWeatherBrief(trimmed) : Promise.resolve(null),
       fastPath && !opsAsk
@@ -1056,8 +1256,13 @@ export async function sendSolunaChat(
         : assessSolunaCostMode(userId),
     ]);
 
+  if (remainingMs(startedAt) < 4_000) {
+    console.warn("[soluna] budget low after preload — degraded reply");
+    return buildDegradedChatResult(userId, trimmed, voiceMode);
+  }
+
   let briefingSection = "";
-  if (opsAsk) {
+  if (opsAsk && remainingMs(startedAt) > 10_000) {
     const briefing = await getBriefingForHumanChat();
     briefingSection = [
       await buildHumanChatBriefingSection(briefing, trimmed, {
@@ -1108,152 +1313,157 @@ export async function sendSolunaChat(
       : ("support" as const)
     : undefined;
 
-  const retryCharacterEmergency = async (
-    character: SolunaCharacter,
-    failed: CharacterChatResult & { error: string },
-    prompt: string,
-    role: "lead" | "support" | undefined,
-  ): Promise<CharacterChatResult> => {
-    const primary =
-      character === "sol" ? routePlan.sol.provider : routePlan.luna.provider;
-    console.warn(`[soluna] ${character} emergency retry after: ${failed.error}`);
-    const emergencyProviders = getAvailableSolunaProviders().filter(
-      (provider) => provider !== primary,
-    );
-    // Gemini を最優先で試す（安定・即応）
-    emergencyProviders.sort((a, b) => Number(b === "gemini") - Number(a === "gemini"));
-    let result: CharacterChatResult = failed;
-    const assignmentBase = character === "sol" ? routePlan.sol : routePlan.luna;
-    const memories = character === "sol" ? solMemories : lunaMemories;
-    const intimacy =
-      character === "sol" ? profile.solIntimacy : profile.lunaIntimacy;
-    const stageLabel = character === "sol" ? solStage.label : lunaStage.label;
-    for (const provider of emergencyProviders) {
-      const emergencyAssignment = buildFallbackAssignment(
-        character,
-        provider,
-        assignmentBase.tier,
-        assignmentBase.tierLevel,
-        costAssessment.mode,
-      );
-      result = await chatWithCharacter(
-        userId,
-        character,
-        emergencyAssignment,
-        prompt,
-        memories,
-        history,
-        intimacy,
-        stageLabel,
-        costAssessment.mode,
-        undefined,
-        briefingSection,
-        voiceMode,
-        role,
-      );
-      if (!("error" in result)) {
-        return {
-          ...result,
-          reason: `緊急フェイルオーバー（${primary}→${result.provider}/${result.model}）`,
-        };
-      }
-    }
-    return result;
-  };
-
   let solResult: CharacterChatResult;
   let lunaResult: CharacterChatResult;
 
-  // 原則1呼び出しの掛け合い（音声・通常とも即答優先）
-  {
-    const duo = await chatVoiceDuo({
-      userId,
-      assignment: voiceLead === "sol" ? routePlan.sol : routePlan.luna,
-      userMessage: trimmed,
-      history,
-      briefingSection,
-      voiceLead,
-      solMemories,
-      lunaMemories,
-      solIntimacy: profile.solIntimacy,
-      lunaIntimacy: profile.lunaIntimacy,
-      explainAsk,
-      voiceMode,
-      costMode: costAssessment.mode,
-    });
+  const duoTimeout = Math.min(
+    voiceMode ? VOICE_PROVIDER_TIMEOUT_MS : DUO_PROVIDER_TIMEOUT_MS,
+    Math.max(3_000, remainingMs(startedAt) - 8_000),
+  );
 
-    if (duo.ok) {
+  const duo = await chatVoiceDuo({
+    userId,
+    assignment: voiceLead === "sol" ? routePlan.sol : routePlan.luna,
+    userMessage: trimmed,
+    history,
+    briefingSection,
+    voiceLead,
+    solMemories,
+    lunaMemories,
+    solIntimacy: profile.solIntimacy,
+    lunaIntimacy: profile.lunaIntimacy,
+    explainAsk,
+    voiceMode,
+    costMode: costAssessment.mode,
+    timeoutMs: duoTimeout,
+    maxAttempts: 1,
+  });
+
+  if (duo.ok) {
+    solResult = {
+      content: duo.sol,
+      model: duo.model,
+      modelLabel: duo.modelLabel,
+      provider: duo.provider,
+      reason: duo.reason,
+    };
+    lunaResult = {
+      content: duo.luna,
+      model: duo.model,
+      modelLabel: duo.modelLabel,
+      provider: duo.provider,
+      reason: duo.reason,
+    };
+  } else if (remainingMs(startedAt) < 7_000) {
+    console.warn("[soluna] duo failed and budget low — degraded:", duo.error);
+    const degraded = buildDegradedDuo(trimmed);
+    solResult = {
+      content: degraded.sol,
+      model: "degraded",
+      modelLabel: "緊急伴走",
+      provider: "gemini",
+      reason: `予算内伴走（${duo.error}）`,
+    };
+    lunaResult = {
+      content: degraded.luna,
+      model: "degraded",
+      modelLabel: "緊急伴走",
+      provider: "gemini",
+      reason: `予算内伴走（${duo.error}）`,
+    };
+  } else {
+    console.warn("[soluna] duo failed, single parallel fallback:", duo.error);
+    const solPrompt = solVoiceRole === "support" ? userPromptSupport : userPromptLead;
+    const lunaPrompt = lunaVoiceRole === "support" ? userPromptSupport : userPromptLead;
+    const perCallTimeout = Math.min(
+      SOL_PRIMARY_TIMEOUT_MS,
+      Math.max(3_500, Math.floor(remainingMs(startedAt) / 2) - 500),
+    );
+    const geminiSol = isGeminiConfigured()
+      ? buildFallbackAssignment(
+          "sol",
+          "gemini",
+          routePlan.sol.tier,
+          routePlan.sol.tierLevel,
+          costAssessment.mode,
+        )
+      : routePlan.sol;
+    const geminiLuna = isGeminiConfigured()
+      ? buildFallbackAssignment(
+          "luna",
+          "gemini",
+          routePlan.luna.tier,
+          routePlan.luna.tierLevel,
+          costAssessment.mode,
+        )
+      : routePlan.luna;
+
+    const solSystem = buildSystemPrompt(
+      "sol",
+      SOL_PERSONA,
+      profile.solIntimacy,
+      solStage.label,
+      solMemories,
+      geminiSol.tier ?? resolveGrowthTier(profile.solIntimacy),
+      briefingSection,
+      voiceMode,
+      solVoiceRole,
+    );
+    const lunaSystem = buildSystemPrompt(
+      "luna",
+      LUNA_PERSONA,
+      profile.lunaIntimacy,
+      lunaStage.label,
+      lunaMemories,
+      geminiLuna.tier ?? resolveGrowthTier(profile.lunaIntimacy),
+      briefingSection,
+      voiceMode,
+      lunaVoiceRole,
+    );
+
+    const [solRaw, lunaRaw] = await Promise.all([
+      callProvider(
+        userId,
+        "sol",
+        geminiSol,
+        solSystem,
+        buildUserMessages(history, solPrompt, MAX_HISTORY_FAST),
+        perCallTimeout,
+        voiceMode,
+      ),
+      callProvider(
+        userId,
+        "luna",
+        geminiLuna,
+        lunaSystem,
+        buildUserMessages(history, lunaPrompt, MAX_HISTORY_FAST),
+        perCallTimeout,
+        voiceMode,
+      ),
+    ]);
+    solResult = solRaw;
+    lunaResult = lunaRaw;
+
+    if ("error" in solResult && "error" in lunaResult) {
+      const degraded = buildDegradedDuo(trimmed);
       solResult = {
-        content: duo.sol,
-        model: duo.model,
-        modelLabel: duo.modelLabel,
-        provider: duo.provider,
-        reason: duo.reason,
+        content: degraded.sol,
+        model: "degraded",
+        modelLabel: "緊急伴走",
+        provider: "gemini",
+        reason: `伴走フォールバック（${solResult.error}）`,
       };
       lunaResult = {
-        content: duo.luna,
-        model: duo.model,
-        modelLabel: duo.modelLabel,
-        provider: duo.provider,
-        reason: duo.reason,
+        content: degraded.luna,
+        model: "degraded",
+        modelLabel: "緊急伴走",
+        provider: "gemini",
+        reason: `伴走フォールバック（${lunaResult.error}）`,
       };
-    } else {
-      console.warn("[soluna] duo failed, parallel fallback:", duo.error);
-      const solPrompt = solVoiceRole === "support" ? userPromptSupport : userPromptLead;
-      const lunaPrompt = lunaVoiceRole === "support" ? userPromptSupport : userPromptLead;
-      const [solRaw, lunaRaw] = await Promise.all([
-        chatWithCharacter(
-          userId,
-          "sol",
-          routePlan.sol,
-          solPrompt,
-          solMemories,
-          history,
-          profile.solIntimacy,
-          solStage.label,
-          costAssessment.mode,
-          undefined,
-          briefingSection,
-          voiceMode,
-          solVoiceRole,
-        ),
-        chatWithCharacter(
-          userId,
-          "luna",
-          routePlan.luna,
-          lunaPrompt,
-          lunaMemories,
-          history,
-          profile.lunaIntimacy,
-          lunaStage.label,
-          costAssessment.mode,
-          undefined,
-          briefingSection,
-          voiceMode,
-          lunaVoiceRole,
-        ),
-      ]);
-      solResult = solRaw;
-      lunaResult = lunaRaw;
-      if ("error" in solResult) {
-        solResult = await retryCharacterEmergency("sol", solResult, solPrompt, solVoiceRole);
-      }
-      if ("error" in lunaResult) {
-        lunaResult = await retryCharacterEmergency(
-          "luna",
-          lunaResult,
-          lunaPrompt,
-          lunaVoiceRole,
-        );
-      }
     }
   }
 
-  if ("error" in solResult && "error" in lunaResult) {
-    return { ok: false, reason: `${solResult.error} / ${lunaResult.error}` };
-  }
-
-  // ルーナだけ落ちた場合は沈黙せず伴走文を必ず返す
+  // 片方だけ落ちた場合は沈黙せず伴走文を必ず返す
   if ("error" in lunaResult && !("error" in solResult)) {
     const failover = buildLunaFailoverLine(trimmed, solResult.content);
     lunaResult = {
@@ -1262,6 +1472,18 @@ export async function sendSolunaChat(
       modelLabel: solResult.modelLabel,
       provider: solResult.provider,
       reason: `ルーナ緊急伴走（${lunaResult.error}）`,
+    };
+  }
+  if ("error" in solResult && !("error" in lunaResult)) {
+    solResult = {
+      content: finalizeSolunaReply(
+        `いま少し遅れてるけど、『${trimmed.slice(0, 32)}』は受け取ったよ。続けて話して☀️`,
+        { voice: voiceMode },
+      ),
+      model: lunaResult.model,
+      modelLabel: lunaResult.modelLabel,
+      provider: lunaResult.provider,
+      reason: `ソル緊急伴走（${solResult.error}）`,
     };
   }
 
@@ -1303,7 +1525,9 @@ export async function sendSolunaChat(
   });
 
   const newMemories: SolunaMemory[] = [];
-  scheduleMemoryExtraction(userId, trimmed, [...solMemories, ...lunaMemories]);
+  if (remainingMs(startedAt) > 3_000) {
+    scheduleMemoryExtraction(userId, trimmed, [...solMemories, ...lunaMemories]);
+  }
 
   const batch = [
     createMessage(userId, "user", trimmed),

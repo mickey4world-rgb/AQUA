@@ -116,6 +116,8 @@ export async function generateWithGoogleSearch(options: {
   timeoutMs?: number;
   /** チャット即答向け: 先頭モデルを並列レース */
   preferFast?: boolean;
+  /** true ならレース失敗後の逐次リトライをしない（チャット遅延防止） */
+  raceOnly?: boolean;
   maxOutputTokens?: number;
 }): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
   if (!isGeminiConfigured()) {
@@ -138,7 +140,7 @@ export async function generateWithGoogleSearch(options: {
 
   if (options.preferFast && models.length > 1) {
     const raced = models.slice(0, FAST_RACE_MODELS);
-    const rest = models.slice(FAST_RACE_MODELS);
+    const rest = options.raceOnly ? [] : models.slice(FAST_RACE_MODELS);
     const settled = await Promise.all(raced.map((model) => run(model)));
     const hit = settled.find((result) => result.ok);
     if (hit?.ok) return hit;

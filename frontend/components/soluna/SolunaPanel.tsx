@@ -203,18 +203,37 @@ export default function SolunaPanel() {
     });
 
     try {
-      const res = await fetch("/api/soluna/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, voiceMode: useVoiceMode }),
-      });
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 32_000);
+      let res: Response;
+      try {
+        res = await fetch("/api/soluna/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: trimmed, voiceMode: useVoiceMode }),
+          signal: controller.signal,
+        });
+      } catch (fetchError) {
+        const aborted =
+          fetchError instanceof DOMException && fetchError.name === "AbortError";
+        setError(
+          aborted
+            ? "応答がタイムアウトしました。もう一度お試しください。"
+            : "通信エラーが発生しました。もう一度お試しください。",
+        );
+        setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
+        resumeIfConversation();
+        return;
+      } finally {
+        clearTimeout(abortTimer);
+      }
 
       let data: unknown;
       try {
         data = await res.json();
       } catch {
         setError(
-          res.status === 504 || res.status === 408
+          res.status === 504 || res.status === 408 || res.status === 500
             ? "応答がタイムアウトしました。もう一度お試しください。"
             : `通信エラーが発生しました（HTTP ${res.status}）`,
         );
@@ -230,7 +249,9 @@ export default function SolunaPanel() {
           "error" in data &&
           typeof (data as { error?: unknown }).error === "string"
             ? (data as { error: string }).error
-            : "送信に失敗しました";
+            : res.status === 500 || res.status === 503
+              ? "一時的に混み合っています。もう一度送ってください。"
+              : "送信に失敗しました";
         setError(message);
         setState((prev) => (prev ? { ...prev, messages: priorMessages } : prev));
         resumeIfConversation();
