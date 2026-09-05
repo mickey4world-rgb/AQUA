@@ -2,7 +2,7 @@ import bundledPreview from "../../data/gyosei/public-preview.json";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { queryMoneyFlow, listGyoseiYears } from "@/lib/server/gyosei-data";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { MoneyFlowResponse } from "@/lib/types/gyosei";
 
 type CachedPublicPreview = {
@@ -43,7 +43,7 @@ function readStaticSnapshot(): MoneyFlowResponse | null {
 async function readCosmosSnapshot(): Promise<MoneyFlowResponse | null> {
   if (!isCosmosConfigured()) return null;
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resource } = await container
       .item(CACHE_DOC_ID, CACHE_DOC_ID)
       .read<CachedPublicPreview>();
@@ -60,7 +60,7 @@ async function writeCosmosSnapshot(snapshot: MoneyFlowResponse): Promise<boolean
     return false;
   }
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const doc: CachedPublicPreview = {
       id: CACHE_DOC_ID,
       year: snapshot.year,

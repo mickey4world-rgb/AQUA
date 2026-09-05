@@ -8,7 +8,7 @@ import {
   isJapanHoliday,
   parseJstDate,
 } from "@/lib/disney-holidays";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import { fetchParkLiveData } from "@/lib/server/themeparks-api";
 import type { AttractionWait, DisneyParkKey } from "@/lib/types/disney";
 
@@ -123,7 +123,7 @@ export async function recordWaitSnapshot(
   if (!isCosmosConfigured()) return snapshot;
 
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     // ライブがある時間帯はシードで上書きしない
     if (source === "empirical-seed") {
       try {
@@ -157,7 +157,7 @@ export async function getSnapshotsForDate(
   }
 
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resources } = await container.items
       .query<DisneyWaitSnapshot>({
         query:

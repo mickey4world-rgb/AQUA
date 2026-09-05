@@ -11,7 +11,7 @@ import {
   reasonKeyFromLabel,
   saveCrowdAdjustments,
 } from "@/lib/server/disney-crowd-adjustments";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import { generateWithGoogleSearch } from "@/lib/server/gemini-grounding";
 import type { DisneyParkKey } from "@/lib/types/disney";
 import type {
@@ -266,7 +266,7 @@ export async function runMonthlyCrowdReview(options?: {
 
   if (isCosmosConfigured()) {
     try {
-      const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+      const container = await getDisneyRecordsContainer();
       await container.items.upsert(review);
     } catch (error) {
       console.warn("[disney-monthly-review] save failed", error);
@@ -279,7 +279,7 @@ export async function runMonthlyCrowdReview(options?: {
 export async function getLatestMonthlyReview(): Promise<DisneyMonthlyReviewDoc | null> {
   if (!isCosmosConfigured()) return null;
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resources } = await container.items
       .query<DisneyMonthlyReviewDoc>({
         query: `
@@ -298,7 +298,7 @@ export async function getLatestMonthlyReview(): Promise<DisneyMonthlyReviewDoc |
 export async function getMonthlyReview(month: string): Promise<DisneyMonthlyReviewDoc | null> {
   if (!isCosmosConfigured()) return null;
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resource } = await container
       .item(`review-${month}`, `review-${month}`)
       .read<DisneyMonthlyReviewDoc>();

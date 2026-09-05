@@ -2,7 +2,7 @@
  * 月次レビューで追加された混雑条件の調整ルール
  */
 import { parseJstDate } from "@/lib/disney-holidays";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { DisneyParkKey } from "@/lib/types/disney";
 import type {
   DisneyCrowdAdjustmentRule,
@@ -28,7 +28,7 @@ export async function loadCrowdAdjustments(): Promise<DisneyCrowdAdjustmentsDoc>
     return memoryDoc;
   }
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     const { resource } = await container
       .item(DOC_ID, DOC_ID)
       .read<DisneyCrowdAdjustmentsDoc>();
@@ -55,7 +55,7 @@ export async function saveCrowdAdjustments(
   }
   if (!isCosmosConfigured()) return;
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const container = await getDisneyRecordsContainer();
     await container.items.upsert(doc);
   } catch (error) {
     console.warn("[disney-crowd-adjustments] save failed", error);
