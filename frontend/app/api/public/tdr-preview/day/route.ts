@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const showcase = await getDisneyShowcaseSnapshot();
+    const showcase = await getDisneyShowcaseSnapshot({ allowRebuild: true });
     if (showcase) {
       const parkData = park === "tdl" ? showcase.tdl : showcase.tds;
       if (date === showcase.today) {
