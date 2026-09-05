@@ -216,9 +216,13 @@ export interface DisneyCharacterEveningAdvice {
   characterId: "baymax" | "elsa";
   characterNameJa: string;
   headline: string;
+  /** キャラの余談・感想（楽しめる短文） */
+  monologue: string[];
   crowdReasons: string[];
   cautions: string[];
   touringTips: string[];
+  /** 過去日の的中に対するキャラ感想 */
+  accuracyReflection?: string | null;
   breakdown: DisneyCrowdBreakdown;
   crowdLevel: CrowdLevel;
   crowdLabel: string;
@@ -235,6 +239,9 @@ export interface DisneyDayBriefing {
   breakdown: DisneyCrowdBreakdown;
   forecast: DisneyDayForecast;
   characterAdvice: DisneyCharacterEveningAdvice;
+  /** 過去日のみ */
+  isPast?: boolean;
+  accuracy?: DisneyAdviceAccuracy | null;
 }
 
 export interface DisneyParkPublicPreview {

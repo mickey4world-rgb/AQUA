@@ -80,10 +80,24 @@ function ForecastTable({ briefing, title }: { briefing: DisneyDayBriefing; title
 
 function CharacterBriefing({ briefing }: { briefing: DisneyDayBriefing }) {
   const advice = briefing.characterAdvice;
+  const accuracy = briefing.accuracy;
+  const crowdReasons =
+    advice.crowdReasons.length > 0
+      ? advice.crowdReasons
+      : Object.values(briefing.breakdown.labels)
+          .filter(
+            (label) =>
+              !label.includes("通常") &&
+              !label.includes("平常") &&
+              !label.includes("平均") &&
+              label !== "災害影響小",
+          )
+          .slice(0, 6);
+
   return (
     <div className={`${disneyPanelClass} p-4 sm:p-5`}>
       <p className="text-xs uppercase tracking-[0.2em] text-sky-300/80">
-        {advice.targetDayLabel}の予想
+        {briefing.isPast ? "Past Day Review" : `${advice.targetDayLabel}の予想`}
       </p>
       <DisneyCompanion
         characterId={advice.characterId}
@@ -91,17 +105,76 @@ function CharacterBriefing({ briefing }: { briefing: DisneyDayBriefing }) {
         nameJa={advice.characterNameJa}
         line={advice.headline}
       />
+
+      {(advice.monologue?.length ?? 0) > 0 && (
+        <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            {advice.characterNameJa}の感想
+          </p>
+          {advice.monologue.map((line) => (
+            <p key={line} className="text-sm leading-relaxed text-slate-200">
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+
       <div className={`mt-3 rounded-xl border p-3 ${crowdLevelColors[briefing.crowdLevel]}`}>
         <p className="text-sm font-medium">
           {advice.targetDayLabel} · 混雑スコア {briefing.crowdScore} / 100 ·{" "}
           {briefing.crowdLabel}
         </p>
       </div>
-      <ul className="mt-3 space-y-1 text-sm text-slate-200">
-        {advice.crowdReasons.map((r) => (
+
+      <h4 className="mt-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        混雑の主な要因
+      </h4>
+      <ul className="mt-2 space-y-1 text-sm text-slate-200">
+        {crowdReasons.map((r) => (
           <li key={r}>• {r}</li>
         ))}
       </ul>
+
+      {briefing.isPast && (
+        <section
+          className={`mt-4 rounded-xl border p-3 ${
+            accuracy && !accuracy.pending
+              ? accuracy.levelHit
+                ? "border-emerald-400/30 bg-emerald-500/10"
+                : "border-rose-400/30 bg-rose-500/10"
+              : "border-white/10 bg-white/[0.03]"
+          }`}
+        >
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            的中結果・評価
+          </h4>
+          {accuracy && !accuracy.pending ? (
+            <>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {accuracy.levelHit ? "的中" : "外れ"}
+                <span className="ml-2 font-normal text-slate-300">
+                  予想 {accuracy.predictedScore}点 → 実績推定 {accuracy.actualScore}点
+                  （差 {accuracy.scoreDelta > 0 ? "+" : ""}
+                  {accuracy.scoreDelta}）
+                </span>
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                {accuracy.explanation}
+              </p>
+              {advice.accuracyReflection ? (
+                <p className="mt-2 text-sm leading-relaxed text-fuchsia-100/90">
+                  {advice.characterNameJa} — {advice.accuracyReflection}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-slate-300">
+              {accuracy?.explanation ?? "実績データ待ちのため、的中率は未評価です。"}
+            </p>
+          )}
+        </section>
+      )}
+
       <h4 className="mt-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
         注意点
       </h4>
@@ -309,6 +382,15 @@ export default function DisneyPublicPreview() {
                   <>
                     {" "}
                     · 混雑スコア {dayBriefing.crowdScore}（{dayBriefing.crowdLabel}）
+                  </>
+                ) : null}
+                {dayBriefing?.isPast && dayBriefing.accuracy && !dayBriefing.accuracy.pending ? (
+                  <>
+                    {" "}
+                    · 的中評価:{" "}
+                    <span className={dayBriefing.accuracy.levelHit ? "text-emerald-200" : "text-rose-200"}>
+                      {dayBriefing.accuracy.levelHit ? "的中" : "外れ"}
+                    </span>
                   </>
                 ) : null}
               </p>
