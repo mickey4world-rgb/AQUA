@@ -4,7 +4,11 @@ import { collectLiveWaitSnapshotsNow } from "@/lib/server/disney-historical-stor
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 
-export const maxDuration = 120;
+/**
+ * SWA マネージド API の実効上限は短い。
+ * core（ショーケース永続化）を既定にし、重い付帯処理は mode で分離する。
+ */
+export const maxDuration = 60;
 
 function authorizeCron(request: Request): boolean {
   const secret = process.env.SOLUNA_CRON_SECRET?.trim();
@@ -14,7 +18,22 @@ function authorizeCron(request: Request): boolean {
   return request.headers.get("x-soluna-cron-secret")?.trim() === secret;
 }
 
-/** 0:05 JST など cron から公開キャッシュを事前生成（重い処理をピークから分離） */
+type WarmMode = "core" | "calendars" | "extras" | "full";
+
+type WarmBody = {
+  mode?: WarmMode;
+};
+
+function resolveMode(request: Request, body: WarmBody): WarmMode {
+  const fromQuery = new URL(request.url).searchParams.get("mode");
+  const raw = (body.mode ?? fromQuery ?? "core").toLowerCase();
+  if (raw === "calendars" || raw === "extras" || raw === "full" || raw === "core") {
+    return raw;
+  }
+  return "core";
+}
+
+/** cron / デプロイ後ウォーム。既定は core のみ（公開GETの不変条件を最速で満たす）。 */
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
     await recordSecurityEvent({
@@ -29,40 +48,106 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let body: WarmBody = {};
   try {
-    let liveHour: number | null = null;
-    try {
-      const live = await collectLiveWaitSnapshotsNow();
-      liveHour = live.hour;
-    } catch (error) {
-      console.warn("[tdr-preview/warm] live wait snapshot skipped", error);
+    body = (await request.json()) as WarmBody;
+  } catch {
+    body = {};
+  }
+  const mode = resolveMode(request, body);
+  const started = Date.now();
+
+  try {
+    if (mode === "extras") {
+      let liveHour: number | null = null;
+      let accuracyCount = 0;
+      let seededDays = 0;
+      try {
+        const live = await collectLiveWaitSnapshotsNow();
+        liveHour = live.hour;
+      } catch (error) {
+        console.warn("[tdr-preview/warm] live wait snapshot skipped", error);
+      }
+      try {
+        const accuracy = await backfillPastAccuracy({ skipExisting: true });
+        accuracyCount = accuracy.records.length;
+        seededDays = accuracy.seededDays;
+        clearCalendarMonthCache();
+      } catch (error) {
+        console.warn("[tdr-preview/warm] accuracy backfill skipped", error);
+      }
+      return Response.json({
+        ok: true,
+        mode,
+        liveHour,
+        accuracyCount,
+        seededDays,
+        elapsedMs: Date.now() - started,
+      });
     }
 
-    let accuracyCount = 0;
-    let seededDays = 0;
-    try {
-      const accuracy = await backfillPastAccuracy({ skipExisting: true });
-      accuracyCount = accuracy.records.length;
-      seededDays = accuracy.seededDays;
-      clearCalendarMonthCache();
-    } catch (error) {
-      console.warn("[tdr-preview/warm] accuracy backfill skipped", error);
+    if (mode === "calendars") {
+      const result = await warmDisneyShowcaseCache({ includeCalendars: true });
+      return Response.json({
+        ok: true,
+        ...result,
+        elapsedMs: Date.now() - started,
+      });
     }
 
-    const result = await warmDisneyShowcaseCache();
+    if (mode === "full") {
+      // full でも先に core 相当を完了させてから付帯（途中タイムアウトでも公開は救う）
+      const core = await warmDisneyShowcaseCache({ includeCalendars: false });
+      let liveHour: number | null = null;
+      let accuracyCount = 0;
+      let seededDays = 0;
+      let calendars: Awaited<ReturnType<typeof warmDisneyShowcaseCache>> | null = null;
+      try {
+        const live = await collectLiveWaitSnapshotsNow();
+        liveHour = live.hour;
+      } catch (error) {
+        console.warn("[tdr-preview/warm] live wait snapshot skipped", error);
+      }
+      try {
+        const accuracy = await backfillPastAccuracy({ skipExisting: true });
+        accuracyCount = accuracy.records.length;
+        seededDays = accuracy.seededDays;
+        clearCalendarMonthCache();
+      } catch (error) {
+        console.warn("[tdr-preview/warm] accuracy backfill skipped", error);
+      }
+      try {
+        calendars = await warmDisneyShowcaseCache({ includeCalendars: true });
+      } catch (error) {
+        console.warn("[tdr-preview/warm] calendars phase skipped", error);
+      }
+      return Response.json({
+        ok: true,
+        mode,
+        core,
+        calendars,
+        liveHour,
+        accuracyCount,
+        seededDays,
+        elapsedMs: Date.now() - started,
+      });
+    }
+
+    // default: core
+    const result = await warmDisneyShowcaseCache({ includeCalendars: false });
     return Response.json({
       ok: true,
-      accuracyCount,
-      seededDays,
-      liveHour,
       ...result,
+      elapsedMs: Date.now() - started,
     });
   } catch (error) {
-    console.error("[tdr-preview/warm]", error);
+    console.error("[tdr-preview/warm]", mode, error);
     return Response.json(
       {
         ok: false,
+        mode,
         error: error instanceof Error ? error.message : "warm failed",
+        elapsedMs: Date.now() - started,
       },
       { status: 503 },
     );
