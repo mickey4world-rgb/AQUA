@@ -1,3 +1,4 @@
+import { gunzipSync, gzipSync } from "node:zlib";
 import { getJstToday, shiftJstDate } from "@/lib/disney-holidays";
 import { buildDisneyShowcaseSnapshot } from "@/lib/server/disney-public-preview";
 import {
@@ -10,8 +11,14 @@ import type { DisneyCalendarMonth, DisneyParkKey, DisneyShowcaseSnapshot } from 
 type CachedShowcase = {
   id: string;
   date: string;
-  snapshot: DisneyShowcaseSnapshot;
   builtAt: string;
+  /** 旧形式（巨大ネストは indexing で失敗しうる） */
+  snapshot?: DisneyShowcaseSnapshot;
+  /** 新形式: gzip+base64 の1フィールドに圧縮 */
+  encoding?: "gzip-base64";
+  snapshotGzip?: string;
+  bytesUncompressed?: number;
+  bytesCompressed?: number;
 };
 
 type CachedCalendar = {
@@ -19,7 +26,9 @@ type CachedCalendar = {
   park: DisneyParkKey;
   year: number;
   month: number;
-  payload: DisneyCalendarMonth;
+  payload?: DisneyCalendarMonth;
+  encoding?: "gzip-base64";
+  payloadGzip?: string;
   builtAt: string;
 };
 
@@ -27,6 +36,7 @@ let memoryCache: { date: string; snapshot: DisneyShowcaseSnapshot; builtAt: numb
   null;
 const calendarMemory = new Map<string, { payload: DisneyCalendarMonth; builtAt: number }>();
 let rebuildInFlight: Promise<DisneyShowcaseSnapshot | null> | null = null;
+let lastShowcaseWriteError: string | null = null;
 
 const MEMORY_TTL_MS = 55 * 60 * 1000;
 const CALENDAR_MEMORY_TTL_MS = 6 * 60 * 60 * 1000;
@@ -39,38 +49,108 @@ function calendarDocId(park: DisneyParkKey, year: number, month: number): string
   return `public-calendar-${park}-${year}-${String(month).padStart(2, "0")}`;
 }
 
+function cosmosErrorDetail(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error);
+  const e = error as {
+    code?: number | string;
+    message?: string;
+    body?: { message?: string; code?: string };
+  };
+  return (
+    [
+      e.code != null ? `code=${e.code}` : null,
+      e.body?.code ? `bodyCode=${e.body.code}` : null,
+      e.body?.message || e.message || null,
+    ]
+      .filter(Boolean)
+      .join(" | ") || String(error)
+  );
+}
+
+function encodeGzipJson(value: unknown): {
+  gzipBase64: string;
+  rawBytes: number;
+  gzipBytes: number;
+} {
+  const raw = Buffer.from(JSON.stringify(value), "utf8");
+  const gzip = gzipSync(raw, { level: 6 });
+  return {
+    gzipBase64: gzip.toString("base64"),
+    rawBytes: raw.length,
+    gzipBytes: gzip.length,
+  };
+}
+
+function decodeGzipJson<T>(gzipBase64: string): T {
+  const raw = gunzipSync(Buffer.from(gzipBase64, "base64"));
+  return JSON.parse(raw.toString("utf8")) as T;
+}
+
+function decodeShowcaseDoc(resource: CachedShowcase | undefined): DisneyShowcaseSnapshot | null {
+  if (!resource) return null;
+  if (resource.encoding === "gzip-base64" && resource.snapshotGzip) {
+    try {
+      return decodeGzipJson<DisneyShowcaseSnapshot>(resource.snapshotGzip);
+    } catch (error) {
+      console.warn("[tdr-cache] gzip decode failed", error);
+      return null;
+    }
+  }
+  return resource.snapshot ?? null;
+}
+
 async function readCosmosCache(date: string): Promise<DisneyShowcaseSnapshot | null> {
   if (!isCosmosConfigured()) return null;
   try {
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
-    const { resource } = await container.item(cacheDocId(date), cacheDocId(date)).read<CachedShowcase>();
-    return resource?.date === date ? resource.snapshot : null;
+    const { resource } = await container
+      .item(cacheDocId(date), cacheDocId(date))
+      .read<CachedShowcase>();
+    if (resource?.date !== date) return null;
+    return decodeShowcaseDoc(resource);
   } catch (error) {
-    console.warn("[tdr-cache] cosmos read failed", date, error);
+    console.warn("[tdr-cache] cosmos read failed", date, cosmosErrorDetail(error));
     return null;
   }
 }
 
 async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot): Promise<boolean> {
   if (!isCosmosConfigured()) {
+    lastShowcaseWriteError = "cosmos not configured";
     console.warn("[tdr-cache] cosmos not configured; snapshot will not persist across instances");
     return false;
   }
   const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+  const encoded = encodeGzipJson(snapshot);
   const doc: CachedShowcase = {
     id: cacheDocId(date),
     date,
-    snapshot,
     builtAt: new Date().toISOString(),
+    encoding: "gzip-base64",
+    snapshotGzip: encoded.gzipBase64,
+    bytesUncompressed: encoded.rawBytes,
+    bytesCompressed: encoded.gzipBytes,
   };
+
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await container.items.upsert(doc);
+      lastShowcaseWriteError = null;
+      console.info("[tdr-cache] showcase persisted", {
+        date,
+        rawBytes: encoded.rawBytes,
+        gzipBytes: encoded.gzipBytes,
+      });
       return true;
     } catch (error) {
-      console.error(`[tdr-cache] cosmos write failed (attempt ${attempt})`, date, error);
+      lastShowcaseWriteError = cosmosErrorDetail(error);
+      console.error(
+        `[tdr-cache] cosmos write failed (attempt ${attempt})`,
+        date,
+        lastShowcaseWriteError,
+      );
       if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
       }
     }
   }
@@ -87,13 +167,22 @@ async function readCosmosCalendar(
     const id = calendarDocId(park, year, month);
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
     const { resource } = await container.item(id, id).read<CachedCalendar>();
-    if (!resource?.payload) return null;
+    if (!resource) return null;
     if (resource.park !== park || resource.year !== year || resource.month !== month) {
       return null;
     }
-    return resource.payload;
+    if (resource.encoding === "gzip-base64" && resource.payloadGzip) {
+      return decodeGzipJson<DisneyCalendarMonth>(resource.payloadGzip);
+    }
+    return resource.payload ?? null;
   } catch (error) {
-    console.warn("[tdr-cache] calendar read failed", park, year, month, error);
+    console.warn(
+      "[tdr-cache] calendar read failed",
+      park,
+      year,
+      month,
+      cosmosErrorDetail(error),
+    );
     return null;
   }
 }
@@ -108,18 +197,26 @@ async function writeCosmosCalendar(
   try {
     const id = calendarDocId(park, year, month);
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const encoded = encodeGzipJson(payload);
     const doc: CachedCalendar = {
       id,
       park,
       year,
       month,
-      payload,
+      encoding: "gzip-base64",
+      payloadGzip: encoded.gzipBase64,
       builtAt: new Date().toISOString(),
     };
     await container.items.upsert(doc);
     return true;
   } catch (error) {
-    console.error("[tdr-cache] calendar write failed", park, year, month, error);
+    console.error(
+      "[tdr-cache] calendar write failed",
+      park,
+      year,
+      month,
+      cosmosErrorDetail(error),
+    );
     return false;
   }
 }
@@ -133,7 +230,7 @@ async function rebuildShowcaseSnapshot(): Promise<DisneyShowcaseSnapshot | null>
       memoryCache = { date: today, snapshot, builtAt: Date.now() };
       const written = await writeCosmosCache(today, snapshot);
       if (!written) {
-        console.warn("[tdr-cache] rebuilt snapshot kept in memory only");
+        console.warn("[tdr-cache] rebuilt snapshot kept in memory only", lastShowcaseWriteError);
       }
       return snapshot;
     } catch (error) {
@@ -175,7 +272,6 @@ export async function getDisneyShowcaseSnapshot(options?: {
     if (rebuilt) return rebuilt;
   }
 
-  // 前日スナップショットでも空ページよりマシ（日付ずれに注意）
   const yesterday = shiftJstDate(today, -1);
   const stale = await readCosmosCache(yesterday);
   if (stale) {
@@ -208,11 +304,7 @@ export async function getPublicCalendarMonth(
   const showcase = await getDisneyShowcaseSnapshot({ allowRebuild: false });
   const today = getJstToday();
   const now = new Date(`${today}T12:00:00+09:00`);
-  if (
-    showcase &&
-    year === now.getFullYear() &&
-    month === now.getMonth() + 1
-  ) {
+  if (showcase && year === now.getFullYear() && month === now.getMonth() + 1) {
     const embedded = park === "tdl" ? showcase.tdl.calendarMonth : showcase.tds.calendarMonth;
     calendarMemory.set(key, { payload: embedded, builtAt: Date.now() });
     return embedded;
@@ -233,7 +325,6 @@ export async function getPublicCalendarMonth(
 
 /** バッチ／cron 専用。ここでだけ重い再生成を行う。 */
 export async function warmDisneyShowcaseCache(options?: {
-  /** false ならショーケース永続化のみ（SWA タイムアウト回避の core） */
   includeCalendars?: boolean;
 }): Promise<{
   date: string;
@@ -241,6 +332,7 @@ export async function warmDisneyShowcaseCache(options?: {
   calendarsWarmed: number;
   cosmosPersisted: boolean;
   mode: "core" | "calendars";
+  writeError?: string;
 }> {
   const includeCalendars = options?.includeCalendars === true;
   clearCalendarMonthCache();
@@ -250,10 +342,11 @@ export async function warmDisneyShowcaseCache(options?: {
   memoryCache = { date: today, snapshot, builtAt: Date.now() };
   const cosmosPersisted = await writeCosmosCache(today, snapshot);
   if (!cosmosPersisted && isCosmosConfigured()) {
-    throw new Error("TDR showcase snapshot could not be persisted to Cosmos");
+    throw new Error(
+      `TDR showcase snapshot could not be persisted to Cosmos (${lastShowcaseWriteError ?? "unknown"})`,
+    );
   }
 
-  // 当月カレンダーはショーケースに内包済み。別途メモリにも載せる
   const now = new Date(`${today}T12:00:00+09:00`);
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -275,7 +368,7 @@ export async function warmDisneyShowcaseCache(options?: {
     const parks: DisneyParkKey[] = ["tdl", "tds"];
     for (const park of parks) {
       for (let offset = -1; offset <= 2; offset += 1) {
-        if (offset === 0) continue; // 当月は上で済み
+        if (offset === 0) continue;
         const cursor = new Date(now);
         cursor.setMonth(cursor.getMonth() + offset);
         const year = cursor.getFullYear();
@@ -306,5 +399,6 @@ export async function warmDisneyShowcaseCache(options?: {
     calendarsWarmed,
     cosmosPersisted,
     mode: includeCalendars ? "calendars" : "core",
+    writeError: lastShowcaseWriteError ?? undefined,
   };
 }
