@@ -7,88 +7,135 @@ type LivingSwarmFieldProps = {
   bubbleCount: number;
 };
 
-type Particle = {
+type LifePhase = "birth" | "gather" | "swim" | "fade" | "burst";
+
+type SoftBody = {
   x: number;
   y: number;
   vx: number;
   vy: number;
   size: number;
+  targetSize: number;
+  alpha: number;
   phase: number;
-  flicker: number;
-  homeX: number;
-  homeY: number;
-  group: number;
-  kind: "mote" | "bubble";
+  joined: boolean;
 };
 
-type Attractor = {
+type Creature = {
+  kind: "light" | "bubble";
+  phase: LifePhase;
+  phaseUntil: number;
   x: number;
   y: number;
-  tx: number;
-  ty: number;
-  radius: number;
+  vx: number;
+  vy: number;
+  heading: number;
+  bodies: SoftBody[];
+  glow: number;
 };
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function createParticles(
-  w: number,
-  h: number,
-  moteCount: number,
-  bubbleCount: number,
-): Particle[] {
-  const particles: Particle[] = [];
-  for (let i = 0; i < moteCount; i += 1) {
-    const x = ((i * 97 + 41) % 1000) / 1000 * w;
-    const y = ((i * 53 + 17) % 1000) / 1000 * h * 0.58;
-    particles.push({
-      x,
-      y,
-      vx: (Math.random() - 0.5) * 0.25,
-      vy: (Math.random() - 0.5) * 0.2,
-      size: i % 5 === 0 ? 2.8 : i % 3 === 0 ? 2.1 : 1.4,
-      phase: Math.random() * Math.PI * 2,
-      flicker: 0.55 + Math.random() * 0.9,
-      homeX: x,
-      homeY: y,
-      group: i % 3,
-      kind: "mote",
-    });
-  }
-  for (let i = 0; i < bubbleCount; i += 1) {
-    const lane = i % 2 === 0 ? 0.08 + (i % 5) * 0.06 : 0.55 + (i % 5) * 0.07;
-    const x = lane * w + (Math.random() - 0.5) * 40;
-    const y = h * (0.62 + Math.random() * 0.36);
-    particles.push({
-      x,
-      y,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: -0.12 - Math.random() * 0.18,
-      size: i % 3 !== 0 ? 10 + (i % 4) * 3 : 5 + (i % 3) * 2,
-      phase: Math.random() * Math.PI * 2,
-      flicker: 0.4 + Math.random() * 0.6,
-      homeX: x,
-      homeY: y,
-      group: i % 2,
-      kind: "bubble",
-    });
-  }
-  return particles;
+function softRand(seed: number) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }
 
-function createAttractors(w: number, h: number): Attractor[] {
+function makeLightBodies(w: number, h: number, count: number): SoftBody[] {
+  const bodies: SoftBody[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = softRand(i * 3.1 + 1) * w;
+    const y = softRand(i * 5.7 + 2) * h * 0.52 + h * 0.04;
+    const size = 10 + softRand(i * 2.2) * 18;
+    bodies.push({
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      size: size * 0.2,
+      targetSize: size,
+      alpha: 0,
+      phase: softRand(i * 9.1) * Math.PI * 2,
+      joined: false,
+    });
+  }
+  return bodies;
+}
+
+function makeBubbleBodies(w: number, h: number, count: number): SoftBody[] {
+  const bodies: SoftBody[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = softRand(i * 4.4 + 8) * w * 0.86 + w * 0.07;
+    const y = h * (0.88 + softRand(i * 1.7) * 0.14);
+    const size = 8 + softRand(i * 6.3) * 22;
+    bodies.push({
+      x,
+      y,
+      vx: (softRand(i * 2.9) - 0.5) * 0.2,
+      vy: -0.05 - softRand(i) * 0.08,
+      size: size * 0.35,
+      targetSize: size,
+      alpha: 0,
+      phase: softRand(i * 7.7) * Math.PI * 2,
+      joined: false,
+    });
+  }
+  return bodies;
+}
+
+function createCreatures(w: number, h: number, moteCount: number, bubbleCount: number): Creature[] {
+  const now = performance.now();
   return [
-    { x: w * 0.32, y: h * 0.28, tx: w * 0.45, ty: h * 0.22, radius: 70 },
-    { x: w * 0.68, y: h * 0.34, tx: w * 0.55, ty: h * 0.3, radius: 64 },
-    { x: w * 0.5, y: h * 0.78, tx: w * 0.42, ty: h * 0.72, radius: 86 },
+    {
+      kind: "light",
+      phase: "birth",
+      phaseUntil: now + 3200,
+      x: w * 0.42,
+      y: h * 0.28,
+      vx: 0.18,
+      vy: 0.05,
+      heading: -0.35,
+      bodies: makeLightBodies(w, h, moteCount),
+      glow: 0,
+    },
+    {
+      kind: "light",
+      phase: "gather",
+      phaseUntil: now + 1800,
+      x: w * 0.68,
+      y: h * 0.22,
+      vx: -0.12,
+      vy: 0.08,
+      heading: 2.4,
+      bodies: makeLightBodies(w, h, Math.max(8, Math.floor(moteCount * 0.55))).map((b, i) => ({
+        ...b,
+        x: w * (0.55 + softRand(i + 40) * 0.3),
+        y: h * (0.12 + softRand(i + 50) * 0.28),
+        alpha: 0.15,
+      })),
+      glow: 0.2,
+    },
+    {
+      kind: "bubble",
+      phase: "birth",
+      phaseUntil: now + 2800,
+      x: w * 0.5,
+      y: h * 0.82,
+      vx: 0.1,
+      vy: -0.04,
+      heading: 0.2,
+      bodies: makeBubbleBodies(w, h, bubbleCount),
+      glow: 0,
+    },
   ];
 }
 
 /**
- * 光の粒と泡が集まり・泳ぎ・散る集合体。
- * 「皮下で AI が生きている」感覚を、群れの呼吸として描く。
+ * 光は大きな光の塊として生まれ・集まり・泳ぎ・消える。
+ * 泡は下から生まれ、大きさ変化しながら集合し、集合後にまとめて割れる。
+ * どちらも「大きな生き物」として泳ぐ。
  */
 export default function LivingSwarmField({
   moteCount,
@@ -107,10 +154,7 @@ export default function LivingSwarmField({
     let w = 0;
     let h = 0;
     let dpr = 1;
-    let particles: Particle[] = [];
-    let attractors: Attractor[] = [];
-    let mode = 0; // 0 drift, 1 gather, 2 swim, 3 disperse
-    let modeUntil = 0;
+    let creatures: Creature[] = [];
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -123,170 +167,245 @@ export default function LivingSwarmField({
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      particles = createParticles(w, h, moteCount, bubbleCount);
-      attractors = createAttractors(w, h);
+      creatures = createCreatures(w, h, moteCount, bubbleCount);
     };
 
-    const pickMode = (now: number) => {
-      // gather → swim → disperse → drift の呼吸（約20秒周期）
-      const period = 20200;
-      const local = now % period;
-      if (local < 4200) {
-        mode = 1;
-        modeUntil = now + (4200 - local);
-      } else if (local < 11200) {
-        mode = 2;
-        modeUntil = now + (11200 - local);
-      } else if (local < 15000) {
-        mode = 3;
-        modeUntil = now + (15000 - local);
+    const respawnCreature = (c: Creature, now: number) => {
+      c.phase = "birth";
+      c.phaseUntil = now + (c.kind === "bubble" ? 3000 : 3600);
+      c.glow = 0;
+      c.heading = Math.random() * Math.PI * 2;
+      if (c.kind === "light") {
+        c.x = w * (0.25 + Math.random() * 0.5);
+        c.y = h * (0.16 + Math.random() * 0.28);
+        c.vx = Math.cos(c.heading) * 0.16;
+        c.vy = Math.sin(c.heading) * 0.1;
+        c.bodies = makeLightBodies(w, h, c.bodies.length);
       } else {
-        mode = 0;
-        modeUntil = now + (period - local);
+        c.x = w * (0.28 + Math.random() * 0.44);
+        c.y = h * 0.9;
+        c.vx = Math.cos(c.heading) * 0.12;
+        c.vy = -0.05;
+        c.bodies = makeBubbleBodies(w, h, c.bodies.length);
       }
     };
 
-    const moveAttractors = (now: number) => {
+    const advancePhase = (c: Creature, now: number) => {
+      if (now < c.phaseUntil) return;
+      if (c.phase === "birth") {
+        c.phase = "gather";
+        c.phaseUntil = now + (c.kind === "bubble" ? 5200 : 4800);
+      } else if (c.phase === "gather") {
+        c.phase = "swim";
+        c.phaseUntil = now + (c.kind === "bubble" ? 7000 : 7800);
+        // 集合したら「一つの生き物」として泳ぎ始める
+        c.vx = Math.cos(c.heading) * (c.kind === "bubble" ? 0.22 : 0.28);
+        c.vy = Math.sin(c.heading) * (c.kind === "bubble" ? 0.08 : 0.14);
+      } else if (c.phase === "swim") {
+        if (c.kind === "bubble") {
+          c.phase = "burst";
+          c.phaseUntil = now + 1600;
+        } else {
+          c.phase = "fade";
+          c.phaseUntil = now + 3200;
+        }
+      } else {
+        respawnCreature(c, now);
+      }
+    };
+
+    const steerCreature = (c: Creature, now: number) => {
       const sec = now * 0.001;
-      for (let i = 0; i < attractors.length; i += 1) {
-        const a = attractors[i];
-        const baseX = i === 2 ? w * 0.5 : i === 0 ? w * 0.34 : w * 0.66;
-        const baseY = i === 2 ? h * 0.76 : i === 0 ? h * 0.26 : h * 0.32;
-        a.tx = baseX + Math.sin(sec * 0.35 + i * 1.7) * (i === 2 ? w * 0.18 : w * 0.14);
-        a.ty = baseY + Math.cos(sec * 0.28 + i * 1.1) * (i === 2 ? h * 0.06 : h * 0.1);
-        a.x += (a.tx - a.x) * 0.035;
-        a.y += (a.ty - a.y) * 0.035;
+      // 大きな生き物らしいゆっくりした進路変更
+      c.heading += Math.sin(sec * 0.33 + c.x * 0.001) * 0.008;
+      const speed = c.kind === "bubble" ? 0.2 : 0.26;
+      const targetVx = Math.cos(c.heading) * speed;
+      const targetVy =
+        c.kind === "bubble"
+          ? -0.04 + Math.sin(sec * 0.4) * 0.05
+          : Math.sin(c.heading) * speed * 0.55;
+
+      if (c.phase === "swim" || c.phase === "gather") {
+        c.vx += (targetVx - c.vx) * 0.02;
+        c.vy += (targetVy - c.vy) * 0.02;
+        c.x += c.vx;
+        c.y += c.vy;
+      }
+
+      if (c.kind === "light") {
+        if (c.x < w * 0.12) c.heading = 0.15;
+        if (c.x > w * 0.88) c.heading = Math.PI - 0.15;
+        if (c.y < h * 0.08) c.heading = 0.9;
+        if (c.y > h * 0.52) c.heading = -0.9;
+        c.x = clamp(c.x, w * 0.1, w * 0.9);
+        c.y = clamp(c.y, h * 0.08, h * 0.52);
+      } else {
+        if (c.x < w * 0.14) c.heading = 0.2;
+        if (c.x > w * 0.86) c.heading = Math.PI - 0.2;
+        c.x = clamp(c.x, w * 0.12, w * 0.88);
+        c.y = clamp(c.y, h * 0.58, h * 0.92);
       }
     };
 
-    const stepParticle = (p: Particle, now: number) => {
-      const attractor = attractors[p.kind === "bubble" ? 2 : p.group % 2];
-      const flicker =
-        0.22 +
-        0.78 *
-          Math.pow(
-            0.5 + 0.5 * Math.sin(now * 0.001 * p.flicker + p.phase),
-            2,
-          );
+    const stepBodies = (c: Creature, now: number) => {
+      const gatherStrength =
+        c.phase === "gather" ? 0.035 : c.phase === "swim" ? 0.05 : 0.008;
+      let joined = 0;
 
-      let ax = 0;
-      let ay = 0;
+      for (const b of c.bodies) {
+        // 大きさは常にゆっくり変化（泡らしい呼吸）
+        const breathe =
+          c.kind === "bubble"
+            ? 1 + Math.sin(now * 0.0012 + b.phase) * 0.18
+            : 1 + Math.sin(now * 0.0008 + b.phase) * 0.08;
+        const desired = b.targetSize * breathe;
+        b.size += (desired - b.size) * 0.04;
 
-      if (mode === 1 || mode === 2) {
-        // 集合 / 群れ泳ぎ: アトラクタへ + 接線方向の流れ
-        const dx = attractor.x - p.x;
-        const dy = attractor.y - p.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const pull = mode === 1 ? 0.012 : 0.006;
-        ax += (dx / dist) * pull * attractor.radius * 0.02;
-        ay += (dy / dist) * pull * attractor.radius * 0.02;
-        // 接線（泳ぎ）
-        const swim = mode === 2 ? 0.045 : 0.015;
-        ax += (-dy / dist) * swim;
-        ay += (dx / dist) * swim * (p.kind === "bubble" ? 0.55 : 1);
-      }
+        if (c.phase === "birth") {
+          b.alpha += (0.55 - b.alpha) * 0.02;
+          // 下／周囲から中心へゆっくり寄る前の漂い
+          b.vx += (Math.sin(now * 0.0006 + b.phase) * 0.02 - b.vx) * 0.04;
+          b.vy +=
+            (c.kind === "bubble" ? -0.08 : Math.cos(now * 0.0005 + b.phase) * 0.015) -
+            b.vy * 0.04;
+        } else if (c.phase === "fade") {
+          b.alpha += (0 - b.alpha) * 0.025;
+          b.size += (b.targetSize * 1.35 - b.size) * 0.02;
+        } else if (c.phase === "burst") {
+          b.alpha += (0 - b.alpha) * 0.08;
+          b.size += (b.targetSize * 2.2 - b.size) * 0.08;
+        } else {
+          // gather / swim: 集合体に残り続ける（個別には消えない）
+          b.alpha += (0.7 - b.alpha) * 0.03;
+          const dx = c.x - b.x;
+          const dy = c.y - b.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          b.vx += (dx / dist) * gatherStrength * Math.min(dist, 120) * 0.02;
+          b.vy += (dy / dist) * gatherStrength * Math.min(dist, 120) * 0.02;
+          // 生き物の輪郭に沿った周回
+          if (c.phase === "swim") {
+            b.vx += (-dy / dist) * 0.03;
+            b.vy += (dx / dist) * 0.03;
+          }
+          if (dist < (c.kind === "bubble" ? 48 : 56)) {
+            b.joined = true;
+            joined += 1;
+          }
+        }
 
-      if (mode === 0 || mode === 3) {
-        // 散開 / 漂い: ホームとノイズへ
-        const homePull = mode === 3 ? 0.004 : 0.0015;
-        ax += (p.homeX - p.x) * homePull;
-        ay += (p.homeY - p.y) * homePull;
-        ax += Math.sin(now * 0.0007 + p.phase) * 0.01;
-        ay += Math.cos(now * 0.0009 + p.phase * 1.3) * 0.008;
-      }
+        b.vx *= 0.92;
+        b.vy *= 0.92;
+        b.x += b.vx;
+        b.y += b.vy;
 
-      if (p.kind === "bubble") {
-        // 常にゆっくり上昇する傾向（海の記憶）
-        ay -= 0.012;
-        if (p.y < h * 0.55) {
-          p.y = h * (0.92 + Math.random() * 0.06);
-          p.x = clamp(p.x + (Math.random() - 0.5) * 80, 0, w);
-          p.homeX = p.x;
-          p.homeY = p.y;
+        if (c.kind === "bubble" && c.phase === "birth" && b.y < h * 0.62) {
+          // 出生中は水面付近まで上がりすぎない
+          b.vy *= 0.5;
         }
       }
 
-      p.vx = clamp(p.vx * 0.96 + ax, -1.4, 1.4);
-      p.vy = clamp(p.vy * 0.96 + ay, -1.2, 1.2);
-      p.x += p.vx;
-      p.y += p.vy;
+      // 集合度で本体の発光を育てる
+      const ratio = joined / Math.max(1, c.bodies.length);
+      const glowTarget =
+        c.phase === "swim"
+          ? 0.85
+          : c.phase === "gather"
+            ? 0.35 + ratio * 0.45
+            : c.phase === "birth"
+              ? 0.15
+              : 0;
+      c.glow += (glowTarget - c.glow) * 0.04;
+    };
 
-      if (p.kind === "mote") {
-        if (p.x < -20) p.x = w + 10;
-        if (p.x > w + 20) p.x = -10;
-        if (p.y < -20) p.y = h * 0.55;
-        if (p.y > h * 0.62) p.y = 8;
-      } else {
-        p.x = clamp(p.x, -30, w + 30);
+    const drawLightCreature = (c: Creature) => {
+      // 大きな光の塊（メタボール風）
+      if (c.glow > 0.05) {
+        const radius = 42 + c.glow * 70;
+        const g = ctx.createRadialGradient(c.x, c.y, radius * 0.1, c.x, c.y, radius);
+        g.addColorStop(0, `rgba(224, 250, 255, ${0.22 * c.glow})`);
+        g.addColorStop(0.35, `rgba(103, 232, 249, ${0.18 * c.glow})`);
+        g.addColorStop(0.7, `rgba(34, 211, 238, ${0.08 * c.glow})`);
+        g.addColorStop(1, "rgba(14, 165, 233, 0)");
+        ctx.beginPath();
+        ctx.fillStyle = g;
+        ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+        ctx.fill();
       }
 
-      return flicker;
+      for (const b of c.bodies) {
+        if (b.alpha < 0.02) continue;
+        const r = b.size;
+        const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+        g.addColorStop(0, `rgba(240, 253, 255, ${0.55 * b.alpha})`);
+        g.addColorStop(0.4, `rgba(165, 243, 252, ${0.28 * b.alpha})`);
+        g.addColorStop(1, "rgba(34, 211, 238, 0)");
+        ctx.beginPath();
+        ctx.fillStyle = g;
+        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const drawBubbleCreature = (c: Creature) => {
+      if (c.glow > 0.08 && c.phase !== "burst") {
+        const radius = 36 + c.glow * 55;
+        const g = ctx.createRadialGradient(c.x, c.y, radius * 0.15, c.x, c.y, radius);
+        g.addColorStop(0, `rgba(186, 242, 255, ${0.12 * c.glow})`);
+        g.addColorStop(0.55, `rgba(56, 189, 248, ${0.08 * c.glow})`);
+        g.addColorStop(1, "rgba(8, 47, 73, 0)");
+        ctx.beginPath();
+        ctx.fillStyle = g;
+        ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      for (const b of c.bodies) {
+        if (b.alpha < 0.02) continue;
+        const r = Math.max(2, b.size);
+        const g = ctx.createRadialGradient(
+          b.x - r * 0.28,
+          b.y - r * 0.32,
+          r * 0.08,
+          b.x,
+          b.y,
+          r,
+        );
+        g.addColorStop(0, `rgba(255,255,255,${0.55 * b.alpha})`);
+        g.addColorStop(0.4, `rgba(165,243,252,${0.28 * b.alpha})`);
+        g.addColorStop(1, `rgba(14,116,144,${0.08 * b.alpha})`);
+        ctx.beginPath();
+        ctx.fillStyle = g;
+        ctx.strokeStyle = `rgba(186, 242, 255, ${0.25 * b.alpha})`;
+        ctx.lineWidth = 1;
+        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // ハイライト
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${0.35 * b.alpha})`;
+        ctx.arc(b.x - r * 0.28, b.y - r * 0.3, Math.max(1.2, r * 0.18), 0, Math.PI * 2);
+        ctx.fill();
+      }
     };
 
     const draw = (now: number) => {
       if (!running) return;
-      if (now > modeUntil) pickMode(now);
-      moveAttractors(now);
-
       ctx.clearRect(0, 0, w, h);
 
-      // 薄い導線: 集合の気配（皮下のネットワーク）
-      if (mode === 1 || mode === 2) {
-        ctx.save();
-        ctx.globalAlpha = mode === 2 ? 0.06 : 0.09;
-        ctx.strokeStyle = "rgba(103, 232, 249, 0.9)";
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 2; i += 1) {
-          const a = attractors[i];
-          ctx.beginPath();
-          ctx.arc(a.x, a.y, a.radius * (0.55 + 0.15 * Math.sin(now * 0.001 + i)), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-
-      for (const p of particles) {
-        const flicker = stepParticle(p, now);
-        if (p.kind === "mote") {
-          const alpha = 0.15 + flicker * 0.75;
-          ctx.beginPath();
-          ctx.fillStyle = `rgba(186, 242, 255, ${alpha})`;
-          ctx.shadowColor = `rgba(34, 211, 238, ${0.35 + flicker * 0.45})`;
-          ctx.shadowBlur = 6 + p.size * 2;
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        } else {
-          const alpha = 0.12 + flicker * 0.28;
-          const r = p.size;
-          const g = ctx.createRadialGradient(
-            p.x - r * 0.25,
-            p.y - r * 0.3,
-            r * 0.1,
-            p.x,
-            p.y,
-            r,
-          );
-          g.addColorStop(0, `rgba(255,255,255,${0.35 + flicker * 0.35})`);
-          g.addColorStop(0.45, `rgba(103,232,249,${alpha})`);
-          g.addColorStop(1, `rgba(14,116,144,${alpha * 0.25})`);
-          ctx.beginPath();
-          ctx.fillStyle = g;
-          ctx.strokeStyle = `rgba(125, 211, 252, ${0.2 + flicker * 0.25})`;
-          ctx.lineWidth = 1;
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        }
+      for (const c of creatures) {
+        advancePhase(c, now);
+        steerCreature(c, now);
+        stepBodies(c, now);
+        if (c.kind === "light") drawLightCreature(c);
+        else drawBubbleCreature(c);
       }
 
       raf = requestAnimationFrame(draw);
     };
 
     resize();
-    pickMode(performance.now());
     raf = requestAnimationFrame(draw);
-
     const onResize = () => resize();
     window.addEventListener("resize", onResize);
 
