@@ -51,7 +51,7 @@ function distributeHeights(
   const minTotal = sumAmount(minHeights);
   if (available < minTotal) return null;
 
-  const heights = amounts.map((amount) => (amount / total) * available);
+  let heights = amounts.map((amount) => (amount / total) * available);
   const locked = new Array<boolean>(count).fill(false);
 
   for (let pass = 0; pass < count + 2; pass += 1) {

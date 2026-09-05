@@ -5,14 +5,16 @@ import {
   resolveUserIdByShortcutToken,
 } from "@/lib/server/soluna-store";
 import { sendSolunaChat } from "@/lib/server/soluna-chat";
-import { canUseAiTokens } from "@/lib/server/token-usage";
 
 function readShortcutToken(request: Request): string | null {
-  return request.headers.get("x-soluna-token")?.trim() ?? null;
+  const header = request.headers.get("x-soluna-token")?.trim();
+  if (header) return header;
+  return new URL(request.url).searchParams.get("token")?.trim() ?? null;
 }
 
 type ShortcutChatBody = {
   message?: string;
+  token?: string;
 };
 
 export async function POST(request: Request) {
@@ -34,12 +36,9 @@ export async function POST(request: Request) {
   }
 
   const body = raw as ShortcutChatBody;
-  const token = readShortcutToken(request);
+  const token = readShortcutToken(request) ?? body.token?.trim() ?? null;
   if (!token) {
-    const response = Response.json(
-      { error: "x-soluna-token header is required." },
-      { status: 401 },
-    );
+    const response = Response.json({ error: "Shortcut token is required." }, { status: 401 });
     logApiAccess(request, "shortcut", response.status, startedAt);
     return response;
   }
@@ -48,16 +47,6 @@ export async function POST(request: Request) {
   if (!userId) {
     const response = Response.json({ error: "Invalid shortcut token." }, { status: 401 });
     logApiAccess(request, "shortcut", response.status, startedAt);
-    return response;
-  }
-
-  const quota = await canUseAiTokens(userId);
-  if (!quota.allowed) {
-    const response = Response.json(
-      { error: "Monthly AI usage limit reached." },
-      { status: 429 },
-    );
-    logApiAccess(request, userId, response.status, startedAt);
     return response;
   }
 
@@ -89,10 +78,7 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   const token = readShortcutToken(request);
   if (!token) {
-    const response = Response.json(
-      { ok: false, error: "x-soluna-token header required" },
-      { status: 401 },
-    );
+    const response = Response.json({ ok: false, error: "token required" }, { status: 401 });
     logApiAccess(request, "shortcut", response.status, startedAt);
     return response;
   }
