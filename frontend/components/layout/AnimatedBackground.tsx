@@ -18,8 +18,8 @@ type AnimatedBackgroundProps = {
   theme: BackgroundTheme;
 };
 
-const MOTE_COUNT = { full: 28, mobile: 14 } as const;
-const BUBBLE_COUNT = { full: 16, mobile: 9 } as const;
+const MOTE_COUNT = { full: 18, mobile: 10 } as const;
+const BUBBLE_COUNT = { full: 12, mobile: 7 } as const;
 const METEOR_COUNT = 3;
 
 /** 疑似乱数（SSR/CSR で同じ並びになるよう index から決定） */
