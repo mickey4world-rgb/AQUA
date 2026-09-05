@@ -7,9 +7,11 @@ export const SOLUNA_REPLY_LIMITS = {
   normal: 420,
   /** 状況・ジョブなど説明が必要な質問 */
   ops: 560,
-  /** 音声会話モード */
-  voice: 72,
-  voiceOps: 110,
+  /** 音声会話モード — 短すぎると機械的になるので余裕を持たせる */
+  voice: 140,
+  voiceOps: 180,
+  /** 音声掛け合いの2人目（賛同／反論／結論） */
+  voiceSupport: 90,
 } as const;
 
 /** TTS 用 — 絵文字を除き、読み上げやすい句読点に整える */
@@ -20,16 +22,51 @@ export function stripForTts(text: string): string {
 export function prepareForTts(text: string): string {
   return text
     .replace(EMOJI_RE, "")
+    .replace(/[#*_`>~\[\]()]/g, "")
+    .replace(/https?:\/\/\S+/gi, "")
     .replace(/[…]{2,}/g, "。")
     .replace(/[！!]{2,}/g, "！")
     .replace(/[？?]{2,}/g, "？")
+    // 数値の範囲だけ「から」（「〜かな」は伸ばし音に）
+    .replace(/(\d)\s*[〜~－]\s*(\d)/g, "$1から$2")
+    .replace(/[〜~]/g, "ー")
+    .replace(/℃/g, "度")
+    .replace(/%/g, "パーセント")
+    .replace(/km\/h/gi, "キロメートル毎時")
     .replace(/\s*[/／]\s*/g, "、")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-/** 文・節単位に分割して棒読み感を減らす */
-export function splitTtsChunks(text: string, maxLen = 44): string[] {
+/**
+ * 音声向けに、堅い書き言葉を少し口語へ寄せる（読み上げ前処理）
+ */
+export function humanizeSpokenJapanese(text: string): string {
+  let out = text.replace(/\s+/g, " ").trim();
+  if (!out) return out;
+
+  out = out
+    .replace(/させていただきます/g, "します")
+    .replace(/いたします/g, "します")
+    .replace(/でございます/g, "です")
+    .replace(/ではありませんか/g, "じゃないかな")
+    .replace(/でしょうか/g, "かな")
+    .replace(/ですよね/g, "だよね")
+    .replace(/ですね([。！？]|$)/g, "ね$1")
+    .replace(/ご質問ありがとうございます[。．]?/g, "")
+    .replace(/結論としては[、,]?/g, "")
+    .replace(/まず最初に[、,]?/g, "")
+    .replace(/承知いたしました/g, "わかった")
+    .replace(/承知しました/g, "わかった")
+    .replace(/かしこまりました/g, "了解")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return out;
+}
+
+/** 文・節単位に分割して棒読み感を減らす（やや長めの塊で自然に） */
+export function splitTtsChunks(text: string, maxLen = 72): string[] {
   const base = prepareForTts(text);
   if (!base) return [];
 
@@ -99,16 +136,19 @@ function ensureCompleteSentence(text: string): string {
 /** モデル出力を完結した返答に整える（音声のみ短文に切り詰め） */
 export function finalizeSolunaReply(
   text: string,
-  options: { ops?: boolean; voice?: boolean } = {},
+  options: { ops?: boolean; voice?: boolean; voiceSupport?: boolean } = {},
 ): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return "うけとりました。";
 
   if (options.voice) {
-    const maxChars = options.ops
-      ? SOLUNA_REPLY_LIMITS.voiceOps
-      : SOLUNA_REPLY_LIMITS.voice;
-    return trimAtSentence(normalized, maxChars);
+    const spoken = humanizeSpokenJapanese(normalized);
+    const maxChars = options.voiceSupport
+      ? SOLUNA_REPLY_LIMITS.voiceSupport
+      : options.ops
+        ? SOLUNA_REPLY_LIMITS.voiceOps
+        : SOLUNA_REPLY_LIMITS.voice;
+    return trimAtSentence(spoken || normalized, maxChars);
   }
 
   const maxChars = options.ops
@@ -128,7 +168,7 @@ export function isOpsStyleQuestion(message: string): boolean {
 
 /** 世間ニュース・最新情報を求める質問（返答をやや長くしてよい） */
 export function isWorldInfoQuestion(message: string): boolean {
-  return /ニュース|最新|世間|世の中|トレンド|話題|SNS|ツイッター|Twitter|\bX\b|インスタ|速報|円安|円高|日経|為替|選挙|地震|台風|天気|戦争|停戦|炎上|バズ|発表|リリース/i.test(
+  return /ニュース|最新|世間|世の中|トレンド|話題|SNS|ツイッター|Twitter|\bX\b|インスタ|速報|円安|円高|日経|為替|選挙|地震|台風|天気|天候|予報|気温|降水|晴れ|雨|雪|戦争|停戦|炎上|バズ|発表|リリース|気象/i.test(
     message,
   );
 }

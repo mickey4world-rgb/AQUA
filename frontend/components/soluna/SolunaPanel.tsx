@@ -172,8 +172,9 @@ export default function SolunaPanel() {
       pauseForReply();
     }
 
+    // conversationModeRef 側で判定するため、常に resumeAfterReply を呼んでよい
     const resumeIfConversation = () => {
-      if (conversationMode) resumeAfterReply();
+      resumeAfterReply();
     };
 
     const shouldSpeakReply = fromVoice || conversationMode;
@@ -303,14 +304,36 @@ export default function SolunaPanel() {
 
       try {
         if (shouldSpeakReply) {
-          speakLines(
-            [
-              { label: "ソル", text: payload.sol.content, character: "sol" },
-              { label: "ルーナ", text: payload.luna.content, character: "luna" },
-            ],
-            resumeIfConversation,
-            { force: true },
+          const lead = payload.voiceLead ?? "sol";
+          const leadLine =
+            lead === "luna"
+              ? {
+                  label: "ルーナ" as const,
+                  text: payload.luna.content,
+                  character: "luna" as const,
+                }
+              : {
+                  label: "ソル" as const,
+                  text: payload.sol.content,
+                  character: "sol" as const,
+                };
+          const supportLine =
+            lead === "luna"
+              ? {
+                  label: "ソル" as const,
+                  text: payload.sol.content,
+                  character: "sol" as const,
+                }
+              : {
+                  label: "ルーナ" as const,
+                  text: payload.luna.content,
+                  character: "luna" as const,
+                };
+          // 掛け合い: 主担当 → 相手（賛同／反論／結論）の順で二人とも話す
+          const lines = [leadLine, supportLine].filter(
+            (line) => line.text.trim().length > 0,
           );
+          speakLines(lines, resumeIfConversation, { force: true });
         } else {
           resumeIfConversation();
         }
@@ -547,7 +570,7 @@ export default function SolunaPanel() {
                     ? speaking
                       ? "🔊 返答中…（タップで終了）"
                       : sending
-                        ? "💭 考え中…（タップで終了）"
+                        ? "状況を確認しています…（タップで終了）"
                         : listening
                           ? "🟢 会話中 — 話しかけてください（タップで終了）"
                           : "🟢 会話モード（タップで終了）"

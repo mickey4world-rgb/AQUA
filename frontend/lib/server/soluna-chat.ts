@@ -35,6 +35,17 @@ import { finalizeSolunaReply, isOpsStyleQuestion, isWorldInfoQuestion } from "@/
 import { getBriefingForHumanChat } from "@/lib/server/soluna-news";
 import { buildHumanChatBriefingSection } from "@/lib/server/soluna-human-context";
 import { fetchLiveWorldContextForChat } from "@/lib/server/soluna-web-context";
+import {
+  fetchAmbientWeatherBrief,
+  isWeatherQuestion,
+} from "@/lib/server/soluna-weather";
+import {
+  COMPETENCE_ADDON,
+  NATURAL_SPEECH_ADDON,
+  selectVoiceLead,
+  VOICE_LEAD_ADDON,
+  VOICE_SUPPORT_ADDON,
+} from "@/lib/server/soluna-companion-competence";
 import { formatModelUsedLabel, resolveModelForProvider } from "@/lib/server/soluna-model-registry";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import {
@@ -61,9 +72,9 @@ import type {
 } from "@/lib/types/soluna";
 
 const MAX_MESSAGE_CHARS = 2000;
-const MAX_HISTORY = 8;
-/** 短い返答向け — 思考モデルのトークン消費を抑える（音声会話） */
-const VOICE_CHAT_MAX_OUTPUT_TOKENS = 140;
+const MAX_HISTORY = 14;
+/** 音声掛け合い（1回の応答で二人分） */
+const VOICE_CHAT_MAX_OUTPUT_TOKENS = 260;
 /** テキストチャット — 十分な長さで完結した返答 */
 const TEXT_CHAT_MAX_OUTPUT_TOKENS = 560;
 const OPENAI_CHAT_MAX_COMPLETION_TOKENS = 520;
@@ -73,6 +84,8 @@ const MEMORY_EXTRACT_MAX_OUTPUT_TOKENS = 500;
 const SOLUNA_PROVIDER_TIMEOUT_MS = 18_000;
 const SOL_PRIMARY_TIMEOUT_MS = 11_000;
 const SOL_FALLBACK_TIMEOUT_MS = 14_000;
+/** 音声は即答優先で短めに切る */
+const VOICE_PROVIDER_TIMEOUT_MS = 10_000;
 const MAX_PROVIDER_ATTEMPTS_SOL = 3;
 const MAX_PROVIDER_ATTEMPTS_LUNA = 2;
 const MAX_CLAUDE_MODEL_ATTEMPTS = 3;
@@ -94,7 +107,7 @@ const LUNA_CATEGORIES = new Set<SolunaMemoryCategory>([
 const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性の AI コンパニオンです。
 ユーザーの「目標」「タスク」「成功体験」「趣味（アクティビティ）」を大切に記憶し、前向きに伴走します。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
-世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」があればそれを根拠に答える（無いときは推測で埋めない）。
+世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」や「天気予報」「周辺状況」があればそれを根拠に答える。
 
 ## 話し方
 - 日本語・です/ます調。**明るく・楽しく・明晰・賢く**。適度に絵文字を1〜2個（☀️🎯✨など）
@@ -103,12 +116,14 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 - 励ましと次の一歩を1つだけ示す（状況質問では事実を先に）
 - ルーナ（月）の話題を否定せず、行動の側から補う
 - 記憶した内容があれば1フレーズだけ自然に触れる
-- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える`;
+- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える
+
+${COMPETENCE_ADDON}`;
 
 const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性の AI コンパニオンです。
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
-世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」があればそれを根拠に答える（無いときは推測で埋めない）。
+世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」や「天気予報」「周辺状況」があればそれを根拠に答える。
 
 ## 話し方
 - 日本語・です/ます調。**やわらかく・温かく・明晰・賢く**。適度に絵文字を1〜2個（🌙💫🌸など）
@@ -117,16 +132,20 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 - 気持ちを受け止めてから、短い一言だけ添える（状況質問では事実を先に）
 - ソル（太陽）の話題を否定せず、心の側から包む
 - 記憶した内容があれば1フレーズだけ自然に触れる
-- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える`;
+- 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える
+
+${COMPETENCE_ADDON}`;
 
 const VOICE_MODE_ADDON = `
 
 ## 音声会話モード（必須・最優先）
-- **1〜2文・35〜70文字**で話す（読み上げ向けに短く口語的に）
-- 絵文字は使わない
-- 爽やか／優しい**会話調**（です・ますは自然に。堅い書き言葉は避ける）
-- 一度に伝えることは1つ。質問は最大1つ
-- 相手の言葉を短く受け止めてから返す`;
+- **2文前後**で、友人と話すような口調にする
+- 絵文字・記号・箇条書き・カッコ書きは使わない
+- 「検索できません」「確認できません」「わかりません」だけで終わらない。分かったことを先に話し、足りない点だけ優しく添える
+- 機械の読み上げ文ではなく、息づかいのある自然な会話
+- 一度に伝えることは1〜2つ。質問は最大1つ
+- ソルとルーナは掛け合いで話す。同じ答えを二人で言わない
+${NATURAL_SPEECH_ADDON}`;
 
 const TEXT_MODE_ADDON = `
 
@@ -268,12 +287,19 @@ function buildSystemPrompt(
   tier: SolunaGrowthTier,
   briefingSection?: string,
   voiceMode?: boolean,
+  voiceRole?: "lead" | "support",
 ): string {
   const briefingBlock = briefingSection?.trim()
     ? `\n\n${briefingSection.trim()}`
     : "";
+  const voiceRoleAddon =
+    voiceMode && voiceRole === "lead"
+      ? `\n${VOICE_LEAD_ADDON}`
+      : voiceMode && voiceRole === "support"
+        ? `\n${VOICE_SUPPORT_ADDON}`
+        : "";
   const voiceAddon = voiceMode
-    ? `${VOICE_MODE_ADDON}\n- ${
+    ? `${VOICE_MODE_ADDON}${voiceRoleAddon}\n- ${
         character === "sol"
           ? "ソルは**爽やかな男の子**の声で話すイメージ（元気・明るい）"
           : "ルーナは**優しい女の子**の声で話すイメージ（やわらか・温かい）"
@@ -553,6 +579,7 @@ async function chatWithCharacter(
   blockedProvider?: SolunaProvider,
   briefingSection?: string,
   voiceMode?: boolean,
+  voiceRole?: "lead" | "support",
 ): Promise<CharacterChatResult> {
   const persona = character === "sol" ? SOL_PERSONA : LUNA_PERSONA;
   const tier = assignment.tier ?? resolveGrowthTier(intimacy);
@@ -565,6 +592,7 @@ async function chatWithCharacter(
     tier,
     briefingSection,
     voiceMode,
+    voiceRole,
   );
   const userMessages = buildUserMessages(history, userMessage);
 
@@ -766,6 +794,156 @@ export type SolunaChatResult =
   | { ok: true; data: SolunaChatResponse }
   | { ok: false; reason: string };
 
+function parseVoiceDuoReply(text: string): { sol: string; luna: string } | null {
+  const cleaned = stripJsonFence(text).trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { sol?: unknown; luna?: unknown };
+    if (typeof parsed.sol === "string" && typeof parsed.luna === "string") {
+      const sol = parsed.sol.trim();
+      const luna = parsed.luna.trim();
+      if (sol && luna) return { sol, luna };
+    }
+  } catch {
+    // fall through
+  }
+  const solMatch = cleaned.match(/"sol"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  const lunaMatch = cleaned.match(/"luna"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  if (solMatch?.[1] && lunaMatch?.[1]) {
+    const sol = solMatch[1].replace(/\\"/g, '"').trim();
+    const luna = lunaMatch[1].replace(/\\"/g, '"').trim();
+    if (sol && luna) return { sol, luna };
+  }
+  return null;
+}
+
+function buildVoiceDuoSystem(
+  voiceLead: SolunaCharacter,
+  briefingSection: string,
+  solMemories: SolunaMemory[],
+  lunaMemories: SolunaMemory[],
+  solIntimacy: number,
+  lunaIntimacy: number,
+): string {
+  const leadName = voiceLead === "sol" ? "ソル" : "ルーナ";
+  const supportName = voiceLead === "sol" ? "ルーナ" : "ソル";
+  return `あなたはソル（太陽・行動）とルーナ（月・感情）の二人組 AI の掛け合い脚本家です。
+1回の応答で二人分の短い話し言葉を JSON だけで返します。
+
+${COMPETENCE_ADDON}
+${NATURAL_SPEECH_ADDON}
+
+${buildTemporalContext()}
+
+## 役割
+- 主担当（1人目）: ${leadName} — ${VOICE_LEAD_ADDON}
+- 掛け合い（2人目）: ${supportName} — ${VOICE_SUPPORT_ADDON}
+- 二人は同じ内容を言わない。2人目は賛同・やさしい反論・結論のいずれか。
+
+## 記憶
+ソル親密度 ${solIntimacy}/100:
+${formatMemories(solMemories)}
+ルーナ親密度 ${lunaIntimacy}/100:
+${formatMemories(lunaMemories)}
+
+${briefingSection.trim()}
+
+## 出力（JSONのみ・他の文字禁止）
+{"sol":"ソルの話し言葉","luna":"ルーナの話し言葉"}
+- 絵文字・箇条書き禁止。主担当80〜120字、相手50〜80字。`;
+}
+
+async function chatVoiceDuo(params: {
+  userId: string;
+  assignment: SolunaRouteAssignment;
+  userMessage: string;
+  history: SolunaMessage[];
+  briefingSection: string;
+  voiceLead: SolunaCharacter;
+  solMemories: SolunaMemory[];
+  lunaMemories: SolunaMemory[];
+  solIntimacy: number;
+  lunaIntimacy: number;
+  explainAsk: boolean;
+}): Promise<
+  | {
+      ok: true;
+      sol: string;
+      luna: string;
+      model: string;
+      modelLabel: string;
+      provider: SolunaProvider;
+      reason: string;
+    }
+  | { ok: false; error: string }
+> {
+  const system = buildVoiceDuoSystem(
+    params.voiceLead,
+    params.briefingSection,
+    params.solMemories,
+    params.lunaMemories,
+    params.solIntimacy,
+    params.lunaIntimacy,
+  );
+  const prompt = `${params.userMessage}
+
+（※音声掛け合い。主担当は${params.voiceLead === "sol" ? "ソル" : "ルーナ"}。
+${params.explainAsk ? "事実ベースで自然な話し言葉。" : ""}
+JSONのみで sol と luna の両方を返す。）`;
+
+  const userMessages = buildUserMessages(params.history, prompt);
+  const providers: SolunaProvider[] = [];
+  // 即答優先: Gemini → 主担当の割当 → その他
+  if (isGeminiConfigured()) providers.push("gemini");
+  if (!providers.includes(params.assignment.provider)) {
+    providers.push(params.assignment.provider);
+  }
+  for (const p of getAvailableSolunaProviders()) {
+    if (!providers.includes(p)) providers.push(p);
+  }
+
+  let lastError = "音声応答を取得できませんでした。";
+  for (const provider of providers.slice(0, 2)) {
+    const assignment =
+      provider === params.assignment.provider
+        ? params.assignment
+        : buildFallbackAssignment(
+            params.voiceLead,
+            provider,
+            params.assignment.tier,
+            params.assignment.tierLevel,
+            "normal",
+          );
+    const result = await callProvider(
+      params.userId,
+      params.voiceLead,
+      assignment,
+      system,
+      userMessages,
+      VOICE_PROVIDER_TIMEOUT_MS,
+      true,
+    );
+    if ("error" in result) {
+      lastError = result.error;
+      continue;
+    }
+    const parsed = parseVoiceDuoReply(result.content);
+    if (!parsed) {
+      lastError = "音声掛け合いの形式が不正でした。";
+      continue;
+    }
+    return {
+      ok: true,
+      sol: parsed.sol,
+      luna: parsed.luna,
+      model: result.model,
+      modelLabel: result.modelLabel || assignment.modelLabel,
+      provider: result.provider,
+      reason: result.reason || "音声掛け合い（1呼び出し）",
+    };
+  }
+  return { ok: false, error: lastError };
+}
+
 export async function sendSolunaChat(
   userId: string,
   message: string,
@@ -788,29 +966,40 @@ export async function sendSolunaChat(
   const profile = await getOrCreateProfile(userId);
   const opsAsk = isOpsStyleQuestion(trimmed);
   const worldAsk = isWorldInfoQuestion(trimmed);
-  const [solMemories, lunaMemories, history, briefing, worldContext] =
+  const voiceLead = voiceMode ? selectVoiceLead(trimmed) : undefined;
+  const wantAmbientWeather = voiceMode && isWeatherQuestion(trimmed);
+  const [solMemories, lunaMemories, history, briefing, worldContext, ambientWeather] =
     await Promise.all([
       listMemories(userId, "sol"),
       listMemories(userId, "luna"),
       listMessages(userId),
       getBriefingForHumanChat(),
       fetchLiveWorldContextForChat(trimmed, { voiceMode }),
+      wantAmbientWeather ? fetchAmbientWeatherBrief(trimmed) : Promise.resolve(null),
     ]);
   const briefingSection = [
     await buildHumanChatBriefingSection(briefing, trimmed, {
       userId,
-      detail: opsAsk ? "full" : "compact",
+      detail: voiceMode ? "compact" : opsAsk ? "full" : "compact",
     }),
     worldContext,
+    ambientWeather &&
+    !(worldContext && /天気予報|周辺状況（天気/.test(worldContext))
+      ? ambientWeather
+      : null,
   ]
     .filter(Boolean)
     .join("\n\n");
   const explainAsk = opsAsk || worldAsk;
-  const userPrompt = voiceMode
-    ? `${explainAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリ・最新情報の質問です。事実ベースで70字以内。）" : trimmed}\n\n（※音声会話中です。35〜70字・1〜2文・絵文字なしで返してください。）`
-    : explainAsk
-      ? `${trimmed}\n\n（※状況・ジョブ・他アプリ・世間の最新情報の質問です。system の「ギルド作戦状況」「他アプリの最近の動き」「最新ウェブ／SNS情報」の事実を根拠に、520字以内で完結した文で答えてください。世間の話題では討伐ネタでごまかさないでください。）`
-      : `${trimmed}\n\n（※テキストチャットです。2〜4文・200〜400字程度で、途中で切らず完結した返答にしてください。）`;
+  const textUserPrompt = explainAsk
+    ? `${trimmed}\n\n（※状況・ジョブ・他アプリ・世間の最新情報の質問です。system の「ギルド作戦状況」「他アプリの最近の動き」「最新ウェブ／SNS情報」「天気予報」の事実を根拠に、520字以内で完結した文で答えてください。世間の話題では討伐ネタでごまかさないでください。）`
+    : `${trimmed}\n\n（※テキストチャットです。2〜4文・200〜400字程度で、途中で切らず完結した返答にしてください。）`;
+  const userPromptLead = voiceMode
+    ? `${explainAsk ? trimmed + "\n\n（※状況・ジョブ・他アプリ・最新情報の質問です。事実ベースで自然な話し言葉。）" : trimmed}\n\n（※音声の掛け合い・あなたが1人目（主担当）。ユーザーに結論から話す。2文・80〜120字・絵文字なし。パートナーが続くので全部言い切らない。）`
+    : textUserPrompt;
+  const userPromptSupport = voiceMode
+    ? `${trimmed}\n\n（※音声の掛け合い・あなたが2人目。主担当が答える前提で、同じ答えを繰り返さず賛同・やさしい反論・結論のいずれか1つ。50〜80字・絵文字なし・話し言葉。）`
+    : textUserPrompt;
 
   const solStage = resolveGrowthStage("sol", profile.solIntimacy);
   const lunaStage = resolveGrowthStage("luna", profile.lunaIntimacy);
@@ -825,44 +1014,21 @@ export async function sendSolunaChat(
     },
   );
 
-  const [solResultRaw, lunaResult] = await Promise.all([
-    chatWithCharacter(
-      userId,
-      "sol",
-      routePlan.sol,
-      userPrompt,
-      solMemories,
-      history,
-      profile.solIntimacy,
-      solStage.label,
-      costAssessment.mode,
-      routePlan.luna.provider,
-      briefingSection,
-      voiceMode,
-    ),
-    chatWithCharacter(
-      userId,
-      "luna",
-      routePlan.luna,
-      userPrompt,
-      lunaMemories,
-      history,
-      profile.lunaIntimacy,
-      lunaStage.label,
-      costAssessment.mode,
-      routePlan.sol.provider,
-      briefingSection,
-      voiceMode,
-    ),
-  ]);
+  const solVoiceRole =
+    voiceMode && voiceLead ? (voiceLead === "sol" ? "lead" : "support") : undefined;
+  const lunaVoiceRole =
+    voiceMode && voiceLead ? (voiceLead === "luna" ? "lead" : "support") : undefined;
 
-  // ソルが全滅したら、相手プロバイダ制限なしで最終リトライ（会話継続を最優先）
-  let solResult = solResultRaw;
-  if ("error" in solResult) {
-    console.warn(`[soluna] sol emergency retry after: ${solResult.error}`);
+  const retrySolEmergency = async (
+    failed: CharacterChatResult & { error: string },
+    prompt: string,
+    role: "lead" | "support" | undefined,
+  ): Promise<CharacterChatResult> => {
+    console.warn(`[soluna] sol emergency retry after: ${failed.error}`);
     const emergencyProviders = getAvailableSolunaProviders().filter(
       (provider) => provider !== routePlan.sol.provider,
     );
+    let result: CharacterChatResult = failed;
     for (const provider of emergencyProviders) {
       const emergencyAssignment = buildFallbackAssignment(
         "sol",
@@ -871,11 +1037,11 @@ export async function sendSolunaChat(
         routePlan.sol.tierLevel,
         costAssessment.mode,
       );
-      solResult = await chatWithCharacter(
+      result = await chatWithCharacter(
         userId,
         "sol",
         emergencyAssignment,
-        userPrompt,
+        prompt,
         solMemories,
         history,
         profile.solIntimacy,
@@ -884,14 +1050,129 @@ export async function sendSolunaChat(
         undefined,
         briefingSection,
         voiceMode,
+        role,
       );
-      if (!("error" in solResult)) {
-        solResult = {
-          ...solResult,
-          reason: `緊急フェイルオーバー（${routePlan.sol.provider}→${solResult.provider}/${solResult.model}）`,
+      if (!("error" in result)) {
+        return {
+          ...result,
+          reason: `緊急フェイルオーバー（${routePlan.sol.provider}→${result.provider}/${result.model}）`,
         };
-        break;
       }
+    }
+    return result;
+  };
+
+  let solResult: CharacterChatResult;
+  let lunaResult: CharacterChatResult;
+
+  if (voiceMode && voiceLead) {
+    // 即答: 1回の呼び出しで二人分の掛け合いを生成
+    const duo = await chatVoiceDuo({
+      userId,
+      assignment: voiceLead === "sol" ? routePlan.sol : routePlan.luna,
+      userMessage: trimmed,
+      history,
+      briefingSection,
+      voiceLead,
+      solMemories,
+      lunaMemories,
+      solIntimacy: profile.solIntimacy,
+      lunaIntimacy: profile.lunaIntimacy,
+      explainAsk,
+    });
+
+    if (duo.ok) {
+      solResult = {
+        content: duo.sol,
+        model: duo.model,
+        modelLabel: duo.modelLabel,
+        provider: duo.provider,
+        reason: duo.reason,
+      };
+      lunaResult = {
+        content: duo.luna,
+        model: duo.model,
+        modelLabel: duo.modelLabel,
+        provider: duo.provider,
+        reason: duo.reason,
+      };
+    } else {
+      console.warn("[soluna] voice duo failed, parallel fallback:", duo.error);
+      const solPrompt = solVoiceRole === "support" ? userPromptSupport : userPromptLead;
+      const lunaPrompt = lunaVoiceRole === "support" ? userPromptSupport : userPromptLead;
+      const [solRaw, lunaRaw] = await Promise.all([
+        chatWithCharacter(
+          userId,
+          "sol",
+          routePlan.sol,
+          solPrompt,
+          solMemories,
+          history,
+          profile.solIntimacy,
+          solStage.label,
+          costAssessment.mode,
+          routePlan.luna.provider,
+          briefingSection,
+          true,
+          solVoiceRole,
+        ),
+        chatWithCharacter(
+          userId,
+          "luna",
+          routePlan.luna,
+          lunaPrompt,
+          lunaMemories,
+          history,
+          profile.lunaIntimacy,
+          lunaStage.label,
+          costAssessment.mode,
+          routePlan.sol.provider,
+          briefingSection,
+          true,
+          lunaVoiceRole,
+        ),
+      ]);
+      solResult = solRaw;
+      lunaResult = lunaRaw;
+      if ("error" in solResult) {
+        solResult = await retrySolEmergency(solResult, solPrompt, solVoiceRole);
+      }
+    }
+  } else {
+    const [solResultRaw, lunaResultRaw] = await Promise.all([
+      chatWithCharacter(
+        userId,
+        "sol",
+        routePlan.sol,
+        textUserPrompt,
+        solMemories,
+        history,
+        profile.solIntimacy,
+        solStage.label,
+        costAssessment.mode,
+        routePlan.luna.provider,
+        briefingSection,
+        false,
+      ),
+      chatWithCharacter(
+        userId,
+        "luna",
+        routePlan.luna,
+        textUserPrompt,
+        lunaMemories,
+        history,
+        profile.lunaIntimacy,
+        lunaStage.label,
+        costAssessment.mode,
+        routePlan.sol.provider,
+        briefingSection,
+        false,
+      ),
+    ]);
+    solResult = solResultRaw;
+    lunaResult = lunaResultRaw;
+    if ("error" in solResult) {
+      solResult = await retrySolEmergency(solResult, textUserPrompt, undefined);
     }
   }
 
@@ -906,11 +1187,19 @@ export async function sendSolunaChat(
   const solContent =
     "error" in solResult
       ? solContentRaw
-      : finalizeSolunaReply(solContentRaw, { ops: explainAsk, voice: voiceMode });
+      : finalizeSolunaReply(solContentRaw, {
+          ops: explainAsk,
+          voice: voiceMode,
+          voiceSupport: solVoiceRole === "support",
+        });
   const lunaContent =
     "error" in lunaResult
       ? lunaContentRaw
-      : finalizeSolunaReply(lunaContentRaw, { ops: explainAsk, voice: voiceMode });
+      : finalizeSolunaReply(lunaContentRaw, {
+          ops: explainAsk,
+          voice: voiceMode,
+          voiceSupport: lunaVoiceRole === "support",
+        });
 
   const gain = estimateIntimacyGain(trimmed.length);
   const nextProfile = await saveProfile({
@@ -999,6 +1288,7 @@ export async function sendSolunaChat(
       lunaStage: resolveGrowthStage("luna", nextProfile.lunaIntimacy),
       newMemories,
       messages,
+      voiceLead,
       costMode: costAssessment.mode,
       costReason: costAssessment.mode !== "normal" ? costAssessment.reason : undefined,
     },
