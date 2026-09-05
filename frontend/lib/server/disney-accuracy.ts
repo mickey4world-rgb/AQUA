@@ -233,11 +233,14 @@ export async function finalizeYesterdayAccuracy(): Promise<{
  */
 export async function backfillPastAccuracy(options?: {
   monthsBack?: number;
+  /** true なら既存的中レコードがある日はスキップ（warm 向け） */
+  skipExisting?: boolean;
 }): Promise<{
   seededDays: number;
   records: DisneyDayAccuracyRecord[];
 }> {
   const monthsBack = options?.monthsBack ?? DEFAULT_MONTHS_BACK;
+  const skipExisting = options?.skipExisting === true;
   const today = getJstToday();
   const cursor = new Date(`${today}T12:00:00+09:00`);
   const parks: DisneyParkKey[] = ["tdl", "tds"];
@@ -255,8 +258,17 @@ export async function backfillPastAccuracy(options?: {
     const days = getMonthDays(year, month).filter(
       (dateStr) => compareDateStr(dateStr, today) < 0,
     );
+
     for (const park of parks) {
+      const existing = skipExisting
+        ? await getAccuracyMapForMonth(park, year, month)
+        : null;
       for (const dateStr of days) {
+        if (existing?.has(dateStr)) {
+          const row = existing.get(dateStr);
+          if (row) records.push(row);
+          continue;
+        }
         jobs.push({ park, date: dateStr });
       }
     }
