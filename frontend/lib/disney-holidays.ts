@@ -73,6 +73,10 @@ function addDays(dateStr: string, days: number): string {
   return formatJstDate(date);
 }
 
+export function shiftJstDate(dateStr: string, days: number): string {
+  return addDays(dateStr, days);
+}
+
 export function formatJstDate(date: Date): string {
   return date.toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
 }

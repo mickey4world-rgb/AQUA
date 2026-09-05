@@ -107,16 +107,6 @@ export async function buildPublicDayBriefing(
   };
 }
 
-async function buildDayBriefing(
-  park: DisneyParkKey,
-  date: string,
-): Promise<DisneyDayBriefing> {
-  return buildPublicDayBriefing(park, date, {
-    today: getJstToday(),
-    tomorrow: getTomorrowJst(),
-  });
-}
-
 async function buildParkPublicPreview(
   park: DisneyParkKey,
   today: string,
@@ -129,8 +119,16 @@ async function buildParkPublicPreview(
 
   const [calendarMonth, todayBriefing, tomorrowBriefing] = await Promise.all([
     predictCalendarMonth(park, year, month, { skipLiveFetch: options?.skipLiveFetch }),
-    buildDayBriefing(park, today),
-    buildDayBriefing(park, tomorrow),
+    buildPublicDayBriefing(park, today, {
+      today,
+      tomorrow,
+      skipLiveFetch: options?.skipLiveFetch,
+    }),
+    buildPublicDayBriefing(park, tomorrow, {
+      today,
+      tomorrow,
+      skipLiveFetch: options?.skipLiveFetch,
+    }),
   ]);
 
   return {

@@ -1,4 +1,4 @@
-import { getJstToday } from "@/lib/disney-holidays";
+import { getJstToday, shiftJstDate } from "@/lib/disney-holidays";
 import { buildDisneyShowcaseSnapshot } from "@/lib/server/disney-public-preview";
 import {
   predictCalendarMonth,
@@ -26,6 +26,7 @@ type CachedCalendar = {
 let memoryCache: { date: string; snapshot: DisneyShowcaseSnapshot; builtAt: number } | null =
   null;
 const calendarMemory = new Map<string, { payload: DisneyCalendarMonth; builtAt: number }>();
+let rebuildInFlight: Promise<DisneyShowcaseSnapshot | null> | null = null;
 
 const MEMORY_TTL_MS = 55 * 60 * 1000;
 const CALENDAR_MEMORY_TTL_MS = 6 * 60 * 60 * 1000;
@@ -44,13 +45,17 @@ async function readCosmosCache(date: string): Promise<DisneyShowcaseSnapshot | n
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
     const { resource } = await container.item(cacheDocId(date), cacheDocId(date)).read<CachedShowcase>();
     return resource?.date === date ? resource.snapshot : null;
-  } catch {
+  } catch (error) {
+    console.warn("[tdr-cache] cosmos read failed", date, error);
     return null;
   }
 }
 
-async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot): Promise<void> {
-  if (!isCosmosConfigured()) return;
+async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot): Promise<boolean> {
+  if (!isCosmosConfigured()) {
+    console.warn("[tdr-cache] cosmos not configured; snapshot will not persist across instances");
+    return false;
+  }
   try {
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
     const doc: CachedShowcase = {
@@ -60,8 +65,10 @@ async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot):
       builtAt: new Date().toISOString(),
     };
     await container.items.upsert(doc);
-  } catch {
-    // キャッシュ書き込み失敗は本番応答を止めない
+    return true;
+  } catch (error) {
+    console.error("[tdr-cache] cosmos write failed", date, error);
+    return false;
   }
 }
 
@@ -80,7 +87,8 @@ async function readCosmosCalendar(
       return null;
     }
     return resource.payload;
-  } catch {
+  } catch (error) {
+    console.warn("[tdr-cache] calendar read failed", park, year, month, error);
     return null;
   }
 }
@@ -90,8 +98,8 @@ async function writeCosmosCalendar(
   year: number,
   month: number,
   payload: DisneyCalendarMonth,
-): Promise<void> {
-  if (!isCosmosConfigured()) return;
+): Promise<boolean> {
+  if (!isCosmosConfigured()) return false;
   try {
     const id = calendarDocId(park, year, month);
     const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
@@ -104,16 +112,44 @@ async function writeCosmosCalendar(
       builtAt: new Date().toISOString(),
     };
     await container.items.upsert(doc);
-  } catch {
-    // ignore
+    return true;
+  } catch (error) {
+    console.error("[tdr-cache] calendar write failed", park, year, month, error);
+    return false;
   }
 }
 
+async function rebuildShowcaseSnapshot(): Promise<DisneyShowcaseSnapshot | null> {
+  if (rebuildInFlight) return rebuildInFlight;
+  rebuildInFlight = (async () => {
+    try {
+      const snapshot = await buildDisneyShowcaseSnapshot({ skipLiveFetch: true });
+      const today = getJstToday();
+      memoryCache = { date: today, snapshot, builtAt: Date.now() };
+      const written = await writeCosmosCache(today, snapshot);
+      if (!written) {
+        console.warn("[tdr-cache] rebuilt snapshot kept in memory only");
+      }
+      return snapshot;
+    } catch (error) {
+      console.error("[tdr-cache] rebuild failed", error);
+      return null;
+    } finally {
+      rebuildInFlight = null;
+    }
+  })();
+  return rebuildInFlight;
+}
+
 /**
- * オンライン表示専用。キャッシュが無ければ null（再計算しない）。
+ * 公開表示用。欠落時はローカル再生成 → 前日キャッシュの順でフォールバックし、
+ * 「データなし 503」を極力出さない。
  */
-export async function getDisneyShowcaseSnapshot(): Promise<DisneyShowcaseSnapshot | null> {
+export async function getDisneyShowcaseSnapshot(options?: {
+  allowRebuild?: boolean;
+}): Promise<DisneyShowcaseSnapshot | null> {
   const today = getJstToday();
+  const allowRebuild = options?.allowRebuild !== false;
 
   if (
     memoryCache?.date === today &&
@@ -128,10 +164,25 @@ export async function getDisneyShowcaseSnapshot(): Promise<DisneyShowcaseSnapsho
     return fromCosmos;
   }
 
+  if (allowRebuild) {
+    console.warn("[tdr-cache] today's snapshot missing — rebuilding locally");
+    const rebuilt = await rebuildShowcaseSnapshot();
+    if (rebuilt) return rebuilt;
+  }
+
+  // 前日スナップショットでも空ページよりマシ（日付ずれに注意）
+  const yesterday = shiftJstDate(today, -1);
+  const stale = await readCosmosCache(yesterday);
+  if (stale) {
+    console.warn("[tdr-cache] serving stale snapshot from", yesterday);
+    memoryCache = { date: today, snapshot: stale, builtAt: Date.now() };
+    return stale;
+  }
+
   return null;
 }
 
-/** 公開カレンダー。メモリ → Cosmos →（当月のみ）ショーケース内包。オンライン再計算しない。 */
+/** 公開カレンダー。メモリ → Cosmos →（当月）ショーケース → 必要ならローカル再計算。 */
 export async function getPublicCalendarMonth(
   park: DisneyParkKey,
   year: number,
@@ -149,7 +200,7 @@ export async function getPublicCalendarMonth(
     return fromCosmos;
   }
 
-  const showcase = await getDisneyShowcaseSnapshot();
+  const showcase = await getDisneyShowcaseSnapshot({ allowRebuild: false });
   const today = getJstToday();
   const now = new Date(`${today}T12:00:00+09:00`);
   if (
@@ -162,7 +213,17 @@ export async function getPublicCalendarMonth(
     return embedded;
   }
 
-  return null;
+  try {
+    const payload = await predictCalendarMonth(park, year, month, {
+      skipLiveFetch: true,
+    });
+    calendarMemory.set(key, { payload, builtAt: Date.now() });
+    await writeCosmosCalendar(park, year, month, payload);
+    return payload;
+  } catch (error) {
+    console.error("[tdr-cache] calendar rebuild failed", park, year, month, error);
+    return null;
+  }
 }
 
 /** バッチ／cron 専用。ここでだけ重い再生成を行う。 */
@@ -170,12 +231,16 @@ export async function warmDisneyShowcaseCache(): Promise<{
   date: string;
   builtAt: string;
   calendarsWarmed: number;
+  cosmosPersisted: boolean;
 }> {
   clearCalendarMonthCache();
   const snapshot = await buildDisneyShowcaseSnapshot({ skipLiveFetch: true });
   const today = getJstToday();
   memoryCache = { date: today, snapshot, builtAt: Date.now() };
-  await writeCosmosCache(today, snapshot);
+  const cosmosPersisted = await writeCosmosCache(today, snapshot);
+  if (!cosmosPersisted && isCosmosConfigured()) {
+    throw new Error("TDR showcase snapshot could not be persisted to Cosmos");
+  }
 
   const now = new Date(`${today}T12:00:00+09:00`);
   let calendarsWarmed = 0;
@@ -204,5 +269,6 @@ export async function warmDisneyShowcaseCache(): Promise<{
     date: snapshot.today,
     builtAt: snapshot.generatedAt,
     calendarsWarmed,
+    cosmosPersisted,
   };
 }

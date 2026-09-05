@@ -203,19 +203,64 @@ export default function DisneyPublicPreview() {
   const [dayLoading, setDayLoading] = useState(false);
   const [dayError, setDayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
-    fetch("/api/public/tdr-preview")
-      .then(async (res) => {
-        if (!res.ok) throw new Error("データを取得できませんでした");
-        return (await res.json()) as DisneyShowcaseSnapshot;
-      })
-      .then((payload) => {
-        setData(payload);
-        setSelectedDate(payload.today);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "エラー"));
-  }, []);
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 4;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      while (!cancelled && attempt < maxAttempts) {
+        attempt += 1;
+        try {
+          const res = await fetch("/api/public/tdr-preview", { cache: "no-store" });
+          let body: unknown = null;
+          try {
+            body = await res.json();
+          } catch {
+            body = null;
+          }
+          if (!res.ok) {
+            const message =
+              typeof body === "object" &&
+              body !== null &&
+              "error" in body &&
+              typeof (body as { error?: unknown }).error === "string"
+                ? (body as { error: string }).error
+                : `データを取得できませんでした（HTTP ${res.status}）`;
+            if (attempt < maxAttempts && (res.status === 503 || res.status === 502)) {
+              await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
+              continue;
+            }
+            throw new Error(message);
+          }
+          if (!cancelled) {
+            setData(body as DisneyShowcaseSnapshot);
+            setSelectedDate((body as DisneyShowcaseSnapshot).today);
+            setError(null);
+            setLoading(false);
+          }
+          return;
+        } catch (e) {
+          if (attempt >= maxAttempts && !cancelled) {
+            setError(e instanceof Error ? e.message : "エラー");
+            setLoading(false);
+          } else if (!cancelled) {
+            await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
+          }
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [retryToken]);
 
   const preview = park === "tdl" ? data?.tdl : data?.tds;
 
@@ -329,12 +374,22 @@ export default function DisneyPublicPreview() {
       </div>
 
       {error && (
-        <p className="mt-6 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {error}
-        </p>
+        <div className="mt-6 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <p>{error}</p>
+          <button
+            type="button"
+            className="mt-3 rounded-full border border-rose-300/40 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/20"
+            onClick={() => {
+              setData(null);
+              setRetryToken((n) => n + 1);
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
       )}
 
-      {!data && !error && (
+      {!data && !error && loading && (
         <p className="mt-8 text-center text-slate-400">読み込み中...</p>
       )}
 

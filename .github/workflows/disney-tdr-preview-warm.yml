@@ -2,14 +2,28 @@ name: TDR Public Preview Warm
 
 on:
   schedule:
-    # 0:05 JST = 15:05 UTC（前日）
+    # 0:05 / 6:05 / 12:05 / 18:05 JST
     - cron: "5 15 * * *"
+    - cron: "5 21 * * *"
+    - cron: "5 3 * * *"
+    - cron: "5 9 * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Azure Static Web Apps CI/CD"]
+    types: [completed]
+    branches: [main]
 
 jobs:
   warm_tdr_preview:
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for SWA propagation
+        if: github.event_name == 'workflow_run'
+        run: sleep 45
+
       - name: Warm public TDR preview cache
         env:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -20,9 +34,20 @@ jobs:
             exit 0
           fi
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          curl -sfS -X POST \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            "${BASE%/}/api/public/tdr-preview/warm" \
-            -d '{}' \
-            --max-time 120
+          # デプロイ直後は最大3回リトライ
+          for i in 1 2 3; do
+            if curl -sfS -X POST \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              "${BASE%/}/api/public/tdr-preview/warm" \
+              -d '{}' \
+              --max-time 120; then
+              echo ""
+              echo "warm ok (attempt $i)"
+              exit 0
+            fi
+            echo "warm attempt $i failed; retrying..."
+            sleep 20
+          done
+          echo "warm failed after retries"
+          exit 1
