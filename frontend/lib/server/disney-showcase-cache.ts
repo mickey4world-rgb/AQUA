@@ -5,7 +5,7 @@ import {
   predictCalendarMonth,
   clearCalendarMonthCache,
 } from "@/lib/server/disney-calendar-prediction";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { getPublicCacheContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { DisneyCalendarMonth, DisneyParkKey, DisneyShowcaseSnapshot } from "@/lib/types/disney";
 
 type CachedShowcase = {
@@ -102,7 +102,7 @@ function decodeShowcaseDoc(resource: CachedShowcase | undefined): DisneyShowcase
 async function readCosmosCache(date: string): Promise<DisneyShowcaseSnapshot | null> {
   if (!isCosmosConfigured()) return null;
   try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const { container } = await getPublicCacheContainer();
     const { resource } = await container
       .item(cacheDocId(date), cacheDocId(date))
       .read<CachedShowcase>();
@@ -120,7 +120,6 @@ async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot):
     console.warn("[tdr-cache] cosmos not configured; snapshot will not persist across instances");
     return false;
   }
-  const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
   const encoded = encodeGzipJson(snapshot);
   const doc: CachedShowcase = {
     id: cacheDocId(date),
@@ -134,10 +133,12 @@ async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot):
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
+      const { container, containerId } = await getPublicCacheContainer();
       await container.items.upsert(doc);
       lastShowcaseWriteError = null;
       console.info("[tdr-cache] showcase persisted", {
         date,
+        containerId,
         rawBytes: encoded.rawBytes,
         gzipBytes: encoded.gzipBytes,
       });
@@ -165,7 +166,7 @@ async function readCosmosCalendar(
   if (!isCosmosConfigured()) return null;
   try {
     const id = calendarDocId(park, year, month);
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const { container } = await getPublicCacheContainer();
     const { resource } = await container.item(id, id).read<CachedCalendar>();
     if (!resource) return null;
     if (resource.park !== park || resource.year !== year || resource.month !== month) {
@@ -196,7 +197,7 @@ async function writeCosmosCalendar(
   if (!isCosmosConfigured()) return false;
   try {
     const id = calendarDocId(park, year, month);
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+    const { container } = await getPublicCacheContainer();
     const encoded = encodeGzipJson(payload);
     const doc: CachedCalendar = {
       id,
