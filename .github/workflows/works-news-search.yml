@@ -19,8 +19,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Build news search digest
+      - name: Install frontend deps (RSS parse)
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Build news search digest (RSS in Actions → ingest)
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
