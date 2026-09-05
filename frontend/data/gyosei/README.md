@@ -11,6 +11,7 @@ https://www.gyoukaku.go.jp/review/database/index.html
 | `fy2019.json.gz` 〜 `fy2022.json.gz` | 主要事項データベース（令和2〜5年度シート）由来 |
 | `fy2024.json.gz` / `fy2025.json.gz` | 見える化サイト「5-1 支出情報」CSV 由来 |
 | `summary.json` | 府省庁別合計・上位支出先などの軽量サマリ |
+| `public-preview.json` | 公開サンキー表示専用の事前集計スナップショット（オンラインはこれだけ読む） |
 
 ## 2023 年度など未収録年の追加
 
@@ -44,6 +45,9 @@ py tools/build_rs_dataset.py data-src/rs frontend/data/gyosei
 
 # サマリ
 py tools/build_review_summary.py frontend/data/gyosei
+
+# 公開プレビュー（オンライン表示用・リクエスト時集計を避ける）
+cd frontend && npm run build:gyosei-preview
 ```
 
 単位入力が疑わしい事業は `suspect=1` として集計から除外しています。
