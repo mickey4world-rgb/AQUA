@@ -2,12 +2,20 @@ import {
   isMonthNavigable,
   predictCalendarMonth,
 } from "@/lib/server/disney-calendar-prediction";
+import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
 export const dynamic = "force-dynamic";
 
 /** 認証不要 · 混雑予測カレンダー（過去2か月〜6か月先） */
 export async function GET(request: Request) {
+  const blocked = await enforcePublicRequestProtection(request, {
+    scope: "public-tdr-calendar",
+    maxRequests: 30,
+    windowMs: 60_000,
+  });
+  if (blocked) return blocked;
+
   const { searchParams } = new URL(request.url);
   const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;
   const monthParam = searchParams.get("month");

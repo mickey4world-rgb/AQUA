@@ -29,10 +29,24 @@ const zenKaku = Zen_Kaku_Gothic_New({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.aquacore.net"),
   title: "AQUA — Personal Software Studio",
   description:
     "AQUA 個人向け統合情報ポータル。保有株・ディズニー・AI 合議・宇宙分析・WORKS を一つの画面から。",
   applicationName: "AQUA",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+  },
+  openGraph: {
+    type: "website",
+    locale: "ja_JP",
+    siteName: "AQUA Personal Software Studio",
+    title: "AQUA — Personal Software Studio",
+    description:
+      "AI、行政可視化、ディズニー混雑予測、宇宙分析、社会貢献を統合する未来実験スタジオ。",
+  },
 };
 
 export const viewport: Viewport = {

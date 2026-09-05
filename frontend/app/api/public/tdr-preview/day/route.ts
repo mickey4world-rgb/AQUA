@@ -1,11 +1,19 @@
 import { isDateNavigable } from "@/lib/server/disney-calendar-prediction";
 import { buildPublicDayBriefing } from "@/lib/server/disney-public-preview";
+import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
 import type { DisneyParkKey } from "@/lib/types/disney";
 
 export const dynamic = "force-dynamic";
 
 /** 認証不要 · 指定日の混雑予測（内訳・アトラクション・キャラアドバイス） */
 export async function GET(request: Request) {
+  const blocked = await enforcePublicRequestProtection(request, {
+    scope: "public-tdr-day",
+    maxRequests: 30,
+    windowMs: 60_000,
+  });
+  if (blocked) return blocked;
+
   const { searchParams } = new URL(request.url);
   const park = (searchParams.get("park") ?? "tdl") as DisneyParkKey;
   const date = searchParams.get("date") ?? "";

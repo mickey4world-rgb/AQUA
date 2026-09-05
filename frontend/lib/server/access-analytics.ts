@@ -10,6 +10,7 @@ import {
   monthStartIso,
   parseMonthParam,
 } from "@/lib/server/token-usage";
+import { buildSecurityAnalyticsReport } from "@/lib/server/security-analytics";
 import type { AppKey } from "@/lib/types/access-log";
 import type { AccessAnalyticsReport } from "@/lib/types/analytics";
 import type { User } from "@/lib/types/user";
@@ -48,11 +49,12 @@ export async function buildAccessAnalyticsReport(
   const start = monthStartIso(monthDate);
   const end = monthEndIso(monthDate);
 
-  const [rows, recentAccess, users, monthLogs] = await Promise.all([
+  const [rows, recentAccess, users, monthLogs, security] = await Promise.all([
     getAccessStatsByUserAndFeature(start, end),
     listRecentAccessLogsAllUsers(start, end, 80),
     listAllUsers(),
     listAccessLogsInRange(start, end, 8000),
+    buildSecurityAnalyticsReport(monthParam(monthDate)),
   ]);
 
   const usersById = new Map(users.map((user) => [user.userId, user]));
@@ -215,5 +217,6 @@ export async function buildAccessAnalyticsReport(
       featureLabel: featureLabel(row.feature),
       pageLabel: `${APP_LABELS[row.app]} · ${featureLabel(row.feature)}`,
     })),
+    security,
   };
 }

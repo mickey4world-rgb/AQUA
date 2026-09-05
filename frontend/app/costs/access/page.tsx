@@ -119,11 +119,11 @@ export default function AccessAnalyticsPage() {
               Access Analytics
             </p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              アクセス情報分析
+              アクセス・セキュリティ分析
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
               公開フロント（認証不要ページ）の訪問者分析と、ログイン後の内部 API
-              利用分析を分けて表示します。
+              利用、外部からの不正アクセスや防御実績を分けて表示します。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export default function AccessAnalyticsPage() {
                 : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
-            内部ユーザー（API 利用）
+            内部API・セキュリティ防御
           </button>
         </div>
 

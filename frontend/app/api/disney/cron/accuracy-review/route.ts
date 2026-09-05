@@ -1,6 +1,7 @@
 import { finalizeYesterdayAccuracy } from "@/lib/server/disney-accuracy";
 import { runMonthlyCrowdReview } from "@/lib/server/disney-monthly-review";
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
+import { recordSecurityEvent } from "@/lib/server/security-event";
 
 export const maxDuration = 120;
 
@@ -18,6 +19,15 @@ function authorizeCron(request: Request): boolean {
  */
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
+    await recordSecurityEvent({
+      request,
+      eventType: "automation_auth_denied",
+      severity: "high",
+      statusCode: 401,
+      attackLabel: "Disney精度更新処理への不正アクセス",
+      reason: "有効な自動タスク秘密情報なし",
+      mitigation: "専用Bearer秘密情報の照合で遮断",
+    });
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

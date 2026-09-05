@@ -7,6 +7,7 @@ import type {
   AccessAnalyticsUserPageRow,
   AccessAnalyticsUserSummary,
 } from "@/lib/types/analytics";
+import SecurityDefensePanels from "@/components/costs/SecurityDefensePanels";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("ja-JP", {
@@ -339,6 +340,7 @@ type AccessAnalyticsPanelsProps = {
 export default function AccessAnalyticsPanels({ report }: AccessAnalyticsPanelsProps) {
   return (
     <div className="space-y-6">
+      <SecurityDefensePanels report={report.security} />
       <SummaryCards report={report} />
       <InternalCharts report={report} />
       <UserTable rows={report.byUser} />

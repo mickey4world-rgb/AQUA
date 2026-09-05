@@ -1,6 +1,10 @@
 import type { AppKey } from "@/lib/types/access-log";
 import type { AccessLog } from "@/lib/types/access-log";
 import type { TokenUsage } from "@/lib/types/token-usage";
+import type {
+  SecurityEventSeverity,
+  SecurityEventType,
+} from "@/lib/types/security-event";
 
 export interface QuotaSummary {
   used: number;
@@ -148,6 +152,45 @@ export interface AccessAnalyticsReport {
     uniqueUsers: number;
   }>;
   recentAccess: AccessAnalyticsRecentRow[];
+  security: SecurityAnalyticsReport;
+}
+
+export interface SecurityAnalyticsReport {
+  summary: {
+    blockedEvents: number;
+    highSeverityEvents: number;
+    uniqueSources: number;
+    affectedPaths: number;
+  };
+  byType: Array<{
+    eventType: SecurityEventType;
+    label: string;
+    count: number;
+    mitigation: string;
+  }>;
+  byCountry: Array<{
+    country: string;
+    count: number;
+  }>;
+  byDay: Array<{
+    date: string;
+    count: number;
+  }>;
+  recentEvents: Array<{
+    id: string;
+    eventType: SecurityEventType;
+    severity: SecurityEventSeverity;
+    attackLabel: string;
+    path: string;
+    method: string;
+    statusCode: number;
+    sourceHash: string;
+    country: string;
+    region: string;
+    mitigation: string;
+    createdAt: string;
+  }>;
+  coverageNote: string;
 }
 
 export interface PublicAccessAnalyticsPageSummary {

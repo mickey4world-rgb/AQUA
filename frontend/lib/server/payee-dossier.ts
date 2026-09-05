@@ -195,7 +195,6 @@ export function buildPayeeDossier(query: string): PayeeDossier | null {
 function collectYearHits(dataset: GyoseiYearDataset, needle: string) {
   let amount = 0;
   let contractCount = 0;
-  let suspectHits = 0;
   let name = "";
   let corporateNumber = "";
   let address = "";

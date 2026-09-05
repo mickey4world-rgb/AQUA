@@ -1,10 +1,18 @@
 import { getDisneyShowcaseSnapshot } from "@/lib/server/disney-showcase-cache";
+import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
 
 /** ビルド時プレビュー生成を避ける。実行時 Cache-Control / Cosmos キャッシュ。 */
 export const dynamic = "force-dynamic";
 
 /** 認証不要・他アプリ API と分離した公開 TDR プレビュー */
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = await enforcePublicRequestProtection(request, {
+    scope: "public-tdr-preview",
+    maxRequests: 30,
+    windowMs: 60_000,
+  });
+  if (blocked) return blocked;
+
   try {
     const payload = await getDisneyShowcaseSnapshot();
     return Response.json(payload, {
