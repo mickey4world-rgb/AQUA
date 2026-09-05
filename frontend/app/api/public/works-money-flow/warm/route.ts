@@ -1,6 +1,9 @@
-import { warmWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
+import {
+  persistUploadedWorksMoneyFlowSnapshot,
+  warmWorksMoneyFlowPublicPreview,
+} from "@/lib/server/gyosei-public-preview";
 import { recordSecurityEvent } from "@/lib/server/security-event";
-import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
+import { isCosmosConfigured } from "@/lib/server/cosmos";
 import type { MoneyFlowResponse } from "@/lib/types/gyosei";
 
 export const maxDuration = 120;
@@ -41,20 +44,19 @@ export async function POST(request: Request) {
     }
 
     if (body.snapshot?.year && Array.isArray(body.snapshot.nodes)) {
-      if (isCosmosConfigured()) {
-        const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
-        await container.items.upsert({
-          id: "works-money-flow-public-preview",
-          year: body.snapshot.year,
-          snapshot: body.snapshot,
-          builtAt: new Date().toISOString(),
-        });
+      const cosmosPersisted = await persistUploadedWorksMoneyFlowSnapshot(body.snapshot);
+      if (!cosmosPersisted && isCosmosConfigured()) {
+        return Response.json(
+          { ok: false, error: "Cosmos persist failed" },
+          { status: 503 },
+        );
       }
       return Response.json({
         ok: true,
         year: body.snapshot.year,
         builtAt: new Date().toISOString(),
         source: "uploaded",
+        cosmosPersisted,
       });
     }
 

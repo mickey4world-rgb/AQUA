@@ -29,23 +29,55 @@ export default function NeoPublicPreview({ initialData = null }: NeoPublicPrevie
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (initialData) return;
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 3;
 
-    fetch("/api/public/neo-preview")
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? "データの取得に失敗しました");
+    const load = async () => {
+      setError(null);
+      while (!cancelled && attempt < maxAttempts) {
+        attempt += 1;
+        try {
+          const res = await fetch("/api/public/neo-preview", { cache: "no-store" });
+          const body = (await res.json().catch(() => null)) as
+            | NeoPublicPreviewSnapshot
+            | { error?: string }
+            | null;
+          if (!res.ok) {
+            const message =
+              body && "error" in body && typeof body.error === "string"
+                ? body.error
+                : "データの取得に失敗しました";
+            if (attempt < maxAttempts && (res.status === 503 || res.status === 502)) {
+              await new Promise((r) => setTimeout(r, 1000 * attempt));
+              continue;
+            }
+            throw new Error(message);
+          }
+          if (!cancelled) {
+            setData(body as NeoPublicPreviewSnapshot);
+            setError(null);
+          }
+          return;
+        } catch (err: unknown) {
+          if (attempt >= maxAttempts && !cancelled) {
+            setError(err instanceof Error ? err.message : "データの取得に失敗しました");
+          } else if (!cancelled) {
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+          }
         }
-        return (await res.json()) as NeoPublicPreviewSnapshot;
-      })
-      .then(setData)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "データの取得に失敗しました");
-      });
-  }, [initialData]);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialData, retryToken]);
 
   const advanceProgress = useCallback((value: number) => {
     setProgress(value);
@@ -90,9 +122,19 @@ export default function NeoPublicPreview({ initialData = null }: NeoPublicPrevie
       </div>
 
       {error ? (
-        <p className="mt-6 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-          {error}
-        </p>
+        <div className="mt-6 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <p>{error}</p>
+          <button
+            type="button"
+            className="mt-3 rounded-full border border-rose-300/40 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/20"
+            onClick={() => {
+              setData(null);
+              setRetryToken((n) => n + 1);
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
       ) : null}
 
       {!data && !error ? (

@@ -1,8 +1,9 @@
 import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
 import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
 
-/** 事前生成スナップショットのみ返す。リクエスト時の集計はしない。 */
+/** キャッシュ優先。欠落時は同梱JSON／再集計で返す。 */
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const blocked = await enforcePublicRequestProtection(request, {
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   if (blocked) return blocked;
 
   try {
-    const payload = await getWorksMoneyFlowPublicPreview();
+    const payload = await getWorksMoneyFlowPublicPreview({ allowRebuild: true });
     if (!payload) {
       return Response.json(
         {
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
           status: 503,
           headers: {
             "Cache-Control": "no-store",
-            "Retry-After": "60",
+            "Retry-After": "30",
             "X-Works-Preview": "missing-snapshot",
           },
         },
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     console.error("[works-money-flow/public]", error);
     return Response.json(
       { error: "行政事業レビューデータの取得に失敗しました" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "30" } },
     );
   }
 }

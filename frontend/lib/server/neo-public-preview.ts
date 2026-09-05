@@ -1,9 +1,18 @@
 import { fetchCloseApproaches } from "@/lib/server/nasa-neo";
+import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { CloseApproach, NeoPublicPreviewSnapshot } from "@/lib/types/space";
 
 export type { NeoPublicPreviewSnapshot };
 
 const MEMORY_TTL_MS = 55 * 60 * 1000;
+const CACHE_DOC_PREFIX = "neo-public-preview-";
+
+type CachedNeo = {
+  id: string;
+  dateKey: string;
+  snapshot: NeoPublicPreviewSnapshot;
+  builtAt: string;
+};
 
 let memoryCache: { dateKey: string; snapshot: NeoPublicPreviewSnapshot; builtAt: number } | null =
   null;
@@ -20,6 +29,10 @@ function jstYmdKey(date = new Date()): string {
 
 function approachJstYmdKey(approach: CloseApproach): string {
   return jstYmdKey(new Date(approach.closeApproachAt));
+}
+
+function cacheDocId(dateKey: string): string {
+  return `${CACHE_DOC_PREFIX}${dateKey}`;
 }
 
 function pickFeaturedApproach(approaches: CloseApproach[], todayKey: string) {
@@ -51,6 +64,41 @@ function pickFeaturedApproach(approaches: CloseApproach[], todayKey: string) {
   };
 }
 
+async function readCosmosNeo(dateKey: string): Promise<NeoPublicPreviewSnapshot | null> {
+  if (!isCosmosConfigured()) return null;
+  try {
+    const id = cacheDocId(dateKey);
+    const { resource } = await getContainer(COSMOS_CONTAINERS.disneyRecords)
+      .item(id, id)
+      .read<CachedNeo>();
+    return resource?.snapshot ?? null;
+  } catch (error) {
+    console.warn("[neo-public-preview] cosmos read failed", dateKey, error);
+    return null;
+  }
+}
+
+async function writeCosmosNeo(
+  dateKey: string,
+  snapshot: NeoPublicPreviewSnapshot,
+): Promise<boolean> {
+  if (!isCosmosConfigured()) return false;
+  try {
+    const id = cacheDocId(dateKey);
+    const doc: CachedNeo = {
+      id,
+      dateKey,
+      snapshot,
+      builtAt: new Date().toISOString(),
+    };
+    await getContainer(COSMOS_CONTAINERS.disneyRecords).items.upsert(doc);
+    return true;
+  } catch (error) {
+    console.error("[neo-public-preview] cosmos write failed", error);
+    return false;
+  }
+}
+
 async function buildFreshSnapshot(): Promise<NeoPublicPreviewSnapshot> {
   const result = await fetchCloseApproaches(40);
   if (!result.ok || result.approaches.length === 0) {
@@ -75,6 +123,7 @@ async function buildFreshSnapshot(): Promise<NeoPublicPreviewSnapshot> {
   };
 
   memoryCache = { dateKey: todayJst, snapshot, builtAt: Date.now() };
+  void writeCosmosNeo(todayJst, snapshot);
   return snapshot;
 }
 
@@ -89,10 +138,29 @@ export async function getNeoPublicPreview(): Promise<NeoPublicPreviewSnapshot> {
     return memoryCache.snapshot;
   }
 
+  const fromCosmos = await readCosmosNeo(todayJst);
+  if (fromCosmos) {
+    memoryCache = { dateKey: todayJst, snapshot: fromCosmos, builtAt: Date.now() };
+    return fromCosmos;
+  }
+
   if (!buildPromise) {
-    buildPromise = buildFreshSnapshot().finally(() => {
-      buildPromise = null;
-    });
+    buildPromise = buildFreshSnapshot()
+      .catch(async (error) => {
+        console.warn("[neo-public-preview] live build failed, trying stale", error);
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const staleKey = jstYmdKey(yesterday);
+        const stale = await readCosmosNeo(staleKey);
+        if (stale) {
+          memoryCache = { dateKey: todayJst, snapshot: stale, builtAt: Date.now() };
+          return stale;
+        }
+        throw error;
+      })
+      .finally(() => {
+        buildPromise = null;
+      });
   }
   return buildPromise;
 }
