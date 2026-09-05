@@ -16,6 +16,14 @@ function attentionTone(score: number): string {
   return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
 }
 
+function isEnriched(item: NewsSearchItem): boolean {
+  if (!item.outlook?.trim()) return false;
+  if (item.outlook.includes("今夜の解説生成")) return false;
+  if (item.outlook.includes("「今すぐ再取得」で詳細化")) return false;
+  if (item.deepDive === item.summary && item.explanation === item.summary) return false;
+  return true;
+}
+
 export default function NewsSearchPanel() {
   const [digest, setDigest] = useState<NewsSearchDigest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +34,8 @@ export default function NewsSearchPanel() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [rebuilding, setRebuilding] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,29 +83,49 @@ export default function NewsSearchPanel() {
     return null;
   }, [digest, selectedId]);
 
-  async function rebuild() {
-    if (rebuilding) return;
-    setRebuilding(true);
+  const needsEnrichment = useMemo(() => {
+    if (!digest) return false;
+    return NEWS_SEARCH_CATEGORIES.some((c) =>
+      digest.categories[c].some((item) => !isEnriched(item)),
+    );
+  }, [digest]);
+
+  async function enrichAll() {
+    if (enriching || !digest) return;
+    setEnriching(true);
     setError(null);
+    let latest = digest;
     try {
-      const res = await fetch("/api/works/news-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "rebuild", force: true }),
-      });
-      const data = (await res.json()) as {
-        digest?: NewsSearchDigest;
-        error?: string;
-      };
-      if (!res.ok || !data.digest) {
-        setError(data.error ?? "再取得に失敗しました。");
-        return;
+      for (let i = 0; i < NEWS_SEARCH_CATEGORIES.length; i += 1) {
+        const c = NEWS_SEARCH_CATEGORIES[i];
+        if ((latest.categories[c] ?? []).length === 0) continue;
+        if ((latest.categories[c] ?? []).every((item) => isEnriched(item))) continue;
+
+        setEnrichProgress(
+          `${NEWS_SEARCH_CATEGORY_LABEL[c]} を解説中… (${i + 1}/${NEWS_SEARCH_CATEGORIES.length})`,
+        );
+        const res = await fetch("/api/works/news-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "enrich", category: c }),
+        });
+        const data = (await res.json()) as {
+          digest?: NewsSearchDigest;
+          error?: string;
+        };
+        if (!res.ok || !data.digest) {
+          setError(data.error ?? `${NEWS_SEARCH_CATEGORY_LABEL[c]} の解説に失敗しました。`);
+          return;
+        }
+        latest = data.digest;
+        setDigest(data.digest);
       }
-      setDigest(data.digest);
+      setEnrichProgress(null);
     } catch {
-      setError("再取得に失敗しました。");
+      setError("解説生成に失敗しました。しばらくして再試行してください。");
     } finally {
-      setRebuilding(false);
+      setEnriching(false);
+      setEnrichProgress(null);
     }
   }
 
@@ -143,24 +172,39 @@ export default function NewsSearchPanel() {
               ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source}${digest.solunaSynced ? " · Soluna連携済" : ""}`
               : "深夜に Google / Bing / 公的・専門フィードから集約します。"}
           </p>
+          {enrichProgress && (
+            <p className="mt-1 text-xs text-cyan-200/80">{enrichProgress}</p>
+          )}
         </div>
         <button
           type="button"
-          onClick={() => void rebuild()}
-          disabled={rebuilding}
-          className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
+          onClick={() => void enrichAll()}
+          disabled={enriching || !digest}
+          className="rounded-full border border-cyan-300/35 bg-cyan-300/15 px-4 py-2 text-xs text-cyan-50 transition hover:bg-cyan-300/25 disabled:opacity-50"
         >
-          {rebuilding ? "再取得中…" : "今すぐ再取得"}
+          {enriching ? "解説生成中…" : needsEnrichment ? "AIで解説を生成" : "解説を再生成"}
         </button>
       </div>
 
+      {needsEnrichment && digest && !enriching && (
+        <div className="rounded-2xl border border-amber-300/25 bg-amber-300/5 px-4 py-3 text-sm text-amber-50">
+          いまは見出し一覧のみです。「AIで解説を生成」を押すと、カテゴリごとに深堀・今後の予想・官公庁向け示唆を作成します（合計1〜2分程度）。
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-rose-300/25 bg-rose-300/5 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-400">読み込み中…</p>
-      ) : error && !digest ? (
+      ) : !digest ? (
         <div className="rounded-2xl border border-amber-300/20 bg-amber-300/5 p-4 text-sm text-amber-100">
-          {error}
+          {error ?? "ニュースサーチ結果がまだありません。"}
           <p className="mt-2 text-xs text-amber-100/70">
-            深夜ジョブ後、または「今すぐ再取得」で作成できます。
+            深夜ジョブ後に一覧が表示されます。
           </p>
         </div>
       ) : (
@@ -212,6 +256,9 @@ export default function NewsSearchPanel() {
                   <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-400">
                     {item.summary}
                   </p>
+                  {!isEnriched(item) && (
+                    <p className="mt-1 text-[10px] text-amber-200/80">解説未生成</p>
+                  )}
                 </button>
               ))}
               {items.length === 0 && (
@@ -232,6 +279,11 @@ export default function NewsSearchPanel() {
                       <span className="text-[11px] text-slate-500">
                         {NEWS_SEARCH_CATEGORY_LABEL[selected.category]}
                       </span>
+                      {!isEnriched(selected) && (
+                        <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-100">
+                          解説未生成
+                        </span>
+                      )}
                     </div>
                     <h2 className="mt-3 text-lg font-medium text-white">{selected.title}</h2>
                   </div>

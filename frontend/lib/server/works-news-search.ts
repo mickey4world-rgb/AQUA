@@ -28,8 +28,29 @@ import {
 
 const MIN_PER_CATEGORY = 5;
 const TARGET_PER_CATEGORY = 6;
-const ENRICH_TIMEOUT_MS = 55_000;
+const ENRICH_TIMEOUT_MS = 28_000;
 const CHAT_TIMEOUT_MS = 28_000;
+
+/** GHA RSS 取り込み時の仮文言（これが残っている＝解説未生成） */
+export const NEWS_SEARCH_OUTLOOK_PLACEHOLDER =
+  "今夜の解説生成で見通しを補完します（「今すぐ再取得」で詳細化可能）。";
+
+export function isNewsSearchItemEnriched(item: NewsSearchItem): boolean {
+  if (!item.outlook?.trim() || !item.deepDive?.trim() || !item.explanation?.trim()) {
+    return false;
+  }
+  if (item.outlook.includes("今夜の解説生成")) return false;
+  if (item.outlook.includes("「今すぐ再取得」で詳細化")) return false;
+  // RSS 直後は summary をそのまま深堀にコピーしている
+  if (item.deepDive === item.summary && item.explanation === item.summary) return false;
+  return true;
+}
+
+export function digestNeedsEnrichment(digest: NewsSearchDigest): boolean {
+  return NEWS_SEARCH_CATEGORIES.some((c) =>
+    digest.categories[c].some((item) => !isNewsSearchItemEnriched(item)),
+  );
+}
 
 function approxTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 3));
@@ -82,7 +103,7 @@ function seedToItem(seed: RawNewsSeed): NewsSearchItem {
     title: seed.title,
     summary: seed.summary,
     deepDive: seed.summary,
-    outlook: "ライブ記事に基づく追加の深堀は、解説生成で補完します。",
+    outlook: NEWS_SEARCH_OUTLOOK_PLACEHOLDER,
     explanation: seed.summary,
     govRelevance:
       "官公庁・基盤運用の観点では、一次情報の確認と影響範囲の洗い出しから始めるのが安全です。",
@@ -97,8 +118,13 @@ function seedToItem(seed: RawNewsSeed): NewsSearchItem {
 async function enrichCategoryWithGemini(
   category: NewsSearchCategory,
   items: NewsSearchItem[],
-): Promise<NewsSearchItem[]> {
-  if (!isGeminiConfigured() || items.length === 0) return items;
+): Promise<{ items: NewsSearchItem[]; enriched: boolean; reason?: string }> {
+  if (!isGeminiConfigured()) {
+    return { items, enriched: false, reason: "Gemini が未設定です。" };
+  }
+  if (items.length === 0) {
+    return { items, enriched: true };
+  }
 
   const today = jstDateString();
   const payload = items.map((item, index) => ({
@@ -122,7 +148,7 @@ JSON のみ返す。`;
 生ニュース:
 ${JSON.stringify(payload, null, 2)}
 
-各 index について次を埋めてください（items 配列）:
+各 index について次を埋めてください（items 配列）。仮文言や「今夜補完」は禁止。必ず具体的に書く。
 - deepDive: 背景・論点の深堀（120〜220字）
 - outlook: 今後30〜90日の予想（80〜160字）
 - explanation: 非専門家にも分かる解説（100〜180字）
@@ -132,47 +158,57 @@ ${JSON.stringify(payload, null, 2)}
 JSON:
 { "items": [ { "index": 0, "deepDive": "...", "outlook": "...", "explanation": "...", "govRelevance": "...", "attentionScore": 72 } ] }`;
 
-  // まず grounding（最新補強）、失敗時は一覧コンテキストのみの Gemini
+  // SWA 時間内に収めるため、まず通常 Gemini（記事一覧が根拠）。失敗時のみ grounding。
   let text = "";
-  const grounded = await generateWithGoogleSearch({
-    system,
-    userPrompt: `${userPrompt}\n必要なら Google 検索で各 sourceUrl の直近事実だけ確認してよい。`,
-    timeoutMs: ENRICH_TIMEOUT_MS,
-    maxOutputTokens: 4096,
-  });
-  if (grounded.ok) {
-    text = grounded.text;
-  } else {
-    const local = await generateWithGemini(
-      {
-        system,
-        messages: [{ role: "user", content: userPrompt }],
-        maxOutputTokens: 4096,
-        temperature: 0.25,
-        responseMimeType: "application/json",
-      },
-      { timeoutMs: ENRICH_TIMEOUT_MS, maxAttempts: 2 },
-    );
-    if (!local.ok) {
-      console.warn("[works-news-search] enrich failed:", grounded.reason, local.reason);
-      return items;
-    }
+  let modelUsed = "";
+  const local = await generateWithGemini(
+    {
+      system,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 4096,
+      temperature: 0.25,
+      responseMimeType: "application/json",
+    },
+    { timeoutMs: ENRICH_TIMEOUT_MS, maxAttempts: 2 },
+  );
+  if (local.ok) {
     text = local.text;
-    await recordTokenUsage({
-      userId: "__works-news-search__",
-      feature: "works-news-search-enrich",
-      model: local.model,
-      promptTokens: approxTokens(userPrompt),
-      completionTokens: approxTokens(text),
+    modelUsed = local.model;
+  } else {
+    const grounded = await generateWithGoogleSearch({
+      system,
+      userPrompt: `${userPrompt}\n必要なら Google 検索で各 sourceUrl の直近事実だけ確認してよい。`,
+      timeoutMs: ENRICH_TIMEOUT_MS,
+      maxOutputTokens: 4096,
     });
+    if (!grounded.ok) {
+      return {
+        items,
+        enriched: false,
+        reason: `解説生成失敗: ${local.reason} / ${grounded.reason}`,
+      };
+    }
+    text = grounded.text;
+    modelUsed = grounded.model;
   }
+
+  await recordTokenUsage({
+    userId: "__works-news-search__",
+    feature: "works-news-search-enrich",
+    model: modelUsed,
+    promptTokens: approxTokens(userPrompt),
+    completionTokens: approxTokens(text),
+  });
 
   try {
     const parsed = JSON.parse(stripJsonFence(text)) as {
       items?: Array<Record<string, unknown>>;
     };
     const rows = Array.isArray(parsed.items) ? parsed.items : [];
-    return items.map((item, index) => {
+    if (rows.length === 0) {
+      return { items, enriched: false, reason: "解説 JSON が空でした。" };
+    }
+    const next = items.map((item, index) => {
       const row = rows.find((r) => r.index === index) ?? rows[index];
       if (!row) return item;
       const attention =
@@ -200,10 +236,66 @@ JSON:
         attentionScore: attention,
       };
     });
+    const enrichedCount = next.filter((item) => isNewsSearchItemEnriched(item)).length;
+    if (enrichedCount === 0) {
+      return { items, enriched: false, reason: "解説がプレースホルダのままです。" };
+    }
+    return { items: next, enriched: true };
   } catch (error) {
     console.warn("[works-news-search] enrich JSON parse failed", error);
-    return items;
+    return { items, enriched: false, reason: "解説 JSON の解析に失敗しました。" };
   }
+}
+
+/**
+ * 既存ダイジェストの1カテゴリだけ AI 解説する（SWA タイムアウト回避）。
+ */
+export async function enrichWorksNewsDigestCategory(
+  category: NewsSearchCategory,
+): Promise<
+  | { ok: true; digest: NewsSearchDigest; enrichedCount: number }
+  | { ok: false; reason: string }
+> {
+  const existing = await getLatestWorksNewsDigest();
+  if (!existing) {
+    return { ok: false, reason: "先にニュース一覧が必要です。深夜取得を待つか、一覧を再取得してください。" };
+  }
+
+  const base = existing.categories[category] ?? [];
+  if (base.length === 0) {
+    return { ok: true, digest: existing, enrichedCount: 0 };
+  }
+
+  const result = await enrichCategoryWithGemini(category, base);
+  if (!result.enriched) {
+    return { ok: false, reason: result.reason ?? `${NEWS_SEARCH_CATEGORY_LABEL[category]} の解説に失敗しました。` };
+  }
+
+  const categories = { ...existing.categories, [category]: result.items };
+  const allEnriched = !digestNeedsEnrichment({ ...existing, categories });
+  const digest: NewsSearchDigest = {
+    ...existing,
+    categories,
+    source: allEnriched ? "rss+gemini" : "mixed",
+    fetchedAt: new Date().toISOString(),
+    summary: NEWS_SEARCH_CATEGORIES.map((c) => {
+      const top = categories[c][0];
+      return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
+    }).join(" / "),
+  };
+
+  try {
+    await saveWorksNewsDigest(digest);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `保存に失敗しました: ${reason}` };
+  }
+
+  return {
+    ok: true,
+    digest,
+    enrichedCount: result.items.filter((item) => isNewsSearchItemEnriched(item)).length,
+  };
 }
 
 export async function buildWorksNewsDigest(options?: {
@@ -241,11 +333,13 @@ export async function buildWorksNewsDigest(options?: {
 
   const categories = emptyCategories();
   let enrichedAny = false;
+  const enrichErrors: string[] = [];
   for (const category of NEWS_SEARCH_CATEGORIES) {
     const base = picked[category].map(seedToItem);
-    const enriched = await enrichCategoryWithGemini(category, base);
-    if (enriched !== base) enrichedAny = true;
-    categories[category] = enriched
+    const result = await enrichCategoryWithGemini(category, base);
+    if (result.enriched) enrichedAny = true;
+    else if (result.reason) enrichErrors.push(`${category}: ${result.reason}`);
+    categories[category] = result.items
       .slice()
       .sort((a, b) => b.attentionScore - a.attentionScore);
   }
