@@ -163,14 +163,15 @@ export function formatEncounterForPrompt(briefing: SolunaNewsBriefing): string {
    正体（元ニュース）: ${item.title}
    要点: ${item.summary}
    弱点: ${monster?.weakness ?? "論点の急所"}
-   キーワード: ${item.keyword}${item.sourceUrl ? `\n   出典: ${item.sourceUrl}` : ""}`;
+   キーワード: ${item.keyword}${item.publishedAt ? `\n   報道日: ${item.publishedAt.slice(0, 10)}` : ""}${item.sourceUrl ? `\n   出典: ${item.sourceUrl}` : ""}`;
   });
 
-  return `## 本日の討伐対象（${briefing.fetchedAt.slice(0, 10)}）
+  return `## 本日の討伐対象（取得: ${briefing.fetchedAt.slice(0, 10)}${briefing.source ? ` · ${briefing.source}` : ""}）
 ${briefing.summary}
 
 ${lines.join("\n\n")}
 
+【鮮度ルール】上の各「正体（元ニュース）」と要点だけが本日の事実。ここに無い関税・製品名・政策は持ち出さない。古い一般知識で話を盛らないこと。
 読者がニュースを知っていても『続きが読みたい』と思えるように、怪物の生態＝ニュースの意味を噛み砕いて語ること。`;
 }
 

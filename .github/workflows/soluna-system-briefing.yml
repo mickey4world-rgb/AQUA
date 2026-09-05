@@ -54,24 +54,44 @@ jobs:
           COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
           echo "complete=${COMPLETE}" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch news briefing (Gemini → RSS fallback)
+      - name: Fetch news briefing (Gemini grounding → RSS; no ungrounded LLM)
         if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
         id: fetch_news
         continue-on-error: true
         env:
           GEMINI_RELAY_URL: ${{ secrets.GEMINI_RELAY_URL }}
           GEMINI_RELAY_KEY: ${{ secrets.GEMINI_RELAY_KEY }}
-          GEMINI_MODEL: gemini-3.6-flash
+          GEMINI_MODEL: gemini-2.5-flash
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: node frontend/scripts/fetch-soluna-news.mjs
 
-      - name: Warn if news fetch failed
-        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.fetch_news.outcome == 'failure'
-        run: echo "::warning::ニュース取得が失敗しました。API 側で RSS フォールバックまたは前日ブリーフィングを使います。"
+      - name: Require today's live briefing before chat
+        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        id: live_gate
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 30 -o /tmp/soluna-live.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}')
+          cat /tmp/soluna-live.json
+          echo ""
+          echo "live-gate HTTP ${HTTP_CODE}"
+          LIVE_OK=$(python3 -c "import json; d=json.load(open('/tmp/soluna-live.json')); print('true' if d.get('liveNewsOk') else 'false')" 2>/dev/null || echo "false")
+          SOURCE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-live.json')); print(d.get('briefingSource') or '')" 2>/dev/null || echo "")
+          echo "liveNewsOk=${LIVE_OK} source=${SOURCE}"
+          if [ "${LIVE_OK}" != "true" ]; then
+            echo "::error::当日ライブニュースが無いのに討伐へ進むのは禁止（意図しない代替成功の再発防止）。fetch outcome=${{ steps.fetch_news.outcome }}"
+            exit 1
+          fi
 
       - name: Run system chat
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
         id: chat
         continue-on-error: true
         env:
@@ -97,11 +117,11 @@ jobs:
           fi
 
       - name: Wait for chat if gateway timed out
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
         run: sleep 90
 
       - name: Verify briefing complete
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -115,13 +135,14 @@ jobs:
           cat /tmp/soluna-status2.json
           echo ""
           COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status2.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
-          if [ "${COMPLETE}" != "true" ]; then
-            echo "::error::本日の討伐が未完了です（status HTTP ${HTTP_CODE}）"
+          LIVE_OK=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status2.json')); print('true' if d.get('liveNewsOk') else 'false')" 2>/dev/null || echo "false")
+          if [ "${COMPLETE}" != "true" ] || [ "${LIVE_OK}" != "true" ]; then
+            echo "::error::本日の討伐が未完了、またはライブニュース条件を満たしません（status HTTP ${HTTP_CODE}）"
             exit 1
           fi
 
       - name: Run autonomous jobs (Note / BOINC / assets)
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
         id: jobs
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}

@@ -81,7 +81,7 @@ export const SOLUNA_WORLD_MAP: readonly SolunaJourneyArea[] = [
   },
 ] as const;
 
-const DEFAULT_AREA = SOLUNA_WORLD_MAP[0];
+const DEFAULT_AREA = SOLUNA_WORLD_MAP.find((a) => a.id === "silicon-oasis") ?? SOLUNA_WORLD_MAP[2];
 
 export function getAreaById(id: string | undefined): SolunaJourneyArea {
   return SOLUNA_WORLD_MAP.find((area) => area.id === id) ?? DEFAULT_AREA;

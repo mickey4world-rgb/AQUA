@@ -4,32 +4,32 @@
  *
  * フォールバック順:
  *   1. Gemini Grounding（Google 検索付き）via relay
- *   2. Gemini 非 Grounding（relay の別モデルで再試行）
- *   3. RSS 直接取得（NHK / Reuters Japan / Ars Technica 等）+ タイトル・本文でモンスター生成
+ *   2. RSS 直接取得（Google News when:2d / NHK / Reuters / Ars 等）
+ *
+ * 禁止: 非 grounding Gemini（学習データの古い関税・AI話が混入する）
  */
 
 import { parseStringPromise } from "xml2js";
 
 const KEYWORDS = ["AI 最新動向", "世界経済"];
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-flash-latest";
-const FALLBACK_MODELS = [
-  FALLBACK_MODEL,
-  process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash",
-].filter((value, index, array) => array.indexOf(value) === index);
 const RELAY_TIMEOUT_MS = 110_000;
+const MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
 
-// RSS フィード定義（公開・認証不要）
 const RSS_FEEDS = [
-  // AI 最新動向
+  {
+    url: "https://news.google.com/rss/search?q=AI+OR+%E4%BA%BA%E5%B7%A5%E7%9F%A5%E8%83%BD+when:2d&hl=ja&gl=JP&ceid=JP:ja",
+    keyword: "AI 最新動向",
+  },
   { url: "https://feeds.arstechnica.com/arstechnica/technology-lab", keyword: "AI 最新動向" },
   { url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml", keyword: "AI 最新動向" },
-  // 世界経済
+  {
+    url: "https://news.google.com/rss/search?q=%E4%B8%96%E7%95%8C%E7%B5%8C%E6%B8%88+OR+%E7%B1%B3%E5%9B%BD%E7%B5%8C%E6%B8%88+OR+%E6%97%A5%E6%9C%AC%E7%B5%8C%E6%B8%88+when:2d&hl=ja&gl=JP&ceid=JP:ja",
+    keyword: "世界経済",
+  },
   { url: "https://feeds.reuters.com/reuters/businessNews", keyword: "世界経済" },
-  { url: "https://www.nhk.or.jp/rss/news/cat6.xml", keyword: "世界経済" }, // NHK 経済
-  { url: "https://www.nhk.or.jp/rss/news/cat5.xml", keyword: "世界経済" }, // NHK 科学・医療（AI 含む）
+  { url: "https://www.nhk.or.jp/rss/news/cat6.xml", keyword: "世界経済" },
 ];
 
-// モンスター名を決定論的に生成（LLM 不要）
 const SPECIES_POOL = ["dragon", "slime", "golem", "shadow", "chimera"];
 const RANK_WORDS = [
   { words: ["AI", "人工知能", "規制", "reform", "crisis"], rank: 4 },
@@ -62,40 +62,24 @@ function deterministicSpecies(title) {
   return SPECIES_POOL[hash % SPECIES_POOL.length];
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetryableRelayError(message) {
-  const msg = message.toLowerCase();
-  return (
-    msg.includes("high demand") ||
-    msg.includes("overloaded") ||
-    msg.includes("unavailable") ||
-    msg.includes("try again") ||
-    msg.includes("resource exhausted") ||
-    msg.includes("timed out") ||
-    msg.includes("結果が空")
-  );
-}
-
 const relayUrl = process.env.GEMINI_RELAY_URL?.trim();
 const relayKey = process.env.GEMINI_RELAY_KEY?.trim();
 const cronSecret = process.env.SOLUNA_CRON_SECRET?.trim();
 const baseUrl = (process.env.PRODUCTION_URL || "https://www.aquacore.net").replace(/\/$/, "");
-const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
+const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 
 if (!cronSecret) {
   console.error("SOLUNA_CRON_SECRET が必要です。");
   process.exit(1);
 }
 
-function briefingDocIdForDate(date = new Date()) {
+function jstDateString(date = new Date()) {
   const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(jst.getUTCDate()).padStart(2, "0");
-  return `briefing-${y}-${m}-${d}`;
+  return jst.toISOString().slice(0, 10);
+}
+
+function briefingDocIdForDate(date = new Date()) {
+  return `briefing-${jstDateString(date)}`;
 }
 
 function stripJsonFence(text) {
@@ -103,10 +87,31 @@ function stripJsonFence(text) {
   return fenced ? fenced[1] : text.trim();
 }
 
+function stripHtml(value) {
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseDate(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const d = new Date(raw.trim());
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFreshPublishedAt(value, now = Date.now()) {
+  if (typeof value !== "string" || !value.trim()) return true;
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) return true;
+  return now - t <= MAX_AGE_MS;
+}
+
 function normalizeItems(raw, keywords) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.items)) return [];
   const allowed = new Set(keywords);
   const result = [];
+  const now = Date.now();
   for (const item of raw.items.slice(0, 10)) {
     if (!item || typeof item !== "object") continue;
     const title = typeof item.title === "string" ? item.title.trim() : "";
@@ -117,12 +122,18 @@ function normalizeItems(raw, keywords) {
       typeof item.sourceUrl === "string" && item.sourceUrl.startsWith("http")
         ? item.sourceUrl
         : undefined;
+    const publishedAt =
+      typeof item.publishedAt === "string" && item.publishedAt.trim()
+        ? item.publishedAt.trim()
+        : undefined;
+    if (publishedAt && !isFreshPublishedAt(publishedAt, now)) continue;
     if (!title || !summary) continue;
     result.push({
       title,
       summary,
       keyword,
       sourceUrl,
+      publishedAt,
       monsterName: typeof item.monsterName === "string" ? item.monsterName.trim() : undefined,
       rank: typeof item.rank === "number" ? item.rank : undefined,
       species: typeof item.species === "string" ? item.species : undefined,
@@ -131,68 +142,36 @@ function normalizeItems(raw, keywords) {
   return result;
 }
 
-// ── Gemini 経由 ──────────────────────────────────────────────────────────────
-
-async function fetchGroundedNews() {
-  if (!relayUrl || !relayKey) throw new Error("Gemini relay 未設定");
-  const { system, userPrompt } = buildNewsPrompts(true);
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    tools: [{ google_search: {} }],
-    generationConfig: { temperature: 0.25, maxOutputTokens: 4096 },
-  };
-  return callRelay(model, body);
+function itemsLookGrounded(items) {
+  if (items.length === 0) return false;
+  const withUrl = items.filter((item) => item.sourceUrl).length;
+  return withUrl >= Math.ceil(items.length / 2);
 }
 
-async function fetchNewsWithoutGrounding() {
-  if (!relayUrl || !relayKey) throw new Error("Gemini relay 未設定");
-  const { system, userPrompt } = buildNewsPrompts(false);
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature: 0.35, maxOutputTokens: 4096 },
-  };
+function buildNewsPrompts() {
+  const todayJst = jstDateString();
+  const system = `あなたはニュースキュレーターです。Google 検索で「今日（JST ${todayJst}）」時点の最新報道だけを調べます。
+学習データの記憶や半年前の話題の再利用は禁止。事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`;
+  const userPrompt = `基準日（JST）: ${todayJst}
+次のキーワードについて、直近48時間以内に新たに報じられた重要ニュースをそれぞれ1〜2件ずつ調べてください: ${KEYWORDS.join("、")}
 
-  let lastReason = "ニュース取得に失敗しました。";
-  for (const modelName of FALLBACK_MODELS) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await callRelay(modelName, body);
-      } catch (error) {
-        lastReason = error instanceof Error ? error.message : String(error);
-        if (isRetryableRelayError(lastReason) && attempt < 2) {
-          console.warn(`[fetch-soluna-news] retry ${modelName} attempt ${attempt + 1}:`, lastReason);
-          await sleep(2000 * (attempt + 1));
-          continue;
-        }
-        console.warn(`[fetch-soluna-news] fallback model ${modelName} failed:`, lastReason);
-        break;
-      }
-    }
-  }
-  throw new Error(lastReason);
-}
+厳守:
+- 「懸念が続く」「依然として燻る」だけの背景説明は不可。誰が・何を・いつ発表／決定したかの新事実がある記事だけ。
+- 各 item に実在する sourceUrl と publishedAt（ISO8601）を付ける。48時間より古い記事は出さない。
+- 関税・貿易・AI でも古い出来事の再掲は禁止。今日〜一昨日の動きに限定。
 
-function buildNewsPrompts(grounded) {
-  const system = grounded
-    ? `あなたはニュースキュレーターです。Google 検索で最新情報を調べ、指定キーワードごとに重要なニュースを選びます。
-事実ベースで簡潔に。推測は summary に含めない。JSON のみ返してください。`
-    : `あなたはニュースキュレーターです。指定キーワードについて、一般に知られている最新の公開情報を要約します。
-不確かな情報は含めず、推測は summary に含めない。JSON のみ返してください。`;
-  const userPrompt = `次のキーワードについて、直近24〜72時間の重要ニュースをそれぞれ1〜2件ずつ調べてください: ${KEYWORDS.join("、")}
-
-各記事は討伐対象のモンスターとして命名する。monsterName はゲーム風（例: 暴走規制竜レギュラ）だが、元ニュースの意味が残ること。rank は議論の難しさ 1〜5。species は dragon / slime / golem / shadow / chimera。
+各記事は討伐対象のモンスターとして命名する。monsterName はゲーム風だが元ニュースの意味が残ること。rank は 1〜5。species は dragon / slime / golem / shadow / chimera。
 
 JSON 形式:
 {
-  "summary": "全体を2〜3文で要約",
+  "summary": "全体を2〜3文で要約（今日の新事実のみ）",
   "items": [
     {
       "keyword": "AI 最新動向",
       "title": "見出し",
       "summary": "80文字以内の要点",
       "sourceUrl": "https://...",
+      "publishedAt": "${todayJst}T00:00:00+09:00",
       "monsterName": "暴走規制竜レギュラ",
       "species": "dragon",
       "rank": 4
@@ -231,7 +210,17 @@ async function callRelay(modelName, body) {
   }
 }
 
-// ── RSS フォールバック ─────────────────────────────────────────────────────────
+async function fetchGroundedNews() {
+  if (!relayUrl || !relayKey) throw new Error("Gemini relay 未設定");
+  const { system, userPrompt } = buildNewsPrompts();
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+  };
+  return callRelay(model, body);
+}
 
 async function fetchRssItems(feedUrl) {
   const controller = new AbortController();
@@ -239,7 +228,7 @@ async function fetchRssItems(feedUrl) {
   try {
     const res = await fetch(feedUrl, {
       signal: controller.signal,
-      headers: { "User-Agent": "SolunaNewsBot/1.0" },
+      headers: { "User-Agent": "SolunaNewsBot/1.1 (+https://www.aquacore.net)" },
     });
     if (!res.ok) throw new Error(`RSS HTTP ${res.status}: ${feedUrl}`);
     const xml = await res.text();
@@ -255,7 +244,7 @@ async function fetchRssItems(feedUrl) {
           : channel.entry
             ? [channel.entry]
             : [];
-    return rawItems.slice(0, 5).map((item) => {
+    return rawItems.slice(0, 8).map((item) => {
       const title =
         typeof item.title === "string" ? item.title : (item.title?._ ?? item.title ?? "");
       const desc =
@@ -266,10 +255,16 @@ async function fetchRssItems(feedUrl) {
         typeof item.link === "string"
           ? item.link
           : (item.link?.["$"]?.href ?? item.guid?._ ?? item.guid ?? "");
+      const published =
+        parseDate(item.pubDate) ||
+        parseDate(item.published) ||
+        parseDate(item.updated) ||
+        parseDate(item["dc:date"]);
       return {
-        title: title.replace(/<[^>]+>/g, "").trim().slice(0, 120),
-        description: desc.replace(/<[^>]+>/g, "").trim().slice(0, 200),
+        title: stripHtml(title).slice(0, 120),
+        description: stripHtml(desc).slice(0, 200),
         link: typeof link === "string" ? link : "",
+        publishedAt: published ? published.toISOString() : undefined,
       };
     });
   } finally {
@@ -279,17 +274,16 @@ async function fetchRssItems(feedUrl) {
 
 async function fetchNewsFromRss() {
   console.log("[fetch-soluna-news] Trying RSS fallback...");
-
-  // xml2js が入っているか確認（GHA の Node.js 環境）
-  // package.json に依存しないため動的 import でエラーハンドリング
   const itemsByKeyword = { "AI 最新動向": [], "世界経済": [] };
   const errors = [];
+  const now = Date.now();
 
   for (const feed of RSS_FEEDS) {
     try {
       const items = await fetchRssItems(feed.url);
       for (const item of items) {
         if (!item.title) continue;
+        if (item.publishedAt && !isFreshPublishedAt(item.publishedAt, now)) continue;
         itemsByKeyword[feed.keyword].push(item);
       }
       console.log(`[fetch-soluna-news] RSS OK: ${feed.url} (${items.length} items)`);
@@ -302,7 +296,17 @@ async function fetchNewsFromRss() {
 
   const resultItems = [];
   for (const [keyword, items] of Object.entries(itemsByKeyword)) {
-    const selected = items.slice(0, 2);
+    const selected = items
+      .sort((a, b) => {
+        const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+        const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+        return tb - ta;
+      })
+      .filter((item, index, arr) => {
+        const key = item.title.toLowerCase();
+        return arr.findIndex((x) => x.title.toLowerCase() === key) === index;
+      })
+      .slice(0, 2);
     for (const item of selected) {
       const title = item.title;
       resultItems.push({
@@ -310,6 +314,7 @@ async function fetchNewsFromRss() {
         title,
         summary: item.description.slice(0, 120) || title,
         sourceUrl: item.link || undefined,
+        publishedAt: item.publishedAt,
         monsterName: deterministicMonsterName(title),
         rank: deterministicRank(title),
         species: deterministicSpecies(title),
@@ -326,8 +331,6 @@ async function fetchNewsFromRss() {
   return { items: resultItems, summary };
 }
 
-// ── ingest ───────────────────────────────────────────────────────────────────
-
 async function ingestBriefing(briefing) {
   const response = await fetch(`${baseUrl}/api/soluna/cron/system-briefing`, {
     method: "POST",
@@ -343,32 +346,28 @@ async function ingestBriefing(briefing) {
   if (!response.ok) process.exit(1);
 }
 
-// ── メイン ────────────────────────────────────────────────────────────────────
-
 let parsed;
 let source = "gemini-grounding";
 
 try {
   const rawText = await fetchGroundedNews();
   parsed = JSON.parse(stripJsonFence(rawText));
+  const groundedItems = normalizeItems(parsed, KEYWORDS);
+  if (!itemsLookGrounded(groundedItems)) {
+    throw new Error("grounding items lack sourceUrl / freshness; use RSS");
+  }
+  parsed = { ...parsed, items: groundedItems };
   console.log("[fetch-soluna-news] Source: Gemini Grounding");
 } catch (err1) {
-  console.warn("[fetch-soluna-news] grounding failed, fallback:", err1.message);
-  source = "gemini-fallback";
+  console.warn("[fetch-soluna-news] grounding failed, RSS fallback:", err1.message);
+  source = "rss";
   try {
-    const rawText = await fetchNewsWithoutGrounding();
-    parsed = JSON.parse(stripJsonFence(rawText));
-    console.log("[fetch-soluna-news] Source: Gemini (no grounding)");
+    parsed = await fetchNewsFromRss();
+    console.log("[fetch-soluna-news] Source: RSS feeds");
   } catch (err2) {
-    console.warn("[fetch-soluna-news] Gemini fallback failed:", err2.message);
-    source = "rss";
-    try {
-      parsed = await fetchNewsFromRss();
-      console.log("[fetch-soluna-news] Source: RSS feeds");
-    } catch (err3) {
-      console.error("[fetch-soluna-news] All sources failed:", err3.message);
-      process.exit(1);
-    }
+    console.error("[fetch-soluna-news] All live sources failed:", err2.message);
+    console.error("[fetch-soluna-news] Refusing ungrounded Gemini (stale training-data news).");
+    process.exit(1);
   }
 }
 

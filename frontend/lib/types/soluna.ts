@@ -54,6 +54,8 @@ export interface SolunaNewsItem {
   title: string;
   summary: string;
   sourceUrl?: string;
+  /** 記事の公開時刻（分かる場合） */
+  publishedAt?: string;
   keyword: string;
   monster?: SolunaNewsMonster;
 }
@@ -64,6 +66,8 @@ export interface SolunaNewsBriefing {
   items: SolunaNewsItem[];
   fetchedAt: string;
   summary: string;
+  /** gemini-grounding | rss | mixed */
+  source?: string;
 }
 
 export type SolunaSystemMessageKind = "narration" | "battle-recap";
