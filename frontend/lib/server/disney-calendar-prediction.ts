@@ -256,14 +256,18 @@ export async function predictCalendarMonth(
   const accuracyMap = await getAccuracyMapForMonth(park, year, month);
   const monthKey = `${year}-${String(month).padStart(2, "0")}`;
 
-  // 過去日でスナップショットがあるが未記録ならバックフィル（最大8日）
-  const pastWithoutRecord = getMonthDays(year, month)
-    .filter((dateStr) => compareDateStr(dateStr, today) < 0 && !accuracyMap.has(dateStr))
-    .slice(-8);
+  // 過去日で未記録なら当月すべてバックフィル
+  const pastWithoutRecord = getMonthDays(year, month).filter(
+    (dateStr) => compareDateStr(dateStr, today) < 0 && !accuracyMap.has(dateStr),
+  );
   if (pastWithoutRecord.length > 0) {
     const { upsertDayAccuracy } = await import("@/lib/server/disney-accuracy");
+    const { seedEmpiricalSnapshotsForDate } = await import(
+      "@/lib/server/disney-historical-store"
+    );
     await Promise.all(
       pastWithoutRecord.map(async (dateStr) => {
+        await seedEmpiricalSnapshotsForDate(park, dateStr);
         const record = await upsertDayAccuracy(park, dateStr);
         if (record) accuracyMap.set(dateStr, record);
       }),

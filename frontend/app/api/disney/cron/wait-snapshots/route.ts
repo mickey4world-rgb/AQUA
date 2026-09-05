@@ -1,5 +1,5 @@
+import { collectLiveWaitSnapshotsNow } from "@/lib/server/disney-historical-store";
 import { backfillPastAccuracy } from "@/lib/server/disney-accuracy";
-import { runMonthlyCrowdReview } from "@/lib/server/disney-monthly-review";
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 
@@ -14,8 +14,8 @@ function authorizeCron(request: Request): boolean {
 }
 
 /**
- * 日次: 過去表示範囲の予測 vs 実績を記録（シード込み）
- * 月初（または ?monthly=1）: 的中率が低い場合にニュース調査→条件自動見直し
+ * 毎時: 両園のライブ待ちをスナップショット保存
+ * ?backfill=1 : 過去表示範囲の経験シード＋的中評価も実行
  */
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       eventType: "automation_auth_denied",
       severity: "high",
       statusCode: 401,
-      attackLabel: "Disney精度更新処理への不正アクセス",
+      attackLabel: "Disney待ち時間収集への不正アクセス",
       reason: "有効な自動タスク秘密情報なし",
       mitigation: "専用Bearer秘密情報の照合で遮断",
     });
@@ -32,43 +32,30 @@ export async function POST(request: Request) {
   }
 
   const url = new URL(request.url);
-  const forceMonthly =
-    url.searchParams.get("monthly") === "1" ||
-    url.searchParams.get("force") === "1";
+  const doBackfill =
+    url.searchParams.get("backfill") === "1" ||
+    url.searchParams.get("seed") === "1";
 
   try {
-    const accuracy = await backfillPastAccuracy();
-    clearCalendarMonthCache();
-
-    const jst = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),
-    );
-    const isMonthStart = jst.getDate() === 1;
-    let review = null;
-    if (forceMonthly || isMonthStart) {
-      review = await runMonthlyCrowdReview({ force: forceMonthly });
+    const live = await collectLiveWaitSnapshotsNow();
+    let backfill: Awaited<ReturnType<typeof backfillPastAccuracy>> | null = null;
+    if (doBackfill) {
+      backfill = await backfillPastAccuracy();
       clearCalendarMonthCache();
     }
 
     return Response.json({
       ok: true,
-      accuracyCount: accuracy.records.length,
-      seededDays: accuracy.seededDays,
-      accuracyDates: accuracy.records
-        .slice(0, 40)
-        .map((r) => `${r.park}:${r.date}:${r.actualSource ?? "unknown"}`),
-      review: review
+      live,
+      backfill: backfill
         ? {
-            month: review.month,
-            hitRate: review.hitRate,
-            summary: review.summary,
-            rulesAdded: review.rulesAdded.length,
-            rulesUpdated: review.rulesUpdated.length,
+            seededDays: backfill.seededDays,
+            accuracyCount: backfill.records.length,
           }
         : null,
     });
   } catch (error) {
-    console.error("[disney/cron/accuracy-review]", error);
+    console.error("[disney/cron/wait-snapshots]", error);
     return Response.json(
       {
         ok: false,

@@ -241,6 +241,10 @@ export async function buildDisneyAdvice(
     let accuracy: DisneyAdviceAccuracy | null = null;
 
     if (prediction.isPast) {
+      const { seedEmpiricalSnapshotsForDate } = await import(
+        "@/lib/server/disney-historical-store"
+      );
+      await seedEmpiricalSnapshotsForDate(park, date);
       const record = await upsertDayAccuracy(park, date);
       if (record) {
         const hitLabel = record.levelHit ? "的中" : "外れ";
@@ -258,7 +262,7 @@ export async function buildDisneyAdvice(
           actualScore: record.actualScore,
           actualAverageWait: record.actualAverageWait,
           scoreDelta: record.scoreDelta,
-          explanation: `予想は「${crowdLevelLabels[record.predictedLevel]}」（${record.predictedScore}点）。実績は平均待ち約${record.actualAverageWait}分から「${crowdLevelLabels[record.actualLevel]}」（${record.actualScore}点）と推定 → ${hitLabel}（${deltaLabel}）。月次で同じ外れ理由が続く条件は自動見直しし、的中率を上げていきます。`,
+          explanation: `予想は「${crowdLevelLabels[record.predictedLevel]}」（${record.predictedScore}点）。実績は平均待ち約${record.actualAverageWait}分から「${crowdLevelLabels[record.actualLevel]}」（${record.actualScore}点）と推定 → ${hitLabel}（${deltaLabel}）${record.actualSource === "empirical-seed" ? "。※ライブ待ち収集前の日のため、過去傾向モデルで暫定評価しています" : ""}。月次で同じ外れ理由が続く条件は自動見直しし、的中率を上げていきます。`,
         };
       } else {
         accuracy = {

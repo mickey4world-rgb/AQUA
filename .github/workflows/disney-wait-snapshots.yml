@@ -1,0 +1,52 @@
+name: Disney Wait Snapshots
+
+on:
+  schedule:
+    # 毎時（公園時間帯を広くカバー。JST 9–22 ≈ UTC 0–13）
+    - cron: "5 0-13 * * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Seed past days and finalize accuracy"
+        required: false
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
+
+jobs:
+  wait_snapshots:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect Disney wait snapshots
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          BACKFILL: ${{ github.event.inputs.backfill || '0' }}
+        run: |
+          if [ -z "$SOLUNA_CRON_SECRET" ]; then
+            echo "SOLUNA_CRON_SECRET not set; skip"
+            exit 0
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          QS=""
+          if [ "$BACKFILL" = "1" ]; then
+            QS="?backfill=1"
+          fi
+          # workflow_dispatch の初回／手動はバックフィル付きも可。定時はライブのみ。
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$BACKFILL" = "1" ]; then
+            curl -sfS -X POST \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              "${BASE%/}/api/disney/cron/wait-snapshots${QS}" \
+              -d '{}' \
+              --max-time 120
+          else
+            curl -sfS -X POST \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              "${BASE%/}/api/disney/cron/wait-snapshots" \
+              -d '{}' \
+              --max-time 90
+          fi

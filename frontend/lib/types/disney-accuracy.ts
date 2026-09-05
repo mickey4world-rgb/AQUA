@@ -1,5 +1,7 @@
 import type { CrowdLevel, DisneyParkKey } from "@/lib/types/disney";
 
+export type DisneyAccuracyActualSource = "live-snapshots" | "empirical-seed";
+
 export type DisneyDayAccuracyRecord = {
   id: string;
   kind: "crowd-accuracy";
@@ -14,6 +16,8 @@ export type DisneyDayAccuracyRecord = {
   levelHit: boolean;
   factors: string[];
   snapshotHours: number;
+  /** ライブ待ち由来か、過去日の暫定シードか */
+  actualSource?: DisneyAccuracyActualSource;
   createdAt: string;
   updatedAt: string;
 };
