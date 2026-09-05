@@ -1,6 +1,7 @@
 /**
  * WORKS ニュースサーチ用・複数ソース RSS 収集
- * Google News / Bing News / 公的・専門フィードを併用
+ * Google News / Bing News / 公的・専門フィードを併用。
+ * 主フィード不足時は同意図の緊急ライブフィードで補完（学習データ捏造は禁止）。
  */
 import { parseStringPromise } from "xml2js";
 import type { NewsSearchCategory } from "@/lib/types/works-news-search";
@@ -17,6 +18,7 @@ export type RawNewsSeed = {
 
 const FEED_TIMEOUT_MS = 12_000;
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const MIN_SEEDS_BEFORE_FALLBACK = 3;
 
 type FeedDef = {
   category: NewsSearchCategory;
@@ -26,7 +28,6 @@ type FeedDef = {
 };
 
 const FEEDS: readonly FeedDef[] = [
-  // AI — Google / Bing / 専門
   {
     category: "ai",
     url: "https://news.google.com/rss/search?q=AI+OR+%E4%BA%BA%E5%B7%A5%E7%9F%A5%E8%83%BD+OR+ChatGPT+OR+Gemini+when:1d&hl=ja&gl=JP&ceid=JP:ja",
@@ -51,7 +52,6 @@ const FEEDS: readonly FeedDef[] = [
     sourceName: "MIT Tech Review",
     weight: 1.05,
   },
-  // システム開発
   {
     category: "systems",
     url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+AWS+OR+Kubernetes+OR+%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0%E9%96%8B%E7%99%BA+when:1d&hl=ja&gl=JP&ceid=JP:ja",
@@ -76,7 +76,6 @@ const FEEDS: readonly FeedDef[] = [
     sourceName: "Microsoft DevBlogs",
     weight: 1.05,
   },
-  // 世界経済
   {
     category: "economy",
     url: "https://news.google.com/rss/search?q=%E4%B8%96%E7%95%8C%E7%B5%8C%E6%B8%88+OR+%E7%B1%B3%E5%9B%BD%E7%B5%8C%E6%B8%88+OR+%E6%97%A5%E6%9C%AC%E7%B5%8C%E6%B8%88+when:1d&hl=ja&gl=JP&ceid=JP:ja",
@@ -101,7 +100,6 @@ const FEEDS: readonly FeedDef[] = [
     sourceName: "Reuters",
     weight: 1.1,
   },
-  // 官公庁
   {
     category: "government",
     url: "https://news.google.com/rss/search?q=%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+OR+%E5%AE%98%E5%85%AC%E5%BA%81+OR+%E6%94%BF%E5%BA%9C+AI+OR+%E8%A1%8C%E6%94%BF%E4%BA%8B%E6%A5%AD+when:2d&hl=ja&gl=JP&ceid=JP:ja",
@@ -124,6 +122,58 @@ const FEEDS: readonly FeedDef[] = [
     category: "government",
     url: "https://www.soumu.go.jp/menu_news/s-news/index.rss",
     sourceName: "総務省",
+    weight: 1.2,
+  },
+];
+
+/** 主フィードが薄い／全滅したときの同意図ライブ代替 */
+const FALLBACK_FEEDS: readonly FeedDef[] = [
+  {
+    category: "ai",
+    url: "https://news.google.com/rss/search?q=AI+OR+ChatGPT+OR+Gemini+OR+%E4%BA%BA%E5%B7%A5%E7%9F%A5%E8%83%BD+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "ai",
+    url: "https://news.yahoo.co.jp/rss/topics/it.xml",
+    sourceName: "Yahoo! ニュース IT",
+    weight: 0.95,
+  },
+  {
+    category: "systems",
+    url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+AWS+OR+DevOps+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "systems",
+    url: "https://www.publickey1.jp/atom.xml",
+    sourceName: "Publickey",
+    weight: 1.05,
+  },
+  {
+    category: "economy",
+    url: "https://news.google.com/rss/search?q=%E7%B5%8C%E6%B8%88+OR+%E5%B8%82%E5%A0%B4+OR+FRB+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "economy",
+    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
+    sourceName: "NHK 主要",
+    weight: 1.05,
+  },
+  {
+    category: "government",
+    url: "https://news.google.com/rss/search?q=%E6%94%BF%E5%BA%9C+OR+%E5%AE%98%E5%85%AC%E5%BA%81+OR+%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+when:7d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (7d)",
+    weight: 1.0,
+  },
+  {
+    category: "government",
+    url: "https://www.digital.go.jp/news.rss",
+    sourceName: "デジタル庁 (retry)",
     weight: 1.2,
   },
 ];
@@ -157,6 +207,13 @@ function linkOf(node: unknown): string {
     if (typeof obj._ === "string") return obj._;
   }
   return "";
+}
+
+function isFresh(publishedAt: string | undefined, now: number): boolean {
+  if (!publishedAt) return true;
+  const t = new Date(publishedAt).getTime();
+  if (Number.isNaN(t)) return true;
+  return now - t <= MAX_AGE_MS;
 }
 
 async function fetchFeedItems(feedUrl: string): Promise<
@@ -208,24 +265,14 @@ async function fetchFeedItems(feedUrl: string): Promise<
   }
 }
 
-function isFresh(publishedAt: string | undefined, now: number): boolean {
-  if (!publishedAt) return true;
-  const t = new Date(publishedAt).getTime();
-  if (Number.isNaN(t)) return true;
-  return now - t <= MAX_AGE_MS;
-}
-
-/** カテゴリ横断で生ニュースを収集 */
-export async function collectMultiSourceNewsSeeds(): Promise<{
-  seeds: RawNewsSeed[];
-  errors: string[];
-}> {
-  const now = Date.now();
+async function collectFromFeedList(
+  feeds: readonly FeedDef[],
+  now: number,
+): Promise<{ seeds: RawNewsSeed[]; errors: string[] }> {
   const seeds: RawNewsSeed[] = [];
   const errors: string[] = [];
-
   await Promise.all(
-    FEEDS.map(async (feed) => {
+    feeds.map(async (feed) => {
       try {
         const rows = await fetchFeedItems(feed.url);
         for (const row of rows) {
@@ -247,8 +294,37 @@ export async function collectMultiSourceNewsSeeds(): Promise<{
       }
     }),
   );
-
   return { seeds, errors };
+}
+
+/** カテゴリ横断で生ニュースを収集（不足カテゴリは緊急フィードで補完） */
+export async function collectMultiSourceNewsSeeds(): Promise<{
+  seeds: RawNewsSeed[];
+  errors: string[];
+  usedFallback: boolean;
+}> {
+  const now = Date.now();
+  const primary = await collectFromFeedList(FEEDS, now);
+  const seeds = [...primary.seeds];
+  const errors = [...primary.errors];
+  let usedFallback = false;
+
+  const categories: NewsSearchCategory[] = ["ai", "systems", "economy", "government"];
+  const thin = categories.filter(
+    (c) => seeds.filter((s) => s.category === c).length < MIN_SEEDS_BEFORE_FALLBACK,
+  );
+  if (thin.length > 0 || seeds.length === 0) {
+    const fallbackFeeds =
+      seeds.length === 0
+        ? FALLBACK_FEEDS
+        : FALLBACK_FEEDS.filter((f) => thin.includes(f.category));
+    const secondary = await collectFromFeedList(fallbackFeeds, now);
+    if (secondary.seeds.length > 0) usedFallback = true;
+    seeds.push(...secondary.seeds);
+    errors.push(...secondary.errors.map((e) => `fallback: ${e}`));
+  }
+
+  return { seeds, errors, usedFallback };
 }
 
 /** 注目度の粗いヒューリスティック（後段で LLM が再採点） */

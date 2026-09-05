@@ -7,10 +7,24 @@ on:
     - cron: "0 16 * * *"  # 1:00 JST
     - cron: "30 16 * * *" # 1:30 JST
     - cron: "0 17 * * *"  # 2:00 JST キャッチアップ
+    # 朝の未完了ゲート（JST 7:00）— incomplete なら強制再実行し、それでも失敗なら red
+    - cron: "0 22 * * *" # 7:00 JST
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "full = RSS+enrich / enrich-only = 失敗カテゴリ再試行 / morning-gate = 朝チェック"
+        type: choice
+        options:
+          - full
+          - enrich-only
+          - morning-gate
+        default: full
 
 jobs:
   build_digest:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'morning-gate' && github.event.inputs.mode != 'enrich-only'
+      || github.event_name == 'schedule' && github.event.schedule != '0 22 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +40,7 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Build news search digest (RSS → ingest → enrich per category)
+      - name: Build news search digest (RSS → ingest → enrich with retries)
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -36,4 +50,89 @@ jobs:
           else
             node frontend/scripts/fetch-works-news-search.mjs
           fi
-        # enrichmentOk must be true; RSS-only green is forbidden
+
+  enrich_retry:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'enrich-only'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Retry enrich only (failed categories, multi-pass)
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: node frontend/scripts/fetch-works-news-search.mjs --enrich-only
+
+  morning_gate:
+    if: >
+      github.event_name == 'schedule' && github.event.schedule == '0 22 * * *'
+      || github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'morning-gate'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Check enrichment status
+        id: status
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/works/news-search/cron" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}')
+          cat /tmp/works-news-status.json
+          echo ""
+          echo "status HTTP ${HTTP_CODE}"
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') else 'false')" 2>/dev/null || echo "false")
+          echo "enrichmentOk=${OK}"
+          echo "ok=${OK}" >> "$GITHUB_OUTPUT"
+
+      - name: Force full rebuild if incomplete
+        if: steps.status.outputs.ok != 'true'
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: node frontend/scripts/fetch-works-news-search.mjs --force
+
+      - name: Require enrichment complete (morning oracle)
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status2.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/works/news-search/cron" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}')
+          cat /tmp/works-news-status2.json
+          echo ""
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status2.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' else 'false')" 2>/dev/null || echo "false")
+          if [ "${OK}" != "true" ]; then
+            echo "::error::朝7時時点で News Search の AI 解説が未完了。プレースホルダのまま成功扱いにしない。"
+            exit 1
+          fi
+          echo "morning gate ok"

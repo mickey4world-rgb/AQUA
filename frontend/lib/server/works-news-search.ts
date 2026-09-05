@@ -4,6 +4,11 @@ import {
   stripJsonFence,
 } from "@/lib/server/gemini";
 import { generateWithGoogleSearch } from "@/lib/server/gemini-grounding";
+import {
+  getAzureOpenAiClient,
+  getAzureOpenAiDeployment,
+  isAzureOpenAiConfigured,
+} from "@/lib/server/azure-openai";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import { jstDateString } from "@/lib/server/soluna-system-config";
 import {
@@ -160,91 +165,10 @@ function seedToItem(seed: RawNewsSeed): NewsSearchItem {
   };
 }
 
-async function enrichCategoryWithGemini(
-  category: NewsSearchCategory,
+async function applyEnrichmentJson(
   items: NewsSearchItem[],
+  text: string,
 ): Promise<{ items: NewsSearchItem[]; enriched: boolean; reason?: string }> {
-  if (!isGeminiConfigured()) {
-    return { items, enriched: false, reason: "Gemini が未設定です。" };
-  }
-  if (items.length === 0) {
-    return { items, enriched: true };
-  }
-
-  const today = jstDateString();
-  const payload = items.map((item, index) => ({
-    index,
-    title: item.title,
-    summary: item.summary,
-    sourceUrl: item.sources[0]?.url,
-    sourceName: item.sources[0]?.name,
-    publishedAt: item.publishedAt,
-    attentionHint: item.attentionScore,
-  }));
-
-  const system = `あなたは官公庁向けテックアナリストです。与えられた「今日の生ニュース一覧」だけを根拠に、各記事を深堀・解説します。
-学習データの古い一般知識でニュースを捏造しないこと。一覧に無い出来事は書かない。
-${USER_CONTEXT}
-JSON のみ返す。`;
-
-  const userPrompt = `基準日 JST: ${today}
-カテゴリ: ${NEWS_SEARCH_CATEGORY_LABEL[category]}
-
-生ニュース:
-${JSON.stringify(payload, null, 2)}
-
-各 index について次を埋めてください（items 配列）。仮文言や「今夜補完」は禁止。必ず具体的に書く。
-- deepDive: 背景・論点の深堀（120〜220字）
-- outlook: 今後30〜90日の予想（80〜160字）
-- explanation: 非専門家にも分かる解説（100〜180字）
-- govRelevance: 司法基盤クラウド／政府事業管理AI導入の実務への示唆（80〜160字）
-- attentionScore: 注目度 0〜100（今日の新しさと実務影響）
-
-JSON:
-{ "items": [ { "index": 0, "deepDive": "...", "outlook": "...", "explanation": "...", "govRelevance": "...", "attentionScore": 72 } ] }`;
-
-  // SWA 時間内に収めるため、まず通常 Gemini（記事一覧が根拠）。失敗時のみ grounding。
-  let text = "";
-  let modelUsed = "";
-  const local = await generateWithGemini(
-    {
-      system,
-      messages: [{ role: "user", content: userPrompt }],
-      maxOutputTokens: 4096,
-      temperature: 0.25,
-      responseMimeType: "application/json",
-    },
-    { timeoutMs: ENRICH_TIMEOUT_MS, maxAttempts: 2 },
-  );
-  if (local.ok) {
-    text = local.text;
-    modelUsed = local.model;
-  } else {
-    const grounded = await generateWithGoogleSearch({
-      system,
-      userPrompt: `${userPrompt}\n必要なら Google 検索で各 sourceUrl の直近事実だけ確認してよい。`,
-      timeoutMs: ENRICH_TIMEOUT_MS,
-      maxOutputTokens: 4096,
-    });
-    if (!grounded.ok) {
-      return {
-        items,
-        enriched: false,
-        reason: `解説生成失敗: ${local.reason} / ${grounded.reason}`,
-      };
-    }
-    text = grounded.text;
-    modelUsed = grounded.model;
-  }
-
-  await recordTokenUsage({
-    userId: "__works-news-search__",
-    feature: "works-news-search-enrich",
-    model: modelUsed,
-    promptTokens: approxTokens(userPrompt),
-    completionTokens: approxTokens(text),
-  });
-
   try {
     const parsed = JSON.parse(stripJsonFence(text)) as {
       items?: Array<Record<string, unknown>>;
@@ -296,6 +220,170 @@ JSON:
   }
 }
 
+async function enrichWithAzureOpenAi(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  if (!isAzureOpenAiConfigured()) {
+    return { ok: false, reason: "Azure OpenAI 未設定" };
+  }
+  try {
+    const client = getAzureOpenAiClient();
+    const deployment = getAzureOpenAiDeployment();
+    const completion = await client.chat.completions.create({
+      model: deployment,
+      max_completion_tokens: 4096,
+      temperature: 0.25,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) return { ok: false, reason: "Azure OpenAI 応答が空" };
+    return { ok: true, text, model: completion.model ?? deployment };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `Azure OpenAI: ${reason}` };
+  }
+}
+
+/**
+ * 解説生成チェーン: Gemini → Grounding → Azure OpenAI（いずれも記事一覧が根拠）。
+ */
+async function enrichCategoryWithGemini(
+  category: NewsSearchCategory,
+  items: NewsSearchItem[],
+): Promise<{ items: NewsSearchItem[]; enriched: boolean; reason?: string }> {
+  if (items.length === 0) {
+    return { items, enriched: true };
+  }
+  if (!isGeminiConfigured() && !isAzureOpenAiConfigured()) {
+    return {
+      items,
+      enriched: false,
+      reason: "Gemini も Azure OpenAI も未設定です。",
+    };
+  }
+
+  const today = jstDateString();
+  const payload = items.map((item, index) => ({
+    index,
+    title: item.title,
+    summary: item.summary,
+    sourceUrl: item.sources[0]?.url,
+    sourceName: item.sources[0]?.name,
+    publishedAt: item.publishedAt,
+    attentionHint: item.attentionScore,
+  }));
+
+  const system = `あなたは官公庁向けテックアナリストです。与えられた「今日の生ニュース一覧」だけを根拠に、各記事を深堀・解説します。
+学習データの古い一般知識でニュースを捏造しないこと。一覧に無い出来事は書かない。
+${USER_CONTEXT}
+JSON のみ返す。`;
+
+  const userPrompt = `基準日 JST: ${today}
+カテゴリ: ${NEWS_SEARCH_CATEGORY_LABEL[category]}
+
+生ニュース:
+${JSON.stringify(payload, null, 2)}
+
+各 index について次を埋めてください（items 配列）。仮文言や「今夜補完」は禁止。必ず具体的に書く。
+- deepDive: 背景・論点の深堀（120〜220字）
+- outlook: 今後30〜90日の予想（80〜160字）
+- explanation: 非専門家にも分かる解説（100〜180字）
+- govRelevance: 司法基盤クラウド／政府事業管理AI導入の実務への示唆（80〜160字）
+- attentionScore: 注目度 0〜100（今日の新しさと実務影響）
+
+JSON:
+{ "items": [ { "index": 0, "deepDive": "...", "outlook": "...", "explanation": "...", "govRelevance": "...", "attentionScore": 72 } ] }`;
+
+  const attemptErrors: string[] = [];
+  let text = "";
+  let modelUsed = "";
+
+  if (isGeminiConfigured()) {
+    const local = await generateWithGemini(
+      {
+        system,
+        messages: [{ role: "user", content: userPrompt }],
+        maxOutputTokens: 4096,
+        temperature: 0.25,
+        responseMimeType: "application/json",
+      },
+      { timeoutMs: ENRICH_TIMEOUT_MS, maxAttempts: 2 },
+    );
+    if (local.ok) {
+      text = local.text;
+      modelUsed = local.model;
+    } else {
+      attemptErrors.push(`gemini: ${local.reason}`);
+      const grounded = await generateWithGoogleSearch({
+        system,
+        userPrompt: `${userPrompt}\n必要なら Google 検索で各 sourceUrl の直近事実だけ確認してよい。`,
+        timeoutMs: ENRICH_TIMEOUT_MS,
+        maxOutputTokens: 4096,
+      });
+      if (grounded.ok) {
+        text = grounded.text;
+        modelUsed = grounded.model;
+      } else {
+        attemptErrors.push(`grounding: ${grounded.reason}`);
+      }
+    }
+  } else {
+    attemptErrors.push("gemini: 未設定");
+  }
+
+  if (!text) {
+    const azure = await enrichWithAzureOpenAi(system, userPrompt);
+    if (azure.ok) {
+      text = azure.text;
+      modelUsed = azure.model;
+    } else {
+      attemptErrors.push(azure.reason);
+      return {
+        items,
+        enriched: false,
+        reason: `解説生成失敗: ${attemptErrors.join(" / ")}`,
+      };
+    }
+  }
+
+  await recordTokenUsage({
+    userId: "__works-news-search__",
+    feature: "works-news-search-enrich",
+    model: modelUsed,
+    promptTokens: approxTokens(userPrompt),
+    completionTokens: approxTokens(text),
+  });
+
+  const applied = await applyEnrichmentJson(items, text);
+  if (!applied.enriched && isAzureOpenAiConfigured() && !modelUsed.includes("gpt")) {
+    // JSON 不良時も Azure で一度だけ再試行
+    const azure = await enrichWithAzureOpenAi(system, userPrompt);
+    if (azure.ok) {
+      await recordTokenUsage({
+        userId: "__works-news-search__",
+        feature: "works-news-search-enrich",
+        model: azure.model,
+        promptTokens: approxTokens(userPrompt),
+        completionTokens: approxTokens(azure.text),
+      });
+      return applyEnrichmentJson(items, azure.text);
+    }
+    attemptErrors.push(azure.reason);
+  }
+  if (!applied.enriched && attemptErrors.length > 0) {
+    return {
+      ...applied,
+      reason: `${applied.reason ?? "解説失敗"} | ${attemptErrors.join(" / ")}`,
+    };
+  }
+  return applied;
+}
+
 /**
  * 既存ダイジェストの1カテゴリだけ AI 解説する（SWA タイムアウト回避）。
  */
@@ -312,11 +400,30 @@ export async function enrichWorksNewsDigestCategory(
 
   const base = existing.categories[category] ?? [];
   if (base.length === 0) {
-    return { ok: true, digest: existing, enrichedCount: 0 };
+    return { ok: true, digest: withEnrichmentMeta(existing), enrichedCount: 0 };
+  }
+  if (base.every((item) => isNewsSearchItemEnriched(item))) {
+    return {
+      ok: true,
+      digest: withEnrichmentMeta(existing),
+      enrichedCount: base.length,
+    };
   }
 
   const result = await enrichCategoryWithGemini(category, base);
   if (!result.enriched) {
+    const failed = withEnrichmentMeta(existing, {
+      triedAndFailed: true,
+      errors: [
+        ...(existing.enrichmentErrors ?? []).filter((e) => !e.startsWith(`${category}:`)),
+        `${category}: ${result.reason ?? "解説失敗"}`,
+      ],
+    });
+    try {
+      await saveWorksNewsDigest(failed);
+    } catch {
+      /* status 保存失敗でも呼び出し元には失敗を返す */
+    }
     return { ok: false, reason: result.reason ?? `${NEWS_SEARCH_CATEGORY_LABEL[category]} の解説に失敗しました。` };
   }
 
