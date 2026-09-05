@@ -33,18 +33,27 @@ export function middleware(request: NextRequest) {
   );
 
   if (!principal) {
-    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
+    return applySecurityHeaders(
+      NextResponse.redirect(new URL("/login", request.url)),
+      true,
+    );
   }
 
   const email = getEmailFromPrincipal(principal);
   if (!isAllowedLogin(principal.userDetails, email)) {
-    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
+    return applySecurityHeaders(
+      NextResponse.redirect(new URL("/login", request.url)),
+      true,
+    );
   }
 
-  return applySecurityHeaders(NextResponse.next());
+  return applySecurityHeaders(NextResponse.next(), true);
 }
 
-function applySecurityHeaders(response: NextResponse): NextResponse {
+function applySecurityHeaders(
+  response: NextResponse,
+  noIndex = false,
+): NextResponse {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Permitted-Cross-Domain-Policies", "none");
@@ -56,7 +65,9 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
     "max-age=31536000; includeSubDomains",
   );
   response.headers.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  if (noIndex) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
   response.headers.set(
     "Content-Security-Policy",
     [
