@@ -33,6 +33,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/works/news-search/cron",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/works/*",
       "allowedRoles": ["authenticated"]
     },

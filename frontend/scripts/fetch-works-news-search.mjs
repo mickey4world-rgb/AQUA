@@ -77,9 +77,21 @@ const FEEDS = [
     weight: 1.15,
   },
   {
+    category: "systems",
+    url: "https://www.infoq.com/feed/",
+    sourceName: "InfoQ",
+    weight: 1.0,
+  },
+  {
+    category: "systems",
+    url: "https://www.publickey1.jp/atom.xml",
+    sourceName: "Publickey",
+    weight: 1.1,
+  },
+  {
     category: "economy",
-    url: "https://feeds.reuters.com/reuters/businessNews",
-    sourceName: "Reuters",
+    url: "https://www.bing.com/news/search?q=world+economy+OR+markets&format=rss",
+    sourceName: "Bing News",
     weight: 1.1,
   },
   {
@@ -93,6 +105,18 @@ const FEEDS = [
     url: "https://www.bing.com/news/search?q=%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+OR+%E5%AE%98%E5%85%AC%E5%BA%81&format=rss",
     sourceName: "Bing News",
     weight: 1.1,
+  },
+  {
+    category: "government",
+    url: "https://www.nikkei.com/rss/news/politics.rdf",
+    sourceName: "Nikkei Politics",
+    weight: 1.1,
+  },
+  {
+    category: "government",
+    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
+    sourceName: "NHK 主要",
+    weight: 1.15,
   },
 ];
 
