@@ -5,6 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import { spacePanelClass } from "@/lib/space-utils";
 import { resolvePlaceQuery, DEFAULT_SORT_PLACE } from "@/lib/eagle-eye-places";
 import {
+  GROUND_CAMERAS,
+  GROUND_CAMERA_DIRECTORIES,
+} from "@/lib/eagle-eye-data";
+import {
   sortSatellitesByImaging,
   type EagleEyePhase,
   type SortRoi,
@@ -33,6 +37,8 @@ const PHASE_STEPS: {
 export default function EagleEyeTab() {
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
   const [selectNonce, setSelectNonce] = useState(0);
+  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
+  const [cameraSelectNonce, setCameraSelectNonce] = useState(0);
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [sortPlace, setSortPlace] = useState<SortRoi>(DEFAULT_SORT_PLACE);
@@ -53,6 +59,7 @@ export default function EagleEyeTab() {
     liveInfos: [],
     satelliteCount: 0,
     satellites: [],
+    groundCameras: GROUND_CAMERAS,
     sortPlaceLabel: DEFAULT_SORT_PLACE.label,
   });
 
@@ -125,13 +132,15 @@ export default function EagleEyeTab() {
             })}
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            {state.satelliteCount || "—"}機 · 地上カメラ {state.activeCamera ? "接続中" : "ピン表示中"} · 地球画像
+            {state.satelliteCount || "—"}機 · 地上カメラ {GROUND_CAMERAS.length}地点 · 地球画像
           </p>
         </div>
         <div className="h-[560px] w-full">
           <EagleEyeViewer
             selectedSatelliteId={selectedSatelliteId}
             selectNonce={selectNonce}
+            selectedCameraId={selectedCameraId}
+            cameraSelectNonce={cameraSelectNonce}
             sortPlace={sortPlace}
             phaseRequest={phaseRequest}
             onStateChange={handleStateChange}
@@ -210,8 +219,14 @@ export default function EagleEyeTab() {
           {displaySat ? (
             <div className="mt-3">
               <p className="text-sm font-semibold text-white">{displaySat.name}</p>
-              {displaySat.category && (
-                <p className="text-[10px] text-indigo-300/80">{displaySat.category}</p>
+              {(displaySat.country || displaySat.category) && (
+                <p className="text-[10px] text-indigo-300/80">
+                  {displaySat.country
+                    ? `${displaySat.country}${displaySat.countryCode ? `（${displaySat.countryCode}）` : ""}`
+                    : ""}
+                  {displaySat.country && displaySat.category ? " · " : ""}
+                  {displaySat.category ?? ""}
+                </p>
               )}
               {displaySat.info && (
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{displaySat.info}</p>
@@ -267,19 +282,43 @@ export default function EagleEyeTab() {
 
         <div className={`${spacePanelClass} flex-1`}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            地上カメラ / 映像
+            地上カメラ / 映像（{GROUND_CAMERAS.length}）
           </p>
           <p className="mt-1 text-[10px] text-slate-500">
-            河川・道路・観光・個人公開など公開ソースをピン留め（地図上のピンをクリック）
+            CCTVアイコン＝地上カメラ / 菱形＝衛星。公開ソースをピン留め。
           </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {GROUND_CAMERA_DIRECTORIES.map((dir) => (
+              <a
+                key={dir.url}
+                href={dir.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[9px] text-cyan-200/90 hover:bg-white/10"
+                title={dir.note}
+              >
+                {dir.label}
+              </a>
+            ))}
+          </div>
           {state.activeCamera ? (
             <div className="mt-3">
               <p className="text-sm font-semibold text-white">{state.activeCamera.name}</p>
               <p className="text-xs text-orange-300">
-                {state.activeCamera.type} ·{" "}
-                {state.activeCamera.mediaType === "video" ? "🎥 ライブ映像" : "🖼 画像"} · 向き{" "}
-                {state.activeCamera.headingDeg}°
+                {state.activeCamera.type} · {state.activeCamera.country}
+                {state.activeCamera.region ? ` · ${state.activeCamera.region}` : ""}{" "}
+                · {state.activeCamera.mediaType === "video" ? "映像" : "画像"}
               </p>
+              {state.activeCamera.sourceUrl && (
+                <a
+                  href={state.activeCamera.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-[10px] text-sky-300 underline-offset-2 hover:underline"
+                >
+                  出典: {state.activeCamera.sourceLabel ?? "公開ライブ"}
+                </a>
+              )}
               <div className="mt-2 overflow-hidden rounded-lg border border-orange-400/30 bg-black">
                 {state.activeCamera.mediaType === "video" ? (
                   <iframe
@@ -301,9 +340,38 @@ export default function EagleEyeTab() {
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">
-              🎥オレンジ=映像 · 🖼水色=画像
+              一覧または地球上のカメラアイコンを選択
             </p>
           )}
+          <ul className="mt-3 max-h-44 space-y-1.5 overflow-y-auto">
+            {GROUND_CAMERAS.map((cam) => {
+              const active = state.activeCamera?.id === cam.id;
+              return (
+                <li key={cam.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCameraId(cam.id);
+                      setCameraSelectNonce((n) => n + 1);
+                      setPhaseRequest({ phase: "live", nonce: Date.now() });
+                    }}
+                    className={`w-full rounded-lg border px-2 py-1.5 text-left text-[11px] transition ${
+                      active
+                        ? "border-orange-400/50 bg-orange-500/15"
+                        : "border-white/10 hover:bg-white/5"
+                    }`}
+                  >
+                    <span className="block truncate font-medium text-white">{cam.name}</span>
+                    <span className="text-[9px] text-slate-500">
+                      {cam.country}
+                      {cam.region ? ` · ${cam.region}` : ""} · {cam.type}
+                      {cam.mediaType === "video" ? " · 映像" : " · 画像"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         <div className={spacePanelClass}>
@@ -339,7 +407,7 @@ export default function EagleEyeTab() {
                       >
                         <div className="flex items-center gap-2">
                           <span
-                            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                            className={`h-2.5 w-2.5 shrink-0 rotate-45 ${
                               isNearest ? "bg-amber-400 ring-2 ring-amber-400/40" : "bg-sky-400"
                             }`}
                           />
@@ -350,6 +418,10 @@ export default function EagleEyeTab() {
                             </span>
                           )}
                         </div>
+                        <span className="mt-0.5 block pl-[18px] text-[9px] text-indigo-200/80">
+                          {sat.country ?? "国不明"}
+                          {sat.countryCode ? `（${sat.countryCode}）` : ""}
+                        </span>
                         <span className="mt-0.5 block pl-[18px] font-mono text-[9px] text-slate-600">
                           {live
                             ? `${Math.round(live.footprintDistKm)} km · ${Math.round(live.altKm)} km · ${live.speedKmS.toFixed(2)} km/s`
