@@ -3,9 +3,17 @@ import { clampHistory, parseJsonBody, sanitizeText } from "@/lib/server/security
 import {
   buildWorksNewsDigest,
   chatWorksNewsSearch,
+  digestNeedsEnrichment,
+  enrichWorksNewsDigestCategory,
 } from "@/lib/server/works-news-search";
 import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
-import type { NewsSearchChatMessage } from "@/lib/types/works-news-search";
+import {
+  NEWS_SEARCH_CATEGORIES,
+  type NewsSearchCategory,
+  type NewsSearchChatMessage,
+} from "@/lib/types/works-news-search";
+
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   return withApiAccessLog(request, async () => {
@@ -20,7 +28,11 @@ export async function GET(request: Request) {
         { status: 404 },
       );
     }
-    return Response.json({ ok: true, digest });
+    return Response.json({
+      ok: true,
+      digest,
+      needsEnrichment: digestNeedsEnrichment(digest),
+    });
   });
 }
 
@@ -29,6 +41,13 @@ type ChatBody = {
   history?: NewsSearchChatMessage[];
   itemId?: string;
 };
+
+function parseCategory(value: unknown): NewsSearchCategory | null {
+  if (typeof value !== "string") return null;
+  return (NEWS_SEARCH_CATEGORIES as readonly string[]).includes(value)
+    ? (value as NewsSearchCategory)
+    : null;
+}
 
 export async function POST(request: Request) {
   return withApiAccessLog(request, async (auth) => {
@@ -39,18 +58,44 @@ export async function POST(request: Request) {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const body = parseJsonBody<ChatBody & { action?: string; force?: boolean }>(raw);
+    const body = parseJsonBody<
+      ChatBody & { action?: string; force?: boolean; category?: string }
+    >(raw);
     if (!body) {
       return Response.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
+    if (body.action === "enrich") {
+      const category = parseCategory(body.category);
+      if (!category) {
+        return Response.json(
+          { error: "category に ai / systems / economy / government を指定してください。" },
+          { status: 400 },
+        );
+      }
+      const enriched = await enrichWorksNewsDigestCategory(category);
+      if (!enriched.ok) {
+        return Response.json({ error: enriched.reason }, { status: 422 });
+      }
+      return Response.json({
+        ok: true,
+        digest: enriched.digest,
+        category,
+        enrichedCount: enriched.enrichedCount,
+        needsEnrichment: digestNeedsEnrichment(enriched.digest),
+      });
+    }
+
     if (body.action === "rebuild") {
-      // 手動再取得は認証ユーザーのみ（cron は別ルート）
       const built = await buildWorksNewsDigest({ force: body.force === true });
       if (!built.ok) {
         return Response.json({ error: built.reason }, { status: 422 });
       }
-      return Response.json({ ok: true, digest: built.digest });
+      return Response.json({
+        ok: true,
+        digest: built.digest,
+        needsEnrichment: digestNeedsEnrichment(built.digest),
+      });
     }
 
     const history = clampHistory(
