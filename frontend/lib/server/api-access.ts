@@ -39,13 +39,12 @@ export async function withApiAccessLog(
     if (options?.skipAccessLog) return response;
     return finalizeApiResponse(request, auth.userId, response, startedAt);
   } catch (error) {
-    console.error("[api]", new URL(request.url).pathname, error);
+    const requestId = crypto.randomUUID();
+    console.error("[api]", requestId, new URL(request.url).pathname, error);
     const response = Response.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "サーバー内部エラーが発生しました",
+        error: "サーバー内部エラーが発生しました",
+        requestId,
       },
       { status: 500 },
     );

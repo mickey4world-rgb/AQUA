@@ -377,6 +377,10 @@ export function useSolunaVoice() {
   const utteranceSentRef = useRef(false);
   const micGrantedRef = useRef(false);
   const recognitionGenerationRef = useRef(0);
+  const speakNextRef = useRef<(() => Promise<void>) | null>(null);
+  const beginContinuousRecognitionRef = useRef<
+    ((attempt?: number, force?: boolean) => Promise<void>) | null
+  >(null);
 
   useEffect(() => {
     voiceEnabledRef.current = voiceEnabled;
@@ -466,7 +470,7 @@ export function useSolunaVoice() {
     const jaVoice = pickCharacterVoice(voices, character);
     const speechText = next.text;
     if (!speechText) {
-      void speakNext();
+      void speakNextRef.current?.();
       return;
     }
 
@@ -493,15 +497,22 @@ export function useSolunaVoice() {
       const nextPeek = speakQueueRef.current[0];
       const delay = pauseAfterChunk(speechText, nextPeek?.character, character);
       window.setTimeout(() => {
-        void speakNext();
+        void speakNextRef.current?.();
       }, delay);
     };
     utterance.onerror = () => {
-      void speakNext();
+      void speakNextRef.current?.();
     };
 
     window.speechSynthesis.speak(utterance);
   }, [finishSpeaking, startIosKeepAlive]);
+
+  useEffect(() => {
+    speakNextRef.current = speakNext;
+    return () => {
+      speakNextRef.current = null;
+    };
+  }, [speakNext]);
 
   const speakLines = useCallback(
     (lines: SpeakLine[], onComplete?: () => void, options?: { force?: boolean }) => {
@@ -581,10 +592,6 @@ export function useSolunaVoice() {
       finalizeConversationUtterance();
     }, SILENCE_MS);
   }, [clearSilenceTimer, finalizeConversationUtterance]);
-
-  const beginContinuousRecognitionRef = useRef<
-    ((attempt?: number, force?: boolean) => Promise<void>) | null
-  >(null);
 
   const beginContinuousRecognition = useCallback(async (attempt = 0, force = false) => {
     const Ctor = getSpeechRecognition();
@@ -726,8 +733,12 @@ export function useSolunaVoice() {
     }
   }, [resetTranscript, scheduleConversationRestart, scheduleSilenceFinalize]);
 
-  beginContinuousRecognitionRef.current = (attempt?: number, force?: boolean) =>
-    beginContinuousRecognition(attempt ?? 0, force ?? false);
+  useEffect(() => {
+    beginContinuousRecognitionRef.current = beginContinuousRecognition;
+    return () => {
+      beginContinuousRecognitionRef.current = null;
+    };
+  }, [beginContinuousRecognition]);
 
   const startConversation = useCallback(
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {
