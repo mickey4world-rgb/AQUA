@@ -64,6 +64,19 @@ export default function DisneyEveningAdvicePanel({
             line={advice.headline}
           />
 
+          {(advice.monologue?.length ?? 0) > 0 && (
+            <section className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                {advice.characterNameJa}の感想
+              </h3>
+              {advice.monologue.map((line) => (
+                <p key={line} className="text-sm leading-relaxed text-slate-200">
+                  {line}
+                </p>
+              ))}
+            </section>
+          )}
+
           <div
             className={`rounded-xl border p-3 ${crowdLevelColors[advice.crowdLevel]}`}
           >

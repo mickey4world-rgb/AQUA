@@ -4,6 +4,7 @@ import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
 import type {
   CrowdLevel,
+  DisneyAdviceAccuracy,
   DisneyCharacterEveningAdvice,
   DisneyParkKey,
 } from "@/lib/types/disney";
@@ -79,6 +80,80 @@ function elsaHeadline(
   return `${intro}穏やかな風が吹いているわ。雪のように静かに、ゆっくり楽しんで。The cold never bothered me anyway…待ち時間くらいね。`;
 }
 
+function baymaxMonologue(
+  park: DisneyParkKey,
+  level: CrowdLevel,
+  breakdown: ReturnType<typeof buildCrowdBreakdown>,
+  dayLabel: string,
+): string[] {
+  const lines = [
+    `${dayLabel}のデータシートを開きました。私のバルーン体でも、人混みには気をつけます。`,
+    level === "extreme" || level === "high"
+      ? "スキャン結果: 列の長さは『長い』。でもあなたの笑顔指数を守るルートがあります。"
+      : "スキャン結果: ゆとりあり。写真タイムとスナックタイムを治療計画に追加できます。",
+    breakdown.weather >= 55
+      ? "気象ケア: 水分は必須です。私は中にゲルが入っていますが、あなたは水をどうぞ。"
+      : "気象ケア: 大きな警報はありません。帽子があると安心スコアが上がります。",
+    park === "tdl"
+      ? "ランド豆知識: 人気ライドは午前に集中。午後はパレードの人波が『壁』になります。"
+      : "ランド豆知識…いえ、今日はランド担当です。足を休めつつ、主要3件を先に。",
+    "ケアの締め: 痛みが10段階で5を超えたら、ベンチで深呼吸。私も隣で膨らみます。",
+  ];
+  if (breakdown.event >= 50) {
+    lines.splice(3, 0, "イベント検知: ショー前後は移動が滞ります。端を歩くと圧迫感が下がります。");
+  }
+  return lines.slice(0, 5);
+}
+
+function elsaMonologue(
+  park: DisneyParkKey,
+  level: CrowdLevel,
+  breakdown: ReturnType<typeof buildCrowdBreakdown>,
+  dayLabel: string,
+): string[] {
+  const lines = [
+    `${dayLabel}の予報を、氷の鏡に映してみたわ。見え方はこんな感じ。`,
+    level === "extreme" || level === "high"
+      ? "混雑は高い氷の壁。でも崩さなくていいの。回る順番を凍らせて、一つずつ溶かしましょう。"
+      : "今日の氷は薄め。ゆっくり歩いても、物語はちゃんと進むわ。",
+    breakdown.weather >= 55
+      ? "天候は少し気難しいわ。私は寒さに強いけど、あなたは帽子と水分を忘れないで。"
+      : "空は穏やか。雪が舞うほどの騒ぎにはならないでしょう。",
+    park === "tds"
+      ? "シーはエリア間が広いの。地図を頭に入れておくと、氷の滑り台みたいにスムーズよ。"
+      : "シー担当として言うわ—欲張らず『Must』を3つに。それが女王の知恵。",
+    "最後に一言。Conceal, don't feel…は待ち時間には禁止。感じたら、次の一手を決めましょう。",
+  ];
+  if (breakdown.shareholderPassport >= 50 || breakdown.regionalPassport >= 50) {
+    lines.splice(
+      3,
+      0,
+      "特別なチケットの気配があるわ。開園前の準備が、魔法より効く日になるかも。",
+    );
+  }
+  return lines.slice(0, 5);
+}
+
+function baymaxAccuracyReflection(accuracy: DisneyAdviceAccuracy): string {
+  if (accuracy.pending) {
+    return "実績データがまだ薄いので、的中判定は保留です。予想の係数は保管済み。揃い次第、再スキャンします。";
+  }
+  if (accuracy.levelHit) {
+    return `的中です。予想 ${accuracy.predictedScore} 点、実績も同じ帯でした。ケアプロトコル『この調子』を継続します。外れ要因の学習は月次で続けます。`;
+  }
+  return `ズレを検出。予想 ${accuracy.predictedScore} 点 → 実績およそ ${accuracy.actualScore} 点（平均待ち約 ${accuracy.actualAverageWait} 分）。痛み度は低いです。同じ外れ理由が続く条件は、自動で見直し対象にします。`;
+}
+
+function elsaAccuracyReflection(accuracy: DisneyAdviceAccuracy): string {
+  if (accuracy.pending) {
+    return "実績の雪解けを待っているわ。予想はそのまま残してあるから、データが来たら的中を確かめましょう。";
+  }
+  if (accuracy.levelHit) {
+    return `的中ね。予想 ${accuracy.predictedScore} 点は実績と重なったわ。良い条件は Let it go せず、次も活かすの。弱い氷だけ月次で削りましょう。`;
+  }
+  return `少しズレたわ。予想 ${accuracy.predictedScore} 点、実績はおよそ ${accuracy.actualScore} 点（待ち約 ${accuracy.actualAverageWait} 分）。でも氷は張り直せる。同じ外れパターンが続けば、条件を凍らせて見直しよ。`;
+}
+
 function elsaCrowdReasons(
   breakdown: ReturnType<typeof buildCrowdBreakdown>,
 ): string[] {
@@ -111,7 +186,8 @@ function buildCautions(
     if (park === "tdl") {
       tips.push("ランドは人気アトラクションが集中。午前中に主要3件を終えるとストレス指数が下がります。");
     }
-    return tips.slice(0, 4);
+    tips.push("グッズ屋さんも混みやすいです。夕方前に『欲しいものリスト』を1つに絞ると安心です。");
+    return tips.slice(0, 5);
   }
 
   if (breakdown.weather >= 55) {
@@ -129,7 +205,8 @@ function buildCautions(
   if (park === "tds") {
     tips.push("シーはエリア間の移動が多い。地図を前日に見ておけば、氷の滑り台のようにスムーズよ。");
   }
-  return tips.slice(0, 4);
+  tips.push("夜のショーは美しいわ。でも帰る列も物語の一部—早めに出口ルートを決めておいて。");
+  return tips.slice(0, 5);
 }
 
 function buildTouringTips(
@@ -142,11 +219,14 @@ function buildTouringTips(
       "開園直後: 美女と野獣 → 新エリアの人気ライド → スペース・マウンテン。走るときは膝を軽く曲げて。",
       "11〜13時はレストラン混雑。軽食を早めに済ませると、血糖値と気分が安定します。",
       "夕方パレード前後は移動が滞ります。私のソフトな体のように、柔らかく人波に乗りましょう。",
+      "休憩プロトコル: 90分に一度、日陰で3分。私が膨張するくらいのペースで十分です。",
     ];
     if (level === "low" || level === "moderate") {
       tips.push("空き日は午後も余裕。ショーやグッズを楽しむ『治療』時間を確保できます。");
+    } else {
+      tips.push("混雑日は『絶対乗りたい』を3つまで。それ以外はボーナス扱いが精神衛生に良いです。");
     }
-    return tips;
+    return tips.slice(0, 5);
   }
 
   const tips = [
@@ -160,7 +240,7 @@ function buildTouringTips(
   } else {
     tips.push("混雑日は「Must-have」アトラクションを3つに絞って。欲張ると心が凍るわ。");
   }
-  return tips.slice(0, 4);
+  return tips.slice(0, 5);
 }
 
 export function buildCharacterEveningAdvice(
@@ -168,6 +248,7 @@ export function buildCharacterEveningAdvice(
   targetDate: string,
   dayContext: "today" | "tomorrow" | "other",
   mode: "evening" | "preview" = "preview",
+  options?: { accuracy?: DisneyAdviceAccuracy | null },
 ): DisneyCharacterEveningAdvice {
   const prediction = predictCrowdForDate(park, targetDate);
   const breakdown = buildCrowdBreakdown(targetDate, park);
@@ -181,12 +262,36 @@ export function buildCharacterEveningAdvice(
   const crowdReasons =
     characterId === "elsa"
       ? elsaCrowdReasons(breakdown)
-      : topFactors(breakdown);
+      : [
+          breakdown.total >= 70
+            ? "混雑警報: ケア計画を前倒し推奨です。"
+            : breakdown.total <= 35
+              ? "低負荷モード。笑顔の余白があります。"
+              : "標準負荷。計画どおり進めれば安心です。",
+          ...topFactors(breakdown).slice(0, 3),
+        ];
 
   const headline =
     characterId === "baymax"
       ? baymaxHeadline(prediction.crowdLevel, breakdown.total, targetDayLabel)
       : elsaHeadline(prediction.crowdLevel, breakdown.total, targetDayLabel);
+
+  const monologue =
+    characterId === "baymax"
+      ? baymaxMonologue(park, prediction.crowdLevel, breakdown, targetDayLabel)
+      : elsaMonologue(park, prediction.crowdLevel, breakdown, targetDayLabel);
+
+  const accuracy = options?.accuracy ?? null;
+  const accuracyReflection = accuracy
+    ? characterId === "baymax"
+      ? baymaxAccuracyReflection(accuracy)
+      : elsaAccuracyReflection(accuracy)
+    : null;
+
+  const monologueWithAccuracy =
+    accuracyReflection && dayContext === "other"
+      ? [...monologue.slice(0, 4), accuracyReflection]
+      : monologue;
 
   return {
     park,
@@ -196,9 +301,11 @@ export function buildCharacterEveningAdvice(
     characterId,
     characterNameJa,
     headline,
+    monologue: monologueWithAccuracy,
     crowdReasons,
     cautions: buildCautions(park, prediction.crowdLevel, breakdown, characterId),
     touringTips: buildTouringTips(park, prediction.crowdLevel, characterId),
+    accuracyReflection,
     breakdown,
     crowdLevel: prediction.crowdLevel,
     crowdLabel: crowdLevelLabels[prediction.crowdLevel],
