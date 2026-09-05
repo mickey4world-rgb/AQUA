@@ -1,5 +1,6 @@
 "use client";
 
+import LivingSwarmField from "@/components/layout/LivingSwarmField";
 import { useMobileProfile } from "@/lib/mobile-utils";
 
 export type BackgroundTheme =
@@ -87,6 +88,9 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
   const showMeteors = theme === "portal" && !reducedMotion && !liteMode;
   const bubbleCount = liteMode || isMobile ? BUBBLE_COUNT.mobile : BUBBLE_COUNT.full;
 
+  /** トップ（portal）は光粒・泡を集合体として泳がせる。軽量端末は従来CSS。 */
+  const useLivingSwarm = theme === "portal" && showMotes && showBubbles && !liteMode;
+
   return (
     <div
       className={`pointer-events-none absolute inset-0 overflow-hidden bg-mesh-${theme}`}
@@ -116,26 +120,32 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
       <div className="aq-water" />
       {!liteMode && <div className="aq-shimmer" />}
 
-      {showBubbles && (
-        <div className="aq-bubbles">
-          {Array.from({ length: bubbleCount }).map((_, i) => (
-            <span
-              key={`bubble-${i}`}
-              className={`aq-bubble ${i % 3 !== 0 ? "aq-bubble--md" : "aq-bubble--sm"}${
-                i % 4 === 1 || i % 5 === 0 ? " aq-bubble--glint" : ""
-              }`}
-              style={bubbleStyle(i, true)}
-            />
-          ))}
-        </div>
-      )}
+      {useLivingSwarm ? (
+        <LivingSwarmField moteCount={moteCount} bubbleCount={bubbleCount} />
+      ) : (
+        <>
+          {showBubbles && (
+            <div className="aq-bubbles">
+              {Array.from({ length: bubbleCount }).map((_, i) => (
+                <span
+                  key={`bubble-${i}`}
+                  className={`aq-bubble ${i % 3 !== 0 ? "aq-bubble--md" : "aq-bubble--sm"}${
+                    i % 4 === 1 || i % 5 === 0 ? " aq-bubble--glint" : ""
+                  }`}
+                  style={bubbleStyle(i, true)}
+                />
+              ))}
+            </div>
+          )}
 
-      {showMotes && (
-        <div className="absolute inset-0">
-          {Array.from({ length: moteCount }).map((_, i) => (
-            <span key={i} className="aq-mote" style={moteStyle(i)} />
-          ))}
-        </div>
+          {showMotes && (
+            <div className="absolute inset-0">
+              {Array.from({ length: moteCount }).map((_, i) => (
+                <span key={i} className="aq-mote" style={moteStyle(i)} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <div className="bg-noise" />
