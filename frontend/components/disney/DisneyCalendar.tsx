@@ -223,8 +223,8 @@ export default function DisneyCalendar({
               const hitMark =
                 day.isPast && day.accuracy
                   ? day.accuracy.levelHit
-                    ? "的中"
-                    : "外れ"
+                    ? "的"
+                    : "外"
                   : null;
               const titleParts = [
                 formatJstDateLabel(day.date),
@@ -232,8 +232,8 @@ export default function DisneyCalendar({
               ];
               if (day.accuracy) {
                 titleParts.push(
-                  `実績スコア ${day.accuracy.actualScore}（差 ${day.accuracy.scoreDelta > 0 ? "+" : ""}${day.accuracy.scoreDelta}）`,
-                  hitMark ?? "",
+                  `実績 ${day.accuracy.actualScore}点（差 ${day.accuracy.scoreDelta > 0 ? "+" : ""}${day.accuracy.scoreDelta}）`,
+                  day.accuracy.levelHit ? "的中" : "外れ",
                 );
               }
               return (
@@ -242,18 +242,25 @@ export default function DisneyCalendar({
                   type="button"
                   onClick={() => onSelectDate(day.date)}
                   title={titleParts.filter(Boolean).join(" — ")}
-                  className={`flex h-9 flex-col items-center justify-center rounded-md border text-xs transition sm:h-10 ${
+                  className={`relative flex h-10 flex-col items-center justify-center rounded-md border text-xs transition sm:h-11 ${
                     crowdLevelCellStyles[day.crowdLevel]
-                  } ${day.isPast && !day.accuracy ? "opacity-45" : ""} ${
-                    day.isPast && day.accuracy && !day.accuracy.levelHit
-                      ? "opacity-80"
-                      : ""
-                  } ${
+                  } ${day.isPast && !day.accuracy ? "opacity-50" : ""} ${
                     isSelected
                       ? "ring-2 ring-fuchsia-400 ring-offset-1 ring-offset-indigo-950"
                       : ""
                   }`}
                 >
+                  {hitMark && (
+                    <span
+                      className={`absolute right-0.5 top-0.5 text-[8px] font-bold leading-none ${
+                        day.accuracy?.levelHit
+                          ? "text-emerald-200"
+                          : "text-rose-200"
+                      }`}
+                    >
+                      {hitMark}
+                    </span>
+                  )}
                   <span
                     className={`text-sm font-bold leading-none ${
                       day.isToday ? "text-fuchsia-100" : "text-white"
@@ -263,22 +270,16 @@ export default function DisneyCalendar({
                   </span>
                   <span
                     className={`mt-0.5 text-[9px] font-semibold leading-none ${
-                      day.accuracy
-                        ? day.accuracy.levelHit
-                          ? "text-emerald-200"
-                          : "text-rose-200"
-                        : day.crowdLevel === "low"
-                          ? "text-emerald-200"
-                          : day.crowdLevel === "moderate"
-                            ? "text-amber-200"
-                            : day.crowdLevel === "high"
-                              ? "text-orange-200"
-                              : "text-rose-200"
+                      day.crowdLevel === "low"
+                        ? "text-emerald-200"
+                        : day.crowdLevel === "moderate"
+                          ? "text-amber-200"
+                          : day.crowdLevel === "high"
+                            ? "text-orange-200"
+                            : "text-rose-200"
                     }`}
                   >
-                    {day.accuracy
-                      ? `${day.accuracy.scoreDelta > 0 ? "+" : ""}${day.accuracy.scoreDelta}`
-                      : day.crowdScore}
+                    {day.crowdScore}
                   </span>
                 </button>
               );
@@ -304,7 +305,7 @@ export default function DisneyCalendar({
           ))}
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          未来日は予測スコア（0〜100）。過去日で実績があるセルは点数差（予測−実績）を表示し、緑＝的中・赤＝外れです。
+          セル内数字は予想時の混雑スコア（0〜100）。過去日は右上に「的／外」で的中結果を追加表示します。
         </p>
         {displayCalendar?.accuracySummary &&
           displayCalendar.accuracySummary.evaluatedDays > 0 && (
