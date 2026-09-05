@@ -1,4 +1,4 @@
-import { finalizeYesterdayAccuracy } from "@/lib/server/disney-accuracy";
+import { backfillPastAccuracy } from "@/lib/server/disney-accuracy";
 import { runMonthlyCrowdReview } from "@/lib/server/disney-monthly-review";
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 import { recordSecurityEvent } from "@/lib/server/security-event";
@@ -14,7 +14,7 @@ function authorizeCron(request: Request): boolean {
 }
 
 /**
- * 日次: 昨日の予測 vs 実績を記録
+ * 日次: 過去表示範囲の予測 vs 実績を記録（シード込み）
  * 月初（または ?monthly=1）: 的中率が低い場合にニュース調査→条件自動見直し
  */
 export async function POST(request: Request) {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     url.searchParams.get("force") === "1";
 
   try {
-    const accuracy = await finalizeYesterdayAccuracy();
+    const accuracy = await backfillPastAccuracy();
     clearCalendarMonthCache();
 
     const jst = new Date(
@@ -53,7 +53,10 @@ export async function POST(request: Request) {
     return Response.json({
       ok: true,
       accuracyCount: accuracy.records.length,
-      accuracyDates: accuracy.records.map((r) => `${r.park}:${r.date}`),
+      seededDays: accuracy.seededDays,
+      accuracyDates: accuracy.records
+        .slice(0, 40)
+        .map((r) => `${r.park}:${r.date}:${r.actualSource ?? "unknown"}`),
       review: review
         ? {
             month: review.month,

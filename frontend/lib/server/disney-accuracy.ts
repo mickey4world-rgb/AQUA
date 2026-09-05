@@ -5,15 +5,28 @@ import { crowdLevelLabels } from "@/lib/disney-utils";
 import {
   compareDateStr,
   getJstToday,
+  getMonthDays,
   isHolidayEve,
   isJapanHoliday,
   parseJstDate,
 } from "@/lib/disney-holidays";
 import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
-import { getSnapshotsForDate } from "@/lib/server/disney-historical-store";
+import {
+  getSnapshotsForDate,
+  hasSufficientWaitSnapshots,
+  MIN_WAIT_SAMPLES_FOR_ACCURACY,
+  seedEmpiricalSnapshotsForDate,
+  type DisneyWaitSnapshot,
+} from "@/lib/server/disney-historical-store";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import type { CrowdLevel, DisneyParkKey } from "@/lib/types/disney";
-import type { DisneyDayAccuracyRecord } from "@/lib/types/disney-accuracy";
+import type {
+  DisneyAccuracyActualSource,
+  DisneyDayAccuracyRecord,
+} from "@/lib/types/disney-accuracy";
+
+/** カレンダー表示と同じ過去月数（disney-calendar-prediction と揃える） */
+const DEFAULT_MONTHS_BACK = 2;
 
 function scoreToCrowdLevel(score: number): CrowdLevel {
   if (score < 32) return "low";
@@ -83,6 +96,22 @@ function levelRank(level: CrowdLevel): number {
   return { low: 0, moderate: 1, high: 2, extreme: 3 }[level];
 }
 
+function pickSnapshotSource(
+  snapshots: DisneyWaitSnapshot[],
+): { source: DisneyWaitSnapshot[]; actualSource: DisneyAccuracyActualSource } {
+  const daytime = snapshots.filter((s) => s.hour >= 9 && s.hour <= 21);
+  const pool = daytime.length > 0 ? daytime : snapshots;
+  const live = pool.filter((s) => s.source !== "empirical-seed");
+  if (hasSufficientWaitSnapshots(live)) {
+    return { source: live, actualSource: "live-snapshots" };
+  }
+  return {
+    source: pool,
+    actualSource:
+      live.length > 0 ? "live-snapshots" : "empirical-seed",
+  };
+}
+
 /** 当日の待ち時間スナップショットから実績混雑を推定 */
 export async function deriveActualCrowdFromSnapshots(
   park: DisneyParkKey,
@@ -92,10 +121,12 @@ export async function deriveActualCrowdFromSnapshots(
   score: number;
   averageWait: number;
   snapshotHours: number;
+  actualSource: DisneyAccuracyActualSource;
 } | null> {
   const snapshots = await getSnapshotsForDate(park, date);
-  const daytime = snapshots.filter((s) => s.hour >= 10 && s.hour <= 20);
-  const source = daytime.length > 0 ? daytime : snapshots;
+  if (snapshots.length === 0) return null;
+
+  const { source, actualSource } = pickSnapshotSource(snapshots);
   if (source.length === 0) return null;
 
   const waits: number[] = [];
@@ -104,7 +135,7 @@ export async function deriveActualCrowdFromSnapshots(
       if (typeof attr.waitTime === "number") waits.push(attr.waitTime);
     }
   }
-  if (waits.length < 8) return null;
+  if (waits.length < MIN_WAIT_SAMPLES_FOR_ACCURACY) return null;
 
   const averageWait = Math.round(
     waits.reduce((sum, value) => sum + value, 0) / waits.length,
@@ -115,6 +146,7 @@ export async function deriveActualCrowdFromSnapshots(
     score: levelToScore(level),
     averageWait,
     snapshotHours: source.length,
+    actualSource,
   };
 }
 
@@ -146,6 +178,7 @@ export async function upsertDayAccuracy(
     levelHit: predictedLevel === actual.level,
     factors: collectPredictionFactors(date, park),
     snapshotHours: actual.snapshotHours,
+    actualSource: actual.actualSource,
     createdAt: now,
     updatedAt: now,
   };
@@ -159,6 +192,13 @@ export async function upsertDayAccuracy(
         .item(record.id, record.id)
         .read<DisneyDayAccuracyRecord>();
       if (resource?.createdAt) record.createdAt = resource.createdAt;
+      // ライブ実績が入ったらシード評価を上書き。逆はしない。
+      if (
+        resource?.actualSource === "live-snapshots" &&
+        record.actualSource === "empirical-seed"
+      ) {
+        return resource;
+      }
     } catch {
       /* new */
     }
@@ -180,10 +220,65 @@ export async function finalizeYesterdayAccuracy(): Promise<{
 
   const records: DisneyDayAccuracyRecord[] = [];
   for (const park of ["tdl", "tds"] as DisneyParkKey[]) {
+    await seedEmpiricalSnapshotsForDate(park, yesterday);
     const record = await upsertDayAccuracy(park, yesterday);
     if (record) records.push(record);
   }
   return { records };
+}
+
+/**
+ * カレンダー表示範囲の過去日すべてをシード＋的中評価する。
+ * ライブ未収集日は経験待ちシードで暫定評価し、「未評価」を解消する。
+ */
+export async function backfillPastAccuracy(options?: {
+  monthsBack?: number;
+}): Promise<{
+  seededDays: number;
+  records: DisneyDayAccuracyRecord[];
+}> {
+  const monthsBack = options?.monthsBack ?? DEFAULT_MONTHS_BACK;
+  const today = getJstToday();
+  const cursor = new Date(`${today}T12:00:00+09:00`);
+  const parks: DisneyParkKey[] = ["tdl", "tds"];
+  let seededDays = 0;
+  const records: DisneyDayAccuracyRecord[] = [];
+
+  type Job = { park: DisneyParkKey; date: string };
+  const jobs: Job[] = [];
+
+  for (let offset = 0; offset <= monthsBack; offset += 1) {
+    const monthCursor = new Date(cursor);
+    monthCursor.setMonth(monthCursor.getMonth() - offset);
+    const year = monthCursor.getFullYear();
+    const month = monthCursor.getMonth() + 1;
+    const days = getMonthDays(year, month).filter(
+      (dateStr) => compareDateStr(dateStr, today) < 0,
+    );
+    for (const park of parks) {
+      for (const dateStr of days) {
+        jobs.push({ park, date: dateStr });
+      }
+    }
+  }
+
+  const concurrency = 6;
+  for (let i = 0; i < jobs.length; i += concurrency) {
+    const chunk = jobs.slice(i, i + concurrency);
+    const chunkResults = await Promise.all(
+      chunk.map(async ({ park, date }) => {
+        const seeded = await seedEmpiricalSnapshotsForDate(park, date);
+        const record = await upsertDayAccuracy(park, date);
+        return { seeded: seeded.seeded, record };
+      }),
+    );
+    for (const row of chunkResults) {
+      if (row.seeded) seededDays += 1;
+      if (row.record) records.push(row.record);
+    }
+  }
+
+  return { seededDays, records };
 }
 
 export async function listAccuracyForMonth(
@@ -247,6 +342,13 @@ export function summarizeAccuracy(records: DisneyDayAccuracyRecord[]): {
     hitRate: Math.round((hits / records.length) * 1000) / 10,
     meanAbsScoreError: Math.round(mae * 10) / 10,
   };
+}
+
+/** 月次自動見直し用: ライブ実績のみ */
+export function summarizeLiveAccuracy(records: DisneyDayAccuracyRecord[]) {
+  return summarizeAccuracy(
+    records.filter((row) => row.actualSource !== "empirical-seed"),
+  );
 }
 
 export function describeMiss(record: DisneyDayAccuracyRecord): string {

@@ -4,7 +4,7 @@
 import {
   describeMiss,
   listAccuracyForMonth,
-  summarizeAccuracy,
+  summarizeLiveAccuracy,
 } from "@/lib/server/disney-accuracy";
 import {
   loadCrowdAdjustments,
@@ -145,8 +145,10 @@ export async function runMonthlyCrowdReview(options?: {
   force?: boolean;
 }): Promise<DisneyMonthlyReviewDoc> {
   const month = options?.month ?? previousMonthKey();
-  const records = await listAccuracyForMonth(month);
-  const summary = summarizeAccuracy(records);
+  const allRecords = await listAccuracyForMonth(month);
+  // 経験シードは UI 用暫定。自動条件見直しはライブ実績のみ。
+  const records = allRecords.filter((row) => row.actualSource !== "empirical-seed");
+  const summary = summarizeLiveAccuracy(allRecords);
   const clusters = clusterMissReasons(records);
   const topMissReasons = clusters.slice(0, 8).map((c) => ({
     reason: c.reason,

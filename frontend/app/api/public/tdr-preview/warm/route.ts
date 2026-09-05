@@ -1,5 +1,6 @@
 import { warmDisneyShowcaseCache } from "@/lib/server/disney-showcase-cache";
-import { finalizeYesterdayAccuracy } from "@/lib/server/disney-accuracy";
+import { backfillPastAccuracy } from "@/lib/server/disney-accuracy";
+import { collectLiveWaitSnapshotsNow } from "@/lib/server/disney-historical-store";
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 
@@ -29,17 +30,33 @@ export async function POST(request: Request) {
   }
 
   try {
-    let accuracyCount = 0;
+    let liveHour: number | null = null;
     try {
-      const accuracy = await finalizeYesterdayAccuracy();
+      const live = await collectLiveWaitSnapshotsNow();
+      liveHour = live.hour;
+    } catch (error) {
+      console.warn("[tdr-preview/warm] live wait snapshot skipped", error);
+    }
+
+    let accuracyCount = 0;
+    let seededDays = 0;
+    try {
+      const accuracy = await backfillPastAccuracy();
       accuracyCount = accuracy.records.length;
+      seededDays = accuracy.seededDays;
       clearCalendarMonthCache();
     } catch (error) {
-      console.warn("[tdr-preview/warm] accuracy finalize skipped", error);
+      console.warn("[tdr-preview/warm] accuracy backfill skipped", error);
     }
 
     const result = await warmDisneyShowcaseCache();
-    return Response.json({ ok: true, accuracyCount, ...result });
+    return Response.json({
+      ok: true,
+      accuracyCount,
+      seededDays,
+      liveHour,
+      ...result,
+    });
   } catch (error) {
     console.error("[tdr-preview/warm]", error);
     return Response.json(
