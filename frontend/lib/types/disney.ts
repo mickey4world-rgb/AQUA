@@ -42,6 +42,19 @@ export interface TouringRecommendation {
   reason: string;
 }
 
+export interface DisneyAdviceAccuracy {
+  levelHit: boolean;
+  predictedLevel: CrowdLevel;
+  predictedScore: number;
+  actualLevel: CrowdLevel;
+  actualScore: number;
+  actualAverageWait: number;
+  scoreDelta: number;
+  explanation: string;
+  /** 実績スナップショットが無く評価できない場合 */
+  pending?: boolean;
+}
+
 export interface DisneyAdvice {
   park: DisneyParkKey;
   parkName: string;
@@ -55,6 +68,8 @@ export interface DisneyAdvice {
   prediction?: DisneyDatePrediction;
   breakdown?: DisneyCrowdBreakdown;
   aiInsight?: DisneyAiInsight;
+  /** 過去日のみ: 予測 vs 実績 */
+  accuracy?: DisneyAdviceAccuracy | null;
 }
 
 export interface DisneyAiInsight {

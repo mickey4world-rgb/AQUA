@@ -9,6 +9,10 @@ type CrowdStatusCardProps = {
   predictionDescription?: string;
   mode?: "live" | "forecast";
   targetDate?: string;
+  /** 予想時の Crowd Score（過去・未来の予測モード向け） */
+  crowdScore?: number;
+  /** 過去日はリアルタイム表示を出さない */
+  hideRealtime?: boolean;
 };
 
 export default function CrowdStatusCard({
@@ -17,8 +21,10 @@ export default function CrowdStatusCard({
   predictionDescription,
   mode = "live",
   targetDate,
+  crowdScore,
+  hideRealtime = false,
 }: CrowdStatusCardProps) {
-  const isForecast = mode === "forecast";
+  const isForecast = mode === "forecast" || hideRealtime;
 
   return (
     <div className={`${disneyPanelClass} p-5`}>
@@ -42,6 +48,18 @@ export default function CrowdStatusCard({
           {status.crowdLabel}
         </span>
       </div>
+
+      {typeof crowdScore === "number" && (
+        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+            Crowd Score（予想時）
+          </p>
+          <p className="mt-0.5 text-2xl font-bold text-white">
+            {crowdScore}
+            <span className="ml-1 text-sm font-normal text-slate-400">/ 100</span>
+          </p>
+        </div>
+      )}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div>

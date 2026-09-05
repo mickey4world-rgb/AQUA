@@ -3,11 +3,13 @@ import { getJstToday } from "@/lib/disney-holidays";
 import { DISNEY_PARKS } from "@/lib/disney-constants";
 import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import { predictCrowdForDate } from "@/lib/server/disney-calendar-prediction";
+import { upsertDayAccuracy } from "@/lib/server/disney-accuracy";
 import { fetchParkLiveData, fetchParkSchedule } from "@/lib/server/themeparks-api";
 import type {
   AttractionWait,
   CrowdLevel,
   DisneyAdvice,
+  DisneyAdviceAccuracy,
   DisneyParkKey,
   DisneyResortStatus,
   ParkCrowdStatus,
@@ -229,20 +231,73 @@ export async function buildDisneyAdvice(
   const date = targetDate ?? today;
 
   if (date !== today) {
+    const { loadCrowdAdjustments } = await import(
+      "@/lib/server/disney-crowd-adjustments"
+    );
+    await loadCrowdAdjustments();
+
     const prediction = predictCrowdForDate(park, date);
     const breakdown = buildCrowdBreakdown(date, park);
+    let accuracy: DisneyAdviceAccuracy | null = null;
+
+    if (prediction.isPast) {
+      const record = await upsertDayAccuracy(park, date);
+      if (record) {
+        const hitLabel = record.levelHit ? "的中" : "外れ";
+        const deltaLabel =
+          record.scoreDelta === 0
+            ? "差なし"
+            : record.scoreDelta > 0
+              ? `予測が ${record.scoreDelta} 点高め`
+              : `予測が ${Math.abs(record.scoreDelta)} 点低め`;
+        accuracy = {
+          levelHit: record.levelHit,
+          predictedLevel: record.predictedLevel,
+          predictedScore: record.predictedScore,
+          actualLevel: record.actualLevel,
+          actualScore: record.actualScore,
+          actualAverageWait: record.actualAverageWait,
+          scoreDelta: record.scoreDelta,
+          explanation: `予想は「${crowdLevelLabels[record.predictedLevel]}」（${record.predictedScore}点）。実績は平均待ち約${record.actualAverageWait}分から「${crowdLevelLabels[record.actualLevel]}」（${record.actualScore}点）と推定 → ${hitLabel}（${deltaLabel}）。月次で同じ外れ理由が続く条件は自動見直しし、的中率を上げていきます。`,
+        };
+      } else {
+        accuracy = {
+          levelHit: false,
+          predictedLevel: prediction.crowdLevel,
+          predictedScore: prediction.crowdScore,
+          actualLevel: prediction.crowdLevel,
+          actualScore: prediction.crowdScore,
+          actualAverageWait: 0,
+          scoreDelta: 0,
+          pending: true,
+          explanation:
+            "この日の待ち時間スナップショットがまだ十分でないため、的中率は未評価です。予想スコアと混雑理由はそのまま参照できます。",
+        };
+      }
+    }
+
+    const summary = prediction.isPast
+      ? accuracy && !accuracy.pending
+        ? `予想時の混雑は「${prediction.crowdLabel}」（${prediction.crowdScore}点）。的中結果は${accuracy.levelHit ? "的中" : "外れ"}です。${accuracy.explanation}`
+        : `予想時の混雑は「${prediction.crowdLabel}」（${prediction.crowdScore}点）。${prediction.description}`
+      : prediction.description;
+
     return {
       park,
       parkName: prediction.parkName,
       crowdLevel: prediction.crowdLevel,
       timeAdvice: buildTimeAdvice(park, prediction.crowdLevel, date),
-      seasonalAdvice: [...prediction.factors.map((f) => `${f}の傾向`), ...buildSeasonalAdvice(date)],
+      seasonalAdvice: [
+        ...prediction.factors.map((f) => `${f}の傾向`),
+        ...buildSeasonalAdvice(date),
+      ],
       touringPlan: [],
-      summary: prediction.description,
+      summary,
       fetchedAt: new Date().toISOString(),
       targetDate: date,
       prediction,
       breakdown,
+      accuracy,
     };
   }
 

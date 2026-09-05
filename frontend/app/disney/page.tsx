@@ -9,6 +9,7 @@ import DisneyEveningAdvicePanel from "@/components/disney/DisneyEveningAdvicePan
 import DisneyHourlyForecast from "@/components/disney/DisneyHourlyForecast";
 import DisneyInfoPanel from "@/components/disney/DisneyInfoPanel";
 import DisneyPageShell from "@/components/disney/DisneyPageShell";
+import DisneyPastDayPanel from "@/components/disney/DisneyPastDayPanel";
 import WaitTimeList from "@/components/disney/WaitTimeList";
 import { crowdLevelColors, formatJstDateLabel } from "@/lib/disney-utils";
 import { DISNEY_PARKS } from "@/lib/disney-constants";
@@ -95,6 +96,8 @@ export default function DisneyPage() {
   const loading = loadedKey !== dataKey;
 
   const isLiveDay = selectedDate === today;
+  const isPastDay = selectedDate < today;
+  const isFutureDay = selectedDate > today;
   const parkName = DISNEY_PARKS[park].nameJa;
 
   const runRefresh = useCallback(async (): Promise<RefreshResult> => {
@@ -167,8 +170,12 @@ export default function DisneyPage() {
               リアルタイム混雑・時間帯別予想・数値化カレンダー（最大6か月先）で来園計画を立てられます。
               {isLiveDay
                 ? ` ${Math.round(refreshMs / 1000)}秒ごとに自動更新。`
-                : " 未来日は予測モードです。"}
-              {" ベイマックス／エルサの前日アドバイスはルールベース（AI コストなし）。"}
+                : isPastDay
+                  ? " 過去日は予想時の係数と的中結果を表示します。"
+                  : " 未来日は予測モードです。"}
+              {isFutureDay || isLiveDay
+                ? " ベイマックス／エルサの前日アドバイスはルールベース（AI コストなし）。"
+                : " 予想を改善しながら的中率を自動的に上げていきます。"}
             </p>
           </div>
           <button
@@ -187,7 +194,9 @@ export default function DisneyPage() {
               {formatJstDateLabel(selectedDate)}
             </span>
             {" — "}
-            祝日・曜日・季節要因に基づく混雑予測を表示しています。
+            {isPastDay
+              ? "予想時の混雑予測・Crowd Score・的中結果を表示しています（リアルタイム非表示）。"
+              : "祝日・曜日・季節要因に基づく混雑予測を表示しています。"}
           </div>
         )}
 
@@ -265,10 +274,19 @@ export default function DisneyPage() {
         </div>
 
         <div className="mt-6">
-          <DisneyEveningAdvicePanel
-            park={park}
-            targetDate={selectedDate > today ? selectedDate : tomorrow}
-          />
+          {isPastDay ? (
+            <DisneyPastDayPanel
+              park={park}
+              date={selectedDate}
+              advice={advice}
+              loading={loading}
+            />
+          ) : (
+            <DisneyEveningAdvicePanel
+              park={park}
+              targetDate={selectedDate > today ? selectedDate : tomorrow}
+            />
+          )}
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-5">
@@ -280,19 +298,32 @@ export default function DisneyPage() {
                 targetDate={selectedDate}
                 predictionLabel={predictionLabel}
                 predictionDescription={predictionDescription}
+                crowdScore={
+                  advice?.prediction?.crowdScore ??
+                  advice?.breakdown?.total ??
+                  undefined
+                }
+                hideRealtime={isPastDay}
               />
             )}
             <DisneyCrowdBreakdownPanel
               breakdown={advice?.breakdown ?? null}
               crowdLabel={advice?.prediction?.crowdLabel ?? waitData?.status.crowdLabel}
+              title={isPastDay ? "予想時の混雑スコア内訳" : undefined}
             />
-            <WaitTimeList
-              attractions={waitData?.attractions ?? []}
+            {!isPastDay && (
+              <WaitTimeList
+                attractions={waitData?.attractions ?? []}
+                loading={loading}
+                mode={waitData?.mode ?? "live"}
+                targetDate={selectedDate}
+              />
+            )}
+            <DisneyInfoPanel
+              advice={advice}
               loading={loading}
-              mode={waitData?.mode ?? "live"}
-              targetDate={selectedDate}
+              isPastDay={isPastDay}
             />
-            <DisneyInfoPanel advice={advice} loading={loading} />
           </div>
           <div className="lg:col-span-3">
             <DisneyChatPanel
