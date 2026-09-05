@@ -16,7 +16,7 @@ function pageViewContainer() {
 
 export function maskVisitorKey(visitorKey: string): string {
   const hash = createHash("sha256").update(visitorKey).digest("hex");
-  return `anon-${hash.slice(0, 8)}`;
+  return `anon-${hash.slice(0, 24)}`;
 }
 
 export async function recordPageView(input: RecordPageViewInput): Promise<void> {

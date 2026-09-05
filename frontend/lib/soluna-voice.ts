@@ -359,6 +359,7 @@ export function useSolunaVoice() {
   const voiceEnabledRef = useRef(false);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speakQueueRef = useRef<SpeakChunk[]>([]);
+  const speakNextRef = useRef<() => Promise<void>>(async () => {});
   const speakingRef = useRef(false);
   const intentionalStopRef = useRef(false);
   const gotResultRef = useRef(false);
@@ -466,7 +467,7 @@ export function useSolunaVoice() {
     const jaVoice = pickCharacterVoice(voices, character);
     const speechText = next.text;
     if (!speechText) {
-      void speakNext();
+      void speakNextRef.current();
       return;
     }
 
@@ -493,15 +494,19 @@ export function useSolunaVoice() {
       const nextPeek = speakQueueRef.current[0];
       const delay = pauseAfterChunk(speechText, nextPeek?.character, character);
       window.setTimeout(() => {
-        void speakNext();
+        void speakNextRef.current();
       }, delay);
     };
     utterance.onerror = () => {
-      void speakNext();
+      void speakNextRef.current();
     };
 
     window.speechSynthesis.speak(utterance);
   }, [finishSpeaking, startIosKeepAlive]);
+
+  useEffect(() => {
+    speakNextRef.current = speakNext;
+  }, [speakNext]);
 
   const speakLines = useCallback(
     (lines: SpeakLine[], onComplete?: () => void, options?: { force?: boolean }) => {
@@ -726,8 +731,12 @@ export function useSolunaVoice() {
     }
   }, [resetTranscript, scheduleConversationRestart, scheduleSilenceFinalize]);
 
-  beginContinuousRecognitionRef.current = (attempt?: number, force?: boolean) =>
-    beginContinuousRecognition(attempt ?? 0, force ?? false);
+  useEffect(() => {
+    // 最新のコールバックをタイマーから呼ぶためのref更新。レンダー中には変更しない。
+    // eslint-disable-next-line react-hooks/immutability
+    beginContinuousRecognitionRef.current = (attempt?: number, force?: boolean) =>
+      beginContinuousRecognition(attempt ?? 0, force ?? false);
+  }, [beginContinuousRecognition]);
 
   const startConversation = useCallback(
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {

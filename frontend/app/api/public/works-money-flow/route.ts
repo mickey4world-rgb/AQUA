@@ -1,10 +1,18 @@
 import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
+import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
 
 /** ビルド時に巨大な gyosei を展開しない。実行時 Cache-Control でキャッシュ。 */
 export const dynamic = "force-dynamic";
 
 /** 認証不要・行政事業レビューのサンキー公開プレビュー */
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = await enforcePublicRequestProtection(request, {
+    scope: "public-works-money-flow",
+    maxRequests: 12,
+    windowMs: 60_000,
+  });
+  if (blocked) return blocked;
+
   try {
     const payload = await getWorksMoneyFlowPublicPreview();
     return Response.json(payload, {

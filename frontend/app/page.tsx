@@ -1,10 +1,25 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import HomePageShell from "@/components/home/HomePageShell";
 import Marquee from "@/components/home/Marquee";
 import ModuleIndexRow, {
   type ModuleIndexEntry,
 } from "@/components/home/ModuleIndexRow";
 import Reveal from "@/components/layout/Reveal";
+
+export const metadata: Metadata = {
+  title: "AQUA — AI・社会貢献・未来技術の実験スタジオ",
+  description:
+    "AQUAはAI、行政予算可視化、東京ディズニーリゾート混雑予測、宇宙分析、BOINC社会貢献を公開するPersonal Software Studioです。",
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
+  openGraph: {
+    url: "/",
+    title: "AQUA — AI・社会貢献・未来技術の実験スタジオ",
+    description:
+      "人とAIが協働する未来への実験、社会貢献、データ可視化を公開しています。",
+  },
+};
 
 const modules: ModuleIndexEntry[] = [
   {

@@ -8,6 +8,7 @@ export const COSMOS_CONTAINERS = {
   tokenUsage: process.env.COSMOS_TOKEN_USAGE_CONTAINER ?? "TokenUsage",
   accessLogs: process.env.COSMOS_ACCESS_LOGS_CONTAINER ?? "AccessLogs",
   pageViewLogs: process.env.COSMOS_PAGE_VIEW_LOGS_CONTAINER ?? "PageViewLogs",
+  securityEvents: process.env.COSMOS_SECURITY_EVENTS_CONTAINER ?? "SecurityEvents",
   workNotes: process.env.COSMOS_WORK_NOTES_CONTAINER ?? "WorkNotes",
   solunaRecords: process.env.COSMOS_SOLUNA_CONTAINER ?? "SolunaRecords",
   solunaTokens: process.env.COSMOS_SOLUNA_TOKENS_CONTAINER ?? "SolunaTokens",
