@@ -80,7 +80,7 @@ export default function MoneyFlowPanel() {
     }
 
     fetchJsonWithTimeout<MetaResponse>("/api/works/money-flow?meta=1", {
-      timeoutMs: 90_000,
+      timeoutMs: 12_000,
     })
       .then((payload) => {
         if (cancelled) return;
@@ -1087,7 +1087,8 @@ async function fetchFlow(key: string): Promise<MoneyFlowResponse> {
   if (focusValue) params.set("focusValue", focusValue);
   const response = await fetchJsonWithTimeout<MoneyFlowResponse>(
     `/api/works/money-flow?${params}`,
-    { timeoutMs: 90_000 },
+    // 初期概観はスナップショット、絞り込みのみオンデマンド。長時間待ちで他画面を止めない。
+    { timeoutMs: 20_000 },
   );
   return response;
 }

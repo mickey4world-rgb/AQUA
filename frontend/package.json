@@ -13,7 +13,8 @@
     "setup:access-logs": "node scripts/setup-access-logs.mjs",
     "setup:page-view-logs": "node scripts/setup-page-view-logs.mjs",
     "setup:work-notes": "node scripts/setup-work-notes.mjs",
-    "setup:soluna": "node scripts/setup-soluna.mjs"
+    "setup:soluna": "node scripts/setup-soluna.mjs",
+    "build:gyosei-preview": "npx --yes tsx scripts/build-gyosei-public-preview.ts"
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.0",

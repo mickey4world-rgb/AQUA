@@ -1,4 +1,5 @@
 import WorksMoneyFlowPublicPreview from "@/components/works/admin/WorksMoneyFlowPublicPreview";
+import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -16,8 +17,11 @@ export const metadata: Metadata = {
   },
 };
 
-export const dynamic = "force-dynamic";
+/** 表示は同梱スナップショットのみ。リクエスト時の集計はしない。 */
+export const dynamic = "force-static";
+export const revalidate = false;
 
-export default function WorksPreviewPage() {
-  return <WorksMoneyFlowPublicPreview />;
+export default async function WorksPreviewPage() {
+  const initialData = await getWorksMoneyFlowPublicPreview();
+  return <WorksMoneyFlowPublicPreview initialData={initialData} />;
 }

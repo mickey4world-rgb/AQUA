@@ -52,7 +52,7 @@ export default function WorksMoneyFlowPublicPreview({
       // キャッシュがある場合は裏で更新（失敗しても表示は維持）
       setRefreshing(true);
       fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow", {
-        timeoutMs: 90_000,
+        timeoutMs: 8_000,
       })
         .then((payload) => {
           if (cancelled) return;
@@ -72,7 +72,7 @@ export default function WorksMoneyFlowPublicPreview({
     }
 
     fetchJsonWithTimeout<MoneyFlowResponse>("/api/public/works-money-flow", {
-      timeoutMs: 90_000,
+      timeoutMs: 8_000,
     })
       .then((payload) => {
         if (cancelled) return;
@@ -168,7 +168,13 @@ export default function WorksMoneyFlowPublicPreview({
 
       {!data && !error ? (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-12 text-center text-sm text-slate-500">
-          データを読み込み中…
+          表示用データを準備しています…
+        </div>
+      ) : null}
+
+      {!data && error ? (
+        <div className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          サンキーの表示データが一時的に利用できません。他のアプリには影響しません。時間をおいて再読み込みしてください。
         </div>
       ) : null}
 

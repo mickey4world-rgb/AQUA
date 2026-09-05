@@ -5,11 +5,28 @@ import {
   loadGyoseiSummary,
   queryMoneyFlow,
 } from "@/lib/server/gyosei-data";
+import { getWorksMoneyFlowPublicPreview } from "@/lib/server/gyosei-public-preview";
 import { PAYEE_SECTORS } from "@/lib/gyosei-sectors";
 import { isAddressLookupReady } from "@/lib/server/company-address";
 import type { MoneyFlowFocusKind } from "@/lib/types/gyosei";
 
 export const runtime = "nodejs";
+
+function isDefaultOverview(params: {
+  ministry?: string;
+  payee?: string;
+  sector?: string;
+  focusKind?: MoneyFlowFocusKind;
+  focusValue?: string;
+}): boolean {
+  return (
+    !params.ministry &&
+    !params.payee &&
+    !params.sector &&
+    !params.focusKind &&
+    !params.focusValue
+  );
+}
 
 export async function GET(request: Request) {
   return withApiAccessLog(request, async () => {
@@ -57,6 +74,19 @@ export async function GET(request: Request) {
         });
       }
 
+      // 初期概観は事前スナップショットを優先し、重い gzip 展開で他 API を詰まらせない
+      if (isDefaultOverview({ ministry, payee, sector, focusKind, focusValue })) {
+        const snapshot = await getWorksMoneyFlowPublicPreview();
+        if (snapshot && snapshot.year === year) {
+          return Response.json(snapshot, {
+            headers: {
+              "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
+              "X-Works-Money-Flow": "snapshot",
+            },
+          });
+        }
+      }
+
       const result = await queryMoneyFlow({
         year,
         ministry,
@@ -69,6 +99,7 @@ export async function GET(request: Request) {
       return Response.json(result, {
         headers: {
           "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
+          "X-Works-Money-Flow": "query",
         },
       });
     } catch (error) {
