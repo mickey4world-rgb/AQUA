@@ -9,7 +9,12 @@ function getGroundingModelCandidates(): string[] {
   const env =
     process.env.SOLUNA_WEB_GEMINI_MODEL?.trim() ||
     process.env.SOLUNA_NEWS_GEMINI_MODEL?.trim();
-  const defaults = ["gemini-3.6-flash", "gemini-flash-latest"];
+  const defaults = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+    "gemini-3.6-flash",
+  ];
   return env ? [...new Set([env, ...defaults])] : defaults;
 }
 

@@ -35,14 +35,16 @@ type BrowserSpeechRecognition = {
 
 type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
 
-/** 無音が続いたら発話完了とみなす（ms） */
-const SILENCE_MS = 1400;
+/** 無音が続いたら発話完了とみなす（ms） — 短めにして会話のテンポを良くする */
+const SILENCE_MS = 900;
 /** 連続認識が切れたあと再開するまでの待機（ms） */
-const RESTART_DELAY_MS = 280;
+const RESTART_DELAY_MS = 220;
 /** iOS: TTS 後にマイクを再開するまでの待機（ms） */
-const IOS_MIC_RESUME_DELAY_MS = 850;
+const IOS_MIC_RESUME_DELAY_MS = 520;
+/** Desktop: TTS 後にマイクを再開するまでの待機（ms） */
+const DESKTOP_MIC_RESUME_DELAY_MS = 120;
 /** iOS: recognition.start 失敗時のリトライ間隔（ms） */
-const IOS_RECOGNITION_RETRY_MS = 420;
+const IOS_RECOGNITION_RETRY_MS = 360;
 
 function getSpeechRecognition(): SpeechRecognitionCtor | null {
   if (typeof window === "undefined") return null;
@@ -64,10 +66,10 @@ function restartDelayMs(): number {
 }
 
 function micResumeDelayMs(): number {
-  return isIosSafari() ? IOS_MIC_RESUME_DELAY_MS : 160;
+  return isIosSafari() ? IOS_MIC_RESUME_DELAY_MS : DESKTOP_MIC_RESUME_DELAY_MS;
 }
 
-function waitForSpeechIdle(maxMs = 2400): Promise<void> {
+function waitForSpeechIdle(maxMs = 600): Promise<void> {
   if (typeof window === "undefined" || !window.speechSynthesis) {
     return Promise.resolve();
   }
@@ -78,10 +80,27 @@ function waitForSpeechIdle(maxMs = 2400): Promise<void> {
         resolve();
         return;
       }
-      window.setTimeout(tick, 60);
+      window.setTimeout(tick, 40);
     };
     tick();
   });
+}
+
+function forceStopSpeechSynthesis(): void {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    // 一部ブラウザで speaking が残留するため二重キャンセル
+    window.setTimeout(() => {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+    }, 40);
+  } catch {
+    // ignore
+  }
 }
 
 function mapSpeechError(code: string): string {
@@ -168,16 +187,40 @@ type CharacterVoiceProfile = {
 
 const CHARACTER_VOICE: Record<"sol" | "luna", CharacterVoiceProfile> = {
   sol: {
-    prefer: [/otoya/i, /ichiro/i, /keita/i, /hattori/i, /takeru/i, /男/i, /male/i, /boy/i],
+    prefer: [
+      /neural/i,
+      /natural/i,
+      /google/i,
+      /otoya/i,
+      /ichiro/i,
+      /keita/i,
+      /hattori/i,
+      /takeru/i,
+      /男/i,
+      /male/i,
+    ],
     avoid: [/kyoko/i, /haruka/i, /nanami/i, /ayumi/i, /moira/i, /samantha/i, /女/i, /female/i],
-    rate: 1.1,
-    pitch: 1.08,
+    // 少しゆっくり・抑揚をつけて読み上げ感を抑える
+    rate: 0.96,
+    pitch: 1.0,
   },
   luna: {
-    prefer: [/kyoko/i, /haruka/i, /nanami/i, /ayumi/i, /moira/i, /samantha/i, /女/i, /female/i],
+    prefer: [
+      /neural/i,
+      /natural/i,
+      /google/i,
+      /kyoko/i,
+      /haruka/i,
+      /nanami/i,
+      /ayumi/i,
+      /moira/i,
+      /samantha/i,
+      /女/i,
+      /female/i,
+    ],
     avoid: [/otoya/i, /ichiro/i, /keita/i, /hattori/i, /takeru/i, /男/i, /male/i, /boy/i],
-    rate: 0.96,
-    pitch: 1.16,
+    rate: 0.93,
+    pitch: 1.08,
   },
 };
 
@@ -187,7 +230,9 @@ function scoreVoice(voice: SpeechSynthesisVoice, character: "sol" | "luna"): num
   let score = 0;
   if (voice.lang.startsWith("ja")) score += 12;
   if (voice.lang === "ja-JP") score += 6;
-  if (voice.localService) score += 2;
+  // クラウド／ニューラル系を優先（ローカルの機械音声より自然）
+  if (!voice.localService) score += 8;
+  else score += 1;
   for (const pattern of profile.prefer) {
     if (pattern.test(label)) score += 24;
   }
@@ -240,10 +285,12 @@ type SpeakChunk = {
   character: "sol" | "luna";
 };
 
-function pauseAfterChunk(text: string): number {
-  if (/[。！？!?]$/.test(text)) return 220;
-  if (/[、，]$/.test(text)) return 120;
-  return 80;
+function pauseAfterChunk(text: string, nextCharacter?: "sol" | "luna", current?: "sol" | "luna"): number {
+  // 話者切替は会話の間を少し（短めに）
+  if (nextCharacter && current && nextCharacter !== current) return 220;
+  if (/[。！？!?]$/.test(text)) return 120;
+  if (/[、，]$/.test(text)) return 50;
+  return 35;
 }
 
 function expandLinesToChunks(lines: SpeakLine[]): SpeakChunk[] {
@@ -351,9 +398,7 @@ export function useSolunaVoice() {
 
   const stopSpeaking = useCallback(() => {
     stopIosKeepAlive();
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+    forceStopSpeechSynthesis();
     speakQueueRef.current = [];
     speakingRef.current = false;
     setSpeaking(false);
@@ -369,10 +414,9 @@ export function useSolunaVoice() {
     onSpeakCompleteRef.current = null;
     if (!onComplete) return;
 
-    void waitForSpeechIdle().then(() => {
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+    forceStopSpeechSynthesis();
+    void waitForSpeechIdle(400).then(() => {
+      forceStopSpeechSynthesis();
       window.setTimeout(onComplete, micResumeDelayMs());
     });
   }, [stopIosKeepAlive]);
@@ -401,13 +445,16 @@ export function useSolunaVoice() {
 
     const utterance = new SpeechSynthesisUtterance(speechText);
     utterance.lang = "ja-JP";
-    utterance.rate = profile.rate;
-    utterance.pitch = profile.pitch;
+    // ごく小さなゆらぎで棒読み感を減らす
+    const jitter = (Math.random() - 0.5) * 0.04;
+    utterance.rate = Math.min(1.05, Math.max(0.88, profile.rate + jitter));
+    utterance.pitch = Math.min(1.15, Math.max(0.92, profile.pitch + jitter * 0.5));
     utterance.volume = 1;
     if (jaVoice) utterance.voice = jaVoice;
 
     utterance.onend = () => {
-      const delay = pauseAfterChunk(speechText);
+      const nextPeek = speakQueueRef.current[0];
+      const delay = pauseAfterChunk(speechText, nextPeek?.character, character);
       window.setTimeout(() => {
         void speakNext();
       }, delay);
@@ -475,7 +522,7 @@ export function useSolunaVoice() {
     restartTimerRef.current = setTimeout(() => {
       restartTimerRef.current = null;
       if (!conversationModeRef.current || pausedForReplyRef.current) return;
-      void beginContinuousRecognitionRef.current?.();
+      void beginContinuousRecognitionRef.current?.(0, true);
     }, restartDelayMs());
   }, [clearRestartTimer]);
 
@@ -498,11 +545,11 @@ export function useSolunaVoice() {
     }, SILENCE_MS);
   }, [clearSilenceTimer, finalizeConversationUtterance]);
 
-  const beginContinuousRecognitionRef = useRef<((attempt?: number) => Promise<void>) | null>(
-    null,
-  );
+  const beginContinuousRecognitionRef = useRef<
+    ((attempt?: number, force?: boolean) => Promise<void>) | null
+  >(null);
 
-  const beginContinuousRecognition = useCallback(async (attempt = 0) => {
+  const beginContinuousRecognition = useCallback(async (attempt = 0, force = false) => {
     const Ctor = getSpeechRecognition();
     if (!Ctor || !conversationModeRef.current || pausedForReplyRef.current) return;
 
@@ -511,11 +558,29 @@ export function useSolunaVoice() {
       return;
     }
 
-    if (recognitionRef.current) return;
+    if (recognitionRef.current) {
+      // 残留セッションがあると再開不能になるため破棄してからやり直す
+      try {
+        intentionalStopRef.current = true;
+        recognitionRef.current.abort();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
 
-    if (speakingRef.current || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+    const synthBusy =
+      speakingRef.current ||
+      (typeof window !== "undefined" && Boolean(window.speechSynthesis?.speaking));
+    if (synthBusy && !force && attempt < 3) {
+      forceStopSpeechSynthesis();
+      speakingRef.current = false;
       scheduleConversationRestart();
       return;
+    }
+    if (synthBusy) {
+      forceStopSpeechSynthesis();
+      speakingRef.current = false;
     }
 
     if (!micGrantedRef.current) {
@@ -531,6 +596,7 @@ export function useSolunaVoice() {
 
     intentionalStopRef.current = false;
     errorFiredRef.current = false;
+    utteranceSentRef.current = false;
     if (attempt === 0) {
       resetTranscript();
     }
@@ -570,6 +636,7 @@ export function useSolunaVoice() {
         return;
       }
       if (conversationModeRef.current) {
+        // ネットワーク以外は黙って再開（会話モードを落とさない）
         scheduleConversationRestart();
         if (event.error !== "network") return;
       }
@@ -610,11 +677,11 @@ export function useSolunaVoice() {
       recognitionRef.current = null;
       setListening(false);
       if (!conversationModeRef.current || pausedForReplyRef.current) return;
-      const maxAttempts = isIosSafari() ? 6 : 3;
+      const maxAttempts = isIosSafari() ? 8 : 5;
       if (attempt < maxAttempts) {
         restartTimerRef.current = setTimeout(() => {
           restartTimerRef.current = null;
-          void beginContinuousRecognitionRef.current?.(attempt + 1);
+          void beginContinuousRecognitionRef.current?.(attempt + 1, true);
         }, restartDelayMs() * (attempt + 1));
         return;
       }
@@ -622,8 +689,8 @@ export function useSolunaVoice() {
     }
   }, [resetTranscript, scheduleConversationRestart, scheduleSilenceFinalize]);
 
-  beginContinuousRecognitionRef.current = (attempt?: number) =>
-    beginContinuousRecognition(attempt ?? 0);
+  beginContinuousRecognitionRef.current = (attempt?: number, force?: boolean) =>
+    beginContinuousRecognition(attempt ?? 0, force ?? false);
 
   const startConversation = useCallback(
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {
@@ -642,9 +709,10 @@ export function useSolunaVoice() {
       voiceEnabledRef.current = true;
       setVoiceEnabled(true);
       pausedForReplyRef.current = false;
+      utteranceSentRef.current = false;
       onResultRef.current = onResult;
       onErrorRef.current = onError ?? null;
-      await beginContinuousRecognition();
+      await beginContinuousRecognition(0, true);
     },
     [beginContinuousRecognition, stopRecognition, stopSpeaking],
   );
@@ -653,6 +721,7 @@ export function useSolunaVoice() {
     conversationModeRef.current = false;
     setConversationMode(false);
     pausedForReplyRef.current = false;
+    utteranceSentRef.current = false;
     micGrantedRef.current = false;
     onResultRef.current = null;
     onErrorRef.current = null;
@@ -663,6 +732,7 @@ export function useSolunaVoice() {
 
   const pauseForReply = useCallback(() => {
     pausedForReplyRef.current = true;
+    utteranceSentRef.current = true;
     clearSilenceTimer();
     clearRestartTimer();
     clearTranscriptBuffers();
@@ -673,10 +743,18 @@ export function useSolunaVoice() {
     if (!conversationModeRef.current) return;
     pausedForReplyRef.current = false;
     utteranceSentRef.current = false;
+    speakingRef.current = false;
+    forceStopSpeechSynthesis();
     resetTranscript();
     clearRestartTimer();
-    void beginContinuousRecognition(0);
-  }, [beginContinuousRecognition, clearRestartTimer, resetTranscript]);
+    clearSilenceTimer();
+    // TTS 残留を捨ててから強制再開（聞き取れなくなるのを防ぐ）
+    restartTimerRef.current = setTimeout(() => {
+      restartTimerRef.current = null;
+      if (!conversationModeRef.current || pausedForReplyRef.current) return;
+      void beginContinuousRecognition(0, true);
+    }, micResumeDelayMs());
+  }, [beginContinuousRecognition, clearRestartTimer, clearSilenceTimer, resetTranscript]);
 
   const startListening = useCallback(
     async (onResult: (text: string) => void, onError?: (message: string) => void) => {

@@ -460,6 +460,8 @@ export interface SolunaChatResponse {
   lunaStage: SolunaGrowthStage;
   newMemories: SolunaMemory[];
   messages: SolunaMessage[];
+  /** 音声モード時の主担当（読み上げは基本この一人） */
+  voiceLead?: SolunaCharacter;
   costMode?: "normal" | "economy" | "minimal";
   costReason?: string;
 }
