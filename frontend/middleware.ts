@@ -75,6 +75,11 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
 
 export const config = {
   matcher: [
+    "/",
+    "/sample",
+    "/tdr-preview",
+    "/works-preview",
+    "/neo-preview",
     "/stocks/:path*",
     "/disney/:path*",
     "/costs/:path*",
