@@ -223,7 +223,7 @@ export async function buildHumanChatBriefingSection(
   const detail =
     options?.detail ??
     (userMessage &&
-    /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|状況|今日の|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成/i.test(
+    /討伐|ジョブ|ブリーフィング|Note|ノート|BOINC|ボインク|資産|魔力|タンク|拠点|スケジュール|動いて|動かない|ギルド|他のアプリ|ディズニー|保有株|合議|コスト|WORKS|宇宙|資料生成|画像生成|今日の(討伐|ジョブ|状況|作戦|スケジュール)/i.test(
       userMessage,
     )
       ? "full"

@@ -3,7 +3,8 @@ import { sanitizeText } from "@/lib/server/security";
 import { isSolunaStorageConfigured } from "@/lib/server/soluna-store";
 import { sendSolunaChat } from "@/lib/server/soluna-chat";
 
-export const maxDuration = 60;
+/** SWA 実効上限より短く保ち、プラットフォーム殺到による HTTP 500 を避ける */
+export const maxDuration = 30;
 
 type ChatRequestBody = {
   message?: string;
@@ -29,13 +30,25 @@ export async function POST(request: Request) {
     const body = raw as ChatRequestBody;
     const message = sanitizeText(typeof body.message === "string" ? body.message : "", 2000);
 
-    const result = await sendSolunaChat(auth.userId, message, {
-      voiceMode: body.voiceMode === true,
-    });
-    if (!result.ok) {
-      return Response.json({ error: result.reason }, { status: 422 });
+    try {
+      const result = await sendSolunaChat(auth.userId, message, {
+        voiceMode: body.voiceMode === true,
+      });
+      if (!result.ok) {
+        // バリデーション等のみ。モデル失敗は sendSolunaChat 側で伴走返答に落とす
+        return Response.json({ error: result.reason }, { status: 422 });
+      }
+      return Response.json(result.data);
+    } catch (error) {
+      // withApiAccessLog の汎用 500 に落とさず、再送を促す（二重 LLM 呼び出しはしない）
+      console.error("[soluna/chat] unhandled", error);
+      return Response.json(
+        {
+          error:
+            "応答の取得に時間がかかりすぎました。もう一度送ってください。",
+        },
+        { status: 503 },
+      );
     }
-
-    return Response.json(result.data);
   });
 }

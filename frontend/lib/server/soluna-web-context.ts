@@ -8,9 +8,10 @@ import {
 } from "@/lib/server/soluna-weather";
 import { isOpsStyleQuestion, isWorldInfoQuestion } from "@/lib/soluna-reply";
 
-/** 速さ優先（正確さは検索結果依存。途中打ち切りはしない） */
-const CHAT_SEARCH_TIMEOUT_MS = 10_000;
-const VOICE_SEARCH_TIMEOUT_MS = 7_000;
+/** チャットは SWA 制限内で返答を優先。検索は短時間レースのみ */
+const CHAT_SEARCH_TIMEOUT_MS = 4_500;
+const VOICE_SEARCH_TIMEOUT_MS = 3_500;
+const CHAT_SEARCH_HARD_CAP_MS = 5_500;
 
 /** @deprecated isWorldInfoQuestion に統合。互換のため残す */
 export const LIVE_WORLD_RE = /ニュース|最新|世間|SNS|速報|首相|総理|大統領|誰|だれ/i;
@@ -83,26 +84,45 @@ export async function fetchLiveWorldContextForChat(
 - 要点2（あれば）
 合計220字以内。噂は未確認と書く。`;
 
-  const [weatherBlock, grounded, snsExtra] = await Promise.all([
+  const searchPromise = Promise.all([
     wantWeather ? fetchOpenMeteoWeatherContext(userMessage) : Promise.resolve(null),
     generateWithGoogleSearch({
       system: RESEARCHER_SYSTEM,
       userPrompt: buildCombinedPrompt(userMessage, compact),
       timeoutMs: searchTimeout,
       preferFast: true,
-      maxOutputTokens: compact ? 512 : 768,
+      raceOnly: true,
+      maxOutputTokens: compact ? 384 : 512,
     }),
     wantSnsExtra
       ? generateWithGoogleSearch({
           system: RESEARCHER_SYSTEM,
           userPrompt: snsExtraPrompt,
-          timeoutMs: Math.min(searchTimeout, compact ? 6_000 : 8_000),
+          timeoutMs: Math.min(searchTimeout, compact ? 3_000 : 4_000),
           preferFast: true,
-          maxOutputTokens: 384,
+          raceOnly: true,
+          maxOutputTokens: 256,
         })
       : Promise.resolve(null),
   ]);
 
+  // ハードキャップ超過時は検索を諦めてチャット本体へ進む（500/タイムアウト防止）
+  const timed = await Promise.race([
+    searchPromise.then((value) => ({ ok: true as const, value })),
+    new Promise<{ ok: false }>((resolve) => {
+      setTimeout(() => resolve({ ok: false }), CHAT_SEARCH_HARD_CAP_MS);
+    }),
+  ]);
+
+  if (!timed.ok) {
+    console.warn("[soluna-web-context] search hard-capped; continuing without live web");
+    return `## 最新ウェブ／SNS情報
+（検索を打ち切って会話を優先しました。
+【必須】古い一般知識で現職・相場・速報を断定しない。
+分かる範囲で伴走し、「いま最新は取り切れなかった。もう一度聞いて」と伝える。）`;
+  }
+
+  const [weatherBlock, grounded, snsExtra] = timed.value;
   const sections: string[] = [];
 
   if (weatherBlock) {
@@ -112,14 +132,14 @@ export async function fetchLiveWorldContextForChat(
   if (grounded.ok && grounded.text.trim()) {
     sections.push(
       `## 最新ウェブ／SNS情報（Google 検索 grounding · ${grounded.model}）
-${grounded.text.trim().slice(0, compact ? 420 : 1100)}`,
+${grounded.text.trim().slice(0, compact ? 420 : 900)}`,
     );
   }
 
   if (snsExtra?.ok && snsExtra.text.trim()) {
     sections.push(
       `## SNS補足（${snsExtra.model}）
-${snsExtra.text.trim().slice(0, compact ? 280 : 520)}`,
+${snsExtra.text.trim().slice(0, compact ? 220 : 400)}`,
     );
   }
 
