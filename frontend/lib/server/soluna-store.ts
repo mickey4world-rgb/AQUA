@@ -120,15 +120,22 @@ export async function listMessages(userId: string, limit = MAX_MESSAGES): Promis
 
 export async function appendMessages(userId: string, messages: SolunaMessage[]): Promise<void> {
   const container = recordsContainer();
-  for (const message of messages) {
-    await container.items.upsert({ ...message, docType: "message" });
-  }
+  await Promise.all(
+    messages.map((message) => container.items.upsert({ ...message, docType: "message" })),
+  );
 
-  const all = await listMessages(userId, MAX_MESSAGES + 20);
-  const stale = all.slice(0, Math.max(0, all.length - MAX_MESSAGES));
-  for (const message of stale) {
-    await container.item(message.id, userId).delete();
-  }
+  // 古いメッセージ整理は応答を待たせない
+  void (async () => {
+    try {
+      const all = await listMessages(userId, MAX_MESSAGES + 20);
+      const stale = all.slice(0, Math.max(0, all.length - MAX_MESSAGES));
+      await Promise.all(
+        stale.map((message) => container.item(message.id, userId).delete()),
+      );
+    } catch (error) {
+      console.warn("[soluna] message prune failed", error);
+    }
+  })();
 }
 
 function createShortcutTokenValue(): string {
