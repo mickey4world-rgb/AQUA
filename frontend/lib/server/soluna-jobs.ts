@@ -9,7 +9,6 @@ import {
   getSystemAssets,
   getSystemHunter,
   getSystemSettlement,
-  getLatestBriefing,
   listSystemMessages,
   saveSystemAssets,
   saveSystemBoincRun,
@@ -89,9 +88,20 @@ export async function runDailyAutonomousJobs(options?: {
   messages?: SolunaSystemMessage[];
 }): Promise<SolunaJobsState> {
   const hunter = await getSystemHunter();
-  const briefing = options?.briefing ?? (await getLatestBriefing());
+  const { assertTodayLiveBriefing } = await import("@/lib/server/soluna-news");
+  const { getBriefingById, briefingDocIdForDate } = await import(
+    "@/lib/server/soluna-system-store"
+  );
+  const todayId = briefingDocIdForDate();
+  const candidate = options?.briefing ?? (await getBriefingById(todayId));
+  const gate = assertTodayLiveBriefing(candidate);
+  if (!gate.ok) {
+    console.warn("[soluna-jobs] refuse jobs without today live briefing:", gate.reason);
+    return buildJobsState();
+  }
+  const briefing = gate.briefing;
   const battle = hunter.battles[hunter.battles.length - 1] ?? null;
-  if (!briefing || !battle || battle.briefingId !== briefing.id) {
+  if (!battle || battle.briefingId !== briefing.id) {
     return buildJobsState();
   }
 

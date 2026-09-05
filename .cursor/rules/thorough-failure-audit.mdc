@@ -1,0 +1,38 @@
+---
+description: Force 5-Whys + failure-mode + sibling audit before calling work thorough
+alwaysApply: true
+---
+
+# Thoroughness is a procedure, not a word
+
+When the user asks for 徹底的 / 再発防止 / 障害対応, or when changing cache-only paths, public APIs, warm/cron, timeouts, or multi-instance SWA behavior — **and on every production incident / unexpected user-visible failure**:
+
+## Before declaring done
+1. **Success criteria**: State the invariant (e.g. "any cold instance GET returns 200 with payload", "討伐は当日ライブニュースのみ"), not only the last symptom ("faster", "no online fetch", "workflow green").
+2. **Architecture change reclassify**: If a path becomes the sole source of truth (cache-only / live-news-only), promote former "best-effort" ops (Cosmos write, warm, grounding) to **correctness requirements**. Silent `catch` on those writes is forbidden unless a durable fallback still satisfies the invariant.
+3. **New failure modes**: For each change, list what newly breaks (cache miss, warm-on-instance-A / read-on-B, cron skip, secret missing, external API down, quota). Add fallback or hard-fail for each.
+4. **Horizontal scan**: Grep siblings (`app/api/public/**`, `*cache*`, `*warm*`, `memoryCache`, `503` on null, `fallback`, `continue-on-error`, `getLatest*`, `ok: true` after catch). Fix the class, not only the ticket.
+5. **Oracle**: Verify the invariant (probe production GET / cold path / liveNewsOk), not a weak proxy (warm JSON `ok`, compile, single-instance memory, GHA green while chat used yesterday).
+6. **Self-interrogation**: Before the final reply, ask of your own draft: "Is this a fact/symptom, or a cause of my decision? Why did I choose X? What incentive/habit produced X?" If the answer is only "we did Y", dig one more why.
+
+## Incident default (do not wait to be asked)
+On every bug/outage the user reports (or that you discover while fixing):
+1. Run **5-Whys** to a controllable root (process/code incentive), not stop at the proximate error string.
+2. Search for the **same class**: error → unintended substitute → still reported as success.
+3. Patch the class; then deploy/verify the invariant.
+
+## Forbidden anti-pattern: “degraded success”
+Never treat the following as a successful completion of the original intent:
+- Primary path fails (quota, 404, timeout) → substitute that **changes meaning** (ungrounded LLM as “latest news”, yesterday’s briefing as “today’s hunt”, memory-only warm as “persisted”) → return `ok: true` / green CI
+- `continue-on-error` then proceeding as if the failed step’s invariant held
+- `getLatest*` when the contract is **today’s** document
+- Silent `catch` that invents empty/default data for a correctness-critical path
+
+Allowed substitutes must be **same-intent live sources** (e.g. Google Search fail → fresh RSS) or an **explicit hard-fail / degraded label** the UI and cron respect (`liveNewsOk: false`, `cosmosPersisted: false` blocking success).
+
+## Forbidden
+- Claiming 徹底的 without steps 1–6
+- Optimizing the latest complaint metric while deleting the previous safety net without a replacement
+- Treating multi-instance memory as durable storage
+- Stopping at "warm succeeded" when public read can still 503
+- Stopping at "briefing ingested" when source was training-data / non-live

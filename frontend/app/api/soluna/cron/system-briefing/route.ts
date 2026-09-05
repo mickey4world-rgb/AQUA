@@ -138,17 +138,27 @@ export async function POST(request: Request) {
 
   if (step === "ensure") {
     const ensured = await ensureDailySystemBriefing({ force });
-    return Response.json({ step: "ensure", ...ensured });
+    const status = ensured.ok ? 200 : 422;
+    return Response.json({ step: "ensure", ...ensured }, { status });
   }
 
   if (step === "status") {
-    const { getDailyBriefingStatus } = await import("@/lib/server/soluna-system-store");
+    const { getDailyBriefingStatus, getBriefingById } = await import(
+      "@/lib/server/soluna-system-store"
+    );
+    const { assertTodayLiveBriefing } = await import("@/lib/server/soluna-news");
     const status = await getDailyBriefingStatus();
+    const todayBriefing = await getBriefingById(status.todayBriefingId);
+    const liveGate = assertTodayLiveBriefing(todayBriefing);
     return Response.json({
       ok: true,
       step: "status",
       needsBriefing: !status.complete,
       ...status,
+      liveNewsOk: liveGate.ok,
+      liveNewsReason: liveGate.ok ? null : liveGate.reason,
+      briefingSource: todayBriefing?.source ?? null,
+      briefingSummary: todayBriefing?.summary?.slice(0, 160) ?? null,
     });
   }
 

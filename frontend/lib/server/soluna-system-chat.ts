@@ -5,7 +5,7 @@ import {
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
 import { resolveDailyBattle } from "@/lib/server/soluna-battle";
-import { formatBriefingForPrompt } from "@/lib/server/soluna-news";
+import { assertTodayLiveBriefing, formatBriefingForPrompt } from "@/lib/server/soluna-news";
 import { formatBattleModePromptAddon } from "@/lib/server/soluna-asset-rpg";
 import {
   formatJourneyForPrompt,
@@ -27,7 +27,9 @@ import {
 } from "@/lib/server/soluna-system-personality";
 import {
   appendSystemMessages,
+  briefingDocIdForDate,
   createSystemMessage,
+  getBriefingById,
   getDailyBriefingStatus,
   getLatestBriefing,
   getSystemHunter,
@@ -51,17 +53,25 @@ const SYSTEM_USER_ID = "__system__";
 
 const RPG_METAPHOR_RULE = `## RPG変換ルール（味付け・必須の翻訳付き）
 経済・政治の硬い用語はゲームのギミックで楽しく言い換えてよい。ただし過激なたとえだけで終わらせない。
-例（「たとえ → つまりニュースでは」のセット）:
+例（「たとえ → つまりニュースでは」のセット）※ブリーフィングにその話題があるときだけ使う:
 - サプライチェーン寸断 → 補給線が塞がれる → つまり物流や部品の流れが滞る話
 - インフレ長期化 → 宿代やポーション代が上がる呪い → つまり物価がじわじわ上がり続ける話
 - 追加関税 → 通行税の壁 → つまり輸入コストや価格への圧が強まる話
 - 金利・為替 → 魔力ゲージ／防衛結界 → つまりお金の借りやすさや通貨の揺らぎの話
 - ポートフォリオ・資産 → サイフ／ギルド金庫 → つまり家計や投資の持ち分の話
 専門用語を使う場合は「（ゲーム言い換え）」を直後に付ける。
-**禁止**: ニュース内容が伝わらないほど激しい比喩だけを連ねること。読後に「で、何が起きたの？」とならないこと。`;
+**禁止**: ニュース内容が伝わらないほど激しい比喩だけを連ねること。読後に「で、何が起きたの？」とならないこと。
+**禁止**: ブリーフィングに無い関税・通商・古いAI話題を例が思い浮かぶからといって持ち出すこと。`;
+
+const FRESHNESS_RULE = `## 鮮度・事実ルール（最優先）
+- 討伐対象ブロックに書かれた見出し・要点・報道日だけが「今日のニュース」。それ以外の一般知識で話を作らない。
+- 「関税が燻っている」「AI規制が続いている」など半年前から続く背景だけでボスを語らない。今日の具体的な新事実に触れる。
+- 数字・固有名詞・政策名はブリーフィングか直前の相手の発言に無いなら捏造しない。`;
 
 const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオン／勇者です。
 ルーナと朝のニュースをモンスター討伐として読み解く。本業は「ニュースを誰でもワクワク分かるように伝えること」。
+
+${FRESHNESS_RULE}
 
 ${RPG_METAPHOR_RULE}
 
@@ -85,6 +95,8 @@ ${RPG_METAPHOR_RULE}
 
 const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオン／賢者です。
 ソルの解説を受けて、読者がニュースを誤解なく楽しく理解できるよう補強・切り返す。討伐は味付け。
+
+${FRESHNESS_RULE}
 
 ${RPG_METAPHOR_RULE}
 
@@ -287,10 +299,20 @@ export async function runDailySystemChat(options?: {
     }
   }
 
-  const briefing = options?.briefing ?? (await getLatestBriefing());
+  const todayId = briefingDocIdForDate();
+  let briefing = options?.briefing ?? null;
   if (!briefing) {
-    return { ok: false, reason: "ニュースブリーフィングがありません。先に briefing を取得してください。" };
+    briefing = (await getBriefingById(todayId)) ?? null;
   }
+
+  const gate = assertTodayLiveBriefing(briefing);
+  if (!gate.ok) {
+    return {
+      ok: false,
+      reason: `${gate.reason} 先に当日のライブニュース取得を成功させてください。`,
+    };
+  }
+  briefing = gate.briefing;
 
   const personality = await getOrInitSystemPersonality({ rotateInterests: options?.force });
   const hunter = await getSystemHunter();
@@ -482,7 +504,7 @@ export async function runFullSystemBriefingPipeline(options?: {
 export async function ensureDailySystemBriefing(options?: {
   force?: boolean;
 }): Promise<{
-  ok: true;
+  ok: boolean;
   skipped: boolean;
   reason?: string;
   briefingId?: string;
@@ -511,27 +533,32 @@ export async function ensureDailySystemBriefing(options?: {
     interestKeywords: [...personality.sol.interests, ...personality.luna.interests],
   });
 
-  const briefing =
-    news.ok ? news.briefing : (await getBriefingById(status.todayBriefingId)) ?? (await getLatestBriefing());
-  if (!briefing) {
+  // 前日ブリーフィングでの「成功したつもり」討伐は禁止。当日ライブのみ。
+  const candidate = news.ok
+    ? news.briefing
+    : await getBriefingById(status.todayBriefingId);
+  const gate = assertTodayLiveBriefing(candidate);
+  if (!gate.ok) {
     return {
-      ok: true,
-      skipped: true,
-      reason: news.ok ? "ブリーフィングがありません。" : news.reason,
+      ok: false,
+      skipped: false,
+      reason: news.ok
+        ? gate.reason
+        : `当日ライブニュース未取得: ${news.reason} / ${gate.reason}`,
     };
   }
 
   const chat = await runDailySystemChat({
     force: options?.force,
-    briefing,
+    briefing: gate.briefing,
     skipFollowUp: true,
   });
   if (!chat.ok) {
     return {
-      ok: true,
+      ok: false,
       skipped: chat.skipped === true,
       reason: chat.reason,
-      briefingId: briefing.id,
+      briefingId: gate.briefing.id,
     };
   }
 
