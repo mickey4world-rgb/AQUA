@@ -2,11 +2,15 @@ name: TDR Public Preview Warm
 
 on:
   schedule:
-    # 0:05 / 6:05 / 12:05 / 18:05 JST
+    # 0:05 / 6:05 / 12:05 / 18:05 JST — core（公開不変条件）
     - cron: "5 15 * * *"
     - cron: "5 21 * * *"
     - cron: "5 3 * * *"
     - cron: "5 9 * * *"
+    # 0:20 JST — extras（待ち時間・的中率）。core 成功後の付帯
+    - cron: "20 15 * * *"
+    # 0:35 JST — calendars（前後月）
+    - cron: "35 15 * * *"
   workflow_dispatch:
   workflow_run:
     workflows: ["Azure Static Web Apps CI/CD"]
@@ -22,32 +26,62 @@ jobs:
     steps:
       - name: Wait for SWA propagation
         if: github.event_name == 'workflow_run'
-        run: sleep 45
+        run: sleep 90
+
+      - name: Resolve warm mode
+        id: mode
+        run: |
+          # schedule の UTC cron から mode を決める。それ以外は core。
+          CRON="${{ github.event.schedule }}"
+          if [ "$CRON" = "20 15 * * *" ]; then
+            echo "mode=extras" >> "$GITHUB_OUTPUT"
+          elif [ "$CRON" = "35 15 * * *" ]; then
+            echo "mode=calendars" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=core" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Warm public TDR preview cache
         env:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          WARM_MODE: ${{ steps.mode.outputs.mode }}
         run: |
           if [ -z "$SOLUNA_CRON_SECRET" ]; then
             echo "SOLUNA_CRON_SECRET not set; skip"
             exit 0
           fi
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          # デプロイ直後は最大3回リトライ
-          for i in 1 2 3; do
-            if curl -sfS -X POST \
+          MODE="${WARM_MODE:-core}"
+          echo "warm mode=$MODE"
+          # core は公開の必須条件。extras/calendars 失敗はジョブを落とさない。
+          soft_fail=0
+          if [ "$MODE" != "core" ]; then
+            soft_fail=1
+          fi
+          for i in 1 2 3 4; do
+            body=$(curl -sS -X POST \
               -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
               -H "Content-Type: application/json" \
-              "${BASE%/}/api/public/tdr-preview/warm" \
-              -d '{}' \
-              --max-time 120; then
-              echo ""
-              echo "warm ok (attempt $i)"
+              "${BASE%/}/api/public/tdr-preview/warm?mode=${MODE}" \
+              -d "{\"mode\":\"${MODE}\"}" \
+              --max-time 55 \
+              -w "\nHTTP_STATUS:%{http_code}" || true)
+            status=$(echo "$body" | sed -n 's/.*HTTP_STATUS:\([0-9]*\)$/\1/p')
+            payload=$(echo "$body" | sed 's/HTTP_STATUS:[0-9]*$//')
+            echo "attempt $i status=$status"
+            echo "$payload" | head -c 1200
+            echo ""
+            if [ "$status" = "200" ]; then
+              echo "warm ok (mode=$MODE attempt $i)"
               exit 0
             fi
             echo "warm attempt $i failed; retrying..."
-            sleep 20
+            sleep $((15 * i))
           done
-          echo "warm failed after retries"
+          echo "warm failed after retries (mode=$MODE)"
+          if [ "$soft_fail" = "1" ]; then
+            echo "non-core mode: treat as warning"
+            exit 0
+          fi
           exit 1

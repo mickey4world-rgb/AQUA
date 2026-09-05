@@ -56,20 +56,25 @@ async function writeCosmosCache(date: string, snapshot: DisneyShowcaseSnapshot):
     console.warn("[tdr-cache] cosmos not configured; snapshot will not persist across instances");
     return false;
   }
-  try {
-    const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
-    const doc: CachedShowcase = {
-      id: cacheDocId(date),
-      date,
-      snapshot,
-      builtAt: new Date().toISOString(),
-    };
-    await container.items.upsert(doc);
-    return true;
-  } catch (error) {
-    console.error("[tdr-cache] cosmos write failed", date, error);
-    return false;
+  const container = getContainer(COSMOS_CONTAINERS.disneyRecords);
+  const doc: CachedShowcase = {
+    id: cacheDocId(date),
+    date,
+    snapshot,
+    builtAt: new Date().toISOString(),
+  };
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await container.items.upsert(doc);
+      return true;
+    } catch (error) {
+      console.error(`[tdr-cache] cosmos write failed (attempt ${attempt})`, date, error);
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
   }
+  return false;
 }
 
 async function readCosmosCalendar(
@@ -227,13 +232,19 @@ export async function getPublicCalendarMonth(
 }
 
 /** バッチ／cron 専用。ここでだけ重い再生成を行う。 */
-export async function warmDisneyShowcaseCache(): Promise<{
+export async function warmDisneyShowcaseCache(options?: {
+  /** false ならショーケース永続化のみ（SWA タイムアウト回避の core） */
+  includeCalendars?: boolean;
+}): Promise<{
   date: string;
   builtAt: string;
   calendarsWarmed: number;
   cosmosPersisted: boolean;
+  mode: "core" | "calendars";
 }> {
+  const includeCalendars = options?.includeCalendars === true;
   clearCalendarMonthCache();
+  const started = Date.now();
   const snapshot = await buildDisneyShowcaseSnapshot({ skipLiveFetch: true });
   const today = getJstToday();
   memoryCache = { date: today, snapshot, builtAt: Date.now() };
@@ -242,33 +253,58 @@ export async function warmDisneyShowcaseCache(): Promise<{
     throw new Error("TDR showcase snapshot could not be persisted to Cosmos");
   }
 
+  // 当月カレンダーはショーケースに内包済み。別途メモリにも載せる
   const now = new Date(`${today}T12:00:00+09:00`);
-  let calendarsWarmed = 0;
-  const parks: DisneyParkKey[] = ["tdl", "tds"];
-  for (const park of parks) {
-    for (let offset = -1; offset <= 2; offset += 1) {
-      const cursor = new Date(now);
-      cursor.setMonth(cursor.getMonth() + offset);
-      const year = cursor.getFullYear();
-      const month = cursor.getMonth() + 1;
-      try {
-        const payload = await predictCalendarMonth(park, year, month, {
-          skipLiveFetch: true,
-        });
-        const key = `${park}:${year}-${month}`;
-        calendarMemory.set(key, { payload, builtAt: Date.now() });
-        await writeCosmosCalendar(park, year, month, payload);
-        calendarsWarmed += 1;
-      } catch (error) {
-        console.warn("[tdr-warm] calendar failed", park, year, month, error);
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  calendarMemory.set(`tdl:${currentYear}-${currentMonth}`, {
+    payload: snapshot.tdl.calendarMonth,
+    builtAt: Date.now(),
+  });
+  calendarMemory.set(`tds:${currentYear}-${currentMonth}`, {
+    payload: snapshot.tds.calendarMonth,
+    builtAt: Date.now(),
+  });
+  await Promise.all([
+    writeCosmosCalendar("tdl", currentYear, currentMonth, snapshot.tdl.calendarMonth),
+    writeCosmosCalendar("tds", currentYear, currentMonth, snapshot.tds.calendarMonth),
+  ]);
+
+  let calendarsWarmed = 2;
+  if (includeCalendars) {
+    const parks: DisneyParkKey[] = ["tdl", "tds"];
+    for (const park of parks) {
+      for (let offset = -1; offset <= 2; offset += 1) {
+        if (offset === 0) continue; // 当月は上で済み
+        const cursor = new Date(now);
+        cursor.setMonth(cursor.getMonth() + offset);
+        const year = cursor.getFullYear();
+        const month = cursor.getMonth() + 1;
+        try {
+          const payload = await predictCalendarMonth(park, year, month, {
+            skipLiveFetch: true,
+          });
+          const key = `${park}:${year}-${month}`;
+          calendarMemory.set(key, { payload, builtAt: Date.now() });
+          await writeCosmosCalendar(park, year, month, payload);
+          calendarsWarmed += 1;
+        } catch (error) {
+          console.warn("[tdr-warm] calendar failed", park, year, month, error);
+        }
       }
     }
   }
+
+  console.info(
+    `[tdr-warm] ${includeCalendars ? "calendars" : "core"} done in ${Date.now() - started}ms`,
+    { cosmosPersisted, calendarsWarmed },
+  );
 
   return {
     date: snapshot.today,
     builtAt: snapshot.generatedAt,
     calendarsWarmed,
     cosmosPersisted,
+    mode: includeCalendars ? "calendars" : "core",
   };
 }
