@@ -27,6 +27,13 @@ For any feature whose value depends on AI, live fetch, cron, or multi-step work 
 3. **Classify each step**: ingest vs enrich vs persist. RSS-only is allowed only if UI/cron label it `enrichmentStatus: pending|failed` and **never** as the finished AI product.
 4. **Forbidden escape hatches as the plan**: “今夜補完”, “ボタンで詳細化可能”, “best-effort Gemini then save anyway”. Placeholders are **incomplete state**, not success content. CTA that names the incomplete state must **hard-fail** when it cannot complete (no silent `ok: true`).
 5. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). Compile / GHA ingest-only green is not enough.
+6. **Reliability matrix (必須・初回開発の成果物)**: Before claiming first ship done, put in the reply (and ideally the PR/commit body) a table of **あるもの / ないもの** for:
+   - 収集（主経路・同意図フォールバック・全滅時）
+   - 生成（主モデル・第2・第3経路）
+   - 同日内リトライ（失敗単位の再キュー）
+   - 朝／ユーザー可见の未完了検知（hard-fail or alert）
+   - オラクル（何を見て成功とするか）
+   Do **not** ship with blank “ないもの” rows without either implementing them or an explicit accepted residual risk named by the user. “後でボタン” is not an accepted residual unless the button path is verified and incomplete state is labeled.
 
 ## Before declaring done (every incident OR every such ship)
 

@@ -1,7 +1,8 @@
 /**
  * WORKS ニュースサーチ（GHA）
- * SWA 時間制限を避け、RSS を Actions 上で集約 → API ingest。
- * 深堀解説は ingest 後に API rebuild を試行（失敗しても RSS ダイジェストは残す）。
+ * RSS（主＋緊急フィード）→ ingest → カテゴリ別 enrich（最大3パス再試行）。
+ * --enrich-only: 既存 digest の未完了カテゴリだけ再試行。
+ * --force: 当日分を上書き ingest。
  */
 import { createHash } from "crypto";
 import { parseStringPromise } from "xml2js";
@@ -13,6 +14,9 @@ const baseUrl = (process.env.PRODUCTION_URL || "https://www.aquacore.net").repla
   "",
 );
 const force = process.argv.includes("--force");
+const enrichOnly = process.argv.includes("--enrich-only");
+const RETRY_PASSES = 3;
+const RETRY_DELAY_MS = 8_000;
 
 if (!cronSecret) {
   console.error("SOLUNA_CRON_SECRET（または WORKS_CRON_SECRET）が必要です。");
@@ -120,6 +124,57 @@ const FEEDS = [
   },
 ];
 
+const FALLBACK_FEEDS = [
+  {
+    category: "ai",
+    url: "https://news.google.com/rss/search?q=AI+OR+ChatGPT+OR+Gemini+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "ai",
+    url: "https://news.yahoo.co.jp/rss/topics/it.xml",
+    sourceName: "Yahoo! ニュース IT",
+    weight: 0.95,
+  },
+  {
+    category: "systems",
+    url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+AWS+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "systems",
+    url: "https://www.publickey1.jp/atom.xml",
+    sourceName: "Publickey",
+    weight: 1.05,
+  },
+  {
+    category: "economy",
+    url: "https://news.google.com/rss/search?q=%E7%B5%8C%E6%B8%88+OR+%E5%B8%82%E5%A0%B4+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (3d)",
+    weight: 1.0,
+  },
+  {
+    category: "economy",
+    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
+    sourceName: "NHK 主要",
+    weight: 1.05,
+  },
+  {
+    category: "government",
+    url: "https://news.google.com/rss/search?q=%E6%94%BF%E5%BA%9C+OR+%E5%AE%98%E5%85%AC%E5%BA%81+when:7d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (7d)",
+    weight: 1.0,
+  },
+  {
+    category: "government",
+    url: "https://www.digital.go.jp/news.rss",
+    sourceName: "デジタル庁 (retry)",
+    weight: 1.2,
+  },
+];
+
 function jstDateString(date = new Date()) {
   const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
@@ -224,12 +279,12 @@ async function fetchFeedItems(feedUrl) {
   }
 }
 
-async function collectSeeds() {
+async function collectFromFeeds(feedList, label) {
   const now = Date.now();
   const maxAge = 3 * 24 * 60 * 60 * 1000;
   const seeds = [];
   const errors = [];
-  for (const feed of FEEDS) {
+  for (const feed of feedList) {
     try {
       const rows = await fetchFeedItems(feed.url);
       for (const row of rows) {
@@ -248,12 +303,34 @@ async function collectSeeds() {
           weight: feed.weight,
         });
       }
-      console.log(`[works-news] RSS OK ${feed.sourceName}/${feed.category}: ${rows.length}`);
+      console.log(`[works-news] ${label} OK ${feed.sourceName}/${feed.category}: ${rows.length}`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       errors.push(msg);
-      console.warn(`[works-news] RSS fail ${feed.url}:`, msg);
+      console.warn(`[works-news] ${label} fail ${feed.url}:`, msg);
     }
+  }
+  return { seeds, errors };
+}
+
+async function collectSeeds() {
+  const primary = await collectFromFeeds(FEEDS, "RSS");
+  const seeds = [...primary.seeds];
+  const errors = [...primary.errors];
+  const thin = CATEGORIES.filter(
+    (c) => seeds.filter((s) => s.category === c).length < 3,
+  );
+  if (thin.length > 0 || seeds.length === 0) {
+    const feeds =
+      seeds.length === 0
+        ? FALLBACK_FEEDS
+        : FALLBACK_FEEDS.filter((f) => thin.includes(f.category));
+    const secondary = await collectFromFeeds(feeds, "RSS-fallback");
+    seeds.push(...secondary.seeds);
+    errors.push(...secondary.errors);
+    console.log(
+      `[works-news] usedFallback=true thin=${thin.join(",") || "all"} added=${secondary.seeds.length}`,
+    );
   }
   return { seeds, errors };
 }
@@ -294,7 +371,7 @@ function buildDigest(seeds) {
   }
 
   const total = CATEGORIES.reduce((sum, c) => sum + categories[c].length, 0);
-  if (total === 0) throw new Error("RSS からニュースを取得できませんでした。");
+  if (total === 0) throw new Error("RSS からニュースを取得できませんでした（主＋緊急フィードとも空）。");
 
   return {
     id: `works-news-search-${jstDateString()}`,
@@ -338,39 +415,79 @@ async function ingest(digest) {
   return payload;
 }
 
-async function enrichAllCategories() {
-  const errors = [];
-  for (const category of CATEGORIES) {
-    const { response, payload } = await postCron({ step: "enrich", category });
-    if (!response.ok || payload.ok !== true) {
-      errors.push(`${category}: ${payload.error ?? `HTTP ${response.status}`}`);
-      console.error(`[works-news] enrich fail ${category}`, payload.error);
-      continue;
-    }
-    console.log(
-      `[works-news] enrich ok ${category} count=${payload.enrichedCount} status=${payload.enrichmentStatus}`,
-    );
-  }
-
+async function fetchStatus() {
   const { response, payload } = await postCron({ step: "status" });
   if (!response.ok) {
     throw new Error(`status failed HTTP ${response.status}`);
   }
-  if (payload.enrichmentOk !== true || payload.enrichmentStatus !== "complete") {
-    throw new Error(
-      `enrichment incomplete status=${payload.enrichmentStatus} errors=${errors.join(" | ") || "none"}`,
-    );
-  }
-  console.log("[works-news] enrichment complete", payload.digestId);
+  return payload;
 }
 
-const { seeds, errors } = await collectSeeds();
-console.log(`[works-news] seeds=${seeds.length} errors=${errors.length}`);
-const digest = buildDigest(seeds);
-for (const key of CATEGORIES) {
-  console.log(`[works-news] ${key}=${digest.categories[key].length}`);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
-await ingest(digest);
-console.log("[works-news] ingest ok", digest.id);
-await enrichAllCategories();
-console.log("[works-news] pipeline ok", digest.id);
+
+/** 失敗カテゴリだけ同夜に最大 RETRY_PASSES 回再試行 */
+async function enrichAllCategories() {
+  let pending = [...CATEGORIES];
+  const allErrors = [];
+
+  for (let pass = 1; pass <= RETRY_PASSES; pass += 1) {
+    const still = [];
+    console.log(`[works-news] enrich pass ${pass}/${RETRY_PASSES} categories=${pending.join(",")}`);
+    for (const category of pending) {
+      const { response, payload } = await postCron({ step: "enrich", category });
+      if (!response.ok || payload.ok !== true) {
+        const err = `${category}: ${payload.error ?? `HTTP ${response.status}`}`;
+        allErrors.push(`pass${pass}/${err}`);
+        still.push(category);
+        console.error(`[works-news] enrich fail`, err);
+        continue;
+      }
+      console.log(
+        `[works-news] enrich ok ${category} count=${payload.enrichedCount} status=${payload.enrichmentStatus}`,
+      );
+    }
+    pending = still;
+    if (pending.length === 0) break;
+    if (pass < RETRY_PASSES) {
+      console.log(`[works-news] retry delay ${RETRY_DELAY_MS}ms before pass ${pass + 1}`);
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+
+  const status = await fetchStatus();
+  if (status.enrichmentOk !== true || status.enrichmentStatus !== "complete") {
+    throw new Error(
+      `enrichment incomplete status=${status.enrichmentStatus} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`,
+    );
+  }
+  console.log("[works-news] enrichment complete", status.digestId);
+}
+
+async function main() {
+  if (enrichOnly) {
+    console.log("[works-news] enrich-only mode");
+    const status = await fetchStatus();
+    if (status.enrichmentOk === true && status.enrichmentStatus === "complete") {
+      console.log("[works-news] already complete", status.digestId);
+      return;
+    }
+    await enrichAllCategories();
+    console.log("[works-news] enrich-only pipeline ok");
+    return;
+  }
+
+  const { seeds, errors } = await collectSeeds();
+  console.log(`[works-news] seeds=${seeds.length} errors=${errors.length}`);
+  const digest = buildDigest(seeds);
+  for (const key of CATEGORIES) {
+    console.log(`[works-news] ${key}=${digest.categories[key].length}`);
+  }
+  await ingest(digest);
+  console.log("[works-news] ingest ok", digest.id);
+  await enrichAllCategories();
+  console.log("[works-news] pipeline ok", digest.id);
+}
+
+await main();
