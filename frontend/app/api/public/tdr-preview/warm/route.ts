@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     let accuracyCount = 0;
     let seededDays = 0;
     try {
-      const accuracy = await backfillPastAccuracy();
+      const accuracy = await backfillPastAccuracy({ skipExisting: true });
       accuracyCount = accuracy.records.length;
       seededDays = accuracy.seededDays;
       clearCalendarMonthCache();
