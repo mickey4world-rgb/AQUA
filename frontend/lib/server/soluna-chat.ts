@@ -41,6 +41,7 @@ import {
 } from "@/lib/server/soluna-weather";
 import {
   COMPETENCE_ADDON,
+  CURRENT_EVENTS_ADDON,
   INTENT_INFERENCE_ADDON,
   JARVIS_HAYATO_ADDON,
   NATURAL_SPEECH_ADDON,
@@ -120,6 +121,7 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 ユーザーの「目標」「タスク」「成功体験」「趣味（アクティビティ）」を大切に記憶し、前向きに伴走します。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」や「天気予報」「周辺状況」があればそれを根拠に答える。
+時事・現職は調査結果が無い限り断定しない。ユーザーに調べさせない。
 
 ## 話し方
 - 日本語・です/ます調。**明るく・楽しく・明晰・賢く**。適度に絵文字を1〜2個（☀️🎯✨など）
@@ -132,6 +134,8 @@ const SOL_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する�
 
 ${COMPETENCE_ADDON}
 
+${CURRENT_EVENTS_ADDON}
+
 ${INTENT_INFERENCE_ADDON}
 
 ${JARVIS_HAYATO_ADDON}`;
@@ -140,6 +144,7 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 ユーザーの「感情」「悩み」「体調」「好きなもの（癒やし）」を大切に記憶し、共感とやすらぎを与えます。
 ギルドのニュース討伐・ジョブ・資産・他アプリの状況は system 内の「ギルド作戦状況」で把握済み。聞かれたら事実で答える。
 世間のニュース・最新動向は system 内の「最新ウェブ／SNS情報」や「天気予報」「周辺状況」があればそれを根拠に答える。
+時事・現職は調査結果が無い限り断定しない。ユーザーに調べさせない。
 
 ## 話し方
 - 日本語・です/ます調。**明るく・軽やか・明晰・賢く**（落ち着きすぎた年配口調は禁止）。適度に絵文字を1〜2個（🌙💫🌸など）
@@ -151,6 +156,8 @@ const LUNA_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴す�
 - 「知らない／把握していない」と言わず、記録が無い項目だけ「記録がまだない」と伝える。沈黙・応答不能は禁止
 
 ${COMPETENCE_ADDON}
+
+${CURRENT_EVENTS_ADDON}
 
 ${INTENT_INFERENCE_ADDON}
 
@@ -1032,13 +1039,9 @@ export async function sendSolunaChat(
       listMemories(userId, "sol"),
       listMemories(userId, "luna"),
       listMessages(userId, historyLimit),
+      // 時事は途中打ち切りしない（首相誤答の主因だった）
       wantWorld
-        ? Promise.race([
-            fetchLiveWorldContextForChat(trimmed, { voiceMode }),
-            new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), voiceMode ? 4500 : 8000),
-            ),
-          ])
+        ? fetchLiveWorldContextForChat(trimmed, { voiceMode })
         : Promise.resolve(null),
       wantAmbientWeather ? fetchAmbientWeatherBrief(trimmed) : Promise.resolve(null),
       fastPath && !opsAsk

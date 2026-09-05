@@ -168,7 +168,7 @@ export function isOpsStyleQuestion(message: string): boolean {
 
 /** 世間ニュース・最新情報を求める質問（返答をやや長くしてよい） */
 export function isWorldInfoQuestion(message: string): boolean {
-  return /ニュース|最新|世間|世の中|トレンド|話題|SNS|ツイッター|Twitter|\bX\b|インスタ|速報|円安|円高|日経|為替|選挙|地震|台風|天気|天候|予報|気温|降水|晴れ|雨|雪|戦争|停戦|炎上|バズ|発表|リリース|気象/i.test(
+  return /ニュース|最新|世間|世の中|トレンド|話題|SNS|ツイッター|Twitter|\bX\b|インスタ|速報|円安|円高|日経|為替|選挙|地震|台風|天気|天候|予報|気温|降水|晴れ|雨|雪|戦争|停戦|炎上|バズ|発表|リリース|気象|首相|総理|大統領|内閣|大臣|現職|現在の|いまの|今の|誰|だれ|就任|当選|政権|組閣|ビットコイン|BTC|ドル円/i.test(
     message,
   );
 }
