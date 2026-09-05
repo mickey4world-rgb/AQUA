@@ -51,7 +51,8 @@ type Creature = {
   intensity: number;
   flash: number;
   sparks: Spark[];
-  rays: number;
+  /** 泳ぎの勢い（光の駆け回り用） */
+  dash: number;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -95,7 +96,7 @@ function makeBubbleBodies(w: number, h: number, count: number): SoftBody[] {
       x,
       y,
       vx: (softRand(i * 2.9) - 0.5) * 0.2,
-      vy: -0.1 - softRand(i) * 0.12,
+      vy: -0.18 - softRand(i) * 0.16,
       size: size * 0.35,
       targetSize: size,
       alpha: 0,
@@ -150,7 +151,7 @@ function createCreatures(
       intensity: 0,
       flash: 0,
       sparks: [],
-      rays: 0,
+      dash: 0,
     },
     {
       kind: "bubble",
@@ -158,9 +159,9 @@ function createCreatures(
       phaseUntil: now + 3000,
       phaseStarted: now,
       x: w * 0.5,
-      y: h * 0.86,
+      y: h * 0.9,
       vx: 0.1,
-      vy: -0.08,
+      vy: -0.14,
       heading: 0.25,
       bodies: makeBubbleBodies(w, h, bubbleCount),
       glow: 0,
@@ -168,14 +169,14 @@ function createCreatures(
       intensity: 0.5,
       flash: 0,
       sparks: [],
-      rays: 0,
+      dash: 0,
     },
   ];
 }
 
 /**
- * 光: 静かに生まれ → 徐々に強く → ぼやけて集合 → 薄く泳ぎ → 光線とともに消える
- * 泡: 透明な自然泡、より上まで、割れで広範囲キラキラ
+ * 光: 生まれ → 集合 → 駆け回って泳ぐ → 明るく光って自然に消える（光線なし）
+ * 泡: 透明な自然泡、画面上部まで上昇、割れで広範囲キラキラ
  */
 export default function LivingSwarmField({
   moteCount,
@@ -220,7 +221,7 @@ export default function LivingSwarmField({
       c.softness = 0;
       c.intensity = 0;
       c.flash = 0;
-      c.rays = 0;
+      c.dash = 0;
       c.sparks = [];
       c.heading = Math.random() * Math.PI * 2;
       if (c.kind === "light") {
@@ -231,9 +232,9 @@ export default function LivingSwarmField({
         c.bodies = makeLightBodies(w, h, c.bodies.length);
       } else {
         c.x = w * (0.28 + Math.random() * 0.44);
-        c.y = h * 0.93;
+        c.y = h * 0.94;
         c.vx = Math.cos(c.heading) * 0.1;
-        c.vy = -0.1;
+        c.vy = -0.16;
         c.bodies = makeBubbleBodies(w, h, c.bodies.length);
         c.intensity = 0.45;
       }
@@ -244,14 +245,15 @@ export default function LivingSwarmField({
       if (c.phase === "birth") {
         c.phase = "gather";
         c.phaseStarted = now;
-        c.phaseUntil = now + (c.kind === "bubble" ? 4800 : 5000);
+        c.phaseUntil = now + (c.kind === "bubble" ? 4800 : 4200);
       } else if (c.phase === "gather") {
         c.phase = "swim";
         c.phaseStarted = now;
-        // 光は集合体として長く薄く泳ぐ
-        c.phaseUntil = now + (c.kind === "bubble" ? 7800 : 9000);
-        c.vx = Math.cos(c.heading) * (c.kind === "bubble" ? 0.2 : 0.22);
-        c.vy = Math.sin(c.heading) * (c.kind === "bubble" ? 0.12 : 0.1);
+        // 光は集合体として長く駆け回って泳ぐ
+        c.phaseUntil = now + (c.kind === "bubble" ? 9000 : 11000);
+        c.dash = c.kind === "light" ? 1 : 0;
+        c.vx = Math.cos(c.heading) * (c.kind === "bubble" ? 0.22 : 0.55);
+        c.vy = Math.sin(c.heading) * (c.kind === "bubble" ? 0.12 : 0.32);
       } else if (c.phase === "swim") {
         c.phaseStarted = now;
         if (c.kind === "bubble") {
@@ -260,10 +262,11 @@ export default function LivingSwarmField({
           c.sparks = spawnSparks(c);
           c.flash = 0.85;
         } else {
+          // 明るく光ってから溶ける（光線は出さない）
           c.phase = "fade";
-          c.phaseUntil = now + 2800;
-          c.flash = 0.75;
-          c.rays = 1;
+          c.phaseUntil = now + 2400;
+          c.flash = 1;
+          c.dash = 0;
         }
       } else {
         respawnCreature(c, now);
@@ -272,34 +275,59 @@ export default function LivingSwarmField({
 
     const steerCreature = (c: Creature, now: number) => {
       const sec = now * 0.001;
-      c.heading += Math.sin(sec * 0.33 + c.x * 0.001) * 0.008;
-      const speed = c.kind === "bubble" ? 0.24 : 0.2;
-      const targetVx = Math.cos(c.heading) * speed;
-      const targetVy =
-        c.kind === "bubble"
-          ? -0.14 + Math.sin(sec * 0.35) * 0.05
-          : Math.sin(c.heading) * speed * 0.45;
+      const age = now - c.phaseStarted;
 
-      if (c.phase === "swim" || c.phase === "gather") {
-        c.vx += (targetVx - c.vx) * 0.02;
-        c.vy += (targetVy - c.vy) * 0.02;
+      if (c.kind === "light" && c.phase === "swim") {
+        // 生き物らしく急に曲がって駆け回る
+        const dart =
+          Math.sin(sec * 1.7 + c.x * 0.008) * 0.045 +
+          Math.sin(sec * 0.55 + age * 0.0011) * 0.028;
+        c.heading += dart;
+        // ときどき方向を大きく変える
+        if (Math.sin(sec * 0.9 + c.y * 0.01) > 0.92) {
+          c.heading += (Math.sin(sec * 3.1) > 0 ? 1 : -1) * 0.12;
+        }
+        const speed = 0.42 + 0.28 * Math.abs(Math.sin(sec * 1.15 + age * 0.0008));
+        const targetVx = Math.cos(c.heading) * speed;
+        const targetVy = Math.sin(c.heading) * speed * 0.72;
+        c.vx += (targetVx - c.vx) * 0.055;
+        c.vy += (targetVy - c.vy) * 0.055;
         c.x += c.vx;
         c.y += c.vy;
+        c.dash = 0.65 + 0.35 * Math.min(1, Math.hypot(c.vx, c.vy) / 0.7);
+      } else if (c.phase === "swim" || c.phase === "gather") {
+        c.heading += Math.sin(sec * 0.33 + c.x * 0.001) * 0.008;
+        const speed = c.kind === "bubble" ? 0.28 : 0.22;
+        const targetVx = Math.cos(c.heading) * speed;
+        const targetVy =
+          c.kind === "bubble"
+            ? -0.22 + Math.sin(sec * 0.35) * 0.06
+            : Math.sin(c.heading) * speed * 0.45;
+        c.vx += (targetVx - c.vx) * 0.028;
+        c.vy += (targetVy - c.vy) * 0.028;
+        c.x += c.vx;
+        c.y += c.vy;
+      } else if (c.kind === "light" && c.phase === "fade") {
+        // 消え際は少し減速して浮く
+        c.vx *= 0.96;
+        c.vy *= 0.96;
+        c.x += c.vx * 0.35;
+        c.y += c.vy * 0.35 - 0.04;
       }
 
       if (c.kind === "light") {
-        if (c.x < w * 0.12) c.heading = 0.2;
-        if (c.x > w * 0.88) c.heading = Math.PI - 0.2;
-        if (c.y < h * 0.08) c.heading = 0.85;
-        if (c.y > h * 0.5) c.heading = -0.85;
-        c.x = clamp(c.x, w * 0.1, w * 0.9);
-        c.y = clamp(c.y, h * 0.08, h * 0.5);
+        if (c.x < w * 0.1) c.heading = 0.15 + Math.random() * 0.4;
+        if (c.x > w * 0.9) c.heading = Math.PI - 0.15 - Math.random() * 0.4;
+        if (c.y < h * 0.06) c.heading = 0.9 + Math.random() * 0.5;
+        if (c.y > h * 0.55) c.heading = -0.9 - Math.random() * 0.4;
+        c.x = clamp(c.x, w * 0.08, w * 0.92);
+        c.y = clamp(c.y, h * 0.05, h * 0.56);
       } else {
         if (c.x < w * 0.14) c.heading = 0.25;
         if (c.x > w * 0.86) c.heading = Math.PI - 0.25;
         c.x = clamp(c.x, w * 0.12, w * 0.88);
-        // より上（中層〜海面近く）まで
-        c.y = clamp(c.y, h * 0.38, h * 0.93);
+        // 上部近くまで
+        c.y = clamp(c.y, h * 0.1, h * 0.94);
       }
     };
 
@@ -319,15 +347,16 @@ export default function LivingSwarmField({
           c.intensity += (0.85 - c.intensity) * 0.03;
           c.softness += (0.55 - c.softness) * 0.04;
         } else if (c.phase === "swim") {
-          // 集合体のまま薄く生きる
-          const t = clamp(age / 9000, 0, 1);
-          c.intensity += (0.7 - t * 0.45 - c.intensity) * 0.025;
-          c.softness += (0.88 - c.softness) * 0.035;
+          // 駆け回りながら薄く生き、終わり近くで少し息を整える
+          const t = clamp(age / 11000, 0, 1);
+          const breath = 0.55 + 0.2 * Math.sin(now * 0.0022) * c.dash;
+          c.intensity += (breath - t * 0.12 - c.intensity) * 0.03;
+          c.softness += (0.82 - c.softness) * 0.03;
         } else if (c.phase === "fade") {
-          c.softness += (1 - c.softness) * 0.06;
-          c.rays *= 0.965;
-          if (c.flash > 0.15) c.intensity += (1.1 - c.intensity) * 0.12;
-          else c.intensity += (0 - c.intensity) * 0.05;
+          // 一瞬明るく → 輪郭が溶けて消える（線は出さない）
+          c.softness += (1 - c.softness) * 0.08;
+          if (c.flash > 0.28) c.intensity += (1.35 - c.intensity) * 0.14;
+          else c.intensity += (0 - c.intensity) * 0.07;
         }
       } else {
         c.intensity = 0.7;
@@ -358,7 +387,7 @@ export default function LivingSwarmField({
           b.alpha += (cap - b.alpha) * (c.kind === "light" ? 0.018 : 0.03);
           b.vx += (Math.sin(now * 0.00055 + b.phase) * 0.02 - b.vx) * 0.045;
           b.vy +=
-            (c.kind === "bubble" ? -0.16 : Math.cos(now * 0.0005 + b.phase) * 0.01) -
+            (c.kind === "bubble" ? -0.28 : Math.cos(now * 0.0005 + b.phase) * 0.01) -
             b.vy * 0.045;
         } else if (c.phase === "fade") {
           if (c.flash > 0.25) {
@@ -378,8 +407,15 @@ export default function LivingSwarmField({
           b.vx += (dx / dist) * gatherStrength * Math.min(dist, 120) * 0.02;
           b.vy += (dy / dist) * gatherStrength * Math.min(dist, 120) * 0.02;
           if (c.phase === "swim") {
-            b.vx += (-dy / dist) * 0.026;
-            b.vy += (dx / dist) * 0.026;
+            // 光は群れとして尾を引くように少し遅れてついてくる
+            const trail =
+              c.kind === "light" ? 0.038 * (0.7 + c.dash * 0.5) : 0.026;
+            b.vx += (-dy / dist) * trail;
+            b.vy += (dx / dist) * trail;
+            if (c.kind === "light") {
+              b.vx += c.vx * 0.04;
+              b.vy += c.vy * 0.04;
+            }
           }
           if (dist < (c.kind === "bubble" ? 54 : 58)) {
             b.joined = true;
@@ -393,23 +429,24 @@ export default function LivingSwarmField({
         b.y += b.vy;
 
         if (c.kind === "bubble" && c.phase !== "burst") {
-          // 上へ寄せる
-          if (b.y > h * 0.55) b.vy -= 0.025;
+          // 上部まで押し上げる
+          if (b.y > h * 0.28) b.vy -= 0.045;
+          else if (b.y > h * 0.14) b.vy -= 0.018;
         }
       }
 
       const ratio = joined / Math.max(1, c.bodies.length);
       const glowTarget =
         c.phase === "swim"
-          ? 0.55 * c.intensity
+          ? (0.45 + 0.2 * c.dash) * c.intensity
           : c.phase === "gather"
             ? (0.2 + ratio * 0.4) * c.intensity
             : c.phase === "fade"
-              ? c.flash * 0.85
+              ? c.flash * 1.05
               : c.phase === "birth"
                 ? 0.05 * c.intensity
                 : 0;
-      c.glow += (glowTarget - c.glow) * 0.045;
+      c.glow += (glowTarget - c.glow) * 0.05;
 
       if (c.sparks.length > 0) {
         const next: Spark[] = [];
@@ -425,34 +462,17 @@ export default function LivingSwarmField({
       }
     };
 
-    const drawLightRays = (c: Creature) => {
-      if (c.rays < 0.05 && c.flash < 0.2) return;
-      const strength = Math.max(c.rays, c.flash * 0.8);
-      const len = 28 + strength * 90;
-      ctx.save();
-      ctx.globalAlpha = 0.35 * strength;
-      ctx.strokeStyle = "rgba(224, 250, 255, 0.95)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 8; i += 1) {
-        const ang = (Math.PI * 2 * i) / 8 + c.heading * 0.2;
-        ctx.beginPath();
-        ctx.moveTo(c.x + Math.cos(ang) * 8, c.y + Math.sin(ang) * 8);
-        ctx.lineTo(c.x + Math.cos(ang) * len, c.y + Math.sin(ang) * len);
-        ctx.stroke();
-      }
-      ctx.restore();
-    };
-
     const drawLightCreature = (c: Creature) => {
       const soft = c.softness;
-      drawLightRays(c);
 
-      if (c.glow > 0.06 && soft > 0.15) {
-        const radius = 30 + c.glow * 58 + c.flash * 36;
+      // 生き物らしいやわらかい暈（直線の光線は使わない）
+      if (c.glow > 0.06 && (soft > 0.12 || c.flash > 0.2)) {
+        const radius = 34 + c.glow * 70 + c.flash * 55 + c.dash * 12;
         const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
-        const peak = Math.min(0.55, 0.14 * c.glow + c.flash * 0.4);
+        const peak = Math.min(0.62, 0.12 * c.glow + c.flash * 0.48);
         g.addColorStop(0, `rgba(255,255,255,${peak})`);
-        g.addColorStop(0.45, `rgba(165,243,252,${peak * 0.45})`);
+        g.addColorStop(0.28, `rgba(186,242,255,${peak * 0.55})`);
+        g.addColorStop(0.62, `rgba(125,211,252,${peak * 0.22})`);
         g.addColorStop(1, "rgba(34,211,238,0)");
         ctx.beginPath();
         ctx.fillStyle = g;
@@ -471,10 +491,10 @@ export default function LivingSwarmField({
           ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
           ctx.fill();
         } else {
-          const r = b.size * (0.85 + soft * 1.5);
+          const r = b.size * (0.9 + soft * 1.65);
           const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
-          g.addColorStop(0, `rgba(255,255,255,${0.42 * a})`);
-          g.addColorStop(0.5, `rgba(165,243,252,${0.22 * a * soft})`);
+          g.addColorStop(0, `rgba(255,255,255,${0.48 * a})`);
+          g.addColorStop(0.45, `rgba(165,243,252,${0.26 * a * soft})`);
           g.addColorStop(1, "rgba(34,211,238,0)");
           ctx.beginPath();
           ctx.fillStyle = g;
