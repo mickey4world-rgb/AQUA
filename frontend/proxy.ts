@@ -23,7 +23,7 @@ function isProtectedPath(pathname: string): boolean {
   );
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (!isProtectedPath(request.nextUrl.pathname)) {
     return applySecurityHeaders(NextResponse.next());
   }
