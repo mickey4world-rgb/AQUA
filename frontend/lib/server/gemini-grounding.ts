@@ -4,6 +4,7 @@
 import { isGeminiConfigured } from "@/lib/server/gemini";
 
 const DEFAULT_TIMEOUT_MS = 18_000;
+const FAST_RACE_MODELS = 2;
 
 function getGroundingModelCandidates(): string[] {
   const env =
@@ -29,6 +30,7 @@ async function generateWithGroundingOnce(
   system: string,
   userPrompt: string,
   timeoutMs: number,
+  maxOutputTokens: number,
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
   const relay = getRelay();
   const apiKey = process.env.GEMINI_API_KEY;
@@ -39,7 +41,7 @@ async function generateWithGroundingOnce(
     tools: [{ google_search: {} }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 2048,
+      maxOutputTokens,
     },
   };
 
@@ -112,20 +114,51 @@ export async function generateWithGoogleSearch(options: {
   system: string;
   userPrompt: string;
   timeoutMs?: number;
+  /** チャット即答向け: 先頭モデルを並列レース */
+  preferFast?: boolean;
+  maxOutputTokens?: number;
 }): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
   if (!isGeminiConfigured()) {
     return { ok: false, reason: "Gemini が未設定です。" };
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxOutputTokens = options.maxOutputTokens ?? 2048;
+  const models = getGroundingModelCandidates();
   let lastReason = "検索に失敗しました。";
-  for (const model of getGroundingModelCandidates()) {
-    const result = await generateWithGroundingOnce(
+
+  const run = (model: string) =>
+    generateWithGroundingOnce(
       model,
       options.system,
       options.userPrompt,
       timeoutMs,
+      maxOutputTokens,
     );
+
+  if (options.preferFast && models.length > 1) {
+    const raced = models.slice(0, FAST_RACE_MODELS);
+    const rest = models.slice(FAST_RACE_MODELS);
+    const settled = await Promise.all(raced.map((model) => run(model)));
+    const hit = settled.find((result) => result.ok);
+    if (hit?.ok) return hit;
+    for (const result of settled) {
+      if (!result.ok) {
+        lastReason = result.reason;
+        console.warn(`[gemini-grounding] race miss:`, result.reason);
+      }
+    }
+    for (const model of rest) {
+      const result = await run(model);
+      if (result.ok) return result;
+      lastReason = result.reason;
+      console.warn(`[gemini-grounding] failed for ${model}:`, result.reason);
+    }
+    return { ok: false, reason: lastReason };
+  }
+
+  for (const model of models) {
+    const result = await run(model);
     if (result.ok) return result;
     lastReason = result.reason;
     console.warn(`[gemini-grounding] failed for ${model}:`, result.reason);
