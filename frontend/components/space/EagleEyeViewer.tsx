@@ -9,6 +9,10 @@ import {
   type GroundCamera,
 } from "@/lib/eagle-eye-data";
 import {
+  getGroundCameraIconDataUrl,
+  getSatelliteIconDataUrl,
+} from "@/lib/eagle-eye-icons";
+import {
   buildCameraFovPolygon,
   computeSatelliteLiveInfo,
   findNearestImagingSatelliteId,
@@ -50,12 +54,15 @@ export type EagleEyeViewerState = {
   liveInfos: SatelliteLiveInfo[];
   satelliteCount: number;
   satellites: EagleEyeSatelliteDef[];
+  groundCameras: GroundCamera[];
   sortPlaceLabel: string | null;
 };
 
 type EagleEyeViewerProps = {
   selectedSatelliteId?: string | null;
   selectNonce?: number;
+  selectedCameraId?: string | null;
+  cameraSelectNonce?: number;
   sortPlace?: SortRoi | null;
   /** 親からフェーズ切替を要求 */
   phaseRequest?: { phase: EagleEyePhase; nonce: number } | null;
@@ -179,6 +186,8 @@ function addMapImagery(
 export default function EagleEyeViewer({
   selectedSatelliteId = null,
   selectNonce = 0,
+  selectedCameraId = null,
+  cameraSelectNonce = 0,
   sortPlace = null,
   phaseRequest = null,
   onStateChange,
@@ -257,6 +266,7 @@ export default function EagleEyeViewer({
       liveInfos,
       satelliteCount: satellitesRef.current.length,
       satellites: satellitesRef.current,
+      groundCameras: GROUND_CAMERAS,
       sortPlaceLabel: roi.label ?? null,
     };
 
@@ -273,20 +283,19 @@ export default function EagleEyeViewer({
 
       satellitesRef.current.forEach((sat, idx) => {
         const entity = viewer.entities.getById(sat.id);
-        if (!entity?.point) return;
+        if (!entity) return;
 
         const isNearest = sat.id === nearestId;
         const isSelected = sat.id === selectedId;
-        const pixelSize = isSelected ? 14 : isNearest ? 12 : 6;
-        entity.point.pixelSize = new Cesium.ConstantProperty(pixelSize);
-        entity.point.color = new Cesium.ConstantProperty(
-          Cesium.Color.fromCssColorString(
-            isNearest || isSelected ? NEAREST_COLOR : satColor(idx),
-          ),
-        );
-        entity.point.outlineWidth = new Cesium.ConstantProperty(
-          isNearest ? 3 : 1,
-        );
+        const color = isNearest || isSelected ? NEAREST_COLOR : satColor(idx);
+        const scale = isSelected ? 1.35 : isNearest ? 1.2 : 0.9;
+
+        if (entity.billboard) {
+          entity.billboard.image = new Cesium.ConstantProperty(
+            getSatelliteIconDataUrl(color),
+          );
+          entity.billboard.scale = new Cesium.ConstantProperty(scale);
+        }
         if (entity.label) {
           entity.label.show = new Cesium.ConstantProperty(
             isSelected || isNearest,
@@ -313,8 +322,8 @@ export default function EagleEyeViewer({
       if (pinEntity.label) {
         pinEntity.label.show = new Cesium.ConstantProperty(true);
       }
-      if (pinEntity.point) {
-        pinEntity.point.pixelSize = new Cesium.ConstantProperty(12);
+      if (pinEntity.billboard) {
+        pinEntity.billboard.scale = new Cesium.ConstantProperty(1.05);
       }
     });
   }, []);
@@ -473,6 +482,22 @@ export default function EagleEyeViewer({
     const sat = satellitesRef.current.find((s) => s.id === selectedSatelliteId);
     if (sat) enterMapMode(sat);
   }, [selectedSatelliteId, selectNonce, ready, enterMapMode]);
+
+  useEffect(() => {
+    if (!selectedCameraId || !ready) return;
+    const cam = GROUND_CAMERAS.find((c) => c.id === selectedCameraId);
+    if (!cam) return;
+    showMapCameras(true);
+    flyToGroundCamera(cam);
+    emitState({ phase: "live", activeCamera: cam });
+  }, [
+    selectedCameraId,
+    cameraSelectNonce,
+    ready,
+    showMapCameras,
+    flyToGroundCamera,
+    emitState,
+  ]);
 
   useEffect(() => {
     if (!ready || !sortPlace) return;
@@ -651,21 +676,24 @@ export default function EagleEyeViewer({
             id: sat.id,
             name: sat.name,
             position: positionProperty,
-            point: {
-              pixelSize: 6,
-              color: Cesium.Color.fromCssColorString(color),
-              outlineColor: Cesium.Color.WHITE,
-              outlineWidth: 1,
+            billboard: {
+              image: getSatelliteIconDataUrl(color),
+              width: 28,
+              height: 28,
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
             label: {
-              text: sat.name,
+              text: sat.country
+                ? `${sat.name}\n${sat.country}`
+                : sat.name,
               font: "10px sans-serif",
               fillColor: Cesium.Color.WHITE,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-              pixelOffset: new Cesium.Cartesian2(0, -12),
+              pixelOffset: new Cesium.Cartesian2(0, -16),
               show: false,
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
                 0,
@@ -677,7 +705,6 @@ export default function EagleEyeViewer({
 
         GROUND_CAMERAS.forEach((cam) => {
           const pinColor = GROUND_PIN_COLORS[cam.mediaType];
-          const icon = cam.mediaType === "video" ? "🎥" : "🖼";
           const fovPoints = buildCameraFovPolygon(
             cam.lat,
             cam.lon,
@@ -707,22 +734,22 @@ export default function EagleEyeViewer({
             name: cam.name,
             position: Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, 50),
             show: true,
-            point: {
-              pixelSize: 11,
-              color: Cesium.Color.fromCssColorString(pinColor),
-              outlineColor: Cesium.Color.WHITE,
-              outlineWidth: 2,
+            billboard: {
+              image: getGroundCameraIconDataUrl(pinColor),
+              width: 34,
+              height: 34,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             },
             label: {
-              text: `${icon} ${cam.name}`,
+              text: `${cam.name}\n${cam.country}${cam.region ? ` · ${cam.region}` : ""}`,
               font: "10px sans-serif",
               fillColor: Cesium.Color.fromCssColorString(pinColor),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               verticalOrigin: Cesium.VerticalOrigin.TOP,
-              pixelOffset: new Cesium.Cartesian2(0, 12),
+              pixelOffset: new Cesium.Cartesian2(0, 8),
               show: true,
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(

@@ -1,3 +1,4 @@
+import { inferSatelliteCountry } from "@/lib/eagle-eye-country";
 import type { EagleEyeSatelliteDef } from "@/lib/eagle-eye-data";
 import { EAGLE_EYE_SATELLITES } from "@/lib/eagle-eye-data";
 
@@ -104,17 +105,20 @@ function buildSatellite(parsed: ParsedTle): EagleEyeSatelliteDef {
   const enrich = NORAD_ENRICH[parsed.noradId];
   const imageUrl =
     enrich?.mediaUrl ?? CATEGORY_IMAGES[parsed.category] ?? CATEGORY_IMAGES.default;
+  const countryInfo = inferSatelliteCountry(parsed.name, parsed.category);
 
   return {
     id: slugify(parsed.name, parsed.noradId),
     name: parsed.name,
     noradId: parsed.noradId,
     category: parsed.category,
+    country: countryInfo.country,
+    countryCode: countryInfo.countryCode,
     tle1: parsed.tle1,
     tle2: parsed.tle2,
     info:
       enrich?.info ??
-      `${parsed.name}（${parsed.category}）。TLE軌道データからリアルタイム位置を表示しています。`,
+      `${parsed.name}（${countryInfo.country} / ${parsed.category}）。TLE軌道データからリアルタイム位置を表示しています。`,
     mediaUrl: imageUrl,
     mediaType: enrich?.mediaType ?? "image",
     liveStreamUrl: enrich?.liveStreamUrl,
