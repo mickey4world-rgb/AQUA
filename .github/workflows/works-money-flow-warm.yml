@@ -5,9 +5,16 @@ on:
     # 毎週月曜 0:10 JST = 日曜 15:10 UTC（同梱データは静的なので頻度は低くてよい）
     - cron: "10 15 * * 0"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Azure Static Web Apps CI/CD"]
+    types: [completed]
+    branches: [main]
 
 jobs:
   warm_works_money_flow:
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,6 +30,9 @@ jobs:
         run: npm ci
       - name: Build public preview snapshot
         run: npm run build:gyosei-preview
+      - name: Wait for SWA propagation
+        if: github.event_name == 'workflow_run'
+        run: sleep 45
       - name: Upload snapshot to production cache
         env:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -33,11 +43,20 @@ jobs:
             exit 0
           fi
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          # 集計は GHA 側で完了済み。本番は保存のみ。
           jq -c '{snapshot: .}' data/gyosei/public-preview.json > /tmp/warm-body.json
-          curl -sfS -X POST \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            --data-binary @/tmp/warm-body.json \
-            "${BASE%/}/api/public/works-money-flow/warm" \
-            --max-time 60
+          for i in 1 2 3; do
+            if curl -sfS -X POST \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              --data-binary @/tmp/warm-body.json \
+              "${BASE%/}/api/public/works-money-flow/warm" \
+              --max-time 60; then
+              echo ""
+              echo "warm ok (attempt $i)"
+              exit 0
+            fi
+            echo "warm attempt $i failed; retrying..."
+            sleep 20
+          done
+          echo "warm failed after retries"
+          exit 1
