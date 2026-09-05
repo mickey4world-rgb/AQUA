@@ -375,10 +375,16 @@ function CameraSetup({
     target: THREE.Vector3;
     update: () => void;
   } | null>(null);
+  const [sunX, sunY, sunZ] = sunPos;
+  const [markerX, markerY, markerZ] = markerPos;
   const cfg = useMemo(
-    () => cameraConfig(scale, sunPos, markerPos),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scale, sunPos.join(","), markerPos.join(",")],
+    () =>
+      cameraConfig(
+        scale,
+        [sunX, sunY, sunZ],
+        [markerX, markerY, markerZ],
+      ),
+    [scale, sunX, sunY, sunZ, markerX, markerY, markerZ],
   );
 
   useLayoutEffect(() => {

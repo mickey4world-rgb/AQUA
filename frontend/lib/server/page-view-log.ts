@@ -16,7 +16,7 @@ function pageViewContainer() {
 
 export function maskVisitorKey(visitorKey: string): string {
   const hash = createHash("sha256").update(visitorKey).digest("hex");
-  return `anon-${hash.slice(0, 8)}`;
+  return `anon-${hash.slice(0, 24)}`;
 }
 
 export async function recordPageView(input: RecordPageViewInput): Promise<void> {
@@ -35,7 +35,7 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
     pageLabel: publicPageLabel(input.pathname, section),
     pageGroup: publicPageGroup(input.pathname, section),
     section,
-    visitorKey: input.visitorKey.slice(0, 128),
+    visitorKey: maskVisitorKey(input.visitorKey),
     referrer: input.referrer?.slice(0, 512) ?? null,
     userAgent: input.userAgent?.slice(0, 320) ?? null,
     browser: ua.browser,

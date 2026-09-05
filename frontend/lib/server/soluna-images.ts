@@ -126,8 +126,19 @@ function isGeminiNativeImageModel(model: SolunaImageModelId): boolean {
 
 async function loadBaseReferenceImage(): Promise<{ mimeType: string; data: string } | null> {
   const candidates = [
-    path.join(process.cwd(), "public", "soluna", "characters-base.jpg"),
-    path.join(process.cwd(), "frontend", "public", "soluna", "characters-base.jpg"),
+    path.join(
+      /* turbopackIgnore: true */ process.cwd(),
+      "public",
+      "soluna",
+      "characters-base.jpg",
+    ),
+    path.join(
+      /* turbopackIgnore: true */ process.cwd(),
+      "frontend",
+      "public",
+      "soluna",
+      "characters-base.jpg",
+    ),
   ];
   for (const filePath of candidates) {
     try {

@@ -12,25 +12,6 @@ jobs:
   run_asset_trade:
     runs-on: ubuntu-latest
     steps:
-      - name: Check daily briefing status
-        env:
-          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
-          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
-        run: |
-          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          STATUS_CODE=$(curl -sS --max-time 30 -o /tmp/soluna-status.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d '{"step":"status"}')
-          cat /tmp/soluna-status.json
-          echo ""
-          echo "status HTTP ${STATUS_CODE}"
-          NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('needsBriefing') else 'false')" 2>/dev/null || echo "false")
-          if [ "${NEEDS}" = "true" ]; then
-            echo "::warning::本日の討伐が未完了。Soluna System Briefing ワークフローで補完されます。"
-          fi
-
       - name: Run background asset trade tick
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
