@@ -1,5 +1,6 @@
 /**
- * 人間チャット向け：質問に合わせてインターネット／SNS の最新情報を拾う
+ * 人間チャット向け：質問に必要なときだけインターネット／SNS の最新情報を拾う。
+ * 雑談・一般知識・伴走はモデル自身の知識で即答し、外取りは時事・天気などに限定する。
  */
 import { generateWithGoogleSearch } from "@/lib/server/gemini-grounding";
 import {
