@@ -1,38 +1,69 @@
 ---
-description: Force 5-Whys + failure-mode + sibling audit before calling work thorough
+description: Force 5-Whys + design-time budget + sibling audit; no feature-framing escape
 alwaysApply: true
 ---
 
 # Thoroughness is a procedure, not a word
 
-When the user asks for 徹底的 / 再発防止 / 障害対応, or when changing cache-only paths, public APIs, warm/cron, timeouts, or multi-instance SWA behavior — **and on every production incident / unexpected user-visible failure**:
+When the user asks for 徹底的 / 再発防止 / 障害対応, or when changing cache-only paths, public APIs, warm/cron, timeouts, or multi-instance SWA behavior — **and on every production incident / unexpected user-visible failure** — **and when shipping any new user-facing AI / overnight / “再取得・生成” path**:
 
-## Before declaring done
-1. **Success criteria**: State the invariant (e.g. "any cold instance GET returns 200 with payload", "討伐は当日ライブニュースのみ"), not only the last symptom ("faster", "no online fetch", "workflow green").
-2. **Architecture change reclassify**: If a path becomes the sole source of truth (cache-only / live-news-only), promote former "best-effort" ops (Cosmos write, warm, grounding) to **correctness requirements**. Silent `catch` on those writes is forbidden unless a durable fallback still satisfies the invariant.
-3. **New failure modes**: For each change, list what newly breaks (cache miss, warm-on-instance-A / read-on-B, cron skip, secret missing, external API down, quota). Add fallback or hard-fail for each.
-4. **Horizontal scan**: Grep siblings (`app/api/public/**`, `*cache*`, `*warm*`, `memoryCache`, `503` on null, `fallback`, `continue-on-error`, `getLatest*`, `ok: true` after catch). Fix the class, not only the ticket.
-5. **Oracle**: Verify the invariant (probe production GET / cold path / liveNewsOk), not a weak proxy (warm JSON `ok`, compile, single-instance memory, GHA green while chat used yesterday).
-6. **Self-interrogation**: Before the final reply, ask of your own draft: "Is this a fact/symptom, or a cause of my decision? Why did I choose X? What incentive/habit produced X?" If the answer is only "we did Y", dig one more why.
+## Why this rule has failed before (do not repeat)
+
+Past failures were not “missing the keyword 徹底的”. They were **process escapes**:
+
+1. **Feature framing**: User said “button does nothing” → agent treated it as a UX/API tweak, skipped 5-Whys / class scan, shipped a narrower fix. **User-visible wrong product behavior IS an incident.** No wait for 徹底的 / 再発防止.
+2. **Design-time optimism**: First ship used placeholders + “今夜／ボタンで後から補完” as the plan, without an SWA timeout budget or an oracle that the CTA actually produces the promised artifact. That is **designed-in degraded success**, not a later bug.
+3. **Copy ≠ invariant**: UI/button text promised “詳細化／再取得で解説” while API returned `ok: true` with the same placeholders. Rule examples covered news/warm but not **CTA promise vs delivery**.
+4. **Symptom metric**: “API 200 / rebuild saved / workflow green” while outlook still said 今夜の解説… — weak proxy, same class as warm-ok / liveNewsOk-false.
+
+If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
+
+## Design-time gate (before first ship — not after the user complains)
+
+For any feature whose value depends on AI, live fetch, cron, or multi-step work on SWA:
+
+1. Write the **user-visible invariant** in one sentence (e.g. “朝開いた News Search に深堀・見通しが入っている”, not “RSS が保存される”).
+2. **Budget the path**: sum worst-case timeouts × steps vs `maxDuration` / platform limit. If 4 categories × Gemini cannot finish in one request, **do not ship a single “再取得” that claims to enrich all** — ship per-step APIs + cron/GHA relay from day one.
+3. **Classify each step**: ingest vs enrich vs persist. RSS-only is allowed only if UI/cron label it `enrichmentStatus: pending|failed` and **never** as the finished AI product.
+4. **Forbidden escape hatches as the plan**: “今夜補完”, “ボタンで詳細化可能”, “best-effort Gemini then save anyway”. Placeholders are **incomplete state**, not success content. CTA that names the incomplete state must **hard-fail** when it cannot complete (no silent `ok: true`).
+5. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). Compile / GHA ingest-only green is not enough.
+
+## Before declaring done (every incident OR every such ship)
+
+1. **Success criteria**: State the invariant (user-visible contract), not the last symptom.
+2. **Architecture change reclassify**: Sole source of truth → former best-effort becomes correctness. Silent `catch` forbidden unless durable same-intent fallback exists.
+3. **New failure modes**: cache miss, multi-instance, cron skip, secret missing, quota, **platform timeout**, partial category enrich. Fallback or hard-fail each.
+4. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields). Fix the **class**.
+5. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path?).
+6. **Self-interrogation**: Symptom vs cause? Why did I choose X? If answer is only “we did Y”, dig one more why — especially “初回で甘く見積もった／後でボタン” incentives.
 
 ## Incident default (do not wait to be asked)
-On every bug/outage the user reports (or that you discover while fixing):
-1. Run **5-Whys** to a controllable root (process/code incentive), not stop at the proximate error string.
-2. Search for the **same class**: error → unintended substitute → still reported as success.
-3. Patch the class; then deploy/verify the invariant.
+
+On every bug/outage the user reports (or you discover), **before** the symptom patch:
+
+1. Run **5-Whys** to a controllable root (design optimism / success metric / incentive), not only the error string.
+2. Search the **same class**: failure → unintended substitute or unfinished state → still `ok: true` / green CI / reassuring copy.
+3. Patch the class; deploy; verify the invariant.
+4. If the class is process (rule escape), **update this rule or a sibling rule in the same change**.
 
 ## Forbidden anti-pattern: “degraded success”
-Never treat the following as a successful completion of the original intent:
-- Primary path fails (quota, 404, timeout) → substitute that **changes meaning** (ungrounded LLM as “latest news”, yesterday’s briefing as “today’s hunt”, memory-only warm as “persisted”) → return `ok: true` / green CI
+
+Never treat as successful completion of the original intent:
+
+- Primary path fails (quota, 404, timeout) → substitute that **changes meaning** (ungrounded LLM as “latest news”, yesterday as “today”, memory-only as “persisted”, **RSS placeholder as “AI解説”**) → `ok: true` / green CI
+- CTA / button / copy promises enrich・詳細化・再生成 but handler saves or returns unfinished placeholders as success
 - `continue-on-error` then proceeding as if the failed step’s invariant held
 - `getLatest*` when the contract is **today’s** document
-- Silent `catch` that invents empty/default data for a correctness-critical path
+- Silent `catch` inventing empty/default data on a correctness-critical path
+- Shipping “incomplete now, user can press a button later” **without** a verified button path and an explicit incomplete status the UI respects
 
-Allowed substitutes must be **same-intent live sources** (e.g. Google Search fail → fresh RSS) or an **explicit hard-fail / degraded label** the UI and cron respect (`liveNewsOk: false`, `cosmosPersisted: false` blocking success).
+Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true` blocking “完成” UX).
 
 ## Forbidden
+
 - Claiming 徹底的 without steps 1–6
-- Optimizing the latest complaint metric while deleting the previous safety net without a replacement
+- Skipping 5-Whys because the message looked like a small UI bug
+- Optimizing the latest complaint metric while deleting the previous safety net without replacement
 - Treating multi-instance memory as durable storage
-- Stopping at "warm succeeded" when public read can still 503
-- Stopping at "briefing ingested" when source was training-data / non-live
+- Stopping at “warm/ingest/rebuild succeeded” when the user-visible artifact is still placeholder or public read can 503
+- Stopping at “briefing ingested” when source was training-data / non-live

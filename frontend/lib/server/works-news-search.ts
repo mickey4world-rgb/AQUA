@@ -23,6 +23,7 @@ import {
   type NewsSearchCategory,
   type NewsSearchChatMessage,
   type NewsSearchDigest,
+  type NewsSearchEnrichmentStatus,
   type NewsSearchItem,
 } from "@/lib/types/works-news-search";
 
@@ -31,14 +32,15 @@ const TARGET_PER_CATEGORY = 6;
 const ENRICH_TIMEOUT_MS = 28_000;
 const CHAT_TIMEOUT_MS = 28_000;
 
-/** GHA RSS 取り込み時の仮文言（これが残っている＝解説未生成） */
+/** RSS 取り込み直後の仮文言（これが残っている＝解説未生成＝成功扱い禁止） */
 export const NEWS_SEARCH_OUTLOOK_PLACEHOLDER =
-  "今夜の解説生成で見通しを補完します（「今すぐ再取得」で詳細化可能）。";
+  "AI解説は未生成です。生成に失敗した場合はエラーが表示されます。";
 
 export function isNewsSearchItemEnriched(item: NewsSearchItem): boolean {
   if (!item.outlook?.trim() || !item.deepDive?.trim() || !item.explanation?.trim()) {
     return false;
   }
+  if (item.outlook.includes("AI解説は未生成")) return false;
   if (item.outlook.includes("今夜の解説生成")) return false;
   if (item.outlook.includes("「今すぐ再取得」で詳細化")) return false;
   // RSS 直後は summary をそのまま深堀にコピーしている
@@ -50,6 +52,49 @@ export function digestNeedsEnrichment(digest: NewsSearchDigest): boolean {
   return NEWS_SEARCH_CATEGORIES.some((c) =>
     digest.categories[c].some((item) => !isNewsSearchItemEnriched(item)),
   );
+}
+
+export function computeEnrichmentStatus(
+  digest: Pick<NewsSearchDigest, "categories">,
+  triedAndFailed = false,
+): NewsSearchEnrichmentStatus {
+  const withItems = NEWS_SEARCH_CATEGORIES.filter(
+    (c) => (digest.categories[c] ?? []).length > 0,
+  );
+  if (withItems.length === 0) return triedAndFailed ? "failed" : "pending";
+  const completeCount = withItems.filter((c) =>
+    digest.categories[c].every((item) => isNewsSearchItemEnriched(item)),
+  ).length;
+  if (completeCount === withItems.length) return "complete";
+  if (completeCount === 0) return triedAndFailed ? "failed" : "pending";
+  return "partial";
+}
+
+export function withEnrichmentMeta(
+  digest: NewsSearchDigest,
+  options?: { triedAndFailed?: boolean; errors?: string[] },
+): NewsSearchDigest {
+  const enrichmentStatus = computeEnrichmentStatus(
+    digest,
+    options?.triedAndFailed === true,
+  );
+  const enrichmentErrors =
+    options?.errors && options.errors.length > 0
+      ? options.errors
+      : enrichmentStatus === "complete"
+        ? undefined
+        : digest.enrichmentErrors;
+  return {
+    ...digest,
+    enrichmentStatus,
+    enrichmentErrors,
+    source:
+      enrichmentStatus === "complete"
+        ? "rss+gemini"
+        : enrichmentStatus === "partial"
+          ? "mixed"
+          : "rss",
+  };
 }
 
 function approxTokens(text: string): number {
@@ -237,8 +282,12 @@ JSON:
       };
     });
     const enrichedCount = next.filter((item) => isNewsSearchItemEnriched(item)).length;
-    if (enrichedCount === 0) {
-      return { items, enriched: false, reason: "解説がプレースホルダのままです。" };
+    if (enrichedCount < items.length) {
+      return {
+        items: next,
+        enriched: false,
+        reason: `解説不足 ${enrichedCount}/${items.length}（一部プレースホルダのまま）`,
+      };
     }
     return { items: next, enriched: true };
   } catch (error) {
@@ -272,17 +321,20 @@ export async function enrichWorksNewsDigestCategory(
   }
 
   const categories = { ...existing.categories, [category]: result.items };
-  const allEnriched = !digestNeedsEnrichment({ ...existing, categories });
-  const digest: NewsSearchDigest = {
+  const draft: NewsSearchDigest = {
     ...existing,
     categories,
-    source: allEnriched ? "rss+gemini" : "mixed",
     fetchedAt: new Date().toISOString(),
     summary: NEWS_SEARCH_CATEGORIES.map((c) => {
       const top = categories[c][0];
       return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
     }).join(" / "),
   };
+  const digest = withEnrichmentMeta(draft, {
+    errors: (existing.enrichmentErrors ?? []).filter(
+      (e) => !e.startsWith(`${category}:`),
+    ),
+  });
 
   try {
     await saveWorksNewsDigest(digest);
@@ -298,13 +350,17 @@ export async function enrichWorksNewsDigestCategory(
   };
 }
 
+/**
+ * RSS 一覧のみ構築する。AI 解説は enrichWorksNewsDigestCategory の責務。
+ * 1リクエストで4カテゴリ解説しようとしてタイムアウト→プレースホルダのまま ok:true、は禁止。
+ */
 export async function buildWorksNewsDigest(options?: {
   force?: boolean;
 }): Promise<{ ok: true; digest: NewsSearchDigest } | { ok: false; reason: string }> {
   const docId = worksNewsSearchDocId();
   if (!options?.force) {
     const existing = await getLatestWorksNewsDigest();
-    if (existing?.id === docId) return { ok: true, digest: existing };
+    if (existing?.id === docId) return { ok: true, digest: withEnrichmentMeta(existing) };
   }
 
   const { seeds, errors } = await collectMultiSourceNewsSeeds();
@@ -332,29 +388,24 @@ export async function buildWorksNewsDigest(options?: {
   }
 
   const categories = emptyCategories();
-  let enrichedAny = false;
-  const enrichErrors: string[] = [];
   for (const category of NEWS_SEARCH_CATEGORIES) {
-    const base = picked[category].map(seedToItem);
-    const result = await enrichCategoryWithGemini(category, base);
-    if (result.enriched) enrichedAny = true;
-    else if (result.reason) enrichErrors.push(`${category}: ${result.reason}`);
-    categories[category] = result.items
-      .slice()
+    categories[category] = picked[category]
+      .map(seedToItem)
       .sort((a, b) => b.attentionScore - a.attentionScore);
   }
 
-  const digest: NewsSearchDigest = {
+  const digest = withEnrichmentMeta({
     id: docId,
     fetchedAt: new Date().toISOString(),
-    source: enrichedAny ? "rss+gemini" : "rss",
+    source: "rss",
     categories,
     solunaSynced: false,
     summary: NEWS_SEARCH_CATEGORIES.map((c) => {
       const top = categories[c][0];
       return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
     }).join(" / "),
-  };
+    enrichmentStatus: "pending",
+  });
 
   try {
     await saveWorksNewsDigest(digest);

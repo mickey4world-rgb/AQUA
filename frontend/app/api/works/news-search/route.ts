@@ -5,6 +5,7 @@ import {
   chatWorksNewsSearch,
   digestNeedsEnrichment,
   enrichWorksNewsDigestCategory,
+  withEnrichmentMeta,
 } from "@/lib/server/works-news-search";
 import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
 import {
@@ -17,8 +18,8 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   return withApiAccessLog(request, async () => {
-    const digest = await getLatestWorksNewsDigest();
-    if (!digest) {
+    const raw = await getLatestWorksNewsDigest();
+    if (!raw) {
       return Response.json(
         {
           ok: false,
@@ -28,10 +29,12 @@ export async function GET(request: Request) {
         { status: 404 },
       );
     }
+    const digest = withEnrichmentMeta(raw);
     return Response.json({
       ok: true,
       digest,
       needsEnrichment: digestNeedsEnrichment(digest),
+      enrichmentStatus: digest.enrichmentStatus,
     });
   });
 }
