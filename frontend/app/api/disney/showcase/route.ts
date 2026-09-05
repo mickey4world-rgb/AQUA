@@ -7,10 +7,16 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const payload = await getDisneyShowcaseSnapshot();
+    if (!payload) {
+      return Response.json(
+        { error: "TDR公開データの準備中です。" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     return Response.json(payload, {
       headers: {
         "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
-        "X-TDR-Preview": "legacy",
+        "X-TDR-Preview": "legacy-snapshot",
       },
     });
   } catch (error) {
