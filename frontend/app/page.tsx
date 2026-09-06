@@ -109,7 +109,7 @@ export default function Home() {
     <HomePageShell>
       <main>
         <section className="mx-auto w-full max-w-5xl px-4 pb-14 pt-16 sm:px-6 sm:pb-20 sm:pt-24">
-          <Reveal>
+          <Reveal eager>
             <p className="eyebrow flex items-center gap-3">
               <span className="home-pulse-dot h-1.5 w-1.5 rounded-full bg-cyan-300" />
               AQUA — Personal Software Studio
@@ -117,26 +117,26 @@ export default function Home() {
           </Reveal>
 
           <h1 className="display-hero mt-8 text-white">
-            <Reveal delayMs={70}>
+            <Reveal eager>
               <span className="block hero-ink-gradient">
                 AQUA: Decoding Tomorrow
               </span>
             </Reveal>
-            <Reveal delayMs={160}>
+            <Reveal eager>
               <span className="block mt-2 ink-soft">
                 through AI Research and Core Challenges
               </span>
             </Reveal>
           </h1>
 
-          <Reveal delayMs={260}>
+          <Reveal eager>
             <p className="mt-8 max-w-lg text-[15px] leading-7 text-slate-400">
               保有株の監視、ディズニーの混雑分析、複数 AI 合議、宇宙観測、そして WORKS。
               光と水のあいだに、必要な情報だけをやさしく並べました。
             </p>
           </Reveal>
 
-          <Reveal delayMs={340}>
+          <Reveal eager>
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <Link
                 href="/works"
@@ -160,7 +160,7 @@ export default function Home() {
             </div>
           </Reveal>
 
-          <Reveal delayMs={420}>
+          <Reveal eager>
             <div className="mt-14 flex items-center gap-4">
               <span className="scroll-cue" aria-hidden />
               <span className="eyebrow">Scroll</span>
