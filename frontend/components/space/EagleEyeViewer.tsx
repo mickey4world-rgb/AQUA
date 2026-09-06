@@ -30,6 +30,16 @@ import {
 } from "@/lib/eagle-eye-client";
 import { IMAGING_ROI } from "@/lib/eagle-eye-data";
 
+type CesiumModule = {
+  // CDN global; keep intentionally loose (no npm cesium package).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CesiumViewer = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CesiumEntity = any;
+
 const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
 /** Esri 衛星画像（失敗時は OSM / Carto にフォールバック） */
@@ -40,6 +50,140 @@ const CARTO_VOYAGER =
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ESRI_LABELS =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
+
+type ImageryKind = "satellite" | "map" | "labels";
+
+type ImageryCandidate = {
+  kind: ImageryKind;
+  url: string;
+  credit: string;
+  maximumLevel: number;
+};
+
+const SATELLITE_CANDIDATES: ImageryCandidate[] = [
+  { kind: "satellite", url: ESRI_IMAGERY, credit: "Esri World Imagery", maximumLevel: 19 },
+  { kind: "map", url: CARTO_VOYAGER, credit: "Carto Voyager", maximumLevel: 18 },
+  { kind: "map", url: OSM_TILES, credit: "© OpenStreetMap", maximumLevel: 18 },
+];
+
+const MAP_CANDIDATES: ImageryCandidate[] = [
+  { kind: "map", url: CARTO_VOYAGER, credit: "Carto Voyager", maximumLevel: 18 },
+  { kind: "map", url: OSM_TILES, credit: "© OpenStreetMap", maximumLevel: 18 },
+  { kind: "satellite", url: ESRI_IMAGERY, credit: "Esri World Imagery", maximumLevel: 19 },
+];
+
+function makeUrlImageryProvider(Cesium: CesiumModule, candidate: ImageryCandidate) {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: candidate.url,
+    maximumLevel: candidate.maximumLevel,
+    credit: candidate.credit,
+    tilingScheme: new Cesium.WebMercatorTilingScheme(),
+  });
+}
+
+/** Cesium 同梱の Natural Earth — 外部タイルが落ちても必ず大陸が見える */
+async function createNaturalEarthLayer(Cesium: CesiumModule) {
+  const url = Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII");
+  try {
+    if (Cesium.TileMapServiceImageryProvider?.fromUrl && Cesium.ImageryLayer?.fromProviderAsync) {
+      return await Cesium.ImageryLayer.fromProviderAsync(
+        Cesium.TileMapServiceImageryProvider.fromUrl(url, {
+          credit: "Natural Earth II",
+        }),
+      );
+    }
+  } catch (error) {
+    console.warn("[EagleEye] NaturalEarth async failed, sync fallback", error);
+  }
+  return new Cesium.ImageryLayer(
+    new Cesium.TileMapServiceImageryProvider({
+      url,
+      credit: "Natural Earth II",
+    }),
+  );
+}
+
+function addUrlImageryLayer(
+  viewer: CesiumViewer,
+  Cesium: CesiumModule,
+  candidate: ImageryCandidate,
+  alpha = 1,
+) {
+  const provider = makeUrlImageryProvider(Cesium, candidate);
+  const layer = viewer.imageryLayers.addImageryProvider(provider);
+  layer.alpha = alpha;
+  // タイル取得失敗時はレイヤーを外し、呼び出し側で次候補へ
+  if (typeof provider.errorEvent?.addEventListener === "function") {
+    let failures = 0;
+    provider.errorEvent.addEventListener(() => {
+      failures += 1;
+      if (failures >= 6) {
+        try {
+          viewer.imageryLayers.remove(layer, false);
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  }
+  return layer;
+}
+
+/**
+ * 地球の見た目を確実にする:
+ * 1) Natural Earth（同梱）を土台
+ * 2) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
+ * 3) 任意で地名ラベル
+ */
+async function ensureEarthImagery(
+  viewer: CesiumViewer,
+  Cesium: CesiumModule,
+  options: { withLabels: boolean; preferSatellite: boolean },
+) {
+  viewer.imageryLayers.removeAll();
+  viewer.scene.globe.show = true;
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a2f5c");
+  viewer.scene.globe.enableLighting = false;
+  viewer.scene.globe.showGroundAtmosphere = true;
+  if (viewer.scene.skyAtmosphere) {
+    viewer.scene.skyAtmosphere.show = true;
+  }
+
+  try {
+    const natural = await createNaturalEarthLayer(Cesium);
+    viewer.imageryLayers.add(natural);
+  } catch (error) {
+    console.warn("[EagleEye] Natural Earth base missing", error);
+  }
+
+  const candidates = options.preferSatellite ? SATELLITE_CANDIDATES : MAP_CANDIDATES;
+  for (const candidate of candidates) {
+    try {
+      addUrlImageryLayer(viewer, Cesium, candidate, 1);
+      break;
+    } catch (error) {
+      console.warn("[EagleEye] imagery candidate failed", candidate.credit, error);
+    }
+  }
+
+  if (options.withLabels) {
+    try {
+      addUrlImageryLayer(
+        viewer,
+        Cesium,
+        {
+          kind: "labels",
+          url: ESRI_LABELS,
+          credit: "Esri Labels",
+          maximumLevel: 18,
+        },
+        0.92,
+      );
+    } catch {
+      /* labels optional */
+    }
+  }
+}
 
 export type EagleEyeViewerState = {
   phase: EagleEyePhase;
@@ -68,16 +212,6 @@ type EagleEyeViewerProps = {
   phaseRequest?: { phase: EagleEyePhase; nonce: number } | null;
   onStateChange?: (state: EagleEyeViewerState) => void;
 };
-
-type CesiumModule = {
-  // CDN global; keep intentionally loose (no npm cesium package).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-};
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CesiumViewer = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CesiumEntity = any;
 
 const NEAREST_COLOR = "#fbbf24";
 const PAST_COLOR = "#64748b";
@@ -135,54 +269,6 @@ function satColor(idx: number): string {
   return palette[idx % palette.length];
 }
 
-function addMapImagery(
-  viewer: CesiumViewer,
-  Cesium: CesiumModule,
-  withLabels: boolean,
-  preferSatellite = true,
-) {
-  viewer.imageryLayers.removeAll();
-  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b3d91");
-
-  const urls = preferSatellite
-    ? [ESRI_IMAGERY, CARTO_VOYAGER, OSM_TILES]
-    : [CARTO_VOYAGER, OSM_TILES, ESRI_IMAGERY];
-
-  for (const url of urls) {
-    try {
-      viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url,
-          maximumLevel: 19,
-          credit: url.includes("arcgisonline")
-            ? "Esri"
-            : url.includes("cartocdn")
-              ? "Carto"
-              : "OSM",
-        }),
-      );
-      break;
-    } catch {
-      // try next provider
-    }
-  }
-
-  if (withLabels) {
-    try {
-      const labels = viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: ESRI_LABELS,
-          maximumLevel: 18,
-          credit: "Esri Labels",
-        }),
-      );
-      labels.alpha = 0.9;
-    } catch {
-      // labels optional
-    }
-  }
-}
-
 export default function EagleEyeViewer({
   selectedSatelliteId = null,
   selectNonce = 0,
@@ -216,6 +302,7 @@ export default function EagleEyeViewer({
   }, [sortPlace]);
 
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isMapMode, setIsMapMode] = useState(false);
   const [mapSatellite, setMapSatellite] = useState<EagleEyeSatelliteDef | null>(
     null,
@@ -385,9 +472,14 @@ export default function EagleEyeViewer({
         easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
         complete: () => {
           if (!viewer || viewer.isDestroyed()) return;
-          // ② 2D 地図へモーフ + 地名レイヤー
-          addMapImagery(viewer, Cesium, true);
-          viewer.scene.morphTo2D(1.6);
+          // ② 2D 地図へモーフ + 地名レイヤー（地球テクスチャ必須）
+          void ensureEarthImagery(viewer, Cesium, {
+            withLabels: true,
+            preferSatellite: true,
+          }).then(() => {
+            if (!viewer || viewer.isDestroyed()) return;
+            viewer.scene.morphTo2D(1.6);
+          });
 
           setTimeout(() => {
             if (!viewer || viewer.isDestroyed()) return;
@@ -459,11 +551,23 @@ export default function EagleEyeViewer({
       footprintRef.current = null;
     }
 
-    addMapImagery(viewer, Cesium, false, true);
+    void ensureEarthImagery(viewer, Cesium, {
+      withLabels: false,
+      preferSatellite: true,
+    });
     showMapCameras(true);
     viewer.scene.morphTo3D(1.5);
     setTimeout(() => {
-      viewer!.camera.flyHome(2);
+      if (!viewer || viewer.isDestroyed()) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(139.76, 20.0, 22_000_000),
+        orientation: {
+          heading: 0,
+          pitch: Cesium.Math.toRadians(-90),
+          roll: 0,
+        },
+        duration: 2,
+      });
     }, 300);
 
     updateSatelliteStyles(nearestIdRef.current, null);
@@ -586,6 +690,15 @@ export default function EagleEyeViewer({
         const start = new Date(now.getTime() - 45 * 60_000);
         const stop = new Date(now.getTime() + 45 * 60_000);
 
+        // Ion 無し: 同梱 Natural Earth + 外部タイルで地球を必ず描画
+        if ("Ion" in Cesium) {
+          try {
+            Cesium.Ion.defaultAccessToken = undefined;
+          } catch {
+            /* ignore */
+          }
+        }
+
         viewer = new Cesium.Viewer(containerRef.current, {
           animation: true,
           timeline: true,
@@ -598,13 +711,27 @@ export default function EagleEyeViewer({
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
           infoBox: false,
           selectionIndicator: true,
-          // Ion 無しでも地球が見えるよう、初期レイヤを付けない
           baseLayer: false,
         } as ConstructorParameters<typeof Cesium.Viewer>[1]);
 
-        addMapImagery(viewer, Cesium, false, true);
+        await ensureEarthImagery(viewer, Cesium, {
+          withLabels: false,
+          preferSatellite: true,
+        });
         viewer.scene.globe.show = true;
         viewer.scene.globe.enableLighting = false;
+        viewer.scene.globe.showGroundAtmosphere = true;
+        if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+
+        // 初期視点: 地球全体が見える高度から日本付近
+        viewer.camera.setView({
+          destination: Cesium.Cartesian3.fromDegrees(139.76, 20.0, 22_000_000),
+          orientation: {
+            heading: 0,
+            pitch: Cesium.Math.toRadians(-90),
+            roll: 0,
+          },
+        });
 
         viewer.clock.startTime = Cesium.JulianDate.fromDate(start);
         viewer.clock.stopTime = Cesium.JulianDate.fromDate(stop);
@@ -818,6 +945,11 @@ export default function EagleEyeViewer({
       })
       .catch((err) => {
         console.error("[EagleEye] Cesium load failed:", err);
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "3D地球の読み込みに失敗しました。",
+        );
       });
 
     return () => {
@@ -836,11 +968,16 @@ export default function EagleEyeViewer({
         ref={containerRef}
         className="h-full w-full overflow-hidden rounded-xl"
       />
-      {!ready && (
+      {!ready && !loadError && (
         <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/70">
           <p className="text-sm text-slate-300">
             鷹の目 — 3D地球を読み込み中...
           </p>
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/80 px-4">
+          <p className="text-sm text-rose-200">{loadError}</p>
         </div>
       )}
       {ready && (
