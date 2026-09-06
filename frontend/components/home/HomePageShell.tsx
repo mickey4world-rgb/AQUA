@@ -1,7 +1,11 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import AppPageShell from "@/components/layout/AppPageShell";
-import HomeAurora from "@/components/home/HomeAurora";
+
+const HomeAurora = dynamic(() => import("@/components/home/HomeAurora"), {
+  ssr: false,
+});
 
 type HomePageShellProps = {
   children: React.ReactNode;

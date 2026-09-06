@@ -1,6 +1,7 @@
 "use client";
 
-import LivingSwarmField from "@/components/layout/LivingSwarmField";
+import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { useMobileProfile } from "@/lib/mobile-utils";
 
 export type BackgroundTheme =
@@ -17,6 +18,11 @@ export type BackgroundTheme =
 type AnimatedBackgroundProps = {
   theme: BackgroundTheme;
 };
+
+const LivingSwarmField = dynamic(
+  () => import("@/components/layout/LivingSwarmField"),
+  { ssr: false },
+);
 
 const MOTE_COUNT = { full: 18, mobile: 10 } as const;
 const BUBBLE_COUNT = { full: 12, mobile: 7 } as const;
@@ -41,11 +47,8 @@ function moteStyle(i: number) {
 }
 
 function bubbleStyle(i: number, isPortal: boolean) {
-  // 中・小のみ（中央を塞ぐ大きな泡は出さない）
   const isMid = i % 3 !== 0;
   const size = isMid ? 36 + (i % 5) * 10 : 12 + (i % 5) * 5;
-
-  // 海エリア寄りに散らす（左右に振って中央の占有を避ける）
   const lane = i % 2 === 0 ? (i * 9 + 4) % 38 : 58 + ((i * 11 + 6) % 36);
   const leftBase = isPortal ? lane : (i * 13 + 5) % 92;
   const drift = ((i % 7) - 3) * 14;
@@ -73,14 +76,52 @@ function meteorStyle(i: number) {
   return {
     top: `${6 + (i % 3) * 9}%`,
     right: `${4 + (i % 3) * 14}%`,
-    // 正の delay だと待機中に静止表示されるため、周期内でずらす
     animationDelay: `${-(i * stagger)}s`,
     animationDuration: `${duration}s`,
   } as const;
 }
 
+function CssParticleLayer({
+  showBubbles,
+  showMotes,
+  bubbleCount,
+  moteCount,
+}: {
+  showBubbles: boolean;
+  showMotes: boolean;
+  bubbleCount: number;
+  moteCount: number;
+}) {
+  return (
+    <>
+      {showBubbles && (
+        <div className="aq-bubbles">
+          {Array.from({ length: bubbleCount }).map((_, i) => (
+            <span
+              key={`bubble-${i}`}
+              className={`aq-bubble ${i % 3 !== 0 ? "aq-bubble--md" : "aq-bubble--sm"}${
+                i % 4 === 1 || i % 5 === 0 ? " aq-bubble--glint" : ""
+              }`}
+              style={bubbleStyle(i, true)}
+            />
+          ))}
+        </div>
+      )}
+      {showMotes && (
+        <div className="absolute inset-0">
+          {Array.from({ length: moteCount }).map((_, i) => (
+            <span key={i} className="aq-mote" style={moteStyle(i)} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
   const { liteMode, isMobile, reducedMotion } = useMobileProfile();
+  /** 初回ペイント後に重い canvas を後載せ（トップをすぐ開ける） */
+  const [swarmReady, setSwarmReady] = useState(false);
 
   const showMotes = !reducedMotion && !liteMode;
   const moteCount = isMobile ? MOTE_COUNT.mobile : MOTE_COUNT.full;
@@ -88,8 +129,27 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
   const showMeteors = theme === "portal" && !reducedMotion && !liteMode;
   const bubbleCount = liteMode || isMobile ? BUBBLE_COUNT.mobile : BUBBLE_COUNT.full;
 
-  /** トップ（portal）は光粒・泡を集合体として泳がせる。軽量端末は従来CSS。 */
   const useLivingSwarm = theme === "portal" && showMotes && showBubbles && !liteMode;
+
+  useEffect(() => {
+    if (!useLivingSwarm) return;
+    let cancelled = false;
+    const enable = () => {
+      if (!cancelled) setSwarmReady(true);
+    };
+    const idle =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? window.requestIdleCallback(enable, { timeout: 900 })
+        : null;
+    const fallback = window.setTimeout(enable, idle == null ? 120 : 450);
+    return () => {
+      cancelled = true;
+      if (idle != null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idle);
+      }
+      window.clearTimeout(fallback);
+    };
+  }, [useLivingSwarm]);
 
   return (
     <div
@@ -97,12 +157,10 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
       data-theme={theme}
       aria-hidden
     >
-      {/* 宇宙 */}
       <div className="aq-stars aq-stars-far" />
       {!liteMode && <div className="aq-stars aq-stars-mid" />}
       {!liteMode && <div className="aq-stars aq-stars-near" />}
 
-      {/* 光 */}
       <div className="aq-nebula aq-nebula-a" />
       <div className="aq-nebula aq-nebula-b" />
       {!liteMode && <div className="aq-nebula aq-nebula-c" />}
@@ -116,36 +174,18 @@ export default function AnimatedBackground({ theme }: AnimatedBackgroundProps) {
         </div>
       )}
 
-      {/* 水 */}
       <div className="aq-water" />
       {!liteMode && <div className="aq-shimmer" />}
 
-      {useLivingSwarm ? (
+      {useLivingSwarm && swarmReady ? (
         <LivingSwarmField moteCount={moteCount} bubbleCount={bubbleCount} />
       ) : (
-        <>
-          {showBubbles && (
-            <div className="aq-bubbles">
-              {Array.from({ length: bubbleCount }).map((_, i) => (
-                <span
-                  key={`bubble-${i}`}
-                  className={`aq-bubble ${i % 3 !== 0 ? "aq-bubble--md" : "aq-bubble--sm"}${
-                    i % 4 === 1 || i % 5 === 0 ? " aq-bubble--glint" : ""
-                  }`}
-                  style={bubbleStyle(i, true)}
-                />
-              ))}
-            </div>
-          )}
-
-          {showMotes && (
-            <div className="absolute inset-0">
-              {Array.from({ length: moteCount }).map((_, i) => (
-                <span key={i} className="aq-mote" style={moteStyle(i)} />
-              ))}
-            </div>
-          )}
-        </>
+        <CssParticleLayer
+          showBubbles={showBubbles}
+          showMotes={showMotes}
+          bubbleCount={bubbleCount}
+          moteCount={moteCount}
+        />
       )}
 
       <div className="bg-noise" />

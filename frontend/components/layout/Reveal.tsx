@@ -7,21 +7,24 @@ type RevealProps = {
   /** Stagger sibling reveals by passing increasing delays. */
   delayMs?: number;
   className?: string;
+  /** ファーストビュー用。待ちなしで即表示（トップをすぐ読める） */
+  eager?: boolean;
 };
 
 export default function Reveal({
   children,
   delayMs = 0,
   className = "",
+  eager = false,
 }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(eager);
 
   useEffect(() => {
+    if (eager) return;
     const element = ref.current;
     if (!element) return;
 
-    // prefers-reduced-motion の場合は globals.css が .reveal を可視状態に固定する。
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
@@ -34,13 +37,13 @@ export default function Reveal({
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [eager]);
 
   return (
     <div
       ref={ref}
       className={`reveal ${shown ? "is-in" : ""} ${className}`}
-      style={delayMs ? { transitionDelay: `${delayMs}ms` } : undefined}
+      style={delayMs && !eager ? { transitionDelay: `${delayMs}ms` } : undefined}
     >
       {children}
     </div>
