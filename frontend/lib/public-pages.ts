@@ -7,11 +7,13 @@ export const PUBLIC_PAGE_LABELS: Record<string, string> = {
   "/tdr-preview": "SHOWCASE詳細 · TDRプレビュー",
   "/works-preview": "SHOWCASE詳細 · サンキープレビュー",
   "/neo-preview": "SHOWCASE詳細 · NEOプレビュー",
+  "/news-search-preview": "SHOWCASE詳細 · ニュースサーチ",
 };
 
 export const SHOWCASE_SECTION_LABELS: Record<string, string> = {
   intro: "SHOWCASE · 導入",
   sankey: "SHOWCASE · サンキー",
+  "news-search": "SHOWCASE · ニュースサーチ",
   judicial: "SHOWCASE · 訴訟記録",
   council: "SHOWCASE · AI合議",
   stocks: "SHOWCASE · 保有株",
@@ -43,7 +45,8 @@ export function publicPageGroup(
   if (
     pathname === "/tdr-preview" ||
     pathname === "/works-preview" ||
-    pathname === "/neo-preview"
+    pathname === "/neo-preview" ||
+    pathname === "/news-search-preview"
   ) {
     return "preview";
   }
