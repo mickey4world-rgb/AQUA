@@ -470,7 +470,7 @@ export async function buildWorksNewsDigest(options?: {
     if (existing?.id === docId) return { ok: true, digest: withEnrichmentMeta(existing) };
   }
 
-  const { seeds, errors } = await collectMultiSourceNewsSeeds();
+  const { seeds, errors, usedFallback } = await collectMultiSourceNewsSeeds();
   const unique = dedupeSeeds(seeds);
   const picked = pickTopSeeds(unique, TARGET_PER_CATEGORY);
 
@@ -512,6 +512,8 @@ export async function buildWorksNewsDigest(options?: {
       return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
     }).join(" / "),
     enrichmentStatus: "pending",
+    usedFallback,
+    collectionErrors: errors.slice(0, 8),
   });
 
   try {

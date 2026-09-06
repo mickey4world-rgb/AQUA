@@ -59,6 +59,10 @@ export type NewsSearchDigest = {
   /** AI 解説の完成度。未設定の旧ドキュメントは pending 扱い */
   enrichmentStatus?: NewsSearchEnrichmentStatus;
   enrichmentErrors?: string[];
+  /** 主フィード不足で緊急ライブフィードを使った */
+  usedFallback?: boolean;
+  /** 収集時のフィードエラー（要約・最大数件） */
+  collectionErrors?: string[];
 };
 
 export type NewsSearchChatMessage = {

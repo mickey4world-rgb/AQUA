@@ -25,6 +25,19 @@ function isEnriched(item: NewsSearchItem): boolean {
   return true;
 }
 
+type EnrichRunLine = {
+  category: NewsSearchCategory;
+  ok: boolean;
+  detail: string;
+};
+
+const ENRICHMENT_STATUS_LABEL = {
+  pending: "解説待ち",
+  partial: "一部のみ解説済",
+  complete: "解説完了",
+  failed: "解説失敗",
+} as const;
+
 export default function NewsSearchPanel() {
   const [digest, setDigest] = useState<NewsSearchDigest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +50,10 @@ export default function NewsSearchPanel() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
+  const [lastEnrichRun, setLastEnrichRun] = useState<{
+    at: string;
+    lines: EnrichRunLine[];
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,16 +108,68 @@ export default function NewsSearchPanel() {
     );
   }, [digest]);
 
+  const pipelineSummary = useMemo(() => {
+    if (!digest) return null;
+    const rows = NEWS_SEARCH_CATEGORIES.map((c) => {
+      const list = digest.categories[c] ?? [];
+      const enriched = list.filter((item) => isEnriched(item)).length;
+      return {
+        category: c,
+        label: NEWS_SEARCH_CATEGORY_LABEL[c],
+        fetched: list.length,
+        enriched,
+        pending: Math.max(0, list.length - enriched),
+      };
+    });
+    const totalFetched = rows.reduce((sum, r) => sum + r.fetched, 0);
+    const totalEnriched = rows.reduce((sum, r) => sum + r.enriched, 0);
+    const status =
+      digest.enrichmentStatus ??
+      (totalFetched === 0
+        ? "pending"
+        : totalEnriched === 0
+          ? "pending"
+          : totalEnriched < totalFetched
+            ? "partial"
+            : "complete");
+    return {
+      rows,
+      totalFetched,
+      totalEnriched,
+      status,
+      statusLabel: ENRICHMENT_STATUS_LABEL[status],
+      usedFallback: digest.usedFallback === true,
+      collectionErrors: digest.collectionErrors ?? [],
+      enrichmentErrors: digest.enrichmentErrors ?? [],
+      source: digest.source,
+    };
+  }, [digest]);
+
   async function enrichAll() {
     if (enriching || !digest) return;
     setEnriching(true);
     setError(null);
     let latest = digest;
+    const lines: EnrichRunLine[] = [];
     try {
       for (let i = 0; i < NEWS_SEARCH_CATEGORIES.length; i += 1) {
         const c = NEWS_SEARCH_CATEGORIES[i];
-        if ((latest.categories[c] ?? []).length === 0) continue;
-        if ((latest.categories[c] ?? []).every((item) => isEnriched(item))) continue;
+        if ((latest.categories[c] ?? []).length === 0) {
+          lines.push({
+            category: c,
+            ok: true,
+            detail: "記事0件のためスキップ",
+          });
+          continue;
+        }
+        if ((latest.categories[c] ?? []).every((item) => isEnriched(item))) {
+          lines.push({
+            category: c,
+            ok: true,
+            detail: "既に解説済のためスキップ",
+          });
+          continue;
+        }
 
         setEnrichProgress(
           `${NEWS_SEARCH_CATEGORY_LABEL[c]} を解説中… (${i + 1}/${NEWS_SEARCH_CATEGORIES.length})`,
@@ -113,17 +182,28 @@ export default function NewsSearchPanel() {
         const data = (await res.json()) as {
           digest?: NewsSearchDigest;
           error?: string;
+          enrichedCount?: number;
         };
         if (!res.ok || !data.digest) {
-          setError(data.error ?? `${NEWS_SEARCH_CATEGORY_LABEL[c]} の解説に失敗しました。`);
+          const detail = data.error ?? "解説に失敗";
+          lines.push({ category: c, ok: false, detail });
+          setLastEnrichRun({ at: new Date().toISOString(), lines });
+          setError(detail);
+          if (data.digest) setDigest(data.digest);
           return;
         }
         latest = data.digest;
         setDigest(data.digest);
+        lines.push({
+          category: c,
+          ok: true,
+          detail: `解説 ${data.enrichedCount ?? (data.digest.categories[c] ?? []).length} 件`,
+        });
       }
       const stillNeeds = NEWS_SEARCH_CATEGORIES.some((c) =>
         (latest.categories[c] ?? []).some((item) => !isEnriched(item)),
       );
+      setLastEnrichRun({ at: new Date().toISOString(), lines });
       if (stillNeeds) {
         setError(
           "一部カテゴリの解説が未完了のままです。成功扱いせず再試行してください。",
@@ -132,6 +212,7 @@ export default function NewsSearchPanel() {
       }
       setEnrichProgress(null);
     } catch {
+      setLastEnrichRun({ at: new Date().toISOString(), lines });
       setError("解説生成に失敗しました。しばらくして再試行してください。");
     } finally {
       setEnriching(false);
@@ -380,6 +461,89 @@ export default function NewsSearchPanel() {
               </div>
             </section>
           </div>
+
+          {pipelineSummary && (
+            <section className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-300">
+              <p className="text-[11px] tracking-[0.16em] text-slate-500 uppercase">
+                取得・解説の結果サマリー
+              </p>
+              <p className="mt-2 text-slate-200">
+                総合: {pipelineSummary.statusLabel}
+                {" · "}
+                記事 {pipelineSummary.totalEnriched}/{pipelineSummary.totalFetched}{" "}
+                件解説済
+                {" · "}
+                ソース {pipelineSummary.source}
+                {pipelineSummary.usedFallback ? " · 緊急フィード補完あり" : ""}
+              </p>
+              <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                {pipelineSummary.rows.map((row) => (
+                  <li
+                    key={row.category}
+                    className="flex justify-between gap-3 text-xs sm:text-sm"
+                  >
+                    <span className="text-slate-400">{row.label}</span>
+                    <span
+                      className={
+                        row.fetched === 0
+                          ? "text-amber-200/90"
+                          : row.pending > 0
+                            ? "text-amber-100"
+                            : "text-emerald-200/90"
+                      }
+                    >
+                      {row.fetched === 0
+                        ? "取得0件"
+                        : row.pending > 0
+                          ? `取得${row.fetched} · 解説${row.enriched} · 未${row.pending}`
+                          : `取得${row.fetched} · 解説完了`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {pipelineSummary.collectionErrors.length > 0 && (
+                <div className="mt-3 border-t border-white/8 pt-3">
+                  <p className="text-xs text-slate-500">フィード取得で失敗したもの（一部）</p>
+                  <ul className="mt-1 space-y-0.5 text-xs text-rose-200/85">
+                    {pipelineSummary.collectionErrors.slice(0, 5).map((err) => (
+                      <li key={err} className="truncate">
+                        {err}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {pipelineSummary.enrichmentErrors.length > 0 && (
+                <div className="mt-3 border-t border-white/8 pt-3">
+                  <p className="text-xs text-slate-500">解説で失敗したもの</p>
+                  <ul className="mt-1 space-y-0.5 text-xs text-rose-200/85">
+                    {pipelineSummary.enrichmentErrors.slice(0, 6).map((err) => (
+                      <li key={err}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {lastEnrichRun && (
+                <div className="mt-3 border-t border-white/8 pt-3">
+                  <p className="text-xs text-slate-500">
+                    直近の手動再実行{" "}
+                    {lastEnrichRun.at.slice(0, 16).replace("T", " ")}
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {lastEnrichRun.lines.map((line) => (
+                      <li
+                        key={`${line.category}-${line.detail}`}
+                        className={line.ok ? "text-emerald-200/85" : "text-rose-200/90"}
+                      >
+                        {NEWS_SEARCH_CATEGORY_LABEL[line.category]}:{" "}
+                        {line.ok ? "OK" : "失敗"} — {line.detail}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
     </div>

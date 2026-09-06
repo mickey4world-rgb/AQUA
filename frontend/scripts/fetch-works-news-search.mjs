@@ -317,6 +317,7 @@ async function collectSeeds() {
   const primary = await collectFromFeeds(FEEDS, "RSS");
   const seeds = [...primary.seeds];
   const errors = [...primary.errors];
+  let usedFallback = false;
   const thin = CATEGORIES.filter(
     (c) => seeds.filter((s) => s.category === c).length < 3,
   );
@@ -328,14 +329,15 @@ async function collectSeeds() {
     const secondary = await collectFromFeeds(feeds, "RSS-fallback");
     seeds.push(...secondary.seeds);
     errors.push(...secondary.errors);
+    if (secondary.seeds.length > 0) usedFallback = true;
     console.log(
-      `[works-news] usedFallback=true thin=${thin.join(",") || "all"} added=${secondary.seeds.length}`,
+      `[works-news] usedFallback=${usedFallback} thin=${thin.join(",") || "all"} added=${secondary.seeds.length}`,
     );
   }
-  return { seeds, errors };
+  return { seeds, errors, usedFallback };
 }
 
-function buildDigest(seeds) {
+function buildDigest(seeds, meta = {}) {
   const seen = new Set();
   const unique = [];
   for (const seed of seeds) {
@@ -380,6 +382,10 @@ function buildDigest(seeds) {
     categories,
     solunaSynced: false,
     enrichmentStatus: "pending",
+    usedFallback: meta.usedFallback === true,
+    collectionErrors: Array.isArray(meta.collectionErrors)
+      ? meta.collectionErrors.slice(0, 8)
+      : [],
     summary: CATEGORIES.map((c) => `${LABELS[c]}: ${categories[c][0]?.title ?? "—"}`).join(
       " / ",
     ),
@@ -478,9 +484,12 @@ async function main() {
     return;
   }
 
-  const { seeds, errors } = await collectSeeds();
+  const { seeds, errors, usedFallback } = await collectSeeds();
   console.log(`[works-news] seeds=${seeds.length} errors=${errors.length}`);
-  const digest = buildDigest(seeds);
+  const digest = buildDigest(seeds, {
+    usedFallback,
+    collectionErrors: errors,
+  });
   for (const key of CATEGORIES) {
     console.log(`[works-news] ${key}=${digest.categories[key].length}`);
   }
