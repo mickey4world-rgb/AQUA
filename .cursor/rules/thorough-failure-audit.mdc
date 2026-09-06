@@ -15,8 +15,10 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 2. **Design-time optimism**: First ship used placeholders + “今夜／ボタンで後から補完” as the plan, without an SWA timeout budget or an oracle that the CTA actually produces the promised artifact. That is **designed-in degraded success**, not a later bug.
 3. **Copy ≠ invariant**: UI/button text promised “詳細化／再取得で解説” while API returned `ok: true` with the same placeholders. Rule examples covered news/warm but not **CTA promise vs delivery**.
 4. **Symptom metric**: “API 200 / rebuild saved / workflow green” while outlook still said 今夜の解説… — weak proxy, same class as warm-ok / liveNewsOk-false.
+5. **Visual weak oracle**: “Cesium loaded / satellites move / Canvas mounted” while Earth was a blank blue ball (external tiles failed async; `baseLayer: false` with no bundled base). Same class: substitute that changes meaning still looked like success.
 
 If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
+If you catch yourself saying “viewer is ready”, ask: **can a stranger recognize continents/map on first paint?**
 
 ## Design-time gate (before first ship — not after the user complains)
 
@@ -40,8 +42,8 @@ For any feature whose value depends on AI, live fetch, cron, or multi-step work 
 1. **Success criteria**: State the invariant (user-visible contract), not the last symptom.
 2. **Architecture change reclassify**: Sole source of truth → former best-effort becomes correctness. Silent `catch` forbidden unless durable same-intent fallback exists.
 3. **New failure modes**: cache miss, multi-instance, cron skip, secret missing, quota, **platform timeout**, partial category enrich. Fallback or hard-fail each.
-4. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields). Fix the **class**.
-5. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path?).
+4. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields, **3D/map imagery** `baseLayer: false` / CDN textures / `Suspense fallback={null}`). Fix the **class**.
+5. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path? **continents/map visible on globe — not “viewer ready” / tracks moving / Canvas mounted**).
 6. **Self-interrogation**: Symptom vs cause? Why did I choose X? If answer is only “we did Y”, dig one more why — especially “初回で甘く見積もった／後でボタン” incentives.
 
 ## Incident default (do not wait to be asked)
@@ -57,14 +59,15 @@ On every bug/outage the user reports (or you discover), **before** the symptom p
 
 Never treat as successful completion of the original intent:
 
-- Primary path fails (quota, 404, timeout) → substitute that **changes meaning** (ungrounded LLM as “latest news”, yesterday as “today”, memory-only as “persisted”, **RSS placeholder as “AI解説”**) → `ok: true` / green CI
+- Primary path fails (quota, 404, timeout) → substitute that **changes meaning** (ungrounded LLM as “latest news”, yesterday as “today”, memory-only as “persisted”, **RSS placeholder as “AI解説”**, **blue ellipsoid / empty Canvas as “Earth viewer ready”**) → `ok: true` / green CI
 - CTA / button / copy promises enrich・詳細化・再生成 but handler saves or returns unfinished placeholders as success
 - `continue-on-error` then proceeding as if the failed step’s invariant held
 - `getLatest*` when the contract is **today’s** document
 - Silent `catch` inventing empty/default data on a correctness-critical path
 - Shipping “incomplete now, user can press a button later” **without** a verified button path and an explicit incomplete status the UI respects
+- **Visual/3D**: treating Cesium/Three “loaded” / satellite tracks / `ready=true` as success when the user-visible contract is **recognizable Earth/map** (continents or tiles). External tile-only + `baseLayer: false` without a same-intent bundled base is designed-in degraded success.
 
-Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true` blocking “完成” UX).
+Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true`, `imageryLayers.length === 0` → error UI — blocking “完成” UX).
 
 ## Forbidden
 
@@ -74,3 +77,4 @@ Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / deg
 - Treating multi-instance memory as durable storage
 - Stopping at “warm/ingest/rebuild succeeded” when the user-visible artifact is still placeholder or public read can 503
 - Stopping at “briefing ingested” when source was training-data / non-live
+- Stopping at “Cesium Viewer constructed / tracks animate” when the globe has no imagery and looks like a blank blue ball

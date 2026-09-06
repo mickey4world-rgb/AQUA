@@ -134,12 +134,17 @@ function addUrlImageryLayer(
  * 1) Natural Earth（同梱）を土台
  * 2) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
  * 3) 任意で地名ラベル
+ * 戻り値で「層が載ったか」を返す。0層は呼び出し側で失敗扱い必須。
  */
 async function ensureEarthImagery(
   viewer: CesiumViewer,
   Cesium: CesiumModule,
   options: { withLabels: boolean; preferSatellite: boolean },
-) {
+): Promise<{
+  layerCount: number;
+  usedNaturalEarth: boolean;
+  usedOverlay: boolean;
+}> {
   viewer.imageryLayers.removeAll();
   viewer.scene.globe.show = true;
   viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a2f5c");
@@ -149,9 +154,13 @@ async function ensureEarthImagery(
     viewer.scene.skyAtmosphere.show = true;
   }
 
+  let usedNaturalEarth = false;
+  let usedOverlay = false;
+
   try {
     const natural = await createNaturalEarthLayer(Cesium);
     viewer.imageryLayers.add(natural);
+    usedNaturalEarth = true;
   } catch (error) {
     console.warn("[EagleEye] Natural Earth base missing", error);
   }
@@ -160,13 +169,14 @@ async function ensureEarthImagery(
   for (const candidate of candidates) {
     try {
       addUrlImageryLayer(viewer, Cesium, candidate, 1);
+      usedOverlay = true;
       break;
     } catch (error) {
       console.warn("[EagleEye] imagery candidate failed", candidate.credit, error);
     }
   }
 
-  if (options.withLabels) {
+  if (options.withLabels && (usedNaturalEarth || usedOverlay)) {
     try {
       addUrlImageryLayer(
         viewer,
@@ -183,6 +193,15 @@ async function ensureEarthImagery(
       /* labels optional */
     }
   }
+
+  const layerCount = viewer.imageryLayers.length as number;
+  if (layerCount < 1) {
+    throw new Error(
+      "地球テクスチャを1枚も載せられませんでした（Natural Earth / 外部タイル全滅）。",
+    );
+  }
+
+  return { layerCount, usedNaturalEarth, usedOverlay };
 }
 
 export type EagleEyeViewerState = {
@@ -313,6 +332,7 @@ export default function EagleEyeViewer({
     nearest: "",
     count: 0,
     place: "東京",
+    earthLayer: "準備中",
   });
 
   const emitState = useCallback((patch: Partial<EagleEyeViewerState>) => {
@@ -476,10 +496,25 @@ export default function EagleEyeViewer({
           void ensureEarthImagery(viewer, Cesium, {
             withLabels: true,
             preferSatellite: true,
-          }).then(() => {
-            if (!viewer || viewer.isDestroyed()) return;
-            viewer.scene.morphTo2D(1.6);
-          });
+          })
+            .then((imagery) => {
+              if (!viewer || viewer.isDestroyed()) return;
+              setHud((prev) => ({
+                ...prev,
+                earthLayer: imagery.usedOverlay
+                  ? "地図モード · タイル"
+                  : "地図モード · Natural Earth",
+              }));
+              viewer.scene.morphTo2D(1.6);
+            })
+            .catch((error) => {
+              console.error("[EagleEye] map imagery failed", error);
+              setLoadError(
+                error instanceof Error
+                  ? error.message
+                  : "地図テクスチャの読み込みに失敗しました",
+              );
+            });
 
           setTimeout(() => {
             if (!viewer || viewer.isDestroyed()) return;
@@ -554,7 +589,25 @@ export default function EagleEyeViewer({
     void ensureEarthImagery(viewer, Cesium, {
       withLabels: false,
       preferSatellite: true,
-    });
+    })
+      .then((imagery) => {
+        setHud((prev) => ({
+          ...prev,
+          earthLayer: imagery.usedOverlay
+            ? imagery.usedNaturalEarth
+              ? "地球地図 · 衛星タイル"
+              : "衛星／道路タイル"
+            : "Natural Earth（同梱）",
+        }));
+      })
+      .catch((error) => {
+        console.error("[EagleEye] exit-map imagery failed", error);
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "地球テクスチャの読み込みに失敗しました",
+        );
+      });
     showMapCameras(true);
     viewer.scene.morphTo3D(1.5);
     setTimeout(() => {
@@ -717,6 +770,13 @@ export default function EagleEyeViewer({
         await ensureEarthImagery(viewer, Cesium, {
           withLabels: false,
           preferSatellite: true,
+        }).then((imagery) => {
+          const earthLayer = imagery.usedOverlay
+            ? imagery.usedNaturalEarth
+              ? "地球地図 · 衛星タイル"
+              : "衛星／道路タイル"
+            : "Natural Earth（同梱）";
+          setHud((prev) => ({ ...prev, earthLayer }));
         });
         viewer.scene.globe.show = true;
         viewer.scene.globe.enableLighting = false;
@@ -991,6 +1051,9 @@ export default function EagleEyeViewer({
           <div className="rounded-lg border border-cyan-400/20 bg-black/60 px-3 py-1.5 text-[10px] text-slate-300">
             最接近（{hud.place}）:{" "}
             <span className="text-amber-300">{hud.nearest}</span>
+          </div>
+          <div className="rounded-lg border border-emerald-400/20 bg-black/60 px-3 py-1.5 text-[10px] text-emerald-100/90">
+            地表: {hud.earthLayer}
           </div>
         </div>
       )}

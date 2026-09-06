@@ -147,11 +147,36 @@ function MoonMesh() {
   );
 }
 
-function EarthMesh({
-  angle,
-}: {
-  angle: number;
-}) {
+function EarthMeshFallback({ angle }: { angle: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const earthRef = useRef<THREE.Mesh>(null);
+
+  useFrame((_, delta) => {
+    if (groupRef.current) groupRef.current.position.copy(earthPosition(angle));
+    if (earthRef.current) earthRef.current.rotation.y += delta * 0.35;
+  });
+
+  return (
+    <group ref={groupRef} position={earthPosition(angle)}>
+      <mesh ref={earthRef}>
+        <sphereGeometry args={[EARTH_RADIUS, 48, 48]} />
+        <meshPhongMaterial
+          color="#2563eb"
+          emissive="#1d4ed8"
+          emissiveIntensity={0.35}
+          shininess={20}
+        />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[EARTH_RADIUS * 1.08, 24, 24]} />
+        <meshBasicMaterial color="#93c5fd" transparent opacity={0.2} />
+      </mesh>
+      <MoonMesh />
+    </group>
+  );
+}
+
+function EarthMeshTextured({ angle }: { angle: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
@@ -198,6 +223,15 @@ function EarthMesh({
       </mesh>
       <MoonMesh />
     </group>
+  );
+}
+
+/** CDN テクスチャ失敗時も地球球が見える（null Suspense で消えない） */
+function EarthMesh({ angle }: { angle: number }) {
+  return (
+    <Suspense fallback={<EarthMeshFallback angle={angle} />}>
+      <EarthMeshTextured angle={angle} />
+    </Suspense>
   );
 }
 
