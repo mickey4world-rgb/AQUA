@@ -968,12 +968,13 @@ export default function EagleEyeViewer({
             (s) => s.id === nearestId,
           );
 
-          setHud({
+          setHud((prev) => ({
+            ...prev,
             speed: nearestInfo ? formatSpeedKmS(nearestInfo.speedKmS) : "—",
             nearest: nearestSat?.name ?? "—",
             count: satellitesRef.current.length,
             place: roi.label ?? "—",
-          });
+          }));
 
           updateSatelliteStyles(nearestId, selectedSatRef.current?.id ?? null);
 
