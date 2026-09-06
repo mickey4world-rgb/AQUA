@@ -73,6 +73,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/news-search-preview",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/neo-preview",
       "allowedRoles": ["anonymous", "authenticated"]
     },

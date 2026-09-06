@@ -7,6 +7,7 @@ import AsteroidShowcaseDemo from "@/components/showcase/demos/AsteroidShowcaseDe
 import CouncilShowcaseDemo from "@/components/showcase/demos/CouncilShowcaseDemo";
 import DisneyShowcaseDemo from "@/components/showcase/demos/DisneyShowcaseDemo";
 import JudicialShowcaseDemo from "@/components/showcase/demos/JudicialShowcaseDemo";
+import NewsSearchShowcaseDemo from "@/components/showcase/demos/NewsSearchShowcaseDemo";
 import SankeyShowcaseDemo from "@/components/showcase/demos/SankeyShowcaseDemo";
 import SolunaShowcaseDemo from "@/components/showcase/demos/SolunaShowcaseDemo";
 import StocksShowcaseDemo from "@/components/showcase/demos/StocksShowcaseDemo";
@@ -14,6 +15,7 @@ import { SHOWCASE_SECTIONS, type ShowcaseSectionMeta } from "@/lib/showcase-data
 
 const DEMO_MAP = {
   sankey: SankeyShowcaseDemo,
+  "news-search": NewsSearchShowcaseDemo,
   judicial: JudicialShowcaseDemo,
   council: CouncilShowcaseDemo,
   stocks: StocksShowcaseDemo,

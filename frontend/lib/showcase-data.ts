@@ -27,8 +27,20 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     tag: "WORKS",
   },
   {
-    id: "judicial",
+    id: "news-search",
     index: "02",
+    title: "News Search",
+    titleJa: "ニュースサーチ",
+    description:
+      "深夜バッチで集約した AI・システム開発・世界経済・官公庁ニュースと解説を無料公開。一覧・深堀・見通しは誰でも閲覧でき、AI相談チャットはログイン後です。",
+    accent: "#5eead4",
+    href: "/works/consult/news-search",
+    publicHref: "/news-search-preview",
+    tag: "WORKS",
+  },
+  {
+    id: "judicial",
+    index: "03",
     title: "Case Notebook",
     titleJa: "訴訟記録分析",
     description:
@@ -39,7 +51,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "council",
-    index: "03",
+    index: "04",
     title: "AI Council",
     titleJa: "AI 合同会議",
     description:
@@ -50,7 +62,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "stocks",
-    index: "04",
+    index: "05",
     title: "Stock Watch",
     titleJa: "保有株",
     description:
@@ -61,7 +73,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "disney",
-    index: "05",
+    index: "06",
     title: "TDR Analytics",
     titleJa: "ディズニー",
     description:
@@ -73,7 +85,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "asteroid",
-    index: "06",
+    index: "07",
     title: "NEO Simulator",
     titleJa: "小惑星 3D シミュレーター",
     description:
@@ -85,7 +97,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "soluna",
-    index: "07",
+    index: "08",
     title: "Soluna",
     titleJa: "ソルーナ",
     description:
