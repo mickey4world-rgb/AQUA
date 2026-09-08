@@ -1,6 +1,7 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { analyzeStock } from "@/lib/server/stock-analysis";
+import { maybeNotifyStockSellAdvice } from "@/lib/server/stock-notify";
 import {
   createStockWatch,
   listStockWatches,
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
         .map(async (watch) => {
           try {
             const advice = await analyzeStock(watch);
+            void maybeNotifyStockSellAdvice(watch, advice);
             return { ...watch, advice };
           } catch {
             return watch;
