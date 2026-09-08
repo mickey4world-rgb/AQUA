@@ -1338,6 +1338,37 @@ body {
   z-index: 1;
 }
 
+/* 右側デモ枠の高さを固定し、読み込み／段階表示でページが上下に跳ねないようにする */
+.showcase-section__demo {
+  width: 100%;
+}
+
+.showcase-section__demo-slot {
+  height: 26rem;
+  min-height: 26rem;
+  max-height: 26rem;
+}
+
+@media (min-width: 640px) {
+  .showcase-section__demo-slot {
+    height: 28rem;
+    min-height: 28rem;
+    max-height: 28rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .showcase-section__demo-slot {
+    height: 30rem;
+    min-height: 30rem;
+    max-height: 30rem;
+  }
+}
+
+.showcase-section__demo-slot > .showcase-demo {
+  height: 100%;
+}
+
 .showcase-section__link:hover {
   border-color: color-mix(in srgb, var(--showcase-accent) 45%, white 10%);
   color: white;
@@ -1345,6 +1376,9 @@ body {
 
 .showcase-demo {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .showcase-demo__glow {
@@ -1359,23 +1393,29 @@ body {
   filter: blur(18px);
   opacity: 0.75;
   animation: showcase-glow-pulse 4s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes showcase-glow-pulse {
   0%,
   100% {
     opacity: 0.55;
-    transform: scale(0.98);
   }
   50% {
     opacity: 0.85;
-    transform: scale(1.02);
   }
 }
 
 .showcase-demo__frame {
   position: relative;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 1.25rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.92));
@@ -1383,17 +1423,6 @@ body {
     0 24px 60px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(12px);
-  animation: showcase-frame-float 6s ease-in-out infinite;
-}
-
-@keyframes showcase-frame-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
 }
 
 .showcase-payee-detail {
@@ -1872,7 +1901,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .showcase-hero__film,
   .showcase-demo__glow,
-  .showcase-demo__frame,
   .showcase-sankey-flow svg path,
   .showcase-sparkline,
   .showcase-mickey-head,

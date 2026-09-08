@@ -58,7 +58,7 @@ function ShowcaseSection({
       style={{ ["--showcase-accent" as string]: section.accent }}
     >
       <div className="showcase-section__bg" aria-hidden />
-      <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12 lg:py-20">
+      <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-start lg:gap-12 lg:py-20">
         <div className="showcase-section__copy">
           <p className="font-mono text-[11px] tracking-[0.22em] text-slate-500">
             {section.index} — {section.tag}
@@ -87,7 +87,9 @@ function ShowcaseSection({
             </Link>
           </div>
         </div>
-        <div className="showcase-section__demo">{children}</div>
+        <div className="showcase-section__demo">
+          <div className="showcase-section__demo-slot">{children}</div>
+        </div>
       </div>
     </section>
   );
@@ -136,7 +138,7 @@ export default function StudioShowcase() {
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a
-              href="#sankey"
+              href={`#${SHOWCASE_SECTIONS[0]?.id ?? "news-search"}`}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-300/90 to-teal-200/90 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:from-cyan-200 hover:to-teal-100"
             >
               ショーケースを見る

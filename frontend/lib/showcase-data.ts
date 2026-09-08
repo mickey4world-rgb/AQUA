@@ -15,20 +15,8 @@ export type ShowcaseSectionMeta = {
 
 export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   {
-    id: "sankey",
-    index: "01",
-    title: "Money Flow",
-    titleJa: "サンキーダイアグラム",
-    description:
-      "行政事業レビューの予算データをサンキー図で可視化。2列目=府省庁、3列目=主要事業、最右=支出先。無料プレビューで明細まで確認できます。",
-    accent: "#67e8f9",
-    href: "/works/admin/money-flow",
-    publicHref: "/works-preview",
-    tag: "WORKS",
-  },
-  {
     id: "news-search",
-    index: "02",
+    index: "01",
     title: "News Search",
     titleJa: "ニュースサーチ",
     description:
@@ -39,41 +27,8 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     tag: "WORKS",
   },
   {
-    id: "judicial",
-    index: "03",
-    title: "Case Notebook",
-    titleJa: "訴訟記録分析",
-    description:
-      "訴状・答弁書・準備書面を AI が横断分析。争点・時系列・証拠対応を構造化して、NotebookLM 風に整理します。",
-    accent: "#c4b5fd",
-    href: "/works/judicial/case-notebook",
-    tag: "WORKS",
-  },
-  {
-    id: "council",
-    index: "04",
-    title: "AI Council",
-    titleJa: "AI 合同会議",
-    description:
-      "論理派・発想派・懐疑派が議論し、議長が統合結論を出す。国内限定と最新モデルの2モードで多角的な判断を得られます。",
-    accent: "#a78bfa",
-    href: "/council",
-    tag: "Multi-AI",
-  },
-  {
-    id: "stocks",
-    index: "05",
-    title: "Stock Watch",
-    titleJa: "保有株",
-    description:
-      "米国株・日本株をウォッチリストで管理。価格変動と AI 売買アドバイスで、保有銘柄の動きを逃しません。",
-    accent: "#38bdf8",
-    href: "/stocks",
-    tag: "Finance",
-  },
-  {
     id: "disney",
-    index: "06",
+    index: "02",
     title: "TDR Analytics",
     titleJa: "ディズニー",
     description:
@@ -85,7 +40,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
   },
   {
     id: "asteroid",
-    index: "07",
+    index: "03",
     title: "NEO Simulator",
     titleJa: "小惑星 3D シミュレーター",
     description:
@@ -94,6 +49,51 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     href: "/space",
     publicHref: "/neo-preview",
     tag: "Cosmos",
+  },
+  {
+    id: "stocks",
+    index: "04",
+    title: "Stock Watch",
+    titleJa: "保有株",
+    description:
+      "米国株・日本株をウォッチリストで管理。価格変動と AI 売買アドバイスで、保有銘柄の動きを逃しません。",
+    accent: "#38bdf8",
+    href: "/stocks",
+    tag: "Finance",
+  },
+  {
+    id: "judicial",
+    index: "05",
+    title: "Case Notebook",
+    titleJa: "訴訟記録分析",
+    description:
+      "訴状・答弁書・準備書面を AI が横断分析。争点・時系列・証拠対応を構造化して、NotebookLM 風に整理します。",
+    accent: "#c4b5fd",
+    href: "/works/judicial/case-notebook",
+    tag: "WORKS",
+  },
+  {
+    id: "council",
+    index: "06",
+    title: "AI Council",
+    titleJa: "AI 合同会議",
+    description:
+      "論理派・発想派・懐疑派が議論し、議長が統合結論を出す。国内限定と最新モデルの2モードで多角的な判断を得られます。",
+    accent: "#a78bfa",
+    href: "/council",
+    tag: "Multi-AI",
+  },
+  {
+    id: "sankey",
+    index: "07",
+    title: "Money Flow",
+    titleJa: "サンキーダイアグラム",
+    description:
+      "行政事業レビューの予算データをサンキー図で可視化。2列目=府省庁、3列目=主要事業、最右=支出先。無料プレビューで明細まで確認できます。",
+    accent: "#67e8f9",
+    href: "/works/admin/money-flow",
+    publicHref: "/works-preview",
+    tag: "WORKS",
   },
   {
     id: "soluna",
