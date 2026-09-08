@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import AppSummaryGrid from "@/components/costs/AppSummaryGrid";
 import AzureInfraCostPanel from "@/components/costs/AzureInfraCostPanel";
 import CostsPageShell from "@/components/costs/CostsPageShell";
@@ -217,15 +218,13 @@ export default function CostsPage() {
               社会貢献の詳細も確認できます。表示はキャッシュ優先で、重い外部取得は裏のバッチ更新です。
               {refreshing ? " · 最新を確認中…" : ""}
             </p>
-            <a
+            <Link
               href="/costs/access"
-              target="_blank"
-              rel="noopener noreferrer"
               className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-400/25 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-400/40 hover:bg-amber-500/15"
             >
-              アクセス分析 — 公開 / 内部（別タブ）
-              <span aria-hidden>↗</span>
-            </a>
+              アクセス分析 — 公開 / 内部
+              <span aria-hidden>→</span>
+            </Link>
           </div>
           <div className="flex items-center gap-2">
             <button

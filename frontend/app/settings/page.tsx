@@ -92,6 +92,10 @@ export default function SettingsPage() {
                 onChange={(e) => setNotifyEmail(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-base text-white"
               />
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                保有株の売り検討アラートと、Soluna
+                資産の売買約定後の内容をこのアドレスへ送ります（送信経路の環境変数設定が必要です）。
+              </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-slate-400">
               <p>認証プロバイダ: {user.authProvider}</p>

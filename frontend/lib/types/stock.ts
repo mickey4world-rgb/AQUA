@@ -1,5 +1,7 @@
 export type StockMarket = "us" | "jp";
 
+export type AdviceAction = "hold" | "buy" | "sell" | "watch";
+
 export interface StockWatch {
   id: string;
   userId: string;
@@ -12,6 +14,10 @@ export interface StockWatch {
   targetPrice: number;
   memo?: string;
   isActive: boolean;
+  /** 直近のメール通知アクション（sell など） */
+  lastNotifyAction?: AdviceAction;
+  /** 直近のメール通知時刻（ISO） */
+  lastNotifyAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,9 +40,9 @@ export interface UpdateStockWatchRequest {
   targetMultiplier?: number;
   memo?: string;
   isActive?: boolean;
+  lastNotifyAction?: AdviceAction;
+  lastNotifyAt?: string;
 }
-
-export type AdviceAction = "hold" | "buy" | "sell" | "watch";
 
 export interface PriceChangeContext {
   title: string;

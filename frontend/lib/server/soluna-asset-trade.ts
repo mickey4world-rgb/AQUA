@@ -861,6 +861,8 @@ export async function runDailyAssetTrade(input: {
   console.log(`[asset-trade] 市場: ${pulses.map((p) => p.summary).join(" || ")}`);
   console.log(`[asset-trade] 判断: ${decision.action} — ${decision.reason}`);
 
+  let traded: SolunaTradeRecord | null = null;
+
   if (decision.action === "BUY") {
     await sendOrder(decision.product, "BUY", decision.amountJpy, decision.pulse.ltp);
     const trade: SolunaTradeRecord = {
@@ -874,6 +876,7 @@ export async function runDailyAssetTrade(input: {
       briefingId: input.briefingId,
     };
     newTrades = [...newTrades.slice(-29), trade];
+    traded = trade;
     updatedBalance = await getBitFlyerBalance();
   } else if (decision.action === "SELL") {
     const held = heldAmount(ledger, decision.product);
@@ -898,6 +901,7 @@ export async function runDailyAssetTrade(input: {
         briefingId: input.briefingId,
       };
       newTrades = [...newTrades.slice(-29), trade];
+      traded = trade;
       updatedBalance = await getBitFlyerBalance();
     }
   }
@@ -932,7 +936,7 @@ export async function runDailyAssetTrade(input: {
   const closingDayChange = updatedTotal - previousTotalYen;
   const closingBattleMode = resolveBattleMode(closingDayChange);
 
-  return {
+  const updatedLedger: SolunaAssetLedger = {
     ...ledger,
     cashYen: updatedBalance.cashYen,
     btcHeld: updatedBalance.btcHeld,
@@ -959,6 +963,25 @@ export async function runDailyAssetTrade(input: {
     lunaComment: lunaComments[decision.action],
     updatedAt: new Date().toISOString(),
   };
+
+  if (traded) {
+    try {
+      const { notifyAssetTradeExecuted } = await import(
+        "@/lib/server/soluna-asset-trade-notify"
+      );
+      await notifyAssetTradeExecuted({
+        trade: traded,
+        solComment: updatedLedger.solComment,
+        lunaComment: updatedLedger.lunaComment,
+        totalYen: updatedLedger.totalYen,
+        monthlyRealizedPnlYen: updatedLedger.monthlyRealizedPnlYen,
+      });
+    } catch (error) {
+      console.warn("[asset-trade] notify email failed", error);
+    }
+  }
+
+  return updatedLedger;
 }
 
 /**
