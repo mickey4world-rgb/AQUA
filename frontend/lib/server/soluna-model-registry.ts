@@ -290,15 +290,16 @@ export function costBiasForProvider(
   provider: SolunaProvider,
   costMode: SolunaCostMode,
 ): number {
-  // normal でも無料 Gemini をわずかに優遇（同点付近の有料偏りを緩和）
+  // normal でも Gemini / Azure OpenAI を優遇し、Claude（Marketplace）を抑える
   if (costMode === "normal") {
-    if (provider === "gemini") return 1;
-    if (provider === "claude") return -0.5;
+    if (provider === "gemini") return 2;
+    if (provider === "openai") return 1.5;
+    if (provider === "claude") return -2;
     return 0;
   }
-  if (provider === "gemini") return costMode === "minimal" ? 6 : 3;
-  if (provider === "openai") return costMode === "minimal" ? -3 : -1.5;
-  if (provider === "claude") return costMode === "minimal" ? -4 : -2;
+  if (provider === "gemini") return costMode === "minimal" ? 7 : 4;
+  if (provider === "openai") return costMode === "minimal" ? -1 : 0.5;
+  if (provider === "claude") return costMode === "minimal" ? -6 : -3.5;
   return 0;
 }
 
