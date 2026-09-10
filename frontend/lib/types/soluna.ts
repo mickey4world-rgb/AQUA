@@ -282,6 +282,10 @@ export interface SolunaTradeRecord {
   priceBtc: number;
   realizedPnlJpy?: number; // 実現損益（SELL 時のみ）
   reason: string;        // "dca" | "take-profit" | "stop-loss"
+  /** 適用した売買条件番号（#1〜）。複数可 */
+  ruleIds?: number[];
+  /** 条件番号付きの詳細理由（ログ・コスト画面用） */
+  reasonDetail?: string;
   briefingId: string;
 }
 

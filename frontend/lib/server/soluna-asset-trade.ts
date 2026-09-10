@@ -29,46 +29,39 @@ import {
   fetchHorizonMomentums,
   type HorizonMomentum,
 } from "@/lib/server/soluna-asset-horizons";
+import {
+  ASSET_PRINCIPAL_YEN,
+  BUY_COOLDOWN_MS,
+  BULLISH_SCORE,
+  HARD_STOP_LOSS_RATE,
+  HARD_TAKE_PROFIT_RATE,
+  LONG_TERM_RECOVERY_HORIZON_MS,
+  MAX_CRYPTO_RATIO,
+  MAX_DAILY_BUY_YEN,
+  MAX_SINGLE_ASSET_RATIO,
+  MAX_SPREAD_BPS,
+  MAX_TRADE_YEN,
+  MIN_CASH_RATIO,
+  MIN_HOLD_BEFORE_SOFT_STOP_MS,
+  MIN_MONTHLY_TARGET_YEN,
+  MONTHLY_TARGET_RATE,
+  NO_STOP_LOSS_BELOW_CASH_YEN,
+  SLEEP_MODE_RATE,
+  SOFT_STOP_LOSS_RATE,
+  SOFT_TAKE_PROFIT_RATE,
+  STRONG_BULLISH_SCORE,
+  TRADEABLE_PRODUCTS,
+  type TradeableProduct,
+} from "@/lib/soluna-asset-trade-constants";
 
-// ── 定数 ─────────────────────────────────────────────────────────────────────
+export {
+  ASSET_PRINCIPAL_YEN,
+  MIN_MONTHLY_TARGET_YEN,
+  TRADEABLE_PRODUCTS,
+  type TradeableProduct,
+};
 
-export const ASSET_PRINCIPAL_YEN = 100_000;
-/** 月次目標の下限（元本10万未満でもこれ未満にはしない） */
-export const MIN_MONTHLY_TARGET_YEN = 2_000;
-const MAX_TRADE_YEN = 10_000;
-/** 利確を少し緩め、目標達成の余地を残す */
-const HARD_TAKE_PROFIT_RATE = 0.055;
-const SOFT_TAKE_PROFIT_RATE = 0.035;
-/**
- * 損切りは「少額積立＋長期保有」前提。短期の -3〜-5% では切らない。
- * 深い含み損かつ長期保有後のみ、かつ現金に余裕があるときだけ例外的に切る。
- */
-const HARD_STOP_LOSS_RATE = -0.25;
-const SOFT_STOP_LOSS_RATE = -0.15;
-/** 現金がこれ以下なら損切り禁止（プラス転換まで保有） */
-const NO_STOP_LOSS_BELOW_CASH_YEN = 500_000;
-/** ソフト損切りの最低保有（約30日）※実際は1年ホライズンが先に効く */
-const MIN_HOLD_BEFORE_SOFT_STOP_MS = 30 * 24 * 60 * 60 * 1000;
-/** 長期改善余地の説明用ホライズン（約1年）— この期間は損切りしない */
-const LONG_TERM_RECOVERY_HORIZON_MS = 365 * 24 * 60 * 60 * 1000;
-const MONTHLY_TARGET_RATE = 0.02;
-/** おやすみモード閾値（月初残高比）。目標2%とは別に、10%超で新規購入停止 */
-const SLEEP_MODE_RATE = 0.1;
-const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000;
-const MAX_DAILY_BUY_YEN = 20_000;
-const MAX_SPREAD_BPS = 12;
-const BULLISH_SCORE = 28;
-const STRONG_BULLISH_SCORE = 55;
-
-/** 総資産に対する現金の下限 */
-const MIN_CASH_RATIO = 0.28;
-/** 1銘柄の時価上限 */
-const MAX_SINGLE_ASSET_RATIO = 0.42;
-/** 暗号資産合計の時価上限 */
-const MAX_CRYPTO_RATIO = 0.72;
-
-export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY", "XRP_JPY", "XLM_JPY"] as const;
-export type TradeableProduct = (typeof TRADEABLE_PRODUCTS)[number];
+// ── 定数（エンジン内エイリアス・後方互換 export）──────────────────────────────
 
 /** bitFlyer Spot で将来拡張可能な候補（自動売買は TRADEABLE_PRODUCTS のみ） */
 export const BITFLYER_SPOT_CANDIDATES = [
@@ -484,6 +477,7 @@ type TradeDecision =
       reason: string;
       amountJpy: number;
       tradeReason: SolunaTradeRecord["reason"];
+      ruleIds: number[];
       pulse: MarketPulse;
     }
   | {
@@ -491,10 +485,18 @@ type TradeDecision =
       product: TradeableProduct;
       reason: string;
       tradeReason: "take-profit" | "stop-loss";
+      ruleIds: number[];
       pulse: MarketPulse;
     }
-  | { action: "HOLD"; reason: string };
+  | { action: "HOLD"; reason: string; ruleIds?: number[] };
 
+function formatReasonWithRuleIds(ruleIds: number[], detail: string): string {
+  const tag = [...new Set(ruleIds)]
+    .sort((a, b) => a - b)
+    .map((id) => `#${id}`)
+    .join("+");
+  return tag ? `${tag} ${detail}` : detail;
+}
 function jstDayKey(date = new Date()): string {
   return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
@@ -632,21 +634,31 @@ function trySellDecision(
 
   // プラス圏は利確（少額積立でも利益確定は継続）
   if (changeRate >= HARD_TAKE_PROFIT_RATE) {
+    const ruleIds = [11];
     return {
       action: "SELL",
       product,
       tradeReason: "take-profit",
+      ruleIds,
       pulse,
-      reason: `${meta.label} 硬利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      reason: formatReasonWithRuleIds(
+        ruleIds,
+        `${meta.label} 硬利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      ),
     };
   }
   if (changeRate >= SOFT_TAKE_PROFIT_RATE && fading) {
+    const ruleIds = [12];
     return {
       action: "SELL",
       product,
       tradeReason: "take-profit",
+      ruleIds,
       pulse,
-      reason: `${meta.label} 勢い減衰で利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      reason: formatReasonWithRuleIds(
+        ruleIds,
+        `${meta.label} 勢い減衰で利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      ),
     };
   }
 
@@ -656,26 +668,31 @@ function trySellDecision(
 
   if (stopLossBlockedByCash) {
     console.info(
-      `[asset-trade] skip stop-loss ${meta.label} cash=${cashYen}≤${NO_STOP_LOSS_BELOW_CASH_YEN} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 現金薄いため損切り禁止・長期保有`,
+      `[asset-trade] skip stop-loss ${meta.label} cash=${cashYen}≤${NO_STOP_LOSS_BELOW_CASH_YEN} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 現金薄いため損切り禁止・長期保有 #13`,
     );
     return null;
   }
 
   if (withinLongTermHorizon) {
     console.info(
-      `[asset-trade] defer stop-loss ${meta.label} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 1年以内は回復余地を優先`,
+      `[asset-trade] defer stop-loss ${meta.label} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 1年以内は回復余地を優先 #14`,
     );
     return null;
   }
 
   // 1年以上保有・現金に余裕あり、かつ深い含み損のみ例外的に損切り
   if (changeRate <= HARD_STOP_LOSS_RATE) {
+    const ruleIds = [15];
     return {
       action: "SELL",
       product,
       tradeReason: "stop-loss",
+      ruleIds,
       pulse,
-      reason: `${meta.label} 1年超保有後の硬損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      reason: formatReasonWithRuleIds(
+        ruleIds,
+        `${meta.label} 1年超保有後の硬損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      ),
     };
   }
 
@@ -685,12 +702,17 @@ function trySellDecision(
     holdMs != null &&
     holdMs >= MIN_HOLD_BEFORE_SOFT_STOP_MS
   ) {
+    const ruleIds = [16];
     return {
       action: "SELL",
       product,
       tradeReason: "stop-loss",
+      ruleIds,
       pulse,
-      reason: `${meta.label} 1年超・下落継続のため損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      reason: formatReasonWithRuleIds(
+        ruleIds,
+        `${meta.label} 1年超・下落継続のため損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
+      ),
     };
   }
 
@@ -715,7 +737,11 @@ function decideTrade(
   if (isSleepModeActive(ledger.monthlyRealizedPnlYen, ledger)) {
     return {
       action: "HOLD",
-      reason: `月次おやすみ閾値（10%）達成済み｜${pulseSummary}`,
+      ruleIds: [17],
+      reason: formatReasonWithRuleIds(
+        [17],
+        `月次おやすみ閾値（10%）達成済み｜${pulseSummary}`,
+      ),
     };
   }
 
@@ -741,7 +767,11 @@ function decideTrade(
       const remainH = ((BUY_COOLDOWN_MS - elapsed) / 3_600_000).toFixed(1);
       return {
         action: "HOLD",
-        reason: `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulseSummary}`,
+        ruleIds: [4],
+        reason: formatReasonWithRuleIds(
+          [4],
+          `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulseSummary}`,
+        ),
       };
     }
   }
@@ -751,7 +781,11 @@ function decideTrade(
   if (dailyBuyRoom < 1000) {
     return {
       action: "HOLD",
-      reason: `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulseSummary}`,
+      ruleIds: [3],
+      reason: formatReasonWithRuleIds(
+        [3],
+        `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulseSummary}`,
+      ),
     };
   }
 
@@ -759,7 +793,11 @@ function decideTrade(
   if (ledger.cashYen <= floor + 999) {
     return {
       action: "HOLD",
-      reason: `現金下限（${(MIN_CASH_RATIO * 100).toFixed(0)}%）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+      ruleIds: [5],
+      reason: formatReasonWithRuleIds(
+        [5],
+        `現金下限（${(MIN_CASH_RATIO * 100).toFixed(0)}%）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+      ),
     };
   }
 
@@ -793,7 +831,11 @@ function decideTrade(
   if (buyCandidates.length === 0) {
     return {
       action: "HOLD",
-      reason: `分散上限内で強気銘柄なし（閾値 ${buyThreshold}）｜${pulseSummary}`,
+      ruleIds: [8, 9, 10],
+      reason: formatReasonWithRuleIds(
+        [8, 9, 10],
+        `分散上限内で強気銘柄なし（閾値 ${buyThreshold}）｜${pulseSummary}`,
+      ),
     };
   }
 
@@ -807,14 +849,19 @@ function decideTrade(
     Math.min(best.room, dailyBuyRoom, Math.round(MAX_TRADE_YEN * conviction)),
   );
   const meta = PRODUCT_META[best.pulse.product];
+  const ruleIds = [1, 2, 6, 7, 8];
 
   return {
     action: "BUY",
     product: best.pulse.product,
     tradeReason: "dca",
+    ruleIds,
     amountJpy,
     pulse: best.pulse,
-    reason: `${meta.rpgName}へ分散召喚 ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%／単一上限${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号上限${(MAX_CRYPTO_RATIO * 100).toFixed(0)}%）｜${best.pulse.summary}`,
+    reason: formatReasonWithRuleIds(
+      ruleIds,
+      `${meta.rpgName}へ分散召喚 ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%／単一上限${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号上限${(MAX_CRYPTO_RATIO * 100).toFixed(0)}%）｜${best.pulse.summary}`,
+    ),
   };
 }
 
@@ -940,6 +987,8 @@ export async function runDailyAssetTrade(input: {
       sizeJpy: decision.amountJpy,
       priceBtc: decision.pulse.ltp,
       reason: decision.tradeReason,
+      ruleIds: decision.ruleIds,
+      reasonDetail: decision.reason,
       briefingId: input.briefingId,
     };
     newTrades = [...newTrades.slice(-29), trade];
@@ -965,6 +1014,8 @@ export async function runDailyAssetTrade(input: {
         priceBtc: decision.pulse.ltp,
         realizedPnlJpy: pnl,
         reason: decision.tradeReason,
+        ruleIds: decision.ruleIds,
+        reasonDetail: decision.reason,
         briefingId: input.briefingId,
       };
       newTrades = [...newTrades.slice(-29), trade];
