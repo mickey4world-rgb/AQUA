@@ -101,6 +101,84 @@ export default function AzureInfraCostPanel({
         </div>
       </div>
 
+      {(() => {
+        const resources = azure.byResource ?? [];
+        const focus = resources.filter(
+          (row) => row.focus === "foundry-claude" || row.focus === "azure-openai",
+        );
+        const others = resources.filter(
+          (row) => row.focus !== "foundry-claude" && row.focus !== "azure-openai",
+        );
+        if (resources.length === 0) return null;
+        const maxResourceCost = Math.max(...resources.map((r) => r.costAmount), 1);
+        return (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-white">AI リソース別（比較）</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Foundry Claude（Marketplace）と Azure OpenAI を並べて確認できます。
+            </p>
+            {focus.length > 0 && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {(["foundry-claude", "azure-openai"] as const).map((key) => {
+                  const row = focus.find((r) => r.focus === key);
+                  const amount = row?.costAmount ?? 0;
+                  const title =
+                    key === "foundry-claude"
+                      ? "Foundry Claude（Marketplace）"
+                      : "Azure OpenAI";
+                  const sub =
+                    key === "foundry-claude"
+                      ? "aqua-foundry-claude-prod"
+                      : "openai-personal-apps-prod";
+                  const border =
+                    key === "foundry-claude"
+                      ? "border-rose-400/25 bg-rose-500/10"
+                      : "border-sky-400/25 bg-sky-500/10";
+                  const valueColor =
+                    key === "foundry-claude" ? "text-rose-100" : "text-sky-100";
+                  return (
+                    <div key={key} className={`rounded-xl border px-4 py-3 ${border}`}>
+                      <p className="text-xs text-slate-400">{title}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-slate-500">{sub}</p>
+                      <p className={`mt-2 text-xl font-bold ${valueColor}`}>
+                        {formatCurrency(amount, azure.currency)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {others.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs font-medium text-slate-400">その他リソース（上位）</p>
+                {others.slice(0, 8).map((row, index) => {
+                  const width = Math.max(4, (row.costAmount / maxResourceCost) * 100);
+                  const color = SERVICE_COLORS[index % SERVICE_COLORS.length];
+                  return (
+                    <div key={row.resourceId}>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate text-slate-300" title={row.resourceId}>
+                          {row.label}
+                        </span>
+                        <span className="shrink-0 font-medium text-white">
+                          {formatCurrency(row.costAmount, azure.currency)}
+                        </span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r ${color}`}
+                          style={{ width: `${width}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {azure.byService.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold text-white">サービス別内訳</h3>

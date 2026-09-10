@@ -60,6 +60,15 @@ export interface AzureServiceCost {
   costAmount: number;
 }
 
+export interface AzureResourceCost {
+  resourceId: string;
+  resourceName: string;
+  label: string;
+  costAmount: number;
+  /** AI コスト比較用の注目リソース */
+  focus?: "foundry-claude" | "azure-openai";
+}
+
 export interface AzureDailyCostPoint {
   date: string;
   costAmount: number;
@@ -73,6 +82,8 @@ export interface AzureInfraCostSummary {
   /** RG フィルタ設定時の RG 内合計（参考） */
   resourceGroupCost?: number;
   byService: AzureServiceCost[];
+  /** リソース別（Foundry Claude / Azure OpenAI を含む） */
+  byResource: AzureResourceCost[];
   daily: AzureDailyCostPoint[];
   scopeLabel: string;
   note?: string;

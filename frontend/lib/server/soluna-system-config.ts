@@ -12,7 +12,7 @@ export function jstDateString(date = new Date()): string {
   return jst.toISOString().slice(0, 10);
 }
 
-export const SOL_SYSTEM_PROVIDER = "claude" as const;
+export const SOL_SYSTEM_PROVIDER = "openai" as const;
 export const LUNA_SYSTEM_PROVIDER = "openai" as const;
 
 export const MOOD_MIN = 0.15;

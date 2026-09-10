@@ -77,7 +77,7 @@ export interface SolunaSystemMessage {
   role: SolunaSystemMessageRole;
   content: string;
   createdAt: string;
-  provider?: "openai" | "claude";
+  provider?: "openai" | "claude" | "gemini";
   model?: string;
   modelLabel?: string;
   briefingId?: string;

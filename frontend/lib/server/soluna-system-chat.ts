@@ -1,9 +1,9 @@
-import { generateWithAnthropic, getFoundryClaudeDeployment, isAnthropicConfigured } from "@/lib/server/anthropic";
 import {
   getAzureOpenAiClient,
   getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
+import { generateWithGemini, isGeminiConfigured } from "@/lib/server/gemini";
 import { resolveDailyBattle } from "@/lib/server/soluna-battle";
 import { assertTodayLiveBriefing, formatBriefingForPrompt } from "@/lib/server/soluna-news";
 import { formatBattleModePromptAddon } from "@/lib/server/soluna-asset-rpg";
@@ -120,15 +120,16 @@ ${RPG_METAPHOR_RULE}
 - たとえが激しくて意味不明になるくらいなら、たとえを減らしてニュース理解を優先する`;
 
 function resolveSystemModels(): { solModel: string; lunaModel: string } | null {
-  if (!isAnthropicConfigured() || !isAzureOpenAiConfigured()) return null;
-  const solModel =
-    getFoundryClaudeDeployment("growing") ??
-    process.env.SOLUNA_CLAUDE_DEPLOYMENT?.trim() ??
-    process.env.AZURE_FOUNDRY_CLAUDE_DEPLOYMENT?.trim();
+  // Marketplace Claude は使わない。ソル／ルーナとも Azure OpenAI（ソルは失敗時 Gemini 可）
+  if (!isAzureOpenAiConfigured()) return null;
   const lunaModel =
     process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ??
     process.env.SOLUNA_OPENAI_DEPLOYMENT_ADVANCED?.trim() ??
     getAzureOpenAiDeployment();
+  const solModel =
+    process.env.SOLUNA_SOL_DEPLOYMENT?.trim() ??
+    process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ??
+    lunaModel;
   if (!solModel || !lunaModel) return null;
   return { solModel, lunaModel };
 }
@@ -158,37 +159,11 @@ function buildLunaSystemPrompt(
   return `${LUNA_SYSTEM_PERSONA}\n\n${personalityBlock}\n\n${relationshipBlock}`;
 }
 
-async function callClaudeSystem(
-  system: string,
-  userPrompt: string,
-  model: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const result = await generateWithAnthropic({
-    system,
-    messages: [{ role: "user", content: userPrompt }],
-    maxTokens: 700,
-    temperature: 0.78,
-    model,
-    tier: "growing",
-    timeoutMs: SYSTEM_TIMEOUT_MS,
-  });
-  if (!result.ok) return result;
-
-  await recordTokenUsage({
-    userId: SYSTEM_USER_ID,
-    feature: "soluna-system-sol",
-    model: result.model,
-    promptTokens: result.promptTokens,
-    completionTokens: result.completionTokens,
-  });
-
-  return { ok: true, text: result.text.trim(), model: result.model };
-}
-
 async function callOpenAiSystem(
   system: string,
   userPrompt: string,
   deployment: string,
+  feature: "soluna-system-sol" | "soluna-system-luna",
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
   const client = getAzureOpenAiClient(deployment, "global");
   const reasoning = /gpt-5|gpt5|o1|o3|o4|reason/i.test(deployment);
@@ -225,7 +200,7 @@ async function callOpenAiSystem(
 
     await recordTokenUsage({
       userId: SYSTEM_USER_ID,
-      feature: "soluna-system-luna",
+      feature,
       model: deployment,
       promptTokens: completion.usage?.prompt_tokens ?? 0,
       completionTokens: completion.usage?.completion_tokens ?? 0,
@@ -238,6 +213,68 @@ async function callOpenAiSystem(
       reason: error instanceof Error ? error.message : "OpenAI 呼び出しに失敗しました。",
     };
   }
+}
+
+async function callGeminiSystem(
+  system: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  if (!isGeminiConfigured()) {
+    return { ok: false, reason: "Gemini が未設定です。" };
+  }
+  const result = await generateWithGemini(
+    {
+      system,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 700,
+      temperature: 0.78,
+    },
+    { timeoutMs: SYSTEM_TIMEOUT_MS },
+  );
+  if (!result.ok) return result;
+
+  await recordTokenUsage({
+    userId: SYSTEM_USER_ID,
+    feature: "soluna-system-sol",
+    model: result.model,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+  });
+
+  return { ok: true, text: result.text.trim(), model: result.model };
+}
+
+/** ソル: Azure OpenAI 優先、失敗時のみ Gemini（Claude / Marketplace は使わない） */
+async function callSolSystem(
+  system: string,
+  userPrompt: string,
+  openaiDeployment: string,
+): Promise<
+  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
+  | { ok: false; reason: string }
+> {
+  const openai = await callOpenAiSystem(
+    system,
+    userPrompt,
+    openaiDeployment,
+    "soluna-system-sol",
+  );
+  if (openai.ok) {
+    return { ok: true, text: openai.text, model: openai.model, provider: "openai" };
+  }
+  console.warn("[soluna-system] Sol OpenAI failed, trying Gemini:", openai.reason);
+  const gemini = await callGeminiSystem(system, userPrompt);
+  if (gemini.ok) {
+    return { ok: true, text: gemini.text, model: gemini.model, provider: "gemini" };
+  }
+  return {
+    ok: false,
+    reason: `ソル応答に失敗（OpenAI: ${openai.reason} / Gemini: ${gemini.reason}）`,
+  };
+}
+
+function solModelLabel(provider: "openai" | "gemini", model: string): string {
+  return provider === "gemini" ? `Gemini · ${model}` : `Azure OpenAI · ${model}`;
 }
 
 export function isSolunaSystemChatConfigured(): boolean {
@@ -288,7 +325,8 @@ export async function runDailySystemChat(options?: {
   if (!models) {
     return {
       ok: false,
-      reason: "システム会話には Claude（ソル）と Azure OpenAI（ルーナ）の両方が必要です。",
+      reason:
+        "システム会話には Azure OpenAI が必要です（ソル／ルーナとも OpenAI。ソル失敗時のみ Gemini）。",
     };
   }
 
@@ -361,7 +399,7 @@ export async function runDailySystemChat(options?: {
 ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今日の題材は ${boss.monster ? `「${boss.monster.name}」（正体: ${boss.title}）` : boss.title} です。
 【第1発言】ルーナに話しかけてください。まずニュースで何が起きたかを分かりやすく言い、RPGたとえは1〜2個までに留め、直後に「つまり〜」で現実の意味を添えること。結論を出し切らず、「ルーナ、これをどう見る？」で余韻を残す。`;
 
-  const solResult = await callClaudeSystem(
+  const solResult = await callSolSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
     solPrompt,
     models.solModel,
@@ -369,9 +407,9 @@ ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今�
   if (!solResult.ok) return { ok: false, reason: solResult.reason };
 
   const solMessage = createSystemMessage("sol", solResult.text, {
-    provider: SOL_SYSTEM_PROVIDER,
+    provider: solResult.provider === "gemini" ? "gemini" : SOL_SYSTEM_PROVIDER,
     model: solResult.model,
-    modelLabel: `Azure Claude · ${solResult.model}`,
+    modelLabel: solModelLabel(solResult.provider, solResult.model),
     briefingId: briefing.id,
   });
   created.push(solMessage);
@@ -392,6 +430,7 @@ ${formatSystemTranscript([...prior, ...created])}
     buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
     lunaPrompt,
     models.lunaModel,
+    "soluna-system-luna",
   );
   if (!lunaResult.ok) return { ok: false, reason: lunaResult.reason };
 
@@ -411,7 +450,7 @@ ${formatSystemTranscript([...prior, ...created])}
 
 【第3発言】ルーナの危機感・ツッコミを受けて白熱させよ。「でも実は…」と切り返し、RPG比喩を続け、まだ答えが出ない問いを1つ残せ。`;
 
-  const solFollow = await callClaudeSystem(
+  const solFollow = await callSolSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
     solFollowPrompt,
     models.solModel,
@@ -419,9 +458,9 @@ ${formatSystemTranscript([...prior, ...created])}
   if (solFollow.ok) {
     created.push(
       createSystemMessage("sol", solFollow.text, {
-        provider: SOL_SYSTEM_PROVIDER,
+        provider: solFollow.provider === "gemini" ? "gemini" : SOL_SYSTEM_PROVIDER,
         model: solFollow.model,
-        modelLabel: `Azure Claude · ${solFollow.model}`,
+        modelLabel: solModelLabel(solFollow.provider, solFollow.model),
         briefingId: briefing.id,
       }),
     );
@@ -440,6 +479,7 @@ ${formatSystemTranscript([...prior, ...created])}
       buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
       lunaClosingPrompt,
       models.lunaModel,
+      "soluna-system-luna",
     );
     if (lunaClosing.ok) {
       created.push(
