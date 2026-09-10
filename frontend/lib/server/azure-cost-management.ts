@@ -9,7 +9,7 @@ const COST_API = "2023-11-01";
 const MANAGEMENT_SCOPE = "https://management.azure.com/";
 
 const SERVICE_LABELS: Record<string, string> = {
-  "Foundry Models": "Azure OpenAI",
+  "Foundry Models": "Foundry Models（Marketplace）",
   "Azure Cosmos DB": "Cosmos DB",
   "Azure DNS": "DNS",
   Storage: "ストレージ",
@@ -29,6 +29,7 @@ const SERVICE_LABELS: Record<string, string> = {
 type CostQueryRow = {
   cost: number;
   serviceName?: string;
+  resourceId?: string;
   usageDate?: number;
   currency: string;
 };
@@ -46,7 +47,8 @@ function sleep(ms: number): Promise<void> {
 
 function cacheKey(month: string, subscriptionId: string): string {
   const rg = process.env.AZURE_COST_RESOURCE_GROUP?.trim() ?? "";
-  return `${subscriptionId}:${month}:${rg}`;
+  // v2: byResource を含む
+  return `${subscriptionId}:${month}:${rg}:v2`;
 }
 
 function monthPeriod(monthDate: Date): { from: string; to: string } {
@@ -68,6 +70,29 @@ function usageDateToIso(value: number): string {
 
 function serviceLabel(name: string): string {
   return SERVICE_LABELS[name] ?? name;
+}
+
+function classifyResourceFocus(
+  resourceId: string,
+): "foundry-claude" | "azure-openai" | undefined {
+  const id = resourceId.toLowerCase();
+  if (id.includes("aqua-foundry-claude-prod")) return "foundry-claude";
+  if (id.includes("openai-personal-apps-prod")) return "azure-openai";
+  return undefined;
+}
+
+function resourceDisplayName(resourceId: string): string {
+  const parts = resourceId.split("/").filter(Boolean);
+  return parts[parts.length - 1] || resourceId;
+}
+
+function resourceLabel(
+  resourceId: string,
+  focus?: "foundry-claude" | "azure-openai",
+): string {
+  if (focus === "foundry-claude") return "Foundry Claude（Marketplace）";
+  if (focus === "azure-openai") return "Azure OpenAI";
+  return resourceDisplayName(resourceId);
 }
 
 export function isAzureCostManagementConfigured(): boolean {
@@ -136,8 +161,16 @@ function parseRows(result: CostQueryResult): CostQueryRow[] {
   const index = Object.fromEntries(result.columns.map((col, i) => [col.name, i]));
   return result.rows.map((row) => ({
     cost: parseCostValue(row, index),
-    serviceName: row[index.ServiceName] as string | undefined,
-    usageDate: row[index.UsageDate] as number | undefined,
+    serviceName:
+      index.ServiceName != null
+        ? (row[index.ServiceName] as string | undefined)
+        : undefined,
+    resourceId:
+      index.ResourceId != null ? String(row[index.ResourceId] ?? "") : undefined,
+    usageDate:
+      index.UsageDate != null
+        ? (row[index.UsageDate] as number | undefined)
+        : undefined,
     currency: String(row[index.Currency] ?? "JPY"),
   }));
 }
@@ -207,16 +240,18 @@ function resourceGroupFilter() {
 }
 
 function buildSummaryFromRows(
-  rows: CostQueryRow[],
+  serviceRows: CostQueryRow[],
+  resourceRows: CostQueryRow[],
   monthKey: string,
   subscriptionId: string,
   rgFilter: ReturnType<typeof resourceGroupFilter>,
 ): AzureInfraCostSummary {
-  const currency = rows[0]?.currency ?? "JPY";
+  const currency = serviceRows[0]?.currency ?? resourceRows[0]?.currency ?? "JPY";
   const byServiceMap = new Map<string, number>();
   const dailyMap = new Map<string, number>();
+  const byResourceMap = new Map<string, number>();
 
-  for (const row of rows) {
+  for (const row of serviceRows) {
     if (row.serviceName) {
       byServiceMap.set(
         row.serviceName,
@@ -229,6 +264,14 @@ function buildSummaryFromRows(
     }
   }
 
+  for (const row of resourceRows) {
+    if (!row.resourceId) continue;
+    byResourceMap.set(
+      row.resourceId,
+      (byResourceMap.get(row.resourceId) ?? 0) + row.cost,
+    );
+  }
+
   const byServiceSorted = [...byServiceMap.entries()]
     .map(([service, costAmount]) => ({
       service,
@@ -236,6 +279,25 @@ function buildSummaryFromRows(
       costAmount,
     }))
     .sort((a, b) => b.costAmount - a.costAmount);
+
+  const byResource = [...byResourceMap.entries()]
+    .map(([resourceId, costAmount]) => {
+      const focus = classifyResourceFocus(resourceId);
+      return {
+        resourceId,
+        resourceName: resourceDisplayName(resourceId),
+        label: resourceLabel(resourceId, focus),
+        costAmount,
+        focus,
+      };
+    })
+    .sort((a, b) => {
+      const rank = (focus?: string) =>
+        focus === "foundry-claude" ? 0 : focus === "azure-openai" ? 1 : 2;
+      const byFocus = rank(a.focus) - rank(b.focus);
+      if (byFocus !== 0) return byFocus;
+      return b.costAmount - a.costAmount;
+    });
 
   const daily = [...dailyMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -251,6 +313,7 @@ function buildSummaryFromRows(
     totalCost,
     resourceGroupCost: rgFilter ? totalCost : undefined,
     byService: byServiceSorted,
+    byResource,
     daily,
     scopeLabel: rgFilter && rgName ? `RG「${rgName}」` : "サブスクリプション全体",
     note: rgFilter
@@ -270,6 +333,7 @@ function unavailableSummary(
     currency: "JPY",
     totalCost: 0,
     byService: [],
+    byResource: [],
     daily: [],
     scopeLabel: subscriptionId,
     error: message,
@@ -299,21 +363,45 @@ async function fetchAzureInfraCostsInternal(
   const rgFilter = resourceGroupFilter();
 
   try {
-    const rows = await runCostQuery(token, subscriptionId, {
-      type: "ActualCost",
-      timeframe: "Custom",
-      timePeriod: period,
-      dataset: {
-        aggregation: {
-          totalCost: { name: "PreTaxCost", function: "Sum" },
-        },
-        granularity: "Daily",
-        grouping: [{ type: "Dimension", name: "ServiceName" }],
-        ...(rgFilter ? { filter: rgFilter } : {}),
+    const baseDataset = {
+      aggregation: {
+        totalCost: { name: "PreTaxCost", function: "Sum" },
       },
-    });
+      ...(rgFilter ? { filter: rgFilter } : {}),
+    };
 
-    const result = buildSummaryFromRows(rows, monthKey, subscriptionId, rgFilter);
+    const [serviceRows, resourceRows] = await Promise.all([
+      runCostQuery(token, subscriptionId, {
+        type: "ActualCost",
+        timeframe: "Custom",
+        timePeriod: period,
+        dataset: {
+          ...baseDataset,
+          granularity: "Daily",
+          grouping: [{ type: "Dimension", name: "ServiceName" }],
+        },
+      }),
+      runCostQuery(token, subscriptionId, {
+        type: "ActualCost",
+        timeframe: "Custom",
+        timePeriod: period,
+        dataset: {
+          ...baseDataset,
+          grouping: [{ type: "Dimension", name: "ResourceId" }],
+        },
+      }).catch((error) => {
+        console.warn("[azure-cost] resource breakdown failed", error);
+        return [] as CostQueryRow[];
+      }),
+    ]);
+
+    const result = buildSummaryFromRows(
+      serviceRows,
+      resourceRows,
+      monthKey,
+      subscriptionId,
+      rgFilter,
+    );
     await writeCosmosAzureCostCache(key, result);
     return result;
   } catch (error) {
