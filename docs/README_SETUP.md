@@ -596,8 +596,10 @@ npm run seed:users
 
 ### Soluna 朝のニュースが遅い / BOINC 実績が UI に出ない
 
-- schedule 遅延は GHA 仕様。6/7/8/9 時の複数枠で取りこぼしを軽減
-- BOINC は RPC 権限と report JSON を `run-soluna-boinc.sh` で正規化済み。失敗時は Actions ログの `boinc-report` を確認
+- schedule 遅延は GHA 仕様。複数枠で取りこぼしを軽減
+- BOINC report が **HTTP 302** なら SWA の `/api/soluna/boinc-report` が authenticated に巻き込まれている（anonymous 明示が必要）
+- RPC: Actions ログに `gui_rpc_auth.cfg exists but can't be read` → sudo 権限付与失敗。`user_name` 空のまま待機は失敗扱い
+- status の `boincNeedsRun` が true なのにスキップされる場合は workflow のリトライ条件を確認
 
 ### Gemini が「high demand」で失敗する
 

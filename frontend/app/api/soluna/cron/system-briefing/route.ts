@@ -143,13 +143,26 @@ export async function POST(request: Request) {
   }
 
   if (step === "status") {
-    const { getDailyBriefingStatus, getBriefingById } = await import(
+    const { getDailyBriefingStatus, getBriefingById, getLatestBoincRun } = await import(
       "@/lib/server/soluna-system-store"
     );
     const { assertTodayLiveBriefing } = await import("@/lib/server/soluna-news");
     const status = await getDailyBriefingStatus();
-    const todayBriefing = await getBriefingById(status.todayBriefingId);
+    const [todayBriefing, latestBoinc] = await Promise.all([
+      getBriefingById(status.todayBriefingId),
+      getLatestBoincRun(),
+    ]);
     const liveGate = assertTodayLiveBriefing(todayBriefing);
+    const boincForToday =
+      latestBoinc && latestBoinc.briefingId === status.todayBriefingId ? latestBoinc : null;
+    // 討伐完了後でも、実績未着・失敗なら BOINC 再実行が必要（スキップ成功にしない）
+    const boincNeedsRun = Boolean(
+      boincForToday &&
+        (boincForToday.status === "waiting-spec" ||
+          boincForToday.status === "queued" ||
+          boincForToday.status === "error" ||
+          !boincForToday.result),
+    );
     return Response.json({
       ok: true,
       step: "status",
@@ -159,6 +172,10 @@ export async function POST(request: Request) {
       liveNewsReason: liveGate.ok ? null : liveGate.reason,
       briefingSource: todayBriefing?.source ?? null,
       briefingSummary: todayBriefing?.summary?.slice(0, 160) ?? null,
+      boincNeedsRun,
+      boincStatus: boincForToday?.status ?? null,
+      boincMinutes: boincForToday?.minutes ?? 0,
+      boincBriefingId: boincForToday?.briefingId ?? null,
     });
   }
 

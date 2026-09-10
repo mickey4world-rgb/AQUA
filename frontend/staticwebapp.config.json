@@ -97,6 +97,10 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/soluna/boinc-report",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/soluna/*",
       "allowedRoles": ["authenticated"]
     },

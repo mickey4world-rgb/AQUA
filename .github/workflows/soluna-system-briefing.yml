@@ -52,7 +52,13 @@ jobs:
           echo "status HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
           COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
+          BOINC_NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('boincNeedsRun') else 'false')" 2>/dev/null || echo "false")
+          BOINC_MIN=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print(int(d.get('boincMinutes') or 0))" 2>/dev/null || echo "0")
+          BOINC_BID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print(d.get('boincBriefingId') or d.get('todayBriefingId') or '')" 2>/dev/null || echo "")
           echo "complete=${COMPLETE}" >> "$GITHUB_OUTPUT"
+          echo "boinc_needs_run=${BOINC_NEEDS}" >> "$GITHUB_OUTPUT"
+          echo "pending_boinc_minutes=${BOINC_MIN}" >> "$GITHUB_OUTPUT"
+          echo "pending_boinc_briefing_id=${BOINC_BID}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch news briefing (Gemini grounding → RSS; no ungrounded LLM)
         if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
@@ -168,19 +174,41 @@ jobs:
           echo "briefing_id=${BRIEFING_ID}" >> "$GITHUB_OUTPUT"
           echo "boinc_minutes=${BOINC}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve BOINC run inputs
+        id: boinc_inputs
+        run: |
+          # 新規 jobs 後、または討伐完了後の未実施/失敗リトライ
+          JOB_MIN="${{ steps.jobs.outputs.boinc_minutes }}"
+          JOB_BID="${{ steps.jobs.outputs.briefing_id }}"
+          PEND_MIN="${{ steps.status.outputs.pending_boinc_minutes }}"
+          PEND_BID="${{ steps.status.outputs.pending_boinc_briefing_id }}"
+          NEEDS="${{ steps.status.outputs.boinc_needs_run }}"
+          MINUTES="0"
+          BID=""
+          if [ -n "${JOB_MIN}" ] && [ "${JOB_MIN}" != "0" ] && [ -n "${JOB_BID}" ]; then
+            MINUTES="${JOB_MIN}"
+            BID="${JOB_BID}"
+          elif [ "${NEEDS}" = "true" ] && [ -n "${PEND_BID}" ] && [ "${PEND_MIN}" != "0" ]; then
+            MINUTES="${PEND_MIN}"
+            BID="${PEND_BID}"
+          fi
+          echo "minutes=${MINUTES}" >> "$GITHUB_OUTPUT"
+          echo "briefing_id=${BID}" >> "$GITHUB_OUTPUT"
+          echo "will_run=$([ -n "${BID}" ] && [ "${MINUTES}" != "0" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Run BOINC social contribution
-        if: steps.jobs.outputs.boinc_minutes != '0' && steps.jobs.outputs.briefing_id != ''
+        if: steps.boinc_inputs.outputs.will_run == 'true'
         env:
           BOINC_ACCOUNT_KEY: ${{ secrets.BOINC_ACCOUNT_KEY }}
           BOINC_PROJECT_URL: ${{ vars.BOINC_PROJECT_URL }}
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
-          RUN_MINUTES: ${{ steps.jobs.outputs.boinc_minutes }}
-          BRIEFING_ID: ${{ steps.jobs.outputs.briefing_id }}
+          RUN_MINUTES: ${{ steps.boinc_inputs.outputs.minutes }}
+          BRIEFING_ID: ${{ steps.boinc_inputs.outputs.briefing_id }}
         run: |
           if [ -z "${BOINC_ACCOUNT_KEY}" ]; then
-            echo "::warning::BOINC_ACCOUNT_KEY 未設定のためスキップ。GitHub Secrets に追加すると社会貢献が有効になります。"
-            exit 0
+            echo "::error::BOINC_ACCOUNT_KEY 未設定のため社会貢献を実行できません。"
+            exit 1
           fi
           chmod +x frontend/scripts/run-soluna-boinc.sh
           sed -i 's/\r$//' frontend/scripts/run-soluna-boinc.sh || true
