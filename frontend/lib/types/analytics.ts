@@ -289,7 +289,21 @@ export interface SolunaOpsTradeRow {
   priceBtc: number;
   realizedPnlJpy?: number;
   reason: string;
+  /** 適用条件番号（複数可） */
+  ruleIds?: number[];
+  /** 番号付き詳細理由 */
+  reasonDetail?: string | null;
+  /** 明細表示用（例: #11+#12 · 利確） */
+  reasonLabel?: string;
   briefingId: string;
+}
+
+export interface SolunaOpsTradeRuleRow {
+  id: number;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  summary: string;
 }
 
 /** JST 1日分の売買サマリー */
@@ -319,6 +333,7 @@ export interface SolunaOpsHourBucket {
     product: string;
     sizeJpy: number;
     reason: string;
+    reasonLabel?: string;
   }>;
 }
 
@@ -443,6 +458,8 @@ export interface SolunaOpsAnalyticsReport {
     /** 前日の時間帯別（約定があった時間のみ） */
     yesterdayHourly: SolunaOpsHourBucket[];
     trades: SolunaOpsTradeRow[];
+    /** 自動売買条件カタログ（明細の #番号 と対応） */
+    tradeRules?: SolunaOpsTradeRuleRow[];
     monthlySummaries: Array<{
       month: string;
       openingBalanceYen: number;

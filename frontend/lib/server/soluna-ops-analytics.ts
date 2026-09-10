@@ -16,6 +16,12 @@ import type {
   SolunaOpsTradeRow,
 } from "@/lib/types/analytics";
 import type { SolunaTradeProduct, SolunaTradeRecord } from "@/lib/types/soluna";
+import {
+  SOLUNA_TRADE_RULES,
+  categoryLabelJa,
+  formatTradeReasonWithRules,
+  inferRuleIdsFromLegacyReason,
+} from "@/lib/soluna-trade-rules";
 
 const PRODUCT_LABELS: Record<string, string> = {
   BTC_JPY: "BTC",
@@ -100,6 +106,10 @@ function dateLabelJa(dateKey: string): string {
 }
 
 function toTradeRow(t: SolunaTradeRecord): SolunaOpsTradeRow {
+  const ruleIds =
+    t.ruleIds && t.ruleIds.length > 0
+      ? t.ruleIds
+      : inferRuleIdsFromLegacyReason(t.reasonDetail || t.reason);
   return {
     id: t.id,
     createdAt: t.createdAt,
@@ -109,6 +119,9 @@ function toTradeRow(t: SolunaTradeRecord): SolunaOpsTradeRow {
     priceBtc: t.priceBtc,
     realizedPnlJpy: t.realizedPnlJpy,
     reason: t.reason,
+    ruleIds,
+    reasonDetail: t.reasonDetail ?? null,
+    reasonLabel: formatTradeReasonWithRules(t.reasonDetail || t.reason, ruleIds),
     briefingId: t.briefingId,
   };
 }
@@ -181,6 +194,12 @@ function buildHourlyBuckets(
       product: (t.product ?? "BTC_JPY").replace("_JPY", ""),
       sizeJpy: t.sizeJpy ?? 0,
       reason: t.reason,
+      reasonLabel: formatTradeReasonWithRules(
+        t.reasonDetail || t.reason,
+        t.ruleIds && t.ruleIds.length > 0
+          ? t.ruleIds
+          : inferRuleIdsFromLegacyReason(t.reasonDetail || t.reason),
+      ),
     });
   }
 
@@ -338,6 +357,13 @@ export async function buildSolunaOpsAnalyticsReport(
             .reverse()
             .slice(0, 40)
             .map(toTradeRow),
+          tradeRules: SOLUNA_TRADE_RULES.map((r) => ({
+            id: r.id,
+            category: r.category,
+            categoryLabel: categoryLabelJa(r.category),
+            title: r.title,
+            summary: r.summary,
+          })),
           monthlySummaries: (assets.monthlySummaries ?? []).slice(-12).map((m) => ({
             month: m.month,
             openingBalanceYen: m.openingBalanceYen,

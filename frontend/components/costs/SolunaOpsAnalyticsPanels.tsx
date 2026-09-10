@@ -27,8 +27,9 @@ function formatJst(iso: string): string {
   });
 }
 
-function reasonJa(reason: string): string {
-  if (reason === "dca" || reason.includes("dca")) return "DCA / 召喚";
+function reasonJa(reason: string, reasonLabel?: string): string {
+  if (reasonLabel) return reasonLabel;
+  if (reason === "dca" || reason.includes("dca")) return "買い（分散召喚）";
   if (reason === "take-profit" || reason.includes("利確")) return "利確";
   if (reason === "stop-loss" || reason.includes("損切")) return "損切り";
   return reason || "—";
@@ -202,7 +203,7 @@ function HourlyChart({
                 {b.actions.map((a, i) => (
                   <li key={`${b.hour}-${i}`}>
                     {a.time} {a.side === "BUY" ? "買" : "売"} {a.product}{" "}
-                    {formatCurrency(a.sizeJpy)}（{reasonJa(a.reason)}）
+                    {formatCurrency(a.sizeJpy)}（{reasonJa(a.reason, a.reasonLabel)}）
                   </li>
                 ))}
               </ul>
@@ -650,6 +651,10 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
                 今月の取引明細
               </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                理由の <span className="text-amber-200/90">#番号</span>{" "}
+                は下の「売買条件」と対応します（複数条件のときは + で連結）。
+              </p>
               {assets.trades.length === 0 ? (
                 <p className="mt-2 text-sm text-slate-500">今月の約定はまだありません（見送り含む）。</p>
               ) : (
@@ -662,7 +667,7 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                         <th className="px-2 py-2 font-medium">売買</th>
                         <th className="px-2 py-2 font-medium">金額</th>
                         <th className="px-2 py-2 font-medium">単価</th>
-                        <th className="px-2 py-2 font-medium">理由</th>
+                        <th className="px-2 py-2 font-medium">理由（条件）</th>
                         <th className="px-2 py-2 font-medium">実現損益</th>
                       </tr>
                     </thead>
@@ -680,7 +685,16 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                           </td>
                           <td className="px-2 py-2">{formatCurrency(t.sizeJpy)}</td>
                           <td className="px-2 py-2">{formatUnitPrice(t.product, t.priceBtc)}</td>
-                          <td className="px-2 py-2">{reasonJa(t.reason)}</td>
+                          <td className="px-2 py-2">
+                            <span className="text-amber-100/95">
+                              {reasonJa(t.reason, t.reasonLabel)}
+                            </span>
+                            {t.reasonDetail && (
+                              <p className="mt-0.5 max-w-md text-[10px] leading-snug text-slate-500">
+                                {t.reasonDetail}
+                              </p>
+                            )}
+                          </td>
                           <td className="px-2 py-2">
                             {t.realizedPnlJpy === undefined
                               ? "—"
@@ -714,6 +728,37 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {(assets.tradeRules?.length ?? 0) > 0 && (
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                  売買条件（番号一覧）
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  取引明細・時間帯明細の理由に付く番号と対応しています。複数条件が同時に効いた場合は{" "}
+                  <span className="text-amber-200/90">#8+#2</span> のように連結します。
+                </p>
+                <ol className="mt-3 space-y-2">
+                  {(assets.tradeRules ?? []).map((rule) => (
+                    <li
+                      key={rule.id}
+                      className="rounded-lg border border-white/8 bg-black/15 px-3 py-2 text-[12px] text-slate-300"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="font-semibold text-amber-200">#{rule.id}</span>
+                        <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
+                          {rule.categoryLabel}
+                        </span>
+                        <span className="font-medium text-white">{rule.title}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                        {rule.summary}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
           </>
