@@ -17,10 +17,17 @@ on:
     - cron: "0 9 * * *"  # 18:00 JST
     - cron: "0 12 * * *" # 21:00 JST 夜キャッチアップ
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force re-run chat/jobs even if today's briefing is complete"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run_system_briefing:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -59,9 +66,16 @@ jobs:
           echo "boinc_needs_run=${BOINC_NEEDS}" >> "$GITHUB_OUTPUT"
           echo "pending_boinc_minutes=${BOINC_MIN}" >> "$GITHUB_OUTPUT"
           echo "pending_boinc_briefing_id=${BOINC_BID}" >> "$GITHUB_OUTPUT"
+          FORCE_INPUT="${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}"
+          if [ "${COMPLETE}" != "true" ] || [ "${FORCE_INPUT}" = "true" ]; then
+            echo "run_pipeline=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_pipeline=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "force=${FORCE_INPUT}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch news briefing (Gemini grounding → RSS; no ungrounded LLM)
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.status.outputs.run_pipeline == 'true'
         id: fetch_news
         continue-on-error: true
         env:
@@ -73,7 +87,7 @@ jobs:
         run: node frontend/scripts/fetch-soluna-news.mjs
 
       - name: Require today's live briefing before chat
-        if: steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.status.outputs.run_pipeline == 'true'
         id: live_gate
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
@@ -97,7 +111,7 @@ jobs:
           fi
 
       - name: Run system chat
-        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
+        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
         id: chat
         continue-on-error: true
         env:
@@ -105,7 +119,7 @@ jobs:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ steps.status.outputs.force }}" = "true" ]; then
             BODY='{"force": true, "step": "chat"}'
           else
             BODY='{"step": "chat"}'
@@ -123,11 +137,11 @@ jobs:
           fi
 
       - name: Wait for chat if gateway timed out
-        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
+        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
         run: sleep 90
 
       - name: Verify briefing complete
-        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
+        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
@@ -148,14 +162,14 @@ jobs:
           fi
 
       - name: Run autonomous jobs (Note / BOINC / assets)
-        if: (steps.status.outputs.complete != 'true' || github.event_name == 'workflow_dispatch') && steps.live_gate.outcome == 'success'
+        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
         id: jobs
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ steps.status.outputs.force }}" = "true" ]; then
             BODY='{"force": true, "step": "jobs"}'
           else
             BODY='{"step": "jobs"}'
