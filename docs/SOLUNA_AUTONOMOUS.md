@@ -86,8 +86,10 @@ GitHub Actions: **`Soluna System Briefing`**
 - GHA 無料ランナーでクライアント実行
 - Secrets: `BOINC_ACCOUNT_KEY`（GitHub）  
   Vars: `BOINC_PROJECT_URL`（任意、既定 World Community Grid）
-- RPC 権限・JSON 正規化は `run-soluna-boinc.sh` 側で対応済み
-
+- RPC: `run-soluna-boinc.sh` が `gui_rpc_auth.cfg` を **sudo で待機・権限付与**（一般ユーザーは `/var/lib/boinc-client` を stat できない）
+- **SWA**: `/api/soluna/boinc-report` は `allowedRoles: anonymous`（アプリ側 Bearer）。`/api/soluna/*` 認証化に巻き込むと 401→302 `/login` で実績が消える
+- status の `boincNeedsRun` が true なら、討伐完了後の schedule でも BOINC を再実行（待機/失敗のままスキップしない）
+- アカウント接続（`user_name`）できない場合は計算せず `runStatus: error` で報告
 ## 6. 資産運用（裏稼働・取引所名は非公開）
 
 実装: `frontend/lib/server/soluna-asset-trade.ts`  

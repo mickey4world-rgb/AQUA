@@ -42,7 +42,7 @@ For any feature whose value depends on AI, live fetch, cron, or multi-step work 
 1. **Success criteria**: State the invariant (user-visible contract), not the last symptom.
 2. **Architecture change reclassify**: Sole source of truth → former best-effort becomes correctness. Silent `catch` forbidden unless durable same-intent fallback exists.
 3. **New failure modes**: cache miss, multi-instance, cron skip, secret missing, quota, **platform timeout**, partial category enrich. Fallback or hard-fail each.
-4. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields, **3D/map imagery** `baseLayer: false` / CDN textures / `Suspense fallback={null}`). Fix the **class**.
+4. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields, **3D/map imagery** `baseLayer: false` / CDN textures / `Suspense fallback={null}`, **SWA** cron/report routes missing `allowedRoles: anonymous` under an authenticated catch-all). Fix the **class**.
 5. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path? **continents/map visible on globe — not “viewer ready” / tracks moving / Canvas mounted**).
 6. **Self-interrogation**: Symptom vs cause? Why did I choose X? If answer is only “we did Y”, dig one more why — especially “初回で甘く見積もった／後でボタン” incentives.
 
@@ -66,6 +66,7 @@ Never treat as successful completion of the original intent:
 - Silent `catch` inventing empty/default data on a correctness-critical path
 - Shipping “incomplete now, user can press a button later” **without** a verified button path and an explicit incomplete status the UI respects
 - **Visual/3D**: treating Cesium/Three “loaded” / satellite tracks / `ready=true` as success when the user-visible contract is **recognizable Earth/map** (continents or tiles). External tile-only + `baseLayer: false` without a same-intent bundled base is designed-in degraded success.
+- **SWA route auth**: locking `/api/.../*` to `authenticated` while cron/GHA still POSTs with Bearer only → platform `401` rewritten to `302 /login` → runner burns minutes then “fails” or skips persist. Cron endpoints must stay explicitly `anonymous` **before** the catch-all (app still enforces the secret). Same class: GHA green/skip because `complete=true` while `boincNeedsRun` / artifact still waiting.
 
 Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true`, `imageryLayers.length === 0` → error UI — blocking “完成” UX).
 
