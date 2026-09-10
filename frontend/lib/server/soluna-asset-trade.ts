@@ -3,7 +3,9 @@
  *
  * 運用ルール:
  *   1. 1回の取引は最大 10,000 円（確信度でサイズ可変）
- *   2. 利確 / 損切りは市場モメンタムに応じて動的（硬い上限: +5.5% / -5%）
+ *   2. 利確は短期でも可。損切りは原則しない／長期保有（〜1年）で回復を待つ
+ *      ・現金 50 万円以下では損切り禁止（含み損は持ち越し）
+ *      ・1年未満は損切りしない。1年超かつ深い含み損（-15%〜-25%）のみ例外
  *   3. 月次目標は月初残高×2%。元本10万未満は一律2,000円（それ未満の目標は無し）
  *      おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: 板・約定に加え、6か月〜昨日の多期間値動きで当日方向を見極めて売買
@@ -37,15 +39,22 @@ const MAX_TRADE_YEN = 10_000;
 /** 利確を少し緩め、目標達成の余地を残す */
 const HARD_TAKE_PROFIT_RATE = 0.055;
 const SOFT_TAKE_PROFIT_RATE = 0.035;
-/** 損切りを遅らせ、短期ノイズでの切りを減らす */
-const HARD_STOP_LOSS_RATE = -0.05;
-const SOFT_STOP_LOSS_RATE = -0.035;
+/**
+ * 損切りは「少額積立＋長期保有」前提。短期の -3〜-5% では切らない。
+ * 深い含み損かつ長期保有後のみ、かつ現金に余裕があるときだけ例外的に切る。
+ */
+const HARD_STOP_LOSS_RATE = -0.25;
+const SOFT_STOP_LOSS_RATE = -0.15;
+/** 現金がこれ以下なら損切り禁止（プラス転換まで保有） */
+const NO_STOP_LOSS_BELOW_CASH_YEN = 500_000;
+/** ソフト損切りの最低保有（約30日）※実際は1年ホライズンが先に効く */
+const MIN_HOLD_BEFORE_SOFT_STOP_MS = 30 * 24 * 60 * 60 * 1000;
+/** 長期改善余地の説明用ホライズン（約1年）— この期間は損切りしない */
+const LONG_TERM_RECOVERY_HORIZON_MS = 365 * 24 * 60 * 60 * 1000;
 const MONTHLY_TARGET_RATE = 0.02;
 /** おやすみモード閾値（月初残高比）。目標2%とは別に、10%超で新規購入停止 */
 const SLEEP_MODE_RATE = 0.1;
 const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000;
-/** ソフト損切りは最低これだけ保有してから */
-const MIN_HOLD_BEFORE_SOFT_STOP_MS = 6 * 60 * 60 * 1000;
 const MAX_DAILY_BUY_YEN = 20_000;
 const MAX_SPREAD_BPS = 12;
 const BULLISH_SCORE = 28;
@@ -568,6 +577,32 @@ function lastBuyAgeMs(ledger: SolunaAssetLedger, product: TradeableProduct): num
   return Date.now() - new Date(last.createdAt).getTime();
 }
 
+/** 銘柄の最初の買いからの経過（長期保有判定用） */
+function firstBuyAgeMs(ledger: SolunaAssetLedger, product: TradeableProduct): number | null {
+  const buys = ledger.trades
+    .filter((t) => t.side === "BUY" && t.product === product)
+    .sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+  if (buys.length === 0 && product === "BTC_JPY") {
+    const legacy = ledger.trades
+      .filter((t) => t.side === "BUY" && (!t.product || t.product === "BTC_JPY"))
+      .sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+    if (legacy.length === 0) return null;
+    return Date.now() - new Date(legacy[0]!.createdAt).getTime();
+  }
+  if (buys.length === 0) return null;
+  return Date.now() - new Date(buys[0]!.createdAt).getTime();
+}
+
+function formatHoldDays(holdMs: number | null): string {
+  if (holdMs == null) return "保有期間不明";
+  const days = Math.max(0, Math.floor(holdMs / (24 * 60 * 60 * 1000)));
+  return `${days}日保有`;
+}
+
 function trySellDecision(
   ledger: SolunaAssetLedger,
   pulse: MarketPulse,
@@ -588,16 +623,21 @@ function trySellDecision(
     pulse.score <= -STRONG_BULLISH_SCORE &&
     pulse.momentumPct < -0.002 &&
     horizonScore <= -10;
-  const holdMs = lastBuyAgeMs(ledger, product);
-  const softStopReady = holdMs == null || holdMs >= MIN_HOLD_BEFORE_SOFT_STOP_MS;
+  const holdMs = firstBuyAgeMs(ledger, product) ?? lastBuyAgeMs(ledger, product);
+  const holdLabel = formatHoldDays(holdMs);
+  const cashYen = Math.round(ledger.cashYen);
+  const stopLossBlockedByCash = cashYen <= NO_STOP_LOSS_BELOW_CASH_YEN;
+  const withinLongTermHorizon =
+    holdMs == null || holdMs < LONG_TERM_RECOVERY_HORIZON_MS;
 
+  // プラス圏は利確（少額積立でも利益確定は継続）
   if (changeRate >= HARD_TAKE_PROFIT_RATE) {
     return {
       action: "SELL",
       product,
       tradeReason: "take-profit",
       pulse,
-      reason: `${meta.label} 硬利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+      reason: `${meta.label} 硬利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
     };
   }
   if (changeRate >= SOFT_TAKE_PROFIT_RATE && fading) {
@@ -606,27 +646,54 @@ function trySellDecision(
       product,
       tradeReason: "take-profit",
       pulse,
-      reason: `${meta.label} 勢い減衰で利確 +${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+      reason: `${meta.label} 勢い減衰で利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
     };
   }
+
+  // 含み損: 原則は長期保有してプラス転換を待つ
+  const underwater = changeRate < 0;
+  if (!underwater) return null;
+
+  if (stopLossBlockedByCash) {
+    console.info(
+      `[asset-trade] skip stop-loss ${meta.label} cash=${cashYen}≤${NO_STOP_LOSS_BELOW_CASH_YEN} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 現金薄いため損切り禁止・長期保有`,
+    );
+    return null;
+  }
+
+  if (withinLongTermHorizon) {
+    console.info(
+      `[asset-trade] defer stop-loss ${meta.label} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 1年以内は回復余地を優先`,
+    );
+    return null;
+  }
+
+  // 1年以上保有・現金に余裕あり、かつ深い含み損のみ例外的に損切り
   if (changeRate <= HARD_STOP_LOSS_RATE) {
     return {
       action: "SELL",
       product,
       tradeReason: "stop-loss",
       pulse,
-      reason: `${meta.label} 硬損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+      reason: `${meta.label} 1年超保有後の硬損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
     };
   }
-  if (changeRate <= SOFT_STOP_LOSS_RATE && acceleratingDown && softStopReady) {
+
+  if (
+    changeRate <= SOFT_STOP_LOSS_RATE &&
+    acceleratingDown &&
+    holdMs != null &&
+    holdMs >= MIN_HOLD_BEFORE_SOFT_STOP_MS
+  ) {
     return {
       action: "SELL",
       product,
       tradeReason: "stop-loss",
       pulse,
-      reason: `${meta.label} 下落加速のため損切り ${(changeRate * 100).toFixed(1)}%｜${pulse.summary}`,
+      reason: `${meta.label} 1年超・下落継続のため損切り ${(changeRate * 100).toFixed(1)}%（${holdLabel}）｜${pulse.summary}`,
     };
   }
+
   return null;
 }
 
@@ -922,15 +989,15 @@ export async function runDailyAssetTrade(input: {
 
   const solComments: Record<string, string> = {
     BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`,
-    SELL: `${isTp ? "利確ドロップ成功" : "損切りで盾構え"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
-    HOLD: `見送り。BTC/ETH/XRP/XLM を監視しつつ、現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
+    SELL: `${isTp ? "利確ドロップ成功" : "例外的な長期損切り"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
+    HOLD: `見送り。含み損は長期保有で待つ。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
   };
   const lunaComments: Record<string, string> = {
     BUY: `単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% の上限内で入れたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
-    SELL: `${isTp ? "利益を確定" : "損失を限定"}。次の召喚枠は BTC/ETH/XRP/XLM のスコア次第よ。`,
+    SELL: `${isTp ? "利益を確定" : "1年超の深い含み損のみ例外処理"}。次の召喚枠は BTC/ETH/XRP/XLM のスコア次第よ。`,
     HOLD: sleepMode
       ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
-      : `分散ルール的にも無理しない判断。${decision.reason}`,
+      : `少額積立は焦らない。現金が薄いときは損切りせず、プラス転換を待つ判断よ。${decision.reason}`,
   };
 
   const closingDayChange = updatedTotal - previousTotalYen;
