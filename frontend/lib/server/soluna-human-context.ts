@@ -116,6 +116,7 @@ function formatAssetsForHumanChat(assets: SolunaAssetLedger | null): string | nu
 総魔力: ${Math.round(assets.totalYen).toLocaleString("ja-JP")} 円
 現金: ${Math.round(assets.cashYen).toLocaleString("ja-JP")} 円 / BTC: ${assets.btcHeld.toFixed(4)} / ETH: ${(assets.ethHeld ?? 0).toFixed(4)} / XRP: ${Math.floor(assets.xrpHeld ?? 0)}
 分散: 現金下限・単一銘柄上限・暗号合計上限あり（自動売買は BTC/ETH/XRP）
+損切: 現金50万以下または保有1年未満は禁止。利確はプラス圏で実施
 当月実現損益: ${Math.round(assets.monthlyRealizedPnlYen).toLocaleString("ja-JP")} 円
 月次目標（2%）: ${Math.round(assets.monthlyTargetYen).toLocaleString("ja-JP")} 円
 おやすみモード（10%超）: ${assets.sleepMode ? "ON" : "OFF"}
