@@ -42,10 +42,11 @@ fi
 echo "RPC auth 準備完了（passwd length=${#BOINC_PASS}）"
 
 boinc() {
+  # boinccmd がハングすると GHA が数時間止まるため上限を付ける
   if [ -n "${BOINC_PASS}" ]; then
-    boinccmd --passwd "${BOINC_PASS}" "$@"
+    timeout 45 boinccmd --passwd "${BOINC_PASS}" "$@" || true
   else
-    boinccmd "$@"
+    timeout 45 boinccmd "$@" || true
   fi
 }
 
@@ -118,9 +119,15 @@ if [ "${ATTACHED}" -ne 1 ]; then
   exit 1
 fi
 
+# CI では長時間ジョブが枠を食うため、実計算は最大 25 分にキャップ（計画分がそれ以下なら計画どおり）
+if [ "${RUN_MINUTES}" -gt 25 ]; then
+  echo "::notice::計画 ${RUN_MINUTES} 分 → CI キャップ 25 分で実行"
+  RUN_MINUTES=25
+fi
+
 START_TIME=$(date +%s)
 DEADLINE=$(( START_TIME + RUN_MINUTES * 60 ))
-echo "計算ループ開始 → deadline epoch ${DEADLINE}"
+echo "計算ループ開始 → deadline epoch ${DEADLINE} (${RUN_MINUTES} min)"
 
 while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
   boinc --get_tasks 2>/dev/null | grep -E "name|state|fraction_done|received_credit" | head -8 || true
