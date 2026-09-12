@@ -1,5 +1,5 @@
 ---
-description: Force 5-Whys + request↔result verification + sibling audit; no feature-framing escape
+description: Force 5-Whys + request↔result + data-entailed expression; no feature-framing escape
 alwaysApply: true
 ---
 
@@ -18,11 +18,13 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 5. **Visual weak oracle**: “Cesium loaded / satellites move / Canvas mounted” while Earth was a blank blue ball (external tiles failed async; `baseLayer: false` with no bundled base). Same class: substitute that changes meaning still looked like success.
 6. **Visual metaphor without cardinality**: “同じ組織はグループで分かるように” → every org bucket got a hull (including **N=1**). A box around one person is **not grouping**; it is decoration that changes meaning. Shape tweaks (ellipse → rounded rect) without re-asking “when does this affordance exist?” are the same escape.
 7. **Request paraphrased into implementation jargon**: User intent (“グルーピングして分かる”) was rewritten as an implementable proxy (“orgKey ごとに図形を描く”) **without verifying the paraphrase still means the same thing to a stranger**. Deploy + “done” while the paraphrase failed. Same class as copy≠invariant / weak oracle — **not limited to 相関図**.
+8. **Expression not entailed by existing data**: User requested a visible affordance (角丸グループ) **because they need something expressed from data they already have**. Agent shipped rules so fine-grained that **real registered people produced zero boxes**, then claimed done. Missing inference: **「依頼した＝今あるデータで必ずその表現が見えるべき」**. Code-path existence ≠ expression on the user’s screen.
 
 If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
 If you catch yourself saying “viewer is ready”, ask: **can a stranger recognize continents/map on first paint?**
 If you catch yourself saying “we added group boxes”, ask: **does N=1 still show a group container? If yes, the metaphor failed.**
 If you catch yourself saying “implemented as requested”, ask: **did I verify against the user’s words, or only against my rewritten proxy?**
+If you catch yourself saying “grouping works when keys match”, ask: **with the user’s current/likely data, is at least one group actually visible? If zero, the request was not delivered.**
 
 ## Mandatory: Request ↔ Result verification (every user-facing ship)
 
@@ -42,21 +44,32 @@ This is the default gap Mickey is pointing at: **依頼と結果が合わない*
 | Counterexample | At least one **N=1 / empty / opposite** case was imagined; it must **not** look like success of the request |
 | Stranger test | A stranger reading only the screen (no chat history) would agree the request was met |
 | No synonym swap | “描いた / 置いた / 動いた / 200” is not accepted as proof of “分かる / 正しい / 完成” |
+| **Data-entailed expression** | Given **existing or realistic user data**, the requested affordance **actually appears** (not only “possible if data were perfect”). If it cannot appear, either fix the mapping rules or **tell the user what field must be filled** — do not ship silent empty success |
 
 If any row fails → **not done**. Fix or ask. Do not narrate “反映しました” over a failed stranger test.
 
 Applies to: diagrams, tables, filters, copy, PROFILE text, Works cards, AI outputs, CTA labels, mobile flows — **any** place the deliverable is how something *reads or looks*.
 
+## Mandatory: “依頼 ⇒ 今あるデータで見える” inference
+
+When the user asks for an **expression** (group box, color, filter result, badge, timeline mark, AI field on screen):
+
+1. **Assume the ask is about their current product state**, not an abstract algorithm that may never fire.
+2. Ask: **「今ある／これから当然入るデータで、この表現は必ず一度は見えるか？」**
+3. If the chosen key/threshold/filter makes the expression **silently never appear** on realistic data → that design is wrong. Prefer coarser keys that match the user’s words (会社・組織, not 部署细分), or surface an explicit empty-state that names the missing field.
+4. **Oracle**: after implement, mentally or actually walk a fixture that mirrors their screen (many people, same company with different units, slight name variants). **Count how many times the affordance renders. Zero = fail.**
+5. Forbidden self-talk: “条件を満たせば出るからOK”. Required self-talk: “ユーザーが依頼したのは、**今の図にその表現があること**だ”.
+
 ## Design-time gate (before first ship — not after the user complains)
 
 For any feature whose value depends on AI, live fetch, cron, or multi-step work on SWA — **and for any visualization whose meaning is a metaphor (group box, cluster, “ready” globe, timeline “today”)** — **and for any request↔expression ship above**:
 
-1. Write the **user-visible invariant** in one sentence (e.g. “朝開いた News Search に深堀・見通しが入っている”, not “RSS が保存される”; e.g. “同じ組織の**2人以上**が一つの枠の中にいる”, not “orgKey ごとに描画した”).
-2. **Cardinality / empty-state test**: For metaphors like group/cluster/batch, state **N≥2 (or whatever minimum)**. Explicitly decide N=0 and N=1 — usually **no container**. Shipping N=1 with the same chrome as a group is designed-in nonsense.
+1. Write the **user-visible invariant** in one sentence (e.g. “朝開いた News Search に深堀・見通しが入っている”, not “RSS が保存される”; e.g. “同じ会社・組織の**2人以上**が一つの角丸枠の中にいる——**今のデータでも枠が1つ以上見える**”, not “orgKey ごとに描画した”).
+2. **Cardinality / empty-state test**: For metaphors like group/cluster/batch, state **N≥2 (or whatever minimum)**. Explicitly decide N=0 and N=1 — usually **no container**. Shipping N=1 with the same chrome as a group is designed-in nonsense. Also decide: **if realistic data yields zero groups, that is a failed ship**, not a quiet map.
 3. **Budget the path**: sum worst-case timeouts × steps vs `maxDuration` / platform limit. If 4 categories × Gemini cannot finish in one request, **do not ship a single “再取得” that claims to enrich all** — ship per-step APIs + cron/GHA relay from day one.
 4. **Classify each step**: ingest vs enrich vs persist. RSS-only is allowed only if UI/cron label it `enrichmentStatus: pending|failed` and **never** as the finished AI product.
 5. **Forbidden escape hatches as the plan**: “今夜補完”, “ボタンで詳細化可能”, “best-effort Gemini then save anyway”. Placeholders are **incomplete state**, not success content. CTA that names the incomplete state must **hard-fail** when it cannot complete (no silent `ok: true`).
-6. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). For visuals: **N=1 fixture has no group hull; N=2+ fixture has multiple nodes inside one container**. For expression ships: complete the **Request ↔ Result** table above. Compile / GHA ingest-only green is not enough.
+6. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). For visuals: **N=1 fixture has no group hull; N=2+ same-company fixture shows one hull with multiple nodes inside; zero-hull on a crowded same-company map = fail**. For expression ships: complete the **Request ↔ Result** table + **data-entailed** check. Compile / GHA ingest-only green is not enough.
 7. **Reliability matrix (必須・初回開発の成果物)** when AI/cron/multi-step: Before claiming first ship done, put in the reply (and ideally the PR/commit body) a table of **あるもの / ないもの** for:
    - 収集（主経路・同意図フォールバック・全滅時）
    - 生成（主モデル・第2・第3経路）
@@ -69,18 +82,19 @@ For any feature whose value depends on AI, live fetch, cron, or multi-step work 
 
 1. **Success criteria**: State the invariant (user-visible contract), not the last symptom.
 2. **Request ↔ Result**: Complete the mandatory verification table; do not pass on proxy metrics alone.
-3. **Architecture change reclassify**: Sole source of truth → former best-effort becomes correctness. Silent `catch` forbidden unless durable same-intent fallback exists.
-4. **New failure modes**: cache miss, multi-instance, cron skip, secret missing, quota, **platform timeout**, partial category enrich. Fallback or hard-fail each.
-5. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields, **3D/map imagery** `baseLayer: false` / CDN textures / `Suspense fallback={null}`, **SWA** cron/report routes missing `allowedRoles: anonymous` under an authenticated catch-all, **N=1 group hulls**). Fix the **class**.
-6. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path? **continents/map visible on globe — not “viewer ready” / tracks moving / Canvas mounted**; **stranger would accept the request as met**).
-7. **Self-interrogation**: Symptom vs cause? Why did I choose X? If answer is only “we did Y”, dig one more why — especially “初回で甘く見積もった／後でボタン／プロキシを依頼だと思った” incentives.
+3. **Data-entailed expression**: Confirm the affordance appears under realistic/current data; if not, fix mapping or label the gap — no silent empty.
+4. **Architecture change reclassify**: Sole source of truth → former best-effort becomes correctness. Silent `catch` forbidden unless durable same-intent fallback exists.
+5. **New failure modes**: cache miss, multi-instance, cron skip, secret missing, quota, **platform timeout**, partial category enrich. Fallback or hard-fail each.
+6. **Horizontal scan**: Grep siblings (`ok: true` after catch, placeholders, `enrichedAny`, `continue-on-error`, `getLatest*`, warm/`cosmosPersisted`, `liveNewsOk`, CTA `action: rebuild` that still leaves incomplete fields, **3D/map imagery** `baseLayer: false` / CDN textures / `Suspense fallback={null}`, **SWA** cron/report routes missing `allowedRoles: anonymous` under an authenticated catch-all, **N=1 group hulls**, **expression gates that yield zero hits on real data**). Fix the **class**.
+7. **Oracle**: Probe the invariant (field left placeholder? production GET? cold path? **continents/map visible on globe — not “viewer ready” / tracks moving / Canvas mounted**; **stranger would accept the request as met**; **requested chrome is visible on a data-like fixture**).
+8. **Self-interrogation**: Symptom vs cause? Why did I choose X? If answer is only “we did Y”, dig one more why — especially “初回で甘く見積もった／後でボタン／プロキシを依頼だと思った／条件を満たせば出るから今は空でもOK” incentives.
 
 ## Incident default (do not wait to be asked)
 
 On every bug/outage the user reports (or you discover), **before** the symptom patch:
 
-1. Run **5-Whys** to a controllable root (design optimism / success metric / incentive / **bad paraphrase of the request**), not only the error string.
-2. Search the **same class**: failure → unintended substitute or unfinished state → still `ok: true` / green CI / reassuring copy / “見た目を足した”.
+1. Run **5-Whys** to a controllable root (design optimism / success metric / incentive / **bad paraphrase of the request** / **expression not entailed by data**), not only the error string.
+2. Search the **same class**: failure → unintended substitute or unfinished state → still `ok: true` / green CI / reassuring copy / “見た目を足した” / “条件次第では出る”.
 3. Patch the class; deploy; verify the invariant.
 4. If the class is process (rule escape), **update this rule or a sibling rule in the same change**.
 
@@ -97,6 +111,7 @@ Never treat as successful completion of the original intent:
 - **Visual/3D**: treating Cesium/Three “loaded” / satellite tracks / `ready=true` as success when the user-visible contract is **recognizable Earth/map** (continents or tiles). External tile-only + `baseLayer: false` without a same-intent bundled base is designed-in degraded success.
 - **Visual grouping metaphor**: drawing a group hull / rounded box / cluster chrome around **N=1** (or empty) and calling it “グルーピング”. Group containers exist only when **≥2** members share the key; singles stay unboxed. Changing shape (ellipse→rounded rect) without fixing cardinality is the same anti-pattern.
 - **Request paraphrase as done**: shipping an implementation proxy that a stranger would not accept as the user’s request, then claiming 反映済み.
+- **Silent empty expression**: shipping a requested visual/UX mode whose gates yield **zero instances** on the user’s realistic data, without fixing the gate or explaining the missing field. “条件を満たせば出る” is not delivery.
 - **SWA route auth**: locking `/api/.../*` to `authenticated` while cron/GHA still POSTs with Bearer only → platform `401` rewritten to `302 /login` → runner burns minutes then “fails” or skips persist. Cron endpoints must stay explicitly `anonymous` **before** the catch-all (app still enforces the secret). Same class: GHA green/skip because `complete=true` while `boincNeedsRun` / artifact still waiting.
 
 Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true`, `imageryLayers.length === 0` → error UI — blocking “完成” UX).
@@ -112,3 +127,4 @@ Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / deg
 - Stopping at “Cesium Viewer constructed / tracks animate” when the globe has no imagery and looks like a blank blue ball
 - Stopping at “org group boxes drawn” when singles each have their own box (N=1 hull ≠ グルーピング)
 - Stopping at “tsc / deploy green / 反映しました” when Request ↔ Result (stranger test) was not run
+- Stopping at “grouping logic exists” when the user’s map shows **zero** group boxes despite many same-org people
