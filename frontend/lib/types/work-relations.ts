@@ -14,6 +14,31 @@ export const RELATION_ORG_LABELS: Record<RelationOrgKind, string> = {
   other: "その他",
 };
 
+/** 相関図・凡例で共通利用する色（均一） */
+export const RELATION_ORG_COLORS: Record<RelationOrgKind, string> = {
+  supreme_court: "#7dd3fc",
+  cabinet: "#5eead4",
+  vendor: "#fcd34d",
+  other: "#c4b5fd",
+};
+
+/** 業者が取引・関連する官庁 */
+export const RELATION_CLIENT_LINK_KINDS = [
+  "supreme_court",
+  "cabinet",
+] as const;
+
+export type RelationClientLinkKind =
+  (typeof RELATION_CLIENT_LINK_KINDS)[number];
+
+export const RELATION_CLIENT_LINK_LABELS: Record<
+  RelationClientLinkKind,
+  string
+> = {
+  supreme_court: "最高裁判所関連",
+  cabinet: "内閣官房関連",
+};
+
 export const RELATION_EDGE_KINDS = [
   "reports_to",
   "peer",
@@ -62,7 +87,9 @@ export type RelationAffiliation = {
   title: string;
   email: string;
   phone: string;
+  /** 在籍開始（YYYY-MM または YYYY-MM-DD） */
   startedOn: string | null;
+  /** 在籍終了。空/null = 現在在籍中 */
   endedOn: string | null;
   notes: string;
 };
@@ -80,6 +107,13 @@ export type RelationPerson = {
   startedOn: string | null;
   endedOn: string | null;
   affiliations: RelationAffiliation[];
+  /**
+   * 業者が最高裁・内閣官房のどちら（または両方）に関連するか。
+   * 官庁職員本人には通常使わない。
+   */
+  clientLinks: RelationClientLinkKind[];
+  /** 顔写真（JPEG data URL、正方形クロップ） */
+  facePhotoDataUrl: string | null;
   notes: string;
   tags: string[];
 };

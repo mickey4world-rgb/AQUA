@@ -6,10 +6,12 @@ import {
 } from "@/lib/server/cosmos";
 import { sanitizeText } from "@/lib/server/security";
 import {
+  RELATION_CLIENT_LINK_KINDS,
   RELATION_EDGE_KINDS,
   RELATION_ORG_KINDS,
   RELATION_PERSON_STATUSES,
   type RelationAffiliation,
+  type RelationClientLinkKind,
   type RelationEdge,
   type RelationEdgeKind,
   type RelationEvent,
@@ -19,6 +21,8 @@ import {
   type RelationWorkspace,
 } from "@/lib/types/work-relations";
 import { currentAffiliation, relationDateKey } from "@/lib/work-relations-utils";
+
+const MAX_FACE_PHOTO_CHARS = 140_000;
 
 const WORKSPACE_DOC_ID = "workspace";
 const MAX_PEOPLE = 250;
@@ -81,6 +85,23 @@ function asEmail(value: unknown): string {
   return email;
 }
 
+function normalizeClientLinks(value: unknown): RelationClientLinkKind[] {
+  if (!Array.isArray(value)) return [];
+  const links = value
+    .map((item) => String(item))
+    .filter((item): item is RelationClientLinkKind =>
+      RELATION_CLIENT_LINK_KINDS.includes(item as RelationClientLinkKind),
+    );
+  return [...new Set(links)];
+}
+
+function normalizeFacePhoto(value: unknown): string | null {
+  if (typeof value !== "string" || !value.startsWith("data:image/")) return null;
+  if (value.length > MAX_FACE_PHOTO_CHARS) return null;
+  if (!/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(value)) return null;
+  return value;
+}
+
 export function normalizeAffiliation(
   input: Partial<RelationAffiliation>,
   existingId?: string,
@@ -88,7 +109,17 @@ export function normalizeAffiliation(
   const orgName = sanitizeText(input.orgName ?? "", 120);
   const unitName = sanitizeText(input.unitName ?? "", 120);
   const title = sanitizeText(input.title ?? "", 120);
-  if (!orgName && !unitName && !title && !input.email && !input.phone) {
+  const startedOn = asDateOrNull(input.startedOn);
+  const endedOn = asDateOrNull(input.endedOn);
+  if (
+    !orgName &&
+    !unitName &&
+    !title &&
+    !input.email &&
+    !input.phone &&
+    !startedOn &&
+    !endedOn
+  ) {
     return null;
   }
 
@@ -100,8 +131,8 @@ export function normalizeAffiliation(
     title,
     email: asEmail(input.email),
     phone: sanitizeText(String(input.phone ?? ""), 40),
-    startedOn: asDateOrNull(input.startedOn),
-    endedOn: asDateOrNull(input.endedOn),
+    startedOn,
+    endedOn,
     notes: sanitizeText(input.notes ?? "", 1000),
   };
 }
@@ -185,6 +216,8 @@ export function normalizePerson(
     startedOn: asDateOrNull(input.startedOn),
     endedOn: asDateOrNull(input.endedOn),
     affiliations,
+    clientLinks: normalizeClientLinks(input.clientLinks),
+    facePhotoDataUrl: normalizeFacePhoto(input.facePhotoDataUrl),
     notes: sanitizeText(input.notes ?? "", 2000),
     tags: (input.tags ?? [])
       .slice(0, 8)

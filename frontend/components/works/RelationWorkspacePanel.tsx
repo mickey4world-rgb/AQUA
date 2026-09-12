@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import RelationFaceCropModal from "@/components/works/RelationFaceCropModal";
 import { worksPanelClass } from "@/lib/works-utils";
 import {
   affiliationAt,
@@ -8,9 +9,14 @@ import {
   displayOrgLabel,
   edgeVisibleAt,
   emptyAffiliation,
+  formatAffiliationPeriod,
+  nodeRingColors,
   personVisibleAt,
+  RELATION_ORG_COLORS,
 } from "@/lib/work-relations-utils";
 import {
+  RELATION_CLIENT_LINK_KINDS,
+  RELATION_CLIENT_LINK_LABELS,
   RELATION_EDGE_KINDS,
   RELATION_EDGE_LABELS,
   RELATION_ORG_KINDS,
@@ -19,6 +25,7 @@ import {
   RELATION_PERSON_STATUS_LABELS,
   type RelationAffiliation,
   type RelationCardScanResult,
+  type RelationClientLinkKind,
   type RelationEdge,
   type RelationEdgeKind,
   type RelationMemoParseResult,
@@ -40,18 +47,12 @@ type GraphNode = {
   id: string;
   person: RelationPerson;
   orgKind: RelationOrgKind;
+  ringColors: string[];
   label: string;
   x: number;
   y: number;
   vx: number;
   vy: number;
-};
-
-const ORG_COLORS: Record<RelationOrgKind, string> = {
-  supreme_court: "#7dd3fc",
-  cabinet: "#5eead4",
-  vendor: "#fcd34d",
-  other: "#c4b5fd",
 };
 
 function newId() {
@@ -72,6 +73,8 @@ function emptyPerson(): RelationPerson {
     startedOn: null,
     endedOn: null,
     affiliations: [aff],
+    clientLinks: [],
+    facePhotoDataUrl: null,
     notes: "",
     tags: [],
   };
@@ -94,6 +97,7 @@ function layoutNodes(
       id: person.id,
       person,
       orgKind: displayOrgKind(person, mode, asOf),
+      ringColors: nodeRingColors(person, mode, asOf),
       label: displayOrgLabel(person, mode, asOf),
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
@@ -196,6 +200,7 @@ export default function RelationWorkspacePanel() {
     null,
   );
   const [cardThumb, setCardThumb] = useState<string | null>(null);
+  const [faceCropOpen, setFaceCropOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [editPerson, setEditPerson] = useState<RelationPerson | null>(null);
@@ -237,10 +242,20 @@ export default function RelationWorkspacePanel() {
     }
     setEditPerson({
       ...selected,
+      clientLinks: [...(selected.clientLinks ?? [])],
+      facePhotoDataUrl: selected.facePhotoDataUrl ?? null,
       affiliations:
         selected.affiliations?.length > 0
           ? selected.affiliations.map((a) => ({ ...a }))
-          : [emptyAffiliation({ orgKind: selected.orgKind, orgName: selected.orgName, title: selected.title, email: selected.email, phone: selected.phone })],
+          : [
+              emptyAffiliation({
+                orgKind: selected.orgKind,
+                orgName: selected.orgName,
+                title: selected.title,
+                email: selected.email,
+                phone: selected.phone,
+              }),
+            ],
     });
   }, [selected]);
 
@@ -250,9 +265,17 @@ export default function RelationWorkspacePanel() {
     if (!workspace) return [];
     return workspace.people.filter((person) => {
       if (!personVisibleAt(person, graphMode, asOf)) return false;
+      if (orgFilter === "all") return true;
       const kind = displayOrgKind(person, graphMode, asOf);
-      if (orgFilter !== "all" && kind !== orgFilter) return false;
-      return true;
+      if (kind === orgFilter) return true;
+      if (
+        kind === "vendor" &&
+        (orgFilter === "supreme_court" || orgFilter === "cabinet") &&
+        (person.clientLinks ?? []).includes(orgFilter)
+      ) {
+        return true;
+      }
+      return false;
     });
   }, [workspace, graphMode, asOf, orgFilter]);
 
@@ -664,6 +687,15 @@ export default function RelationWorkspacePanel() {
 
           <div className="mt-4 overflow-x-auto rounded-xl border border-white/8 bg-[#071018]">
             <svg viewBox="0 0 720 420" className="h-[360px] w-full min-w-[560px]">
+              <defs>
+                {nodes.map((node) =>
+                  node.person.facePhotoDataUrl ? (
+                    <clipPath key={`clip-${node.id}`} id={`face-clip-${node.id}`}>
+                      <circle cx={node.x} cy={node.y} r={16} />
+                    </clipPath>
+                  ) : null,
+                )}
+              </defs>
               {filteredEdges.map((edge) => {
                 const from = nodes.find((node) => node.id === edge.fromPersonId);
                 const to = nodes.find((node) => node.id === edge.toPersonId);
@@ -692,21 +724,66 @@ export default function RelationWorkspacePanel() {
               })}
               {nodes.map((node) => {
                 const selectedNode = node.id === selectedId;
-                const color = ORG_COLORS[node.orgKind];
+                const colors = node.ringColors;
+                const r = selectedNode ? 22 : 18;
                 return (
                   <g
                     key={node.id}
                     className="cursor-pointer"
                     onClick={() => setSelectedId(node.id)}
                   >
-                    <circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={selectedNode ? 22 : 18}
-                      fill="rgba(15,23,42,0.95)"
-                      stroke={color}
-                      strokeWidth={selectedNode ? 3 : 2}
-                    />
+                    {colors.length <= 1 ? (
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={r}
+                        fill="rgba(15,23,42,0.95)"
+                        stroke={colors[0] ?? RELATION_ORG_COLORS.other}
+                        strokeWidth={selectedNode ? 3 : 2.5}
+                      />
+                    ) : (
+                      <>
+                        <circle
+                          cx={node.x}
+                          cy={node.y}
+                          r={r}
+                          fill="rgba(15,23,42,0.95)"
+                          stroke={RELATION_ORG_COLORS.vendor}
+                          strokeWidth={1}
+                        />
+                        {colors.map((color, index) => {
+                          const start = (index / colors.length) * Math.PI * 2 - Math.PI / 2;
+                          const end =
+                            ((index + 1) / colors.length) * Math.PI * 2 - Math.PI / 2;
+                          const x1 = node.x + Math.cos(start) * r;
+                          const y1 = node.y + Math.sin(start) * r;
+                          const x2 = node.x + Math.cos(end) * r;
+                          const y2 = node.y + Math.sin(end) * r;
+                          const large = end - start > Math.PI ? 1 : 0;
+                          return (
+                            <path
+                              key={`${node.id}-arc-${color}`}
+                              d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`}
+                              fill="none"
+                              stroke={color}
+                              strokeWidth={selectedNode ? 4 : 3}
+                              strokeLinecap="butt"
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                    {node.person.facePhotoDataUrl ? (
+                      <image
+                        href={node.person.facePhotoDataUrl}
+                        x={node.x - 16}
+                        y={node.y - 16}
+                        width={32}
+                        height={32}
+                        clipPath={`url(#face-clip-${node.id})`}
+                        preserveAspectRatio="xMidYMid slice"
+                      />
+                    ) : null}
                     <text
                       x={node.x}
                       y={node.y + 34}
@@ -721,6 +798,20 @@ export default function RelationWorkspacePanel() {
               })}
             </svg>
           </div>
+          <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
+            {RELATION_ORG_KINDS.map((kind) => (
+              <span key={kind} className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: RELATION_ORG_COLORS[kind] }}
+                />
+                {RELATION_ORG_LABELS[kind]}
+              </span>
+            ))}
+            <span className="text-slate-500">
+              業者の両官庁関連は最高裁色＋内閣官房色のリング
+            </span>
+          </div>
         </section>
 
         <section className="space-y-5">
@@ -728,15 +819,64 @@ export default function RelationWorkspacePanel() {
             <h3 className="text-base text-white">人物・所属履歴</h3>
             {editPerson ? (
               <div className="mt-3 space-y-3 text-sm">
-                <input
-                  value={editPerson.name}
-                  onChange={(e) =>
-                    setEditPerson((prev) =>
-                      prev ? { ...prev, name: e.target.value } : prev,
-                    )
-                  }
-                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
-                />
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0">
+                    {editPerson.facePhotoDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={editPerson.facePhotoDataUrl}
+                        alt={`${editPerson.name}の顔写真`}
+                        className="h-16 w-16 rounded-full border-2 object-cover"
+                        style={{
+                          borderColor:
+                            RELATION_ORG_COLORS[
+                              displayOrgKind(editPerson, "all", null)
+                            ],
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-white/20 text-[10px] text-slate-500"
+                      >
+                        No face
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <input
+                      value={editPerson.name}
+                      onChange={(e) =>
+                        setEditPerson((prev) =>
+                          prev ? { ...prev, name: e.target.value } : prev,
+                        )
+                      }
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFaceCropOpen(true)}
+                        className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-2.5 py-1.5 text-[12px] text-amber-50"
+                      >
+                        顔写真を切り出し登録
+                      </button>
+                      {editPerson.facePhotoDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditPerson((prev) =>
+                              prev ? { ...prev, facePhotoDataUrl: null } : prev,
+                            )
+                          }
+                          className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[12px] text-slate-300"
+                        >
+                          顔写真を削除
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <select
                   value={editPerson.status}
                   onChange={(e) =>
@@ -757,6 +897,47 @@ export default function RelationWorkspacePanel() {
                     </option>
                   ))}
                 </select>
+
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-[12px] text-slate-400">
+                    関連官庁（業者向け・複数可）
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    最高裁と内閣官房の両方に関わる場合は両方チェック。相関図では両色リングで均一表示します。
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {RELATION_CLIENT_LINK_KINDS.map((link) => {
+                      const checked = (editPerson.clientLinks ?? []).includes(link);
+                      return (
+                        <label
+                          key={link}
+                          className="inline-flex items-center gap-2 text-[12px] text-slate-200"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setEditPerson((prev) => {
+                                if (!prev) return prev;
+                                const current = prev.clientLinks ?? [];
+                                const next: RelationClientLinkKind[] = checked
+                                  ? current.filter((item) => item !== link)
+                                  : [...current, link];
+                                return { ...prev, clientLinks: next };
+                              });
+                            }}
+                          />
+                          <span
+                            className="inline-block h-2.5 w-2.5 rounded-full"
+                            style={{ background: RELATION_ORG_COLORS[link] }}
+                          />
+                          {RELATION_CLIENT_LINK_LABELS[link]}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <textarea
                   value={editPerson.notes}
                   onChange={(e) =>
@@ -772,7 +953,7 @@ export default function RelationWorkspacePanel() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <p className="text-[12px] uppercase tracking-wide text-slate-500">
-                      所属履歴（異動）
+                      所属・在籍期間
                     </p>
                     <button
                       type="button"
@@ -829,30 +1010,47 @@ export default function RelationWorkspacePanel() {
                         className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
                       />
                       <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="month"
-                          value={aff.startedOn?.slice(0, 7) ?? ""}
-                          onChange={(e) =>
-                            patchAffiliation(aff.id, {
-                              startedOn: e.target.value || null,
-                            })
-                          }
-                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
-                        />
-                        <input
-                          type="month"
-                          value={aff.endedOn?.slice(0, 7) ?? ""}
-                          onChange={(e) =>
-                            patchAffiliation(aff.id, {
-                              endedOn: e.target.value || null,
-                            })
-                          }
-                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
-                          title="空欄=現職"
-                        />
+                        <label className="space-y-1 text-[10px] text-slate-500">
+                          在籍開始
+                          <input
+                            type="date"
+                            value={
+                              aff.startedOn && aff.startedOn.length >= 10
+                                ? aff.startedOn.slice(0, 10)
+                                : aff.startedOn
+                                  ? `${aff.startedOn.slice(0, 7)}-01`
+                                  : ""
+                            }
+                            onChange={(e) =>
+                              patchAffiliation(aff.id, {
+                                startedOn: e.target.value || null,
+                              })
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-slate-200"
+                          />
+                        </label>
+                        <label className="space-y-1 text-[10px] text-slate-500">
+                          在籍終了（空＝現在在籍）
+                          <input
+                            type="date"
+                            value={
+                              aff.endedOn && aff.endedOn.length >= 10
+                                ? aff.endedOn.slice(0, 10)
+                                : aff.endedOn
+                                  ? `${aff.endedOn.slice(0, 7)}-01`
+                                  : ""
+                            }
+                            onChange={(e) =>
+                              patchAffiliation(aff.id, {
+                                endedOn: e.target.value || null,
+                              })
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-slate-200"
+                          />
+                        </label>
                       </div>
-                      <p className="text-[10px] text-slate-500">
-                        開始月 / 終了月（空欄なら現職）
+                      <p className="text-[11px] text-sky-200/70">
+                        期間: {formatAffiliationPeriod(aff.startedOn, aff.endedOn)}
                       </p>
                       <input
                         value={aff.email}
@@ -902,7 +1100,7 @@ export default function RelationWorkspacePanel() {
               </div>
             ) : (
               <p className="mt-3 text-sm text-slate-400">
-                相関図または一覧から人物を選ぶと、異動履歴を編集できます。
+                相関図または一覧から人物を選ぶと、顔写真・在籍期間・関連官庁を編集できます。
               </p>
             )}
           </div>
@@ -1130,17 +1328,55 @@ export default function RelationWorkspacePanel() {
                     : "border-white/8 bg-white/[0.02] hover:border-white/20"
                 }`}
               >
-                <p className="text-sm text-white">{person.name}</p>
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {RELATION_ORG_LABELS[current?.orgKind ?? person.orgKind]} ·{" "}
-                  {[current?.orgName, current?.unitName].filter(Boolean).join(" / ") ||
-                    "所属未設定"}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {RELATION_PERSON_STATUS_LABELS[person.status]} · 履歴{" "}
-                  {person.affiliations?.length ?? 0}件
-                  {current?.email ? ` · ${current.email}` : ""}
-                </p>
+                <div className="flex items-start gap-3">
+                  {person.facePhotoDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={person.facePhotoDataUrl}
+                      alt=""
+                      className="h-10 w-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      className="mt-1 inline-block h-2.5 w-2.5 rounded-full"
+                      style={{
+                        background:
+                          RELATION_ORG_COLORS[current?.orgKind ?? person.orgKind],
+                      }}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-white">{person.name}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {RELATION_ORG_LABELS[current?.orgKind ?? person.orgKind]} ·{" "}
+                      {[current?.orgName, current?.unitName]
+                        .filter(Boolean)
+                        .join(" / ") || "所属未設定"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {formatAffiliationPeriod(
+                        current?.startedOn ?? null,
+                        current?.endedOn ?? null,
+                      )}
+                    </p>
+                    {(person.clientLinks?.length ?? 0) > 0 && (
+                      <p className="mt-1 flex flex-wrap gap-1">
+                        {person.clientLinks.map((link) => (
+                          <span
+                            key={link}
+                            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300"
+                          >
+                            <span
+                              className="inline-block h-1.5 w-1.5 rounded-full"
+                              style={{ background: RELATION_ORG_COLORS[link] }}
+                            />
+                            {RELATION_CLIENT_LINK_LABELS[link]}
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </button>
             );
           })}
@@ -1149,6 +1385,17 @@ export default function RelationWorkspacePanel() {
           )}
         </div>
       </section>
+
+      <RelationFaceCropModal
+        open={faceCropOpen}
+        onClose={() => setFaceCropOpen(false)}
+        onConfirm={(faceDataUrl) => {
+          setEditPerson((prev) =>
+            prev ? { ...prev, facePhotoDataUrl: faceDataUrl } : prev,
+          );
+          setNotice("顔写真を切り出しました。変更を保存してください。");
+        }}
+      />
     </div>
   );
 }

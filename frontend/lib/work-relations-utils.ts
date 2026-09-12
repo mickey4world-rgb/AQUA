@@ -1,9 +1,16 @@
 import type {
   RelationAffiliation,
+  RelationClientLinkKind,
   RelationEdge,
   RelationOrgKind,
   RelationPerson,
 } from "@/lib/types/work-relations";
+import {
+  RELATION_CLIENT_LINK_KINDS,
+  RELATION_ORG_COLORS,
+} from "@/lib/types/work-relations";
+
+export { RELATION_ORG_COLORS };
 
 /** YYYY-MM or YYYY-MM-DD → comparable day key (YYYYMMDD number) */
 export function relationDateKey(value: string | null | undefined): number | null {
@@ -15,6 +22,15 @@ export function relationDateKey(value: string | null | undefined): number | null
   const d = m[3] ? Number(m[3]) : 1;
   if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
   return y * 10000 + mo * 100 + d;
+}
+
+export function formatAffiliationPeriod(
+  startedOn: string | null | undefined,
+  endedOn: string | null | undefined,
+): string {
+  const start = startedOn?.trim() || "（開始未設定）";
+  const end = endedOn?.trim() || "現在";
+  return `${start} 〜 ${end}`;
 }
 
 export function isPeriodActiveAt(
@@ -51,7 +67,10 @@ export function currentAffiliation(
 }
 
 export function affiliationAt(
-  person: Pick<RelationPerson, "affiliations" | "orgKind" | "orgName" | "title" | "email" | "phone">,
+  person: Pick<
+    RelationPerson,
+    "affiliations" | "orgKind" | "orgName" | "title" | "email" | "phone"
+  >,
   asOf: string | null,
 ): RelationAffiliation | null {
   const list = person.affiliations ?? [];
@@ -121,6 +140,23 @@ export function displayOrgLabel(
       : currentAffiliation(person);
   if (!aff) return person.orgName || "所属不明";
   return [aff.orgName, aff.unitName].filter(Boolean).join(" / ") || "所属不明";
+}
+
+/** 相関図リングに使う色。業者で両官庁関連なら両方の色 */
+export function nodeRingColors(
+  person: RelationPerson,
+  mode: "all" | "asOf",
+  asOf: string | null,
+): string[] {
+  const kind = displayOrgKind(person, mode, asOf);
+  const links = (person.clientLinks ?? []).filter((link) =>
+    RELATION_CLIENT_LINK_KINDS.includes(link),
+  ) as RelationClientLinkKind[];
+
+  if (kind === "vendor" && links.length > 0) {
+    return links.map((link) => RELATION_ORG_COLORS[link]);
+  }
+  return [RELATION_ORG_COLORS[kind]];
 }
 
 export function emptyAffiliation(
