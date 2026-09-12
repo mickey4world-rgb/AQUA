@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "AQUA SHOWCASE — AI・ディズニー・行政・宇宙の未来実験",
   description:
-    "AQUA STUDIOのサンキー図、AI合議、ディズニー混雑予測、小惑星3D、Soluna自動社会貢献を認証なしで体験できる公開ショーケース。",
+    "AQUA STUDIOのニュースサーチ、ディズニー混雑予測、サンキー図、関係図ワークスペース、Soluna自動社会貢献を認証なしで体験できる公開ショーケース。",
   alternates: { canonical: "/sample" },
   robots: { index: true, follow: true },
   keywords: [
@@ -14,6 +14,8 @@ export const metadata: Metadata = {
     "東京ディズニーリゾート 混雑予測",
     "行政事業レビュー",
     "サンキー図",
+    "関係図",
+    "名刺OCR",
     "BOINC 社会貢献",
     "宇宙分析",
   ],
@@ -22,7 +24,7 @@ export const metadata: Metadata = {
     type: "website",
     title: "AQUA SHOWCASE — AIと社会貢献の未来実験",
     description:
-      "AI、ディズニー混雑予測、行政可視化、宇宙分析、BOINC社会貢献の公開デモ。",
+      "AI、ディズニー混雑予測、行政可視化、関係図、宇宙分析、BOINC社会貢献の公開デモ。",
   },
 };
 
@@ -34,7 +36,7 @@ const structuredData = {
   operatingSystem: "Web",
   url: "https://www.aquacore.net/sample",
   description:
-    "AI、行政予算可視化、ディズニー混雑予測、宇宙分析、BOINC社会貢献を統合した公開ショーケース。",
+    "AI、行政予算可視化、ディズニー混雑予測、関係図、宇宙分析、BOINC社会貢献を統合した公開ショーケース。",
   offers: {
     "@type": "Offer",
     price: "0",
