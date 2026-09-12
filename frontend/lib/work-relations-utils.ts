@@ -193,17 +193,13 @@ export function orgGroupTitle(
     mode === "asOf" && asOf
       ? affiliationAt(person, asOf)
       : currentAffiliation(person);
-  const kindLabel =
-    kind === "supreme_court"
-      ? "最高裁"
-      : kind === "cabinet"
-        ? "内閣官房"
-        : kind === "vendor"
-          ? "業者"
-          : "その他";
   const orgName = (aff?.orgName || person.orgName || "").trim();
-  if (orgName) return `${kindLabel} · ${orgName}`;
-  return kindLabel;
+
+  if (kind === "supreme_court") return "最高裁 職員グループ";
+  if (kind === "cabinet") return "内閣官房 職員グループ";
+  if (orgName) return orgName;
+  if (kind === "vendor") return `業者（名称未設定）`;
+  return `その他 · ${person.name}`;
 }
 
 /** 相関図リングに使う色。業者で両官庁関連なら両方の色 */

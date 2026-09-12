@@ -22,6 +22,14 @@ export const RELATION_ORG_COLORS: Record<RelationOrgKind, string> = {
   other: "#c4b5fd",
 };
 
+/** 相関図の組織枠カラー（依頼スケッチ準拠） */
+export const RELATION_GROUP_BOX_COLORS: Record<RelationOrgKind, string> = {
+  supreme_court: "#3b82f6",
+  cabinet: "#f97316",
+  vendor: "#22c55e",
+  other: "#a78bfa",
+};
+
 /** 業者が取引・関連する官庁 */
 export const RELATION_CLIENT_LINK_KINDS = [
   "supreme_court",
@@ -138,6 +146,21 @@ export type RelationEvent = {
   notes: string;
 };
 
+/** 組織枠どうしの関係線 */
+export type RelationGroupEdge = {
+  id: string;
+  fromGroupKey: string;
+  toGroupKey: string;
+  label: string;
+};
+
+/** マウス編集で動かした位置（永続化） */
+export type RelationMapLayout = {
+  groupPositions: Record<string, { x: number; y: number }>;
+  /** 組織枠内の相対座標 */
+  personOffsets: Record<string, { x: number; y: number }>;
+};
+
 export type RelationWorkspace = {
   id: string;
   userId: string;
@@ -145,6 +168,8 @@ export type RelationWorkspace = {
   people: RelationPerson[];
   edges: RelationEdge[];
   events: RelationEvent[];
+  groupEdges: RelationGroupEdge[];
+  layout: RelationMapLayout;
   createdAt: string;
   updatedAt: string;
 };

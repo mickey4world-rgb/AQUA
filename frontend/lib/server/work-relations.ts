@@ -15,6 +15,8 @@ import {
   type RelationEdge,
   type RelationEdgeKind,
   type RelationEvent,
+  type RelationGroupEdge,
+  type RelationMapLayout,
   type RelationOrgKind,
   type RelationPerson,
   type RelationPersonStatus,
@@ -29,6 +31,7 @@ const MAX_PEOPLE = 250;
 const MAX_EDGES = 500;
 const MAX_EVENTS = 300;
 const MAX_AFFILIATIONS = 40;
+const MAX_GROUP_EDGES = 200;
 
 function relationsContainer() {
   return getContainer(COSMOS_CONTAINERS.workRelations);
@@ -43,6 +46,8 @@ function emptyWorkspace(userId: string): RelationWorkspace {
     people: [],
     edges: [],
     events: [],
+    groupEdges: [],
+    layout: { groupPositions: {}, personOffsets: {} },
     createdAt: now,
     updatedAt: now,
   };
@@ -302,6 +307,51 @@ function normalizeWorkspace(
       personIds: event.personIds.filter((id) => personIds.has(id)),
     }));
 
+  const groupEdges = (input.groupEdges ?? existing?.groupEdges ?? [])
+    .slice(0, MAX_GROUP_EDGES)
+    .map((edge) => {
+      const fromGroupKey = sanitizeText(String(edge.fromGroupKey ?? ""), 160);
+      const toGroupKey = sanitizeText(String(edge.toGroupKey ?? ""), 160);
+      if (!fromGroupKey || !toGroupKey || fromGroupKey === toGroupKey) return null;
+      return {
+        id: sanitizeText(String(edge.id ?? ""), 64) || randomUUID(),
+        fromGroupKey,
+        toGroupKey,
+        label: sanitizeText(String(edge.label ?? ""), 80),
+      } satisfies RelationGroupEdge;
+    })
+    .filter((edge): edge is RelationGroupEdge => Boolean(edge));
+
+  const layoutInput = input.layout ?? existing?.layout;
+  const layout: RelationMapLayout = {
+    groupPositions: {},
+    personOffsets: {},
+  };
+  if (layoutInput?.groupPositions && typeof layoutInput.groupPositions === "object") {
+    for (const [key, value] of Object.entries(layoutInput.groupPositions).slice(0, 200)) {
+      if (!value || typeof value !== "object") continue;
+      const x = Number((value as { x?: number }).x);
+      const y = Number((value as { y?: number }).y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      layout.groupPositions[sanitizeText(key, 160)] = {
+        x: Math.max(-200, Math.min(4000, x)),
+        y: Math.max(-200, Math.min(4000, y)),
+      };
+    }
+  }
+  if (layoutInput?.personOffsets && typeof layoutInput.personOffsets === "object") {
+    for (const [key, value] of Object.entries(layoutInput.personOffsets).slice(0, 250)) {
+      if (!value || typeof value !== "object") continue;
+      const x = Number((value as { x?: number }).x);
+      const y = Number((value as { y?: number }).y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      layout.personOffsets[sanitizeText(key, 64)] = {
+        x: Math.max(-40, Math.min(800, x)),
+        y: Math.max(-40, Math.min(800, y)),
+      };
+    }
+  }
+
   const now = new Date().toISOString();
   return {
     id: WORKSPACE_DOC_ID,
@@ -310,6 +360,8 @@ function normalizeWorkspace(
     people,
     edges,
     events,
+    groupEdges,
+    layout,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
