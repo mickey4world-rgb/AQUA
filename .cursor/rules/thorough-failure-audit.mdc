@@ -16,20 +16,23 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 3. **Copy ≠ invariant**: UI/button text promised “詳細化／再取得で解説” while API returned `ok: true` with the same placeholders. Rule examples covered news/warm but not **CTA promise vs delivery**.
 4. **Symptom metric**: “API 200 / rebuild saved / workflow green” while outlook still said 今夜の解説… — weak proxy, same class as warm-ok / liveNewsOk-false.
 5. **Visual weak oracle**: “Cesium loaded / satellites move / Canvas mounted” while Earth was a blank blue ball (external tiles failed async; `baseLayer: false` with no bundled base). Same class: substitute that changes meaning still looked like success.
+6. **Visual metaphor without cardinality**: “同じ組織はグループで分かるように” → every org bucket got a hull (including **N=1**). A box around one person is **not grouping**; it is decoration that changes meaning. Shape tweaks (ellipse → rounded rect) without re-asking “when does this affordance exist?” are the same escape.
 
 If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
 If you catch yourself saying “viewer is ready”, ask: **can a stranger recognize continents/map on first paint?**
+If you catch yourself saying “we added group boxes”, ask: **does N=1 still show a group container? If yes, the metaphor failed.**
 
 ## Design-time gate (before first ship — not after the user complains)
 
-For any feature whose value depends on AI, live fetch, cron, or multi-step work on SWA:
+For any feature whose value depends on AI, live fetch, cron, or multi-step work on SWA — **and for any visualization whose meaning is a metaphor (group box, cluster, “ready” globe, timeline “today”)**:
 
-1. Write the **user-visible invariant** in one sentence (e.g. “朝開いた News Search に深堀・見通しが入っている”, not “RSS が保存される”).
-2. **Budget the path**: sum worst-case timeouts × steps vs `maxDuration` / platform limit. If 4 categories × Gemini cannot finish in one request, **do not ship a single “再取得” that claims to enrich all** — ship per-step APIs + cron/GHA relay from day one.
-3. **Classify each step**: ingest vs enrich vs persist. RSS-only is allowed only if UI/cron label it `enrichmentStatus: pending|failed` and **never** as the finished AI product.
-4. **Forbidden escape hatches as the plan**: “今夜補完”, “ボタンで詳細化可能”, “best-effort Gemini then save anyway”. Placeholders are **incomplete state**, not success content. CTA that names the incomplete state must **hard-fail** when it cannot complete (no silent `ok: true`).
-5. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). Compile / GHA ingest-only green is not enough.
-6. **Reliability matrix (必須・初回開発の成果物)**: Before claiming first ship done, put in the reply (and ideally the PR/commit body) a table of **あるもの / ないもの** for:
+1. Write the **user-visible invariant** in one sentence (e.g. “朝開いた News Search に深堀・見通しが入っている”, not “RSS が保存される”; e.g. “同じ組織の**2人以上**が一つの枠の中にいる”, not “orgKey ごとに描画した”).
+2. **Cardinality / empty-state test**: For metaphors like group/cluster/batch, state **N≥2 (or whatever minimum)**. Explicitly decide N=0 and N=1 — usually **no container**. Shipping N=1 with the same chrome as a group is designed-in nonsense.
+3. **Budget the path**: sum worst-case timeouts × steps vs `maxDuration` / platform limit. If 4 categories × Gemini cannot finish in one request, **do not ship a single “再取得” that claims to enrich all** — ship per-step APIs + cron/GHA relay from day one.
+4. **Classify each step**: ingest vs enrich vs persist. RSS-only is allowed only if UI/cron label it `enrichmentStatus: pending|failed` and **never** as the finished AI product.
+5. **Forbidden escape hatches as the plan**: “今夜補完”, “ボタンで詳細化可能”, “best-effort Gemini then save anyway”. Placeholders are **incomplete state**, not success content. CTA that names the incomplete state must **hard-fail** when it cannot complete (no silent `ok: true`).
+6. **Oracle before merge**: exercise the real CTA or cron end-to-end once; assert the artifact field changed (outlook/deepDive left placeholder). For visuals: **N=1 fixture has no group hull; N=2+ fixture has multiple nodes inside one container**. Compile / GHA ingest-only green is not enough.
+7. **Reliability matrix (必須・初回開発の成果物)**: Before claiming first ship done, put in the reply (and ideally the PR/commit body) a table of **あるもの / ないもの** for:
    - 収集（主経路・同意図フォールバック・全滅時）
    - 生成（主モデル・第2・第3経路）
    - 同日内リトライ（失敗単位の再キュー）
@@ -66,6 +69,7 @@ Never treat as successful completion of the original intent:
 - Silent `catch` inventing empty/default data on a correctness-critical path
 - Shipping “incomplete now, user can press a button later” **without** a verified button path and an explicit incomplete status the UI respects
 - **Visual/3D**: treating Cesium/Three “loaded” / satellite tracks / `ready=true` as success when the user-visible contract is **recognizable Earth/map** (continents or tiles). External tile-only + `baseLayer: false` without a same-intent bundled base is designed-in degraded success.
+- **Visual grouping metaphor**: drawing a group hull / rounded box / cluster chrome around **N=1** (or empty) and calling it “グルーピング”. Group containers exist only when **≥2** members share the key; singles stay unboxed. Changing shape (ellipse→rounded rect) without fixing cardinality is the same anti-pattern.
 - **SWA route auth**: locking `/api/.../*` to `authenticated` while cron/GHA still POSTs with Bearer only → platform `401` rewritten to `302 /login` → runner burns minutes then “fails” or skips persist. Cron endpoints must stay explicitly `anonymous` **before** the catch-all (app still enforces the secret). Same class: GHA green/skip because `complete=true` while `boincNeedsRun` / artifact still waiting.
 
 Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true`, `imageryLayers.length === 0` → error UI — blocking “完成” UX).
@@ -79,3 +83,4 @@ Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / deg
 - Stopping at “warm/ingest/rebuild succeeded” when the user-visible artifact is still placeholder or public read can 503
 - Stopping at “briefing ingested” when source was training-data / non-live
 - Stopping at “Cesium Viewer constructed / tracks animate” when the globe has no imagery and looks like a blank blue ball
+- Stopping at “org group boxes drawn” when singles each have their own box (N=1 hull ≠ グルーピング)
