@@ -64,10 +64,10 @@ type GraphGroup = {
   title: string;
   orgKind: RelationOrgKind;
   color: string;
-  cx: number;
-  cy: number;
-  rx: number;
-  ry: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   memberCount: number;
 };
 
@@ -208,38 +208,202 @@ function layoutGraph(
     }
   }
 
-  // グループ中心をメンバー平均に更新し、楕円バウンドを計算
+  // グループ中心をメンバー平均に更新し、角丸四角のバウンドを計算
   const groups: GraphGroup[] = [];
-  for (const [key, members] of groupEntries) {
+  for (const [key] of groupEntries) {
     const memberNodes = nodes.filter((n) => n.groupKey === key);
     if (memberNodes.length === 0) continue;
+    const pad = 36;
+    const minX = Math.min(...memberNodes.map((n) => n.x)) - pad;
+    const maxX = Math.max(...memberNodes.map((n) => n.x)) + pad;
+    const minY = Math.min(...memberNodes.map((n) => n.y)) - pad - 8;
+    const maxY = Math.max(...memberNodes.map((n) => n.y)) + pad + 10;
     const avgX =
       memberNodes.reduce((sum, n) => sum + n.x, 0) / memberNodes.length;
     const avgY =
       memberNodes.reduce((sum, n) => sum + n.y, 0) / memberNodes.length;
-    const spreadX = Math.max(
-      ...memberNodes.map((n) => Math.abs(n.x - avgX)),
-      28,
-    );
-    const spreadY = Math.max(
-      ...memberNodes.map((n) => Math.abs(n.y - avgY)),
-      28,
-    );
+    // グループ中心を記録（次フレーム向けに centers は描画用にのみ使用）
+    void avgX;
+    void avgY;
     const sample = memberNodes[0];
     groups.push({
       key,
       title: sample.groupTitle,
       orgKind: sample.orgKind,
       color: RELATION_ORG_COLORS[sample.orgKind],
-      cx: avgX,
-      cy: avgY,
-      rx: spreadX + 42,
-      ry: spreadY + 42,
+      x: minX,
+      y: minY,
+      width: Math.max(maxX - minX, 96),
+      height: Math.max(maxY - minY, 88),
       memberCount: memberNodes.length,
     });
   }
 
   return { nodes, groups };
+}
+
+function RelationMapSvgContent({
+  nodes,
+  groups,
+  edges,
+  selectedId,
+  onSelect,
+  clipPrefix = "face",
+}: {
+  nodes: GraphNode[];
+  groups: GraphGroup[];
+  edges: RelationEdge[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  clipPrefix?: string;
+}) {
+  return (
+    <>
+      <defs>
+        {nodes.map((node) =>
+          node.person.facePhotoDataUrl ? (
+            <clipPath
+              key={`clip-${clipPrefix}-${node.id}`}
+              id={`${clipPrefix}-clip-${node.id}`}
+            >
+              <circle cx={node.x} cy={node.y} r={16} />
+            </clipPath>
+          ) : null,
+        )}
+      </defs>
+      {groups.map((group) => (
+        <g key={`group-${group.key}`}>
+          <rect
+            x={group.x}
+            y={group.y}
+            width={group.width}
+            height={group.height}
+            rx={18}
+            ry={18}
+            fill={group.color}
+            fillOpacity={0.1}
+            stroke={group.color}
+            strokeOpacity={0.55}
+            strokeWidth={1.6}
+            strokeDasharray={group.memberCount > 1 ? "0" : "5 4"}
+          />
+          <text
+            x={group.x + 14}
+            y={group.y + 18}
+            textAnchor="start"
+            fontSize="11"
+            className="fill-slate-100"
+          >
+            {group.title.length > 36
+              ? `${group.title.slice(0, 36)}…`
+              : group.title}
+            {group.memberCount > 1 ? `（${group.memberCount}）` : ""}
+          </text>
+        </g>
+      ))}
+      {edges.map((edge) => {
+        const from = nodes.find((node) => node.id === edge.fromPersonId);
+        const to = nodes.find((node) => node.id === edge.toPersonId);
+        if (!from || !to) return null;
+        return (
+          <g key={edge.id}>
+            <line
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke="rgba(148,163,184,0.45)"
+              strokeWidth={edge.strength}
+            />
+            <text
+              x={(from.x + to.x) / 2}
+              y={(from.y + to.y) / 2 - 6}
+              textAnchor="middle"
+              className="fill-slate-500"
+              fontSize="10"
+            >
+              {edge.label || RELATION_EDGE_LABELS[edge.kind]}
+            </text>
+          </g>
+        );
+      })}
+      {nodes.map((node) => {
+        const selectedNode = node.id === selectedId;
+        const colors = node.ringColors;
+        const r = selectedNode ? 22 : 18;
+        return (
+          <g
+            key={node.id}
+            className="cursor-pointer"
+            onClick={() => onSelect(node.id)}
+          >
+            {colors.length <= 1 ? (
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r={r}
+                fill="rgba(15,23,42,0.95)"
+                stroke={colors[0] ?? RELATION_ORG_COLORS.other}
+                strokeWidth={selectedNode ? 3 : 2.5}
+              />
+            ) : (
+              <>
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={r}
+                  fill="rgba(15,23,42,0.95)"
+                  stroke={RELATION_ORG_COLORS.vendor}
+                  strokeWidth={1}
+                />
+                {colors.map((color, index) => {
+                  const start =
+                    (index / colors.length) * Math.PI * 2 - Math.PI / 2;
+                  const end =
+                    ((index + 1) / colors.length) * Math.PI * 2 - Math.PI / 2;
+                  const x1 = node.x + Math.cos(start) * r;
+                  const y1 = node.y + Math.sin(start) * r;
+                  const x2 = node.x + Math.cos(end) * r;
+                  const y2 = node.y + Math.sin(end) * r;
+                  const large = end - start > Math.PI ? 1 : 0;
+                  return (
+                    <path
+                      key={`${node.id}-arc-${color}`}
+                      d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={selectedNode ? 4 : 3}
+                      strokeLinecap="butt"
+                    />
+                  );
+                })}
+              </>
+            )}
+            {node.person.facePhotoDataUrl ? (
+              <image
+                href={node.person.facePhotoDataUrl}
+                x={node.x - 16}
+                y={node.y - 16}
+                width={32}
+                height={32}
+                clipPath={`url(#${clipPrefix}-clip-${node.id})`}
+                preserveAspectRatio="xMidYMid slice"
+              />
+            ) : null}
+            <text
+              x={node.x}
+              y={node.y + 34}
+              textAnchor="middle"
+              className="fill-slate-200"
+              fontSize="11"
+            >
+              {node.person.name}
+            </text>
+          </g>
+        );
+      })}
+    </>
+  );
 }
 
 function newId() {
@@ -312,6 +476,18 @@ export default function RelationWorkspacePanel() {
   );
   const [cardThumb, setCardThumb] = useState<string | null>(null);
   const [faceCropOpen, setFaceCropOpen] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const [listNameFilter, setListNameFilter] = useState("");
+  const [listOrgKindFilter, setListOrgKindFilter] = useState<"all" | RelationOrgKind>(
+    "all",
+  );
+  const [listStatusFilter, setListStatusFilter] = useState<
+    "all" | RelationPersonStatus
+  >("all");
+  const [listOrgTextFilter, setListOrgTextFilter] = useState("");
+  const [listClientFilter, setListClientFilter] = useState<
+    "all" | RelationClientLinkKind | "both"
+  >("all");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [editPerson, setEditPerson] = useState<RelationPerson | null>(null);
@@ -370,6 +546,15 @@ export default function RelationWorkspacePanel() {
     });
   }, [selected]);
 
+  useEffect(() => {
+    if (!mapExpanded) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMapExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mapExpanded]);
+
   const asOf = graphMode === "asOf" ? asOfDate : null;
 
   const filteredPeople = useMemo(() => {
@@ -401,10 +586,64 @@ export default function RelationWorkspacePanel() {
     );
   }, [workspace, filteredPeople, graphMode, asOf]);
 
+  const mapSize = mapExpanded
+    ? { w: 1400, h: 860 }
+    : { w: 960, h: 560 };
+
   const { nodes, groups } = useMemo(
-    () => layoutGraph(filteredPeople, filteredEdges, graphMode, asOf, 720, 420),
-    [filteredPeople, filteredEdges, graphMode, asOf],
+    () =>
+      layoutGraph(
+        filteredPeople,
+        filteredEdges,
+        graphMode,
+        asOf,
+        mapSize.w,
+        mapSize.h,
+      ),
+    [filteredPeople, filteredEdges, graphMode, asOf, mapSize.w, mapSize.h],
   );
+
+  const listRows = useMemo(() => {
+    if (!workspace) return [];
+    const nameQ = listNameFilter.trim().toLowerCase();
+    const orgQ = listOrgTextFilter.trim().toLowerCase();
+    return workspace.people.filter((person) => {
+      const current = affiliationAt(person, null);
+      if (nameQ && !person.name.toLowerCase().includes(nameQ)) return false;
+      if (
+        listOrgKindFilter !== "all" &&
+        (current?.orgKind ?? person.orgKind) !== listOrgKindFilter
+      ) {
+        return false;
+      }
+      if (listStatusFilter !== "all" && person.status !== listStatusFilter) {
+        return false;
+      }
+      if (orgQ) {
+        const hay = `${current?.orgName ?? ""} ${current?.unitName ?? ""} ${person.orgName}`.toLowerCase();
+        if (!hay.includes(orgQ)) return false;
+      }
+      if (listClientFilter === "both") {
+        const links = person.clientLinks ?? [];
+        if (
+          !links.includes("supreme_court") ||
+          !links.includes("cabinet")
+        ) {
+          return false;
+        }
+      } else if (listClientFilter !== "all") {
+        if (!(person.clientLinks ?? []).includes(listClientFilter)) return false;
+      }
+      return true;
+    });
+  }, [
+    workspace,
+    listNameFilter,
+    listOrgKindFilter,
+    listStatusFilter,
+    listOrgTextFilter,
+    listClientFilter,
+  ]);
 
   async function persist(next: RelationWorkspace, message?: string) {
     setSaving(true);
@@ -788,6 +1027,13 @@ export default function RelationWorkspacePanel() {
                 {filteredPeople.length}人 / {filteredEdges.length}関係
                 {saving ? " · 保存中" : ""}
               </span>
+              <button
+                type="button"
+                onClick={() => setMapExpanded(true)}
+                className="rounded-lg border border-sky-300/30 bg-sky-300/10 px-2.5 py-1.5 text-sky-50"
+              >
+                画面を広げる
+              </button>
             </div>
           </div>
           {graphMode === "asOf" && (
@@ -796,145 +1042,18 @@ export default function RelationWorkspacePanel() {
             </p>
           )}
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-white/8 bg-[#071018]">
-            <svg viewBox="0 0 720 420" className="h-[360px] w-full min-w-[560px]">
-              <defs>
-                {nodes.map((node) =>
-                  node.person.facePhotoDataUrl ? (
-                    <clipPath key={`clip-${node.id}`} id={`face-clip-${node.id}`}>
-                      <circle cx={node.x} cy={node.y} r={16} />
-                    </clipPath>
-                  ) : null,
-                )}
-              </defs>
-              {groups.map((group) => (
-                <g key={`group-${group.key}`}>
-                  <ellipse
-                    cx={group.cx}
-                    cy={group.cy}
-                    rx={group.rx}
-                    ry={group.ry}
-                    fill={group.color}
-                    fillOpacity={0.1}
-                    stroke={group.color}
-                    strokeOpacity={0.45}
-                    strokeWidth={1.5}
-                    strokeDasharray={group.memberCount > 1 ? "0" : "4 4"}
-                  />
-                  <text
-                    x={group.cx}
-                    y={group.cy - group.ry + 14}
-                    textAnchor="middle"
-                    fontSize="11"
-                    className="fill-slate-200"
-                  >
-                    {group.title.length > 28
-                      ? `${group.title.slice(0, 28)}…`
-                      : group.title}
-                    {group.memberCount > 1 ? `（${group.memberCount}）` : ""}
-                  </text>
-                </g>
-              ))}
-              {filteredEdges.map((edge) => {
-                const from = nodes.find((node) => node.id === edge.fromPersonId);
-                const to = nodes.find((node) => node.id === edge.toPersonId);
-                if (!from || !to) return null;
-                return (
-                  <g key={edge.id}>
-                    <line
-                      x1={from.x}
-                      y1={from.y}
-                      x2={to.x}
-                      y2={to.y}
-                      stroke="rgba(148,163,184,0.45)"
-                      strokeWidth={edge.strength}
-                    />
-                    <text
-                      x={(from.x + to.x) / 2}
-                      y={(from.y + to.y) / 2 - 6}
-                      textAnchor="middle"
-                      className="fill-slate-500"
-                      fontSize="10"
-                    >
-                      {edge.label || RELATION_EDGE_LABELS[edge.kind]}
-                    </text>
-                  </g>
-                );
-              })}
-              {nodes.map((node) => {
-                const selectedNode = node.id === selectedId;
-                const colors = node.ringColors;
-                const r = selectedNode ? 22 : 18;
-                return (
-                  <g
-                    key={node.id}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedId(node.id)}
-                  >
-                    {colors.length <= 1 ? (
-                      <circle
-                        cx={node.x}
-                        cy={node.y}
-                        r={r}
-                        fill="rgba(15,23,42,0.95)"
-                        stroke={colors[0] ?? RELATION_ORG_COLORS.other}
-                        strokeWidth={selectedNode ? 3 : 2.5}
-                      />
-                    ) : (
-                      <>
-                        <circle
-                          cx={node.x}
-                          cy={node.y}
-                          r={r}
-                          fill="rgba(15,23,42,0.95)"
-                          stroke={RELATION_ORG_COLORS.vendor}
-                          strokeWidth={1}
-                        />
-                        {colors.map((color, index) => {
-                          const start = (index / colors.length) * Math.PI * 2 - Math.PI / 2;
-                          const end =
-                            ((index + 1) / colors.length) * Math.PI * 2 - Math.PI / 2;
-                          const x1 = node.x + Math.cos(start) * r;
-                          const y1 = node.y + Math.sin(start) * r;
-                          const x2 = node.x + Math.cos(end) * r;
-                          const y2 = node.y + Math.sin(end) * r;
-                          const large = end - start > Math.PI ? 1 : 0;
-                          return (
-                            <path
-                              key={`${node.id}-arc-${color}`}
-                              d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`}
-                              fill="none"
-                              stroke={color}
-                              strokeWidth={selectedNode ? 4 : 3}
-                              strokeLinecap="butt"
-                            />
-                          );
-                        })}
-                      </>
-                    )}
-                    {node.person.facePhotoDataUrl ? (
-                      <image
-                        href={node.person.facePhotoDataUrl}
-                        x={node.x - 16}
-                        y={node.y - 16}
-                        width={32}
-                        height={32}
-                        clipPath={`url(#face-clip-${node.id})`}
-                        preserveAspectRatio="xMidYMid slice"
-                      />
-                    ) : null}
-                    <text
-                      x={node.x}
-                      y={node.y + 34}
-                      textAnchor="middle"
-                      className="fill-slate-200"
-                      fontSize="11"
-                    >
-                      {node.person.name}
-                    </text>
-                  </g>
-                );
-              })}
+          <div className="mt-4 overflow-auto rounded-xl border border-white/8 bg-[#071018]">
+            <svg
+              viewBox={`0 0 ${mapSize.w} ${mapSize.h}`}
+              className="h-[480px] w-full min-w-[640px]"
+            >
+              <RelationMapSvgContent
+                nodes={nodes}
+                groups={groups}
+                edges={filteredEdges}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
             </svg>
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
@@ -948,7 +1067,7 @@ export default function RelationWorkspacePanel() {
               </span>
             ))}
             <span className="text-slate-500">
-              同じ組織・所属は自動でグループ配置。業者の両官庁関連は両色リング
+              同じ組織・所属は角丸の四角でグループ化。業者の両官庁関連は両色リング
             </span>
           </div>
         </section>
@@ -1452,78 +1571,254 @@ export default function RelationWorkspacePanel() {
       </div>
 
       <section className={`${worksPanelClass} p-4 sm:p-5`}>
-        <h3 className="text-base text-white">登録一覧</h3>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {workspace?.people.map((person) => {
-            const current = affiliationAt(person, null);
-            return (
-              <button
-                key={person.id}
-                type="button"
-                onClick={() => setSelectedId(person.id)}
-                className={`rounded-xl border px-3 py-3 text-left transition ${
-                  selectedId === person.id
-                    ? "border-sky-300/40 bg-sky-300/10"
-                    : "border-white/8 bg-white/[0.02] hover:border-white/20"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {person.facePhotoDataUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={person.facePhotoDataUrl}
-                      alt=""
-                      className="h-10 w-10 rounded-full object-cover"
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-base text-white">登録一覧</h3>
+            <p className="mt-1 text-[12px] text-slate-500">
+              {listRows.length} / {workspace?.people.length ?? 0} 件
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-white/10">
+          <table className="min-w-[880px] w-full border-collapse text-left text-[13px]">
+            <thead className="bg-white/[0.04] text-[11px] text-slate-400">
+              <tr>
+                <th className="px-3 py-2 font-medium">顔</th>
+                <th className="px-3 py-2 font-medium">
+                  <div className="space-y-1">
+                    <span>氏名</span>
+                    <input
+                      value={listNameFilter}
+                      onChange={(e) => setListNameFilter(e.target.value)}
+                      placeholder="フィルタ"
+                      className="block w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[12px] text-slate-200"
                     />
-                  ) : (
-                    <span
-                      className="mt-1 inline-block h-2.5 w-2.5 rounded-full"
-                      style={{
-                        background:
-                          RELATION_ORG_COLORS[current?.orgKind ?? person.orgKind],
-                      }}
+                  </div>
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  <div className="space-y-1">
+                    <span>種別</span>
+                    <select
+                      value={listOrgKindFilter}
+                      onChange={(e) =>
+                        setListOrgKindFilter(
+                          e.target.value as "all" | RelationOrgKind,
+                        )
+                      }
+                      className="block w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[12px] text-slate-200"
+                    >
+                      <option value="all">すべて</option>
+                      {RELATION_ORG_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {RELATION_ORG_LABELS[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  <div className="space-y-1">
+                    <span>組織 / 所属</span>
+                    <input
+                      value={listOrgTextFilter}
+                      onChange={(e) => setListOrgTextFilter(e.target.value)}
+                      placeholder="フィルタ"
+                      className="block w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[12px] text-slate-200"
                     />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white">{person.name}</p>
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      {RELATION_ORG_LABELS[current?.orgKind ?? person.orgKind]} ·{" "}
+                  </div>
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  <div className="space-y-1">
+                    <span>状態</span>
+                    <select
+                      value={listStatusFilter}
+                      onChange={(e) =>
+                        setListStatusFilter(
+                          e.target.value as "all" | RelationPersonStatus,
+                        )
+                      }
+                      className="block w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[12px] text-slate-200"
+                    >
+                      <option value="all">すべて</option>
+                      {RELATION_PERSON_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {RELATION_PERSON_STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-3 py-2 font-medium">在籍期間</th>
+                <th className="px-3 py-2 font-medium">
+                  <div className="space-y-1">
+                    <span>関連官庁</span>
+                    <select
+                      value={listClientFilter}
+                      onChange={(e) =>
+                        setListClientFilter(
+                          e.target.value as
+                            | "all"
+                            | RelationClientLinkKind
+                            | "both",
+                        )
+                      }
+                      className="block w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-[12px] text-slate-200"
+                    >
+                      <option value="all">すべて</option>
+                      <option value="supreme_court">最高裁関連</option>
+                      <option value="cabinet">内閣官房関連</option>
+                      <option value="both">両方</option>
+                    </select>
+                  </div>
+                </th>
+                <th className="px-3 py-2 font-medium">連絡先</th>
+              </tr>
+            </thead>
+            <tbody>
+              {listRows.map((person) => {
+                const current = affiliationAt(person, null);
+                return (
+                  <tr
+                    key={person.id}
+                    onClick={() => setSelectedId(person.id)}
+                    className={`cursor-pointer border-t border-white/8 transition hover:bg-white/[0.04] ${
+                      selectedId === person.id ? "bg-sky-300/10" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      {person.facePhotoDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={person.facePhotoDataUrl}
+                          alt=""
+                          className="h-8 w-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{
+                            background:
+                              RELATION_ORG_COLORS[
+                                current?.orgKind ?? person.orgKind
+                              ],
+                          }}
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-slate-100">{person.name}</td>
+                    <td className="px-3 py-2 text-slate-300">
+                      {RELATION_ORG_LABELS[current?.orgKind ?? person.orgKind]}
+                    </td>
+                    <td className="px-3 py-2 text-slate-300">
                       {[current?.orgName, current?.unitName]
                         .filter(Boolean)
-                        .join(" / ") || "所属未設定"}
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                        .join(" / ") || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-slate-300">
+                      {RELATION_PERSON_STATUS_LABELS[person.status]}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">
                       {formatAffiliationPeriod(
                         current?.startedOn ?? null,
                         current?.endedOn ?? null,
                       )}
-                    </p>
-                    {(person.clientLinks?.length ?? 0) > 0 && (
-                      <p className="mt-1 flex flex-wrap gap-1">
-                        {person.clientLinks.map((link) => (
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {(person.clientLinks ?? []).map((link) => (
                           <span
                             key={link}
                             className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300"
                           >
                             <span
                               className="inline-block h-1.5 w-1.5 rounded-full"
-                              style={{ background: RELATION_ORG_COLORS[link] }}
+                              style={{
+                                background: RELATION_ORG_COLORS[link],
+                              }}
                             />
                             {RELATION_CLIENT_LINK_LABELS[link]}
                           </span>
                         ))}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-          {!workspace?.people.length && (
-            <p className="text-sm text-slate-500">まだ人物がありません。</p>
-          )}
+                        {(person.clientLinks?.length ?? 0) === 0 && (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">
+                      {current?.email || person.email || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!listRows.length && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-3 py-8 text-center text-sm text-slate-500"
+                  >
+                    {workspace?.people.length
+                      ? "フィルタ条件に一致する人物がありません。"
+                      : "まだ人物がありません。"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
+
+      {mapExpanded && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-[#050b14]/95 p-3 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow text-sky-200/80">Expanded Map</p>
+              <h2 className="text-lg text-white">相関図（拡大）</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              <select
+                value={graphMode}
+                onChange={(e) => setGraphMode(e.target.value as GraphMode)}
+                className="rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-slate-200"
+              >
+                <option value="all">全員表示</option>
+                <option value="asOf">時点で表示</option>
+              </select>
+              {graphMode === "asOf" && (
+                <input
+                  type="date"
+                  value={asOfDate}
+                  onChange={(e) => setAsOfDate(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-slate-200"
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setMapExpanded(false)}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-slate-100"
+              >
+                閉じる（Esc）
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-white/10 bg-[#071018]">
+            <svg
+              viewBox={`0 0 ${mapSize.w} ${mapSize.h}`}
+              className="h-full min-h-[70vh] w-full"
+            >
+              <RelationMapSvgContent
+                nodes={nodes}
+                groups={groups}
+                edges={filteredEdges}
+                selectedId={selectedId}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                }}
+                clipPrefix="face-xl"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
 
       <RelationFaceCropModal
         open={faceCropOpen}
