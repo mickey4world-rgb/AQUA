@@ -714,7 +714,7 @@ export default function RelationWorkspacePanel() {
               </span>
             ))}
             <span className="text-slate-500">
-              角丸枠＝組織グループ（中に要員）· 青線＝グループ関係 · 細線＝人間関係 ·
+              角丸枠＝組織グループ（枠内に社名・要員）· 灰色線＝グループ関係 · 細線＝人間関係 ·
               枠・人をドラッグで配置を保存
             </span>
           </div>
