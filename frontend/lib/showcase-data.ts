@@ -112,7 +112,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "Relations Map",
     titleJa: "関係図ワークスペース",
     description:
-      "複数勤務先・異動履歴をそのまま管理。組織グループの相関図と時点フィルタ、名刺カメラでの自動登録まで。顔写真・人間関係・官庁／業者リンクを一画面で扱えます。",
+      "複数勤務先・異動履歴をそのまま管理。組織グループの相関図と時点フィルタ、名刺カメラでの自動登録まで（SHOWCASE は完全架空のサンプルデータ）。",
     accent: "#fcd34d",
     href: "/works/misc/relations",
     tag: "WORKS",
@@ -483,7 +483,7 @@ export const SHOWCASE_SOLUNA_SCENARIOS: ShowcaseSolunaScenario[] = [
   },
 ];
 
-/** 関係図ワークスペース — SHOWCASE 用フィクスチャ（架空データ） */
+/** 関係図ワークスペース — SHOWCASE 用フィクスチャ（完全架空・実在組織／人名禁止） */
 export type ShowcaseRelationOrgKind =
   | "supreme_court"
   | "cabinet"
@@ -530,8 +530,8 @@ export const SHOWCASE_RELATION_COLORS: Record<ShowcaseRelationOrgKind, string> =
 
 export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
   {
-    key: "supreme_court",
-    title: "最高裁 職員グループ",
+    key: "agency-a",
+    title: "サンプル中央機関グループ",
     orgKind: "supreme_court",
     color: "#7dd3fc",
     x: 24,
@@ -539,13 +539,13 @@ export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
     w: 200,
     h: 128,
     members: [
-      { id: "p-goto", name: "後藤", cx: 74, cy: 92 },
-      { id: "p-sasaki", name: "佐々木", cx: 154, cy: 92 },
+      { id: "p-a1", name: "青木", cx: 74, cy: 92 },
+      { id: "p-a2", name: "白井", cx: 154, cy: 92 },
     ],
   },
   {
-    key: "cabinet",
-    title: "内閣官房 職員グループ",
+    key: "agency-b",
+    title: "デモ調整室グループ",
     orgKind: "cabinet",
     color: "#5eead4",
     x: 280,
@@ -553,14 +553,14 @@ export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
     w: 250,
     h: 140,
     members: [
-      { id: "p-take", name: "武富", cx: 330, cy: 88 },
-      { id: "p-narita", name: "成田", cx: 405, cy: 88 },
-      { id: "p-yoshida", name: "吉田", cx: 480, cy: 88 },
+      { id: "p-b1", name: "北村", cx: 330, cy: 88 },
+      { id: "p-b2", name: "南野", cx: 405, cy: 88 },
+      { id: "p-b3", name: "東山", cx: 480, cy: 88 },
     ],
   },
   {
-    key: "bellcore",
-    title: "ベルコア・コンサルティング",
+    key: "vendor-x",
+    title: "サンプルテック株式会社",
     orgKind: "vendor",
     color: "#fcd34d",
     x: 24,
@@ -568,13 +568,13 @@ export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
     w: 220,
     h: 128,
     members: [
-      { id: "p-seri", name: "芹澤", cx: 78, cy: 276 },
-      { id: "p-yoneda", name: "米田", cx: 168, cy: 276 },
+      { id: "p-x1", name: "西園", cx: 78, cy: 276 },
+      { id: "p-x2", name: "中川", cx: 168, cy: 276 },
     ],
   },
   {
-    key: "abeam",
-    title: "アビームコンサルティング",
+    key: "vendor-y",
+    title: "デモブリッジ合同会社",
     orgKind: "vendor",
     color: "#fcd34d",
     x: 280,
@@ -582,43 +582,43 @@ export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
     w: 250,
     h: 150,
     members: [
-      { id: "p-hosoe", name: "細江", cx: 330, cy: 268 },
-      { id: "p-oda", name: "織田", cx: 405, cy: 268 },
-      { id: "p-tanaka", name: "田中", cx: 480, cy: 268 },
-      { id: "p-kondo", name: "近藤", cx: 367, cy: 322 },
-      { id: "p-abe", name: "安部", cx: 442, cy: 322 },
+      { id: "p-y1", name: "春田", cx: 330, cy: 268 },
+      { id: "p-y2", name: "夏目", cx: 405, cy: 268 },
+      { id: "p-y3", name: "秋山", cx: 480, cy: 268 },
+      { id: "p-y4", name: "冬木", cx: 367, cy: 322 },
+      { id: "p-y5", name: "星野", cx: 442, cy: 322 },
     ],
   },
 ];
 
 export const SHOWCASE_RELATION_PERSON_EDGES: ShowcaseRelationEdge[] = [
-  { fromId: "p-take", toId: "p-narita", label: "職員C班" },
-  { fromId: "p-narita", toId: "p-yoshida", label: "職員C班" },
-  { fromId: "p-take", toId: "p-yoshida", label: "職員C班" },
+  { fromId: "p-b1", toId: "p-b2", label: "同班" },
+  { fromId: "p-b2", toId: "p-b3", label: "同班" },
+  { fromId: "p-b1", toId: "p-b3", label: "同班" },
 ];
 
 export const SHOWCASE_RELATION_GROUP_LINKS: ShowcaseRelationGroupLink[] = [
-  { fromKey: "supreme_court", toKey: "bellcore", label: "最高裁関連" },
-  { fromKey: "cabinet", toKey: "abeam", label: "内閣官房関連" },
+  { fromKey: "agency-a", toKey: "vendor-x", label: "発注関連A" },
+  { fromKey: "agency-b", toKey: "vendor-y", label: "発注関連B" },
 ];
 
-/** 複数勤務先の時系列デモ（同一人物の所属履歴） */
+/** 複数勤務先の時系列デモ（同一人物の所属履歴・架空） */
 export const SHOWCASE_RELATION_TIMELINE_PERSON = {
-  name: "米田 佑",
-  note: "業者側窓口。官庁案件ごとに所属が切り替わっても履歴で追える。",
+  name: "中川 サンプル",
+  note: "業者側窓口のデモ。勤務先が変わっても履歴で追えることを示す架空データです。",
   affiliations: [
     {
       orgKind: "vendor" as const,
-      orgName: "ベルコア・コンサルティング",
-      unitName: "公共コンサル部",
+      orgName: "サンプルテック株式会社",
+      unitName: "公共デモ部",
       title: "シニアコンサルタント",
       startedOn: "2022-04-01",
       endedOn: "2024-03-31",
     },
     {
       orgKind: "vendor" as const,
-      orgName: "アビームコンサルティング",
-      unitName: "官公庁アカウント",
+      orgName: "デモブリッジ合同会社",
+      unitName: "公共デモアカウント",
       title: "マネージャー",
       startedOn: "2024-04-01",
       endedOn: null,
@@ -627,11 +627,11 @@ export const SHOWCASE_RELATION_TIMELINE_PERSON = {
 };
 
 export const SHOWCASE_RELATION_CARD_SCAN = {
-  orgName: "アクセンチュア株式会社",
-  name: "和田 一樹",
-  unitName: "公共サービス本部",
-  title: "マネジング・ディレクター",
-  email: "demo.wada@example.co.jp",
-  orgKindLabel: "関連業者",
-  clientLinks: ["最高裁判所関連", "内閣官房関連"],
+  orgName: "フィクション商事株式会社",
+  name: "山田 サンプル",
+  unitName: "ソリューション本部（デモ）",
+  title: "アカウントリード",
+  email: "sample.yamada@example.invalid",
+  orgKindLabel: "関連業者（デモ）",
+  clientLinks: ["発注関連A", "発注関連B"],
 };

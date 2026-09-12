@@ -339,6 +339,7 @@ export default function RelationsShowcaseDemo() {
         </div>
 
         <div className="flex flex-wrap gap-2 border-t border-white/8 px-4 py-3 text-[10px] text-slate-500">
+          <span className="rounded-full border border-white/10 px-2 py-0.5">架空サンプルのみ</span>
           <span className="rounded-full border border-white/10 px-2 py-0.5">複数勤務先</span>
           <span className="rounded-full border border-white/10 px-2 py-0.5">組織グループ相関図</span>
           <span className="rounded-full border border-white/10 px-2 py-0.5">時点フィルタ</span>
