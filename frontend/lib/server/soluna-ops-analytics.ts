@@ -357,7 +357,9 @@ export async function buildSolunaOpsAnalyticsReport(
             .reverse()
             .slice(0, 40)
             .map(toTradeRow),
-          tradeRules: SOLUNA_TRADE_RULES.map((r) => ({
+          tradeRules: [...SOLUNA_TRADE_RULES]
+            .sort((a, b) => a.id - b.id)
+            .map((r) => ({
             id: r.id,
             category: r.category,
             categoryLabel: categoryLabelJa(r.category),

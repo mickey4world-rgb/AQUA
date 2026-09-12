@@ -43,7 +43,10 @@ export async function notifyAssetTradeExecuted(input: {
     `金額: ${formatYen(input.trade.sizeJpy)}`,
     `単価: ${price} 円`,
     pnlLine.trimEnd(),
-    `理由: ${input.trade.reason}`,
+    `理由: ${input.trade.reasonDetail || input.trade.reason}`,
+    input.trade.ruleIds?.length
+      ? `条件: ${input.trade.ruleIds.map((id) => `#${id}`).join("+")}`
+      : "",
     `時刻: ${input.trade.createdAt}`,
     typeof input.totalYen === "number" ? `総資産: ${formatYen(input.totalYen)}` : "",
     typeof input.monthlyRealizedPnlYen === "number"

@@ -84,7 +84,8 @@ export const SOLUNA_TRADE_RULES: SolunaTradeRule[] = [
     id: 8,
     category: "buy",
     title: "強気スコアで買い",
-    summary: "板・約定・多期間トレンドのスコアが閾値以上、かつ強気バイアスの銘柄を買う（防御/ニュースで閾値調整）",
+    summary:
+      "板・約定・多期間トレンドのスコアが閾値以上、かつ強気バイアスの銘柄を買う（防御/ニュースで閾値調整）。条件達成銘柄は互いに除外しない",
   },
   {
     id: 9,
@@ -146,6 +147,13 @@ export const SOLUNA_TRADE_RULES: SolunaTradeRule[] = [
     title: "月次目標",
     summary: "月初残高×2%を目安（下限2,000円）。目標達成の判定用で、単独の売買トリガーではない",
   },
+  {
+    id: 19,
+    category: "buy",
+    title: "条件達成銘柄の同時買い",
+    summary:
+      "同じ時間帯に複数銘柄が買い条件を満たしたら、銘柄同士で競わせず枠（日次・現金・単一・暗号上限）の範囲で同時に買う。予算が足りないときだけスコア順に消化",
+  },
 ];
 
 export function tradeRuleById(id: number): SolunaTradeRule | undefined {
@@ -181,7 +189,7 @@ export function inferRuleIdsFromLegacyReason(reason: string): number[] {
     return [...reason.matchAll(/#(\d+)/g)].map((m) => Number(m[1])).filter((n) => n > 0);
   }
   if (reason === "dca" || reason.includes("dca") || reason.includes("召喚")) {
-    return [1, 2, 6, 7, 8];
+    return [1, 2, 6, 7, 8, 19];
   }
   if (reason.includes("硬利確")) return [11];
   if (reason.includes("勢い減衰")) return [12];
