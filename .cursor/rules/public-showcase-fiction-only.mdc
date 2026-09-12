@@ -1,0 +1,42 @@
+---
+description: Public SHOWCASE/demo fixtures must be fictional — never real orgs/people
+globs: frontend/lib/showcase-data.ts,frontend/components/showcase/**/*,frontend/app/sample/**/*,frontend/app/**/preview/**
+alwaysApply: true
+---
+
+# Public demo data must be fiction
+
+## Trigger
+
+Any work on SHOWCASE (`/sample`), public previews, OG copy, or auth-free demos — especially when the user says テストデータ / サンプル / デモ / 紹介.
+
+## Invariant
+
+**公開面に載せる文字列は、実在の人名・組織名・案件名・メール・本番ワークスペース由来の相関を含んではならない。**
+
+「テストデータで表現して」＝ **架空データを発明する**。  
+≠ 本番スクショや Works 関係図をそのまま／少し変えて公開する。
+
+## Before coding
+
+1. 依頼の原文: サンプル／テストが要求されているか？
+2. 実装プロキシ: フィクスチャの固有名詞は何か？
+3. 差分: 固有名詞を素人に見せて「実在っぽい／知っている組織」と思われたら **失敗**。
+
+## Before done (mandatory grep / stranger test)
+
+- Grep shipped files for real agencies/vendors/people seen in chat or production screenshots.
+- Prefer obviously fictional labels: `サンプル〜` / `デモ〜` / `フィクション〜` / `〜 サンプル`.
+- Email domains: `.invalid` or clearly fake — never real corporate domains from the user’s data.
+- Comment in fixture file: `完全架空・実在組織／人名禁止`.
+
+## Forbidden incentives
+
+- “リアルな方がデモとして分かりやすい”
+- “ユーザーの相関図と同じ構造にすれば検証になる”
+- “苗字だけなら大丈夫”
+- “組織名は一般名詞だからOK”（最高裁・内閣官房・実ベンダーは不可）
+
+## Class
+
+Same family as degraded success: **proxy metric（見た目が本物っぽい）で依頼（テストデータ）と秘匿義務をすり替える。**

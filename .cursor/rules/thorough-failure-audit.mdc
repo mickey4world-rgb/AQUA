@@ -19,12 +19,14 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 6. **Visual metaphor without cardinality**: “同じ組織はグループで分かるように” → every org bucket got a hull (including **N=1**). A box around one person is **not grouping**; it is decoration that changes meaning. Shape tweaks (ellipse → rounded rect) without re-asking “when does this affordance exist?” are the same escape.
 7. **Request paraphrased into implementation jargon**: User intent (“グルーピングして分かる”) was rewritten as an implementable proxy (“orgKey ごとに図形を描く”) **without verifying the paraphrase still means the same thing to a stranger**. Deploy + “done” while the paraphrase failed. Same class as copy≠invariant / weak oracle — **not limited to 相関図**.
 8. **Expression not entailed by existing data**: User requested a visible affordance (角丸グループ) **because they need something expressed from data they already have**. Agent shipped rules so fine-grained that **real registered people produced zero boxes**, then claimed done. Missing inference: **「依頼した＝今あるデータで必ずその表現が見えるべき」**. Code-path existence ≠ expression on the user’s screen.
+9. **Public demo reused production-shaped secrets**: User said SHOWCASE / テストデータ / サンプル. Agent shipped **real org names, real people names, or production-looking affiliation graphs** (最高裁・内閣官房・実ベンダー・実氏名) onto `/sample` because “realistic fixture” felt clearer. That is **not a UX miss — it is a confidentiality / security failure**. 「分かりやすいデモ」は「公開してよいデータ」の同義語ではない。
 
 If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
 If you catch yourself saying “viewer is ready”, ask: **can a stranger recognize continents/map on first paint?**
 If you catch yourself saying “we added group boxes”, ask: **does N=1 still show a group container? If yes, the metaphor failed.**
 If you catch yourself saying “implemented as requested”, ask: **did I verify against the user’s words, or only against my rewritten proxy?**
 If you catch yourself saying “grouping works when keys match”, ask: **with the user’s current/likely data, is at least one group actually visible? If zero, the request was not delivered.**
+If you catch yourself saying “demo looks realistic”, ask: **would publishing this on the open internet leak someone’s real org / name / role? If yes or unsure — stop and invent clearly fictional sample data.**
 
 ## Mandatory: Request ↔ Result verification (every user-facing ship)
 
@@ -112,9 +114,20 @@ Never treat as successful completion of the original intent:
 - **Visual grouping metaphor**: drawing a group hull / rounded box / cluster chrome around **N=1** (or empty) and calling it “グルーピング”. Group containers exist only when **≥2** members share the key; singles stay unboxed. Changing shape (ellipse→rounded rect) without fixing cardinality is the same anti-pattern.
 - **Request paraphrase as done**: shipping an implementation proxy that a stranger would not accept as the user’s request, then claiming 反映済み.
 - **Silent empty expression**: shipping a requested visual/UX mode whose gates yield **zero instances** on the user’s realistic data, without fixing the gate or explaining the missing field. “条件を満たせば出る” is not delivery.
+- **Public surface with real-world identifiers**: SHOWCASE / `/sample` / public preview / OG / screenshots that contain **real people names, real agency or vendor names, real emails, or production workspace graphs**. “テストデータで表現” means **invented sample**, not “copy the user’s production map so it looks authentic.”
 - **SWA route auth**: locking `/api/.../*` to `authenticated` while cron/GHA still POSTs with Bearer only → platform `401` rewritten to `302 /login` → runner burns minutes then “fails” or skips persist. Cron endpoints must stay explicitly `anonymous` **before** the catch-all (app still enforces the secret). Same class: GHA green/skip because `complete=true` while `boincNeedsRun` / artifact still waiting.
 
 Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / degraded label** (`liveNewsOk: false`, `cosmosPersisted: false`, `enrichmentStatus: pending|failed`, `needsEnrichment: true`, `imageryLayers.length === 0` → error UI — blocking “完成” UX).
+
+## Mandatory: Public / SHOWCASE data hygiene (security)
+
+Whenever shipping `/sample`, SHOWCASE demos, public previews, or any **auth-free** surface:
+
+1. **依頼に「テスト／サンプル／デモ」とあれば、実データ禁止が第一不変条件**（見た目の良さより優先）。
+2. Before merge, grep the shipped strings for known production orgs / people from chat screenshots or Works relations. **Any hit = not done.**
+3. Labels must read as fiction to a stranger（「サンプル中央機関」「フィクション商事」「山田 サンプル」）。実在の最高裁・内閣官房・実ベンダー名・実氏名は不可。
+4. Do **not** paste from production screenshots, Cosmos exports, or user-uploaded relation maps into public fixtures — even “anonymized” copies that keep real org names.
+5. Oracle: “Would Mickey be upset if a stranger on the internet saw this string?” If yes → rewrite.
 
 ## Forbidden
 
@@ -128,3 +141,5 @@ Allowed substitutes: **same-intent live sources**, or **explicit hard-fail / deg
 - Stopping at “org group boxes drawn” when singles each have their own box (N=1 hull ≠ グルーピング)
 - Stopping at “tsc / deploy green / 反映しました” when Request ↔ Result (stranger test) was not run
 - Stopping at “grouping logic exists” when the user’s map shows **zero** group boxes despite many same-org people
+- Stopping at “SHOWCASE demo looks realistic” when the fixture contains real org / person identifiers from production or screenshots
+- Treating “デモの分かりやすさ” as permission to publish confidential or production-shaped relationship data
