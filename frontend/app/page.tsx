@@ -105,7 +105,7 @@ const stats = [
   { label: "Region", value: "Japan East" },
   {
     label: "Profile",
-    value: "清水健利 →",
+    value: "Taketoshi Shimizu →",
     href: "/profile",
   },
 ] as const;
