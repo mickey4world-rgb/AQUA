@@ -24,6 +24,11 @@ const EagleEyeViewer = dynamic(() => import("@/components/space/EagleEyeViewer")
   ),
 });
 
+const EagleEyeGroundMap = dynamic(
+  () => import("@/components/space/EagleEyeGroundMap"),
+  { ssr: false },
+);
+
 const PHASE_STEPS: {
   id: EagleEyePhase;
   label: string;
@@ -132,7 +137,8 @@ export default function EagleEyeTab() {
             })}
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            {state.satelliteCount || "—"}機 · 地上カメラ {GROUND_CAMERAS.length}地点 · 地球画像
+            {state.satelliteCount || "—"}機 · 地上カメラ {GROUND_CAMERAS.length}地点 ·
+            Cesium 地球 + MapLibre 地図（無料タイル）
           </p>
         </div>
         <div className="h-[560px] w-full">
@@ -285,8 +291,17 @@ export default function EagleEyeTab() {
             地上カメラ / 映像（{GROUND_CAMERAS.length}）
           </p>
           <p className="mt-1 text-[10px] text-slate-500">
-            CCTVアイコン＝地上カメラ / 菱形＝衛星。公開ソースをピン留め。
+            下の地図ピンまたは一覧から選択。CCTV＝地上 / 菱形＝衛星。
           </p>
+          <EagleEyeGroundMap
+            className="mt-3"
+            selectedCameraId={selectedCameraId ?? state.activeCamera?.id ?? null}
+            onSelectCamera={(cam) => {
+              setSelectedCameraId(cam.id);
+              setCameraSelectNonce((n) => n + 1);
+              setPhaseRequest({ phase: "live", nonce: Date.now() });
+            }}
+          />
           <div className="mt-2 flex flex-wrap gap-1.5">
             {GROUND_CAMERA_DIRECTORIES.map((dir) => (
               <a
