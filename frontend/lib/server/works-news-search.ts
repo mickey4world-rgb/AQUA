@@ -31,6 +31,7 @@ import {
   type NewsSearchEnrichmentStatus,
   type NewsSearchItem,
 } from "@/lib/types/works-news-search";
+import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
 
 const MIN_PER_CATEGORY = 5;
 const TARGET_PER_CATEGORY = 6;
@@ -205,15 +206,16 @@ async function applyEnrichmentJson(
         attentionScore: attention,
       };
     });
-    const enrichedCount = next.filter((item) => isNewsSearchItemEnriched(item)).length;
+    const sorted = sortNewsItemsByAttention(next);
+    const enrichedCount = sorted.filter((item) => isNewsSearchItemEnriched(item)).length;
     if (enrichedCount < items.length) {
       return {
-        items: next,
+        items: sorted,
         enriched: false,
         reason: `解説不足 ${enrichedCount}/${items.length}（一部プレースホルダのまま）`,
       };
     }
-    return { items: next, enriched: true };
+    return { items: sorted, enriched: true };
   } catch (error) {
     console.warn("[works-news-search] enrich JSON parse failed", error);
     return { items, enriched: false, reason: "解説 JSON の解析に失敗しました。" };
@@ -496,9 +498,9 @@ export async function buildWorksNewsDigest(options?: {
 
   const categories = emptyCategories();
   for (const category of NEWS_SEARCH_CATEGORIES) {
-    categories[category] = picked[category]
-      .map(seedToItem)
-      .sort((a, b) => b.attentionScore - a.attentionScore);
+    categories[category] = sortNewsItemsByAttention(
+      picked[category].map(seedToItem),
+    );
   }
 
   const digest = withEnrichmentMeta({

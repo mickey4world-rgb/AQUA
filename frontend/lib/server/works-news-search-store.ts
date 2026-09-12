@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { getDisneyRecordsContainer, isCosmosConfigured } from "@/lib/server/cosmos";
 import { jstDateString } from "@/lib/server/soluna-system-config";
 import type { NewsSearchDigest } from "@/lib/types/works-news-search";
+import { withCategoriesSortedByAttention } from "@/lib/works-news-search-sort";
 
 function digestIdForDate(date = new Date()): string {
   return `works-news-search-${jstDateString(date)}`;
@@ -15,9 +16,10 @@ export async function saveWorksNewsDigest(digest: NewsSearchDigest): Promise<voi
   if (!isCosmosConfigured()) {
     throw new Error("Cosmos DB が未設定です。");
   }
+  const normalized = withCategoriesSortedByAttention(digest);
   const container = await getDisneyRecordsContainer();
   await container.items.upsert({
-    ...digest,
+    ...normalized,
     docType: "worksNewsSearchDigest",
   });
 }
@@ -29,7 +31,8 @@ export async function getWorksNewsDigestById(
   try {
     const container = await getDisneyRecordsContainer();
     const { resource } = await container.item(id, id).read<NewsSearchDigest>();
-    return resource ?? null;
+    if (!resource) return null;
+    return withCategoriesSortedByAttention(resource);
   } catch {
     return null;
   }
