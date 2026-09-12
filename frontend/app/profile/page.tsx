@@ -37,9 +37,9 @@ const roles = [
     orgJa: "最高裁判所",
     role: "事務総局 デジタル総合政策室 司法DX推進プロジェクトマネージャー",
     mission:
-      "日本の司法インフラにおける民事裁判手続きのIT化、および生成AI（Gemini Pro / NotebookLM）を活用した証拠・争点整理の自動化・効率化実証を指揮。",
+      "日本の司法インフラにおける民事裁判手続きのIT化、それに伴うクラウド基盤の環境構築および生成AIを活用した証拠・争点整理の自動化・効率化実証を推進。",
     stack: "Azure / Enterprise AI Governance / Secure Cloud Environment",
-    impact: "令和9年度からの本格検証に向けたクラウド環境整備および予算スキームの構築。",
+    impact: "本格検証に向けたクラウド環境整備および予算スキームの構築、AI利用による業務改善。",
     accent: "#7dd3fc",
   },
   {
@@ -48,10 +48,10 @@ const roles = [
     orgJa: "内閣官房",
     role: "行政改革・効率化推進事務局 デジタルアドバイザー",
     mission:
-      "国の予算執行を一元管理する「RSシステム（行政事業レビューシートシステム）」の次世代刷新。15府省庁が参加するAI実証実験のアーキテクチャ設計。",
-    stack: "Generative AI / Public Sector Data Standardization / Next-gen RS-System",
+      "国の予算執行を一元管理する「RSシステム（行政事業レビューシートシステム）」の次世代刷新。15府省庁が参加するAI実証実験のアーキテクチャ設計と実証評価。",
+    stack: "AWS / Azure / Generative AI / Public Sector Data Standardization / Next-gen RS-System",
     impact:
-      "2028年度までの次期RSシステム実装に向けた、短期アウトカムのAI自動評価および改善提案アルゴリズムの検証。",
+      "次期RSシステム実装に向けた、アウトカム(KPI)のAI自動評価および改善提案アルゴリズムの検証。",
     accent: "#5eead4",
   },
   {
@@ -60,7 +60,7 @@ const roles = [
     orgJa: "技術発信・コミュニティ",
     role: "Private WORK / Tech Conference — Personal Software Developer in AQUA Studio",
     mission:
-      "エンタープライズ・パブリックセクターにおける大規模クラウド（AWS/Azure）移行戦略。ミッションクリティカルな国家インフラにアジャイルとアジリティを組み込む手法。未来を見据えたシステムの形、重要なシステムに対してAIを活用した品質確保。",
+      "エンタープライズ・パブリックセクターにおける大規模クラウド移行戦略。ミッションクリティカルな国家インフラにアジャイルとアジリティを組み込む手法。未来を見据えたシステムの形、重要なシステムに対してAIを活用した品質確保。",
     stack: "AWS / Azure / Agile for Critical Systems / AI-assisted Quality",
     impact: "現場の実装知見を公開実験（AQUA）とカンファレンス発信へ還元。",
     accent: "#fcd34d",
@@ -150,7 +150,7 @@ export default function ProfilePage() {
 
             <Reveal eager>
               <p className="mt-6 max-w-2xl text-[15px] leading-7 text-slate-300 sm:text-base sm:leading-8">
-                内閣官房の参謀であり、最高裁の司法DXを動かすPM。
+                内閣官房の行政改革のデジタルアドバイザーであり、最高裁の司法DXを動かすPM。
                 止めてはならない国家インフラへ、最先端クラウドと生成AIを統合する——
                 世界にとって希少な、公的基盤の実装者です。
               </p>
