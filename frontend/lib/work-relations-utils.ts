@@ -154,7 +154,7 @@ export function normalizeOrgNameForGroup(name: string): string {
 /**
  * 相関図の角丸枠用キー。
  * 依頼どおり「同じ会社・組織」でまとめる。部署では分けない。
- * - 最高裁 / 内閣官房: 種別そのものが組織（組織名空でも同枠）
+ * - 最高裁 / 内閣官房: 種別だけで必ず1枠（組織名のゆれ・空欄で割らない）
  * - 業者 / その他: 正規化した組織名が同じときのみ同枠（空なら枠なし＝単独）
  */
 export function orgGroupKey(
@@ -171,8 +171,9 @@ export function orgGroupKey(
     aff?.orgName || person.orgName || "",
   );
 
+  // 官庁は「内閣官房職員グループ」「最高裁職員グループ」が常に1つ
   if (kind === "supreme_court" || kind === "cabinet") {
-    return `${kind}|${orgName || "_agency_"}`;
+    return kind;
   }
 
   if (orgName) {
