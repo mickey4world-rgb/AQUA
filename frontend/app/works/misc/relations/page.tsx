@@ -19,9 +19,10 @@ export default function WorksMiscRelationsPage() {
           </Link>
           <h1 className="display-section mt-4 text-white">関係図ワークスペース</h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400">
-            最高裁・内閣官房・関連業者の人物と関係を個人ワークスペースで管理します。
-            データは Azure Cosmos DB、メモ解析は日本リージョン Azure OpenAI
-            のみ（海外転送なし）。
+            最高裁・内閣官房・関連業者の人物と異動履歴・関係を個人管理します。
+            相関図は全員表示と時点フィルタに対応。モバイルでは名刺撮影で項目を取り込みます。
+            データは Azure Cosmos DB（Japan East）、AI は日本リージョン Azure OpenAI
+            のみです。
           </p>
         </Reveal>
 

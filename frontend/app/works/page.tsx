@@ -122,10 +122,10 @@ const panels: Panel[] = [
       {
         title: "Relations",
         titleJa: "関係図ワークスペース",
-        desc: "官公庁・業者の人物相関図を個人管理。異動メモから AI 抽出（日本リージョン Azure のみ）。",
+        desc: "異動履歴つき人物相関図。時点フィルタ、名刺撮影取り込み（日本リージョン Azure のみ）。",
         href: "/works/misc/relations",
         status: "ready",
-        points: ["相関図", "異動・在任", "国内AI抽出"],
+        points: ["異動履歴", "時点フィルタ", "名刺撮影"],
         accent: "#fbbf24",
       },
     ],

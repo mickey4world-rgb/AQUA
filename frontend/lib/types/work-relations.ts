@@ -51,15 +51,35 @@ export const RELATION_PERSON_STATUS_LABELS: Record<RelationPersonStatus, string>
     left: "離任",
   };
 
+/** ある期間の所属（異動履歴の1行） */
+export type RelationAffiliation = {
+  id: string;
+  orgKind: RelationOrgKind;
+  /** 組織名（例: 最高裁判所 / ○○株式会社） */
+  orgName: string;
+  /** 部署・室・チームなど */
+  unitName: string;
+  title: string;
+  email: string;
+  phone: string;
+  startedOn: string | null;
+  endedOn: string | null;
+  notes: string;
+};
+
 export type RelationPerson = {
   id: string;
   name: string;
+  /** 現時点（または最新）所属のミラー。相関図色分け用 */
   orgKind: RelationOrgKind;
   orgName: string;
   title: string;
+  email: string;
+  phone: string;
   status: RelationPersonStatus;
   startedOn: string | null;
   endedOn: string | null;
+  affiliations: RelationAffiliation[];
   notes: string;
   tags: string[];
 };
@@ -107,4 +127,16 @@ export type RelationMemoParseResult = {
   }>;
   events: Array<Omit<RelationEvent, "id" | "personIds"> & { personNames: string[] }>;
   summary: string;
+};
+
+export type RelationCardScanResult = {
+  name: string;
+  orgKind: RelationOrgKind;
+  orgName: string;
+  unitName: string;
+  title: string;
+  email: string;
+  phone: string;
+  notes: string;
+  confidence: "high" | "medium" | "low";
 };
