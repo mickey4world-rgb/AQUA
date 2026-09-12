@@ -21,66 +21,98 @@ import type {
   DocVisualType,
   DocsChatMessage,
 } from "@/lib/types/docs";
+import { ensureOutlineImages } from "@/lib/server/docs-stock-images";
 
-const SYSTEM_PROMPT = `あなたは官公庁向け内部提案資料の構成を設計する専門家です。
-ユーザーの依頼に基づき、PowerPoint 5枚前後の構成を JSON のみで返してください。
+const SYSTEM_PROMPT = `あなたは内部提案向け PowerPoint の構成・編集デザインを設計する専門家です。
+Gamma / Presenti のような「余白・階層・図解・写真」優先の緻密な資料を目指します。
+ユーザーの依頼に基づき、JSON のみで返してください。
 
 ## 出力形式（厳守）
 - マークダウンや説明文は禁止。JSON オブジェクト1つのみ
 - スライドは ${DOCS_DEFAULT_SLIDES} 枚前後（最大 ${DOCS_MAX_SLIDES} 枚）
-- 日本語。です・ます調。簡潔で分かりやすく
-- 1スライドの箇条書きは最大4点、各40文字以内を目安
-- **本文スライド（content / closing）には可能な限り visual を付ける** — 文字だけのスライドは避け、図解で伝える
-- visual.type:
-  - "flow": 手順・プロセス（左→右、青ヘッダー付きボックス＋矢印）
-  - "comparison": 現状 vs 提案（2列の構成図ボックス）
-  - "timeline": スケジュール・フェーズ（番号付きノード＋ラベル）
-  - "pyramid": 優先度・階層（青グラデーションのピラミッド）
-  - "icons": キーワードを青系ヘッダー付きボックスで表現（Azure構成図風）
-- visual.labels は2〜5個、各12文字以内
-- **デザイン方針**: 青色ベース（ネイビー #0E2841 / ティール #156082 / シアン #0BD0D9）。テキストだけのスライドは避け、必ず図解オブジェクトを配置
+- 日本語。です・ます調。簡潔
+- **1スライド1メッセージ**: 箇条書きは最大4点、各32文字以内
+- keyMessage は任意だが、本文では1行（28文字以内）のリード文を推奨
+- 文字だけのスライドは禁止。visual / cards / twoColumn / stat / image のいずれかを使う
+- visual.labels は2〜5個、各10文字以内
 
-## JSON スキーマ
+## 画像（image）— Gamma風の自動写真
+- 表紙（title）は必ず image を付ける（placement: "hero"）
+- content の約半数に image（placement: "side"）を付ける。visual と両方ある場合は image を優先して右側に写真
+- query は**英語** 2〜6語（例: "modern office collaboration", "data analytics dashboard", "city skyline dusk"）
+- 人物の実名や実在企業ロゴを連想させるクエリは禁止
+- cards / twoColumn / stat には image 不要（レイアウト自体がビジュアル）
+
+## layout（必須で使い分ける）
+- "title": 表紙（1枚目のみ）
+- "section": 章扉（紺地・短いタイトル）。長い資料の区切りに1枚まで可
+- "content": 左に要点＋右に visual または image（最も基本）
+- "twoColumn": 左右比較（columns 必須・各2〜3点）
+- "cards": 3〜4枚のカードグリッド（bullets=見出し、cardDetails=補足・同数）
+- "stat": KPI・効果（stats 2〜4個。value は短く「30%」「3ヶ月」等）
+- "closing": まとめ（最終）
+
+visual.type:
+- "flow" | "comparison" | "timeline" | "pyramid" | "icons"
+
+## 構成のおすすめ
+title（+hero画像）→（任意 section）→ content/twoColumn/cards/stat を混ぜる → closing
+同じ layout を連続させすぎない。
+
+## JSON スキーマ例
 {
   "documentTitle": "提案タイトル",
-  "subtitle": "副題（任意）",
-  "author": "所属・部門（任意、不明なら空文字）",
+  "subtitle": "副題",
+  "author": "所属",
   "slides": [
     {
       "layout": "title",
-      "title": "表紙タイトル",
+      "title": "表紙",
       "subtitle": "副題",
-      "bullets": []
+      "bullets": [],
+      "image": { "query": "modern business skyline", "placement": "hero" }
     },
     {
       "layout": "content",
       "title": "背景と課題",
-      "bullets": ["...", "..."],
-      "visual": { "type": "comparison", "labels": ["現状", "課題"] }
+      "keyMessage": "現状のボトルネックを特定する",
+      "bullets": ["課題A", "課題B", "影響"],
+      "image": { "query": "office workflow challenges", "placement": "side" }
     },
     {
-      "layout": "content",
-      "title": "提案概要",
-      "bullets": ["...", "..."],
-      "visual": { "type": "flow", "labels": ["調査", "設計", "導入", "評価"] }
+      "layout": "twoColumn",
+      "title": "現状と提案",
+      "columns": [
+        { "title": "現状", "bullets": ["手作業", "属人化"] },
+        { "title": "提案", "bullets": ["自動化", "標準化"] }
+      ],
+      "bullets": []
     },
     {
-      "layout": "content",
-      "title": "具体施策",
-      "bullets": ["...", "..."],
-      "visual": { "type": "timeline", "labels": ["Phase1", "Phase2", "Phase3"] }
+      "layout": "cards",
+      "title": "施策の柱",
+      "bullets": ["可視化", "自動化", "定着"],
+      "cardDetails": ["ダッシュボード", "定型処理の削減", "研修と運用"]
+    },
+    {
+      "layout": "stat",
+      "title": "期待効果",
+      "stats": [
+        { "value": "30%", "label": "工数削減" },
+        { "value": "3ヶ月", "label": "導入期間" },
+        { "value": "4部署", "label": "展開範囲" }
+      ],
+      "bullets": []
     },
     {
       "layout": "closing",
-      "title": "期待効果と次のアクション",
-      "bullets": ["...", "..."],
-      "visual": { "type": "pyramid", "labels": ["効果", "施策", "基盤"] }
+      "title": "次のアクション",
+      "keyMessage": "小さく始めて効果を測る",
+      "bullets": ["PoC範囲の確定", "関係者合意", "キックオフ"],
+      "visual": { "type": "timeline", "labels": ["合意", "PoC", "展開"] }
     }
   ]
-}
-
-layout は "title" | "content" | "closing" のみ。
-最初のスライドは必ず title、最後は closing を推奨。`;
+}`;
 
 function trimHistory(history: DocsChatMessage[]): DocsChatMessage[] {
   return history.slice(-6);
@@ -94,7 +126,15 @@ function extractJson(raw: string): unknown {
 }
 
 function isLayout(value: unknown): value is DocSlideLayout {
-  return value === "title" || value === "content" || value === "closing";
+  return (
+    value === "title" ||
+    value === "section" ||
+    value === "content" ||
+    value === "twoColumn" ||
+    value === "cards" ||
+    value === "stat" ||
+    value === "closing"
+  );
 }
 
 function isVisualType(value: unknown): value is DocVisualType {
@@ -118,6 +158,22 @@ function parseVisual(raw: unknown): DocSlideVisual | undefined {
   return { type: obj.type, labels };
 }
 
+function parseImage(raw: unknown): DocSlideOutline["image"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const query = String(obj.query ?? "")
+    .trim()
+    .replace(/[^\w\s\-]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 60);
+  if (query.length < 3) return undefined;
+  const placement =
+    obj.placement === "hero" || obj.placement === "side"
+      ? obj.placement
+      : undefined;
+  return { query, placement };
+}
+
 function parseSlide(raw: unknown): DocSlideOutline | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
@@ -129,14 +185,57 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
     ? obj.bullets.map((b) => String(b).trim()).filter(Boolean).slice(0, 5)
     : [];
 
+  const columns = Array.isArray(obj.columns)
+    ? obj.columns
+        .map((col) => {
+          if (!col || typeof col !== "object") return null;
+          const c = col as Record<string, unknown>;
+          const colTitle = String(c.title ?? "").trim();
+          const colBullets = Array.isArray(c.bullets)
+            ? c.bullets.map((b) => String(b).trim()).filter(Boolean).slice(0, 4)
+            : [];
+          if (!colTitle || !colBullets.length) return null;
+          return { title: colTitle, bullets: colBullets };
+        })
+        .filter((c): c is { title: string; bullets: string[] } => Boolean(c))
+        .slice(0, 2)
+    : undefined;
+
+  const cardDetails = Array.isArray(obj.cardDetails)
+    ? obj.cardDetails.map((d) => String(d).trim()).filter(Boolean).slice(0, 4)
+    : undefined;
+
+  const stats = Array.isArray(obj.stats)
+    ? obj.stats
+        .map((row) => {
+          if (!row || typeof row !== "object") return null;
+          const s = row as Record<string, unknown>;
+          const value = String(s.value ?? "").trim();
+          const label = String(s.label ?? "").trim();
+          if (!value || !label) return null;
+          return { value, label };
+        })
+        .filter((s): s is { value: string; label: string } => Boolean(s))
+        .slice(0, 4)
+    : undefined;
+
   const visual = parseVisual(obj.visual);
+  const image = parseImage(obj.image);
+  const keyMessage = obj.keyMessage
+    ? String(obj.keyMessage).trim().slice(0, 40)
+    : undefined;
 
   return {
     layout,
-    title,
-    subtitle: obj.subtitle ? String(obj.subtitle).trim() : undefined,
+    title: title.slice(0, 48),
+    subtitle: obj.subtitle ? String(obj.subtitle).trim().slice(0, 60) : undefined,
+    keyMessage,
     bullets,
+    columns: columns?.length === 2 ? columns : undefined,
+    cardDetails: cardDetails?.length ? cardDetails : undefined,
+    stats: stats?.length ? stats : undefined,
     visual,
+    image,
   };
 }
 
@@ -235,7 +334,7 @@ export async function generateDocOutline(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 1500,
+      max_completion_tokens: 1800,
       messages,
       response_format: { type: "json_object" },
     });
@@ -256,6 +355,8 @@ export async function generateDocOutline(
     if (!outline) {
       return { ok: false, reason: "構成案の形式が不正です。もう一度お試しください。" };
     }
+
+    ensureOutlineImages(outline);
 
     const modelUsed = completion.model ?? model;
     if (completion.usage) {
