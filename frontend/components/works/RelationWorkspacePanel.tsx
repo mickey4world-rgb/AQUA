@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { worksPanelClass } from "@/lib/works-utils";
+import {
+  affiliationAt,
+  displayOrgKind,
+  displayOrgLabel,
+  edgeVisibleAt,
+  emptyAffiliation,
+  personVisibleAt,
+} from "@/lib/work-relations-utils";
 import {
   RELATION_EDGE_KINDS,
   RELATION_EDGE_LABELS,
@@ -9,6 +17,8 @@ import {
   RELATION_ORG_LABELS,
   RELATION_PERSON_STATUSES,
   RELATION_PERSON_STATUS_LABELS,
+  type RelationAffiliation,
+  type RelationCardScanResult,
   type RelationEdge,
   type RelationEdgeKind,
   type RelationMemoParseResult,
@@ -24,9 +34,13 @@ type ResidencyInfo = {
   policy: string;
 };
 
+type GraphMode = "all" | "asOf";
+
 type GraphNode = {
   id: string;
   person: RelationPerson;
+  orgKind: RelationOrgKind;
+  label: string;
   x: number;
   y: number;
   vx: number;
@@ -45,15 +59,19 @@ function newId() {
 }
 
 function emptyPerson(): RelationPerson {
+  const aff = emptyAffiliation({ orgKind: "other", startedOn: null, endedOn: null });
   return {
     id: newId(),
     name: "",
     orgKind: "other",
     orgName: "",
     title: "",
+    email: "",
+    phone: "",
     status: "active",
     startedOn: null,
     endedOn: null,
+    affiliations: [aff],
     notes: "",
     tags: [],
   };
@@ -62,6 +80,8 @@ function emptyPerson(): RelationPerson {
 function layoutNodes(
   people: RelationPerson[],
   edges: RelationEdge[],
+  mode: GraphMode,
+  asOf: string | null,
   width: number,
   height: number,
 ): GraphNode[] {
@@ -73,6 +93,8 @@ function layoutNodes(
     return {
       id: person.id,
       person,
+      orgKind: displayOrgKind(person, mode, asOf),
+      label: displayOrgLabel(person, mode, asOf),
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
       vx: 0,
@@ -130,6 +152,22 @@ function layoutNodes(
   return nodes;
 }
 
+async function compressImageFile(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("画像キャンバスを初期化できませんでした");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.72);
+}
+
 export default function RelationWorkspacePanel() {
   const [workspace, setWorkspace] = useState<RelationWorkspace | null>(null);
   const [residency, setResidency] = useState<ResidencyInfo | null>(null);
@@ -139,7 +177,10 @@ export default function RelationWorkspacePanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [orgFilter, setOrgFilter] = useState<"all" | RelationOrgKind>("all");
-  const [activeOnly, setActiveOnly] = useState(true);
+  const [graphMode, setGraphMode] = useState<GraphMode>("all");
+  const [asOfDate, setAsOfDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [draftPerson, setDraftPerson] = useState<RelationPerson>(emptyPerson());
   const [edgeFrom, setEdgeFrom] = useState("");
   const [edgeTo, setEdgeTo] = useState("");
@@ -150,6 +191,14 @@ export default function RelationWorkspacePanel() {
   const [parsePreview, setParsePreview] = useState<RelationMemoParseResult | null>(
     null,
   );
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardPreview, setCardPreview] = useState<RelationCardScanResult | null>(
+    null,
+  );
+  const [cardThumb, setCardThumb] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [editPerson, setEditPerson] = useState<RelationPerson | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,14 +227,34 @@ export default function RelationWorkspacePanel() {
     };
   }, []);
 
+  const selected =
+    workspace?.people.find((person) => person.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (!selected) {
+      setEditPerson(null);
+      return;
+    }
+    setEditPerson({
+      ...selected,
+      affiliations:
+        selected.affiliations?.length > 0
+          ? selected.affiliations.map((a) => ({ ...a }))
+          : [emptyAffiliation({ orgKind: selected.orgKind, orgName: selected.orgName, title: selected.title, email: selected.email, phone: selected.phone })],
+    });
+  }, [selected]);
+
+  const asOf = graphMode === "asOf" ? asOfDate : null;
+
   const filteredPeople = useMemo(() => {
     if (!workspace) return [];
     return workspace.people.filter((person) => {
-      if (activeOnly && person.status !== "active") return false;
-      if (orgFilter !== "all" && person.orgKind !== orgFilter) return false;
+      if (!personVisibleAt(person, graphMode, asOf)) return false;
+      const kind = displayOrgKind(person, graphMode, asOf);
+      if (orgFilter !== "all" && kind !== orgFilter) return false;
       return true;
     });
-  }, [workspace, activeOnly, orgFilter]);
+  }, [workspace, graphMode, asOf, orgFilter]);
 
   const filteredEdges = useMemo(() => {
     if (!workspace) return [];
@@ -194,26 +263,14 @@ export default function RelationWorkspacePanel() {
       (edge) =>
         ids.has(edge.fromPersonId) &&
         ids.has(edge.toPersonId) &&
-        (!activeOnly || !edge.endedOn),
+        edgeVisibleAt(edge, graphMode, asOf),
     );
-  }, [workspace, filteredPeople, activeOnly]);
+  }, [workspace, filteredPeople, graphMode, asOf]);
 
   const nodes = useMemo(
-    () => layoutNodes(filteredPeople, filteredEdges, 720, 420),
-    [filteredPeople, filteredEdges],
+    () => layoutNodes(filteredPeople, filteredEdges, graphMode, asOf, 720, 420),
+    [filteredPeople, filteredEdges, graphMode, asOf],
   );
-
-  const selected =
-    workspace?.people.find((person) => person.id === selectedId) ?? null;
-  const [editPerson, setEditPerson] = useState<RelationPerson | null>(null);
-
-  useEffect(() => {
-    if (!selected) {
-      setEditPerson(null);
-      return;
-    }
-    setEditPerson({ ...selected });
-  }, [selected]);
 
   async function persist(next: RelationWorkspace, message?: string) {
     setSaving(true);
@@ -237,18 +294,17 @@ export default function RelationWorkspacePanel() {
     }
   }
 
-  async function addPerson() {
-    if (!workspace || !draftPerson.name.trim()) {
+  async function addPerson(person: RelationPerson, message = "人物を追加しました") {
+    if (!workspace || !person.name.trim()) {
       setError("氏名を入力してください");
       return;
     }
-    const person = { ...draftPerson, id: newId(), name: draftPerson.name.trim() };
+    const nextPerson = { ...person, id: person.id || newId(), name: person.name.trim() };
     await persist(
-      { ...workspace, people: [...workspace.people, person] },
-      "人物を追加しました",
+      { ...workspace, people: [...workspace.people, nextPerson] },
+      message,
     );
-    setDraftPerson(emptyPerson());
-    setSelectedId(person.id);
+    setSelectedId(nextPerson.id);
   }
 
   async function saveSelected() {
@@ -280,6 +336,56 @@ export default function RelationWorkspacePanel() {
     }));
     setSelectedId(null);
     await persist({ ...workspace, people, edges, events }, "人物を削除しました");
+  }
+
+  function patchAffiliation(id: string, patch: Partial<RelationAffiliation>) {
+    setEditPerson((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        affiliations: prev.affiliations.map((aff) =>
+          aff.id === id ? { ...aff, ...patch } : aff,
+        ),
+      };
+    });
+  }
+
+  function addAffiliationRow() {
+    setEditPerson((prev) => {
+      if (!prev) return prev;
+      const current = affiliationAt(prev, null);
+      return {
+        ...prev,
+        affiliations: [
+          ...prev.affiliations.map((aff) =>
+            !aff.endedOn
+              ? {
+                  ...aff,
+                  endedOn: new Date().toISOString().slice(0, 7),
+                }
+              : aff,
+          ),
+          emptyAffiliation({
+            orgKind: "other",
+            startedOn: new Date().toISOString().slice(0, 7),
+            endedOn: null,
+            email: current?.email ?? prev.email,
+            phone: current?.phone ?? prev.phone,
+          }),
+        ],
+        status: "transferred",
+      };
+    });
+  }
+
+  function removeAffiliationRow(id: string) {
+    setEditPerson((prev) => {
+      if (!prev || prev.affiliations.length <= 1) return prev;
+      return {
+        ...prev,
+        affiliations: prev.affiliations.filter((aff) => aff.id !== id),
+      };
+    });
   }
 
   async function addEdge() {
@@ -346,6 +452,65 @@ export default function RelationWorkspacePanel() {
     }
   }
 
+  async function onCardFile(file: File | null) {
+    if (!file) return;
+    setCardBusy(true);
+    setError(null);
+    setNotice(null);
+    setCardPreview(null);
+    try {
+      const dataUrl = await compressImageFile(file);
+      setCardThumb(dataUrl);
+      const res = await fetch("/api/works/relations/scan-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUrl: dataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "名刺の読み取りに失敗しました");
+      }
+      setCardPreview(data.result);
+      setNotice(
+        `名刺を読み取りました（${data.dataRegion} / 信頼度 ${data.result.confidence}）`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "名刺スキャンに失敗しました");
+    } finally {
+      setCardBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function applyCardPreview() {
+    if (!cardPreview || !workspace) return;
+    const aff = emptyAffiliation({
+      orgKind: cardPreview.orgKind,
+      orgName: cardPreview.orgName,
+      unitName: cardPreview.unitName,
+      title: cardPreview.title,
+      email: cardPreview.email,
+      phone: cardPreview.phone,
+      startedOn: new Date().toISOString().slice(0, 7),
+      endedOn: null,
+      notes: cardPreview.notes,
+    });
+    const person: RelationPerson = {
+      ...emptyPerson(),
+      name: cardPreview.name || cardPreview.orgName,
+      orgKind: cardPreview.orgKind,
+      orgName: cardPreview.orgName,
+      title: cardPreview.title,
+      email: cardPreview.email,
+      phone: cardPreview.phone,
+      affiliations: [aff],
+      notes: cardPreview.notes,
+    };
+    await addPerson(person, "名刺から人物を登録しました");
+    setCardPreview(null);
+    setCardThumb(null);
+  }
+
   if (loading) {
     return (
       <div className={`${worksPanelClass} p-6 text-sm text-slate-400`}>
@@ -360,7 +525,7 @@ export default function RelationWorkspacePanel() {
         <p className="font-medium text-emerald-100">国内保持ポリシー</p>
         <p className="mt-1 text-[13px] leading-relaxed text-emerald-50/80">
           {residency?.policy ??
-            "関係データは Cosmos、メモ解析は日本リージョン Azure OpenAI のみ。"}
+            "関係データは Cosmos、AI は日本リージョン Azure OpenAI のみ。"}
         </p>
         <p className="mt-2 font-mono text-[11px] text-emerald-200/70">
           AI: {residency?.domesticAiReady ? "利用可" : "未設定"} ·{" "}
@@ -380,6 +545,73 @@ export default function RelationWorkspacePanel() {
         </div>
       )}
 
+      <section className={`${worksPanelClass} p-4 sm:p-5`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow text-amber-200/80">Mobile Capture</p>
+            <h2 className="mt-1 text-lg text-white">名刺を撮影して取り込み</h2>
+            <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-400">
+              スマホではカメラが起動します。日本リージョン Azure OpenAI
+              Vision で氏名・組織・部署・役職・メール等を抽出し、所属種別も自動判定します。読めない場合は失敗表示します（空登録しません）。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => onCardFile(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              disabled={cardBusy || !residency?.domesticAiReady}
+              onClick={() => fileRef.current?.click()}
+              className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-sm text-amber-50 disabled:opacity-40"
+            >
+              {cardBusy ? "読み取り中…" : "カメラ / 画像を選択"}
+            </button>
+          </div>
+        </div>
+        {(cardThumb || cardPreview) && (
+          <div className="mt-4 grid gap-4 md:grid-cols-[160px_1fr]">
+            {cardThumb && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={cardThumb}
+                alt="名刺プレビュー"
+                className="h-36 w-full rounded-xl object-cover border border-white/10"
+              />
+            )}
+            {cardPreview && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-200">
+                <p>
+                  {cardPreview.name || "（氏名不明）"} ·{" "}
+                  {RELATION_ORG_LABELS[cardPreview.orgKind]}
+                </p>
+                <p className="mt-1 text-slate-400">
+                  {[cardPreview.orgName, cardPreview.unitName, cardPreview.title]
+                    .filter(Boolean)
+                    .join(" / ") || "組織情報なし"}
+                </p>
+                <p className="mt-1 text-slate-400">
+                  {[cardPreview.email, cardPreview.phone].filter(Boolean).join(" · ") ||
+                    "連絡先なし"}
+                </p>
+                <button
+                  type="button"
+                  onClick={applyCardPreview}
+                  className="mt-3 rounded-lg border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-sky-50"
+                >
+                  この内容で人物登録
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
         <section className={`${worksPanelClass} overflow-hidden p-4 sm:p-5`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -388,6 +620,22 @@ export default function RelationWorkspacePanel() {
               <h2 className="mt-1 text-lg text-white">相関図</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              <select
+                value={graphMode}
+                onChange={(e) => setGraphMode(e.target.value as GraphMode)}
+                className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
+              >
+                <option value="all">全員表示</option>
+                <option value="asOf">時点で表示</option>
+              </select>
+              {graphMode === "asOf" && (
+                <input
+                  type="date"
+                  value={asOfDate}
+                  onChange={(e) => setAsOfDate(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
+                />
+              )}
               <select
                 value={orgFilter}
                 onChange={(e) =>
@@ -402,20 +650,17 @@ export default function RelationWorkspacePanel() {
                   </option>
                 ))}
               </select>
-              <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={activeOnly}
-                  onChange={(e) => setActiveOnly(e.target.checked)}
-                />
-                在任のみ
-              </label>
               <span className="text-slate-500">
                 {filteredPeople.length}人 / {filteredEdges.length}関係
                 {saving ? " · 保存中" : ""}
               </span>
             </div>
           </div>
+          {graphMode === "asOf" && (
+            <p className="mt-2 text-[12px] text-slate-500">
+              {asOfDate} 時点で所属が有効な人物だけを表示し、色は当時の所属種別です。
+            </p>
+          )}
 
           <div className="mt-4 overflow-x-auto rounded-xl border border-white/8 bg-[#071018]">
             <svg viewBox="0 0 720 420" className="h-[360px] w-full min-w-[560px]">
@@ -447,7 +692,7 @@ export default function RelationWorkspacePanel() {
               })}
               {nodes.map((node) => {
                 const selectedNode = node.id === selectedId;
-                const color = ORG_COLORS[node.person.orgKind];
+                const color = ORG_COLORS[node.orgKind];
                 return (
                   <g
                     key={node.id}
@@ -476,23 +721,11 @@ export default function RelationWorkspacePanel() {
               })}
             </svg>
           </div>
-
-          <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
-            {RELATION_ORG_KINDS.map((kind) => (
-              <span key={kind} className="inline-flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-full"
-                  style={{ background: ORG_COLORS[kind] }}
-                />
-                {RELATION_ORG_LABELS[kind]}
-              </span>
-            ))}
-          </div>
         </section>
 
         <section className="space-y-5">
           <div className={`${worksPanelClass} p-4 sm:p-5`}>
-            <h3 className="text-base text-white">人物カード</h3>
+            <h3 className="text-base text-white">人物・所属履歴</h3>
             {editPerson ? (
               <div className="mt-3 space-y-3 text-sm">
                 <input
@@ -504,68 +737,26 @@ export default function RelationWorkspacePanel() {
                   }
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={editPerson.orgKind}
-                    onChange={(e) =>
-                      setEditPerson((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              orgKind: e.target.value as RelationOrgKind,
-                            }
-                          : prev,
-                      )
-                    }
-                    className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-slate-200"
-                  >
-                    {RELATION_ORG_KINDS.map((kind) => (
-                      <option key={kind} value={kind}>
-                        {RELATION_ORG_LABELS[kind]}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={editPerson.status}
-                    onChange={(e) =>
-                      setEditPerson((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              status: e.target.value as RelationPersonStatus,
-                            }
-                          : prev,
-                      )
-                    }
-                    className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-slate-200"
-                  >
-                    {RELATION_PERSON_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {RELATION_PERSON_STATUS_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <input
-                  value={editPerson.orgName}
+                <select
+                  value={editPerson.status}
                   onChange={(e) =>
                     setEditPerson((prev) =>
-                      prev ? { ...prev, orgName: e.target.value } : prev,
+                      prev
+                        ? {
+                            ...prev,
+                            status: e.target.value as RelationPersonStatus,
+                          }
+                        : prev,
                     )
                   }
-                  placeholder="所属・部署・会社名"
-                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
-                />
-                <input
-                  value={editPerson.title}
-                  onChange={(e) =>
-                    setEditPerson((prev) =>
-                      prev ? { ...prev, title: e.target.value } : prev,
-                    )
-                  }
-                  placeholder="役職"
-                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
-                />
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-slate-200"
+                >
+                  {RELATION_PERSON_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {RELATION_PERSON_STATUS_LABELS[status]}
+                    </option>
+                  ))}
+                </select>
                 <textarea
                   value={editPerson.notes}
                   onChange={(e) =>
@@ -573,10 +764,125 @@ export default function RelationWorkspacePanel() {
                       prev ? { ...prev, notes: e.target.value } : prev,
                     )
                   }
-                  rows={4}
-                  placeholder="事実メモ（評価・噂は書かない）"
+                  rows={2}
+                  placeholder="人物メモ（事実のみ）"
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white"
                 />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[12px] uppercase tracking-wide text-slate-500">
+                      所属履歴（異動）
+                    </p>
+                    <button
+                      type="button"
+                      onClick={addAffiliationRow}
+                      className="text-[12px] text-sky-200"
+                    >
+                      + 異動を追加
+                    </button>
+                  </div>
+                  {editPerson.affiliations.map((aff) => (
+                    <div
+                      key={aff.id}
+                      className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2"
+                    >
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={aff.orgKind}
+                          onChange={(e) =>
+                            patchAffiliation(aff.id, {
+                              orgKind: e.target.value as RelationOrgKind,
+                            })
+                          }
+                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
+                        >
+                          {RELATION_ORG_KINDS.map((kind) => (
+                            <option key={kind} value={kind}>
+                              {RELATION_ORG_LABELS[kind]}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={aff.title}
+                          onChange={(e) =>
+                            patchAffiliation(aff.id, { title: e.target.value })
+                          }
+                          placeholder="役職"
+                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
+                        />
+                      </div>
+                      <input
+                        value={aff.orgName}
+                        onChange={(e) =>
+                          patchAffiliation(aff.id, { orgName: e.target.value })
+                        }
+                        placeholder="組織名（異動先・会社名）"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
+                      />
+                      <input
+                        value={aff.unitName}
+                        onChange={(e) =>
+                          patchAffiliation(aff.id, { unitName: e.target.value })
+                        }
+                        placeholder="部署・室・チーム"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="month"
+                          value={aff.startedOn?.slice(0, 7) ?? ""}
+                          onChange={(e) =>
+                            patchAffiliation(aff.id, {
+                              startedOn: e.target.value || null,
+                            })
+                          }
+                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
+                        />
+                        <input
+                          type="month"
+                          value={aff.endedOn?.slice(0, 7) ?? ""}
+                          onChange={(e) =>
+                            patchAffiliation(aff.id, {
+                              endedOn: e.target.value || null,
+                            })
+                          }
+                          className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-slate-200"
+                          title="空欄=現職"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        開始月 / 終了月（空欄なら現職）
+                      </p>
+                      <input
+                        value={aff.email}
+                        onChange={(e) =>
+                          patchAffiliation(aff.id, { email: e.target.value })
+                        }
+                        placeholder="メールアドレス"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
+                      />
+                      <input
+                        value={aff.phone}
+                        onChange={(e) =>
+                          patchAffiliation(aff.id, { phone: e.target.value })
+                        }
+                        placeholder="電話番号"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white"
+                      />
+                      {editPerson.affiliations.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeAffiliationRow(aff.id)}
+                          className="text-[11px] text-rose-200/80"
+                        >
+                          この所属行を削除
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -588,7 +894,7 @@ export default function RelationWorkspacePanel() {
                   <button
                     type="button"
                     onClick={removeSelected}
-                    className="rounded-lg border border-rose-300/30 px-3 py-2 text-rose-100 hover:bg-rose-300/10"
+                    className="rounded-lg border border-rose-300/30 px-3 py-2 text-rose-100"
                   >
                     削除
                   </button>
@@ -596,13 +902,13 @@ export default function RelationWorkspacePanel() {
               </div>
             ) : (
               <p className="mt-3 text-sm text-slate-400">
-                相関図のノード、または下の一覧から人物を選んでください。
+                相関図または一覧から人物を選ぶと、異動履歴を編集できます。
               </p>
             )}
           </div>
 
           <div className={`${worksPanelClass} p-4 sm:p-5`}>
-            <h3 className="text-base text-white">人物を追加</h3>
+            <h3 className="text-base text-white">手入力で追加</h3>
             <div className="mt-3 space-y-2">
               <input
                 value={draftPerson.name}
@@ -612,44 +918,76 @@ export default function RelationWorkspacePanel() {
                 placeholder="氏名"
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={draftPerson.orgKind}
-                  onChange={(e) =>
-                    setDraftPerson((prev) => ({
-                      ...prev,
-                      orgKind: e.target.value as RelationOrgKind,
-                    }))
-                  }
-                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-sm text-slate-200"
-                >
-                  {RELATION_ORG_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {RELATION_ORG_LABELS[kind]}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={draftPerson.title}
-                  onChange={(e) =>
-                    setDraftPerson((prev) => ({ ...prev, title: e.target.value }))
-                  }
-                  placeholder="役職"
-                  className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-                />
-              </div>
-              <input
-                value={draftPerson.orgName}
+              <select
+                value={draftPerson.affiliations[0]?.orgKind ?? "other"}
                 onChange={(e) =>
-                  setDraftPerson((prev) => ({ ...prev, orgName: e.target.value }))
+                  setDraftPerson((prev) => ({
+                    ...prev,
+                    orgKind: e.target.value as RelationOrgKind,
+                    affiliations: [
+                      {
+                        ...prev.affiliations[0],
+                        orgKind: e.target.value as RelationOrgKind,
+                      },
+                    ],
+                  }))
                 }
-                placeholder="所属・会社"
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-sm text-slate-200"
+              >
+                {RELATION_ORG_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {RELATION_ORG_LABELS[kind]}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={draftPerson.affiliations[0]?.orgName ?? ""}
+                onChange={(e) =>
+                  setDraftPerson((prev) => ({
+                    ...prev,
+                    orgName: e.target.value,
+                    affiliations: [
+                      { ...prev.affiliations[0], orgName: e.target.value },
+                    ],
+                  }))
+                }
+                placeholder="組織名"
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+              />
+              <input
+                value={draftPerson.affiliations[0]?.unitName ?? ""}
+                onChange={(e) =>
+                  setDraftPerson((prev) => ({
+                    ...prev,
+                    affiliations: [
+                      { ...prev.affiliations[0], unitName: e.target.value },
+                    ],
+                  }))
+                }
+                placeholder="部署・所属"
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+              />
+              <input
+                value={draftPerson.affiliations[0]?.email ?? ""}
+                onChange={(e) =>
+                  setDraftPerson((prev) => ({
+                    ...prev,
+                    email: e.target.value,
+                    affiliations: [
+                      { ...prev.affiliations[0], email: e.target.value },
+                    ],
+                  }))
+                }
+                placeholder="メール"
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
               />
               <button
                 type="button"
-                onClick={addPerson}
-                className="rounded-lg border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-sm text-sky-50 hover:bg-sky-300/20"
+                onClick={() => {
+                  void addPerson(draftPerson);
+                  setDraftPerson(emptyPerson());
+                }}
+                className="rounded-lg border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-sm text-sky-50"
               >
                 追加して保存
               </button>
@@ -739,15 +1077,11 @@ export default function RelationWorkspacePanel() {
 
         <section className={`${worksPanelClass} p-4 sm:p-5`}>
           <h3 className="text-base text-white">メモから AI 抽出（国内限定）</h3>
-          <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
-            打合せメモや異動メモを貼ると、人物・関係・出来事の候補を日本リージョン
-            Azure OpenAI だけで抽出します。海外モデルや Gemini は使いません。
-          </p>
           <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             rows={7}
-            placeholder="例）4月から内閣官房の〇〇さんが窓口。業者は△△社の□□さん。先日の打合せで司法DXの××さんを紹介された。"
+            placeholder="例）令和7年4月、〇〇さんは最高裁から内閣官房へ異動。窓口メールは …"
             className="mt-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
           />
           <div className="mt-3 flex flex-wrap gap-2">
@@ -775,14 +1109,6 @@ export default function RelationWorkspacePanel() {
                 人物 {parsePreview.people.length} / 関係 {parsePreview.edges.length} /
                 出来事 {parsePreview.events.length}
               </p>
-              <ul className="mt-2 space-y-1">
-                {parsePreview.people.slice(0, 8).map((person) => (
-                  <li key={`${person.name}-${person.orgName}`}>
-                    · {person.name}（{RELATION_ORG_LABELS[person.orgKind]} /{" "}
-                    {person.title || "役職不明"}）
-                  </li>
-                ))}
-              </ul>
             </div>
           )}
         </section>
@@ -791,26 +1117,33 @@ export default function RelationWorkspacePanel() {
       <section className={`${worksPanelClass} p-4 sm:p-5`}>
         <h3 className="text-base text-white">登録一覧</h3>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {workspace?.people.map((person) => (
-            <button
-              key={person.id}
-              type="button"
-              onClick={() => setSelectedId(person.id)}
-              className={`rounded-xl border px-3 py-3 text-left transition ${
-                selectedId === person.id
-                  ? "border-sky-300/40 bg-sky-300/10"
-                  : "border-white/8 bg-white/[0.02] hover:border-white/20"
-              }`}
-            >
-              <p className="text-sm text-white">{person.name}</p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                {RELATION_ORG_LABELS[person.orgKind]} · {person.orgName || "所属未設定"}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                {RELATION_PERSON_STATUS_LABELS[person.status]} · {person.title || "—"}
-              </p>
-            </button>
-          ))}
+          {workspace?.people.map((person) => {
+            const current = affiliationAt(person, null);
+            return (
+              <button
+                key={person.id}
+                type="button"
+                onClick={() => setSelectedId(person.id)}
+                className={`rounded-xl border px-3 py-3 text-left transition ${
+                  selectedId === person.id
+                    ? "border-sky-300/40 bg-sky-300/10"
+                    : "border-white/8 bg-white/[0.02] hover:border-white/20"
+                }`}
+              >
+                <p className="text-sm text-white">{person.name}</p>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {RELATION_ORG_LABELS[current?.orgKind ?? person.orgKind]} ·{" "}
+                  {[current?.orgName, current?.unitName].filter(Boolean).join(" / ") ||
+                    "所属未設定"}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {RELATION_PERSON_STATUS_LABELS[person.status]} · 履歴{" "}
+                  {person.affiliations?.length ?? 0}件
+                  {current?.email ? ` · ${current.email}` : ""}
+                </p>
+              </button>
+            );
+          })}
           {!workspace?.people.length && (
             <p className="text-sm text-slate-500">まだ人物がありません。</p>
           )}

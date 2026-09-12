@@ -9,6 +9,7 @@ import {
   RELATION_EDGE_KINDS,
   RELATION_ORG_KINDS,
   RELATION_PERSON_STATUSES,
+  type RelationAffiliation,
   type RelationEdge,
   type RelationEdgeKind,
   type RelationEvent,
@@ -17,11 +18,13 @@ import {
   type RelationPersonStatus,
   type RelationWorkspace,
 } from "@/lib/types/work-relations";
+import { currentAffiliation, relationDateKey } from "@/lib/work-relations-utils";
 
 const WORKSPACE_DOC_ID = "workspace";
 const MAX_PEOPLE = 250;
 const MAX_EDGES = 500;
 const MAX_EVENTS = 300;
+const MAX_AFFILIATIONS = 40;
 
 function relationsContainer() {
   return getContainer(COSMOS_CONTAINERS.workRelations);
@@ -71,6 +74,77 @@ function asStrength(value: unknown): 1 | 2 | 3 {
   return 2;
 }
 
+function asEmail(value: unknown): string {
+  const email = sanitizeText(String(value ?? ""), 120).toLowerCase();
+  if (!email) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return sanitizeText(String(value ?? ""), 120);
+  return email;
+}
+
+export function normalizeAffiliation(
+  input: Partial<RelationAffiliation>,
+  existingId?: string,
+): RelationAffiliation | null {
+  const orgName = sanitizeText(input.orgName ?? "", 120);
+  const unitName = sanitizeText(input.unitName ?? "", 120);
+  const title = sanitizeText(input.title ?? "", 120);
+  if (!orgName && !unitName && !title && !input.email && !input.phone) {
+    return null;
+  }
+
+  return {
+    id: existingId ?? (sanitizeText(input.id ?? "", 64) || randomUUID()),
+    orgKind: asOrgKind(input.orgKind),
+    orgName,
+    unitName,
+    title,
+    email: asEmail(input.email),
+    phone: sanitizeText(String(input.phone ?? ""), 40),
+    startedOn: asDateOrNull(input.startedOn),
+    endedOn: asDateOrNull(input.endedOn),
+    notes: sanitizeText(input.notes ?? "", 1000),
+  };
+}
+
+function syncPersonMirror(person: RelationPerson): RelationPerson {
+  const current = currentAffiliation(person);
+  const hasOpen = (person.affiliations ?? []).some((a) => !a.endedOn);
+  const status =
+    person.status === "left"
+      ? "left"
+      : hasOpen
+        ? person.status === "transferred"
+          ? "transferred"
+          : "active"
+        : person.affiliations.length > 0
+          ? "left"
+          : person.status;
+
+  const startedKeys = person.affiliations
+    .map((a) => relationDateKey(a.startedOn))
+    .filter((k): k is number => k != null);
+  const earliest =
+    startedKeys.length > 0
+      ? [...person.affiliations].sort(
+          (a, b) =>
+            (relationDateKey(a.startedOn) ?? Number.MAX_SAFE_INTEGER) -
+            (relationDateKey(b.startedOn) ?? Number.MAX_SAFE_INTEGER),
+        )[0]?.startedOn ?? null
+      : person.startedOn;
+
+  return {
+    ...person,
+    orgKind: current?.orgKind ?? person.orgKind,
+    orgName: current?.orgName ?? person.orgName,
+    title: current?.title ?? person.title,
+    email: current?.email || person.email || "",
+    phone: current?.phone || person.phone || "",
+    startedOn: earliest,
+    endedOn: hasOpen ? null : (current?.endedOn ?? person.endedOn),
+    status,
+  };
+}
+
 export function normalizePerson(
   input: Partial<RelationPerson> & { name?: string },
   existingId?: string,
@@ -78,21 +152,47 @@ export function normalizePerson(
   const name = sanitizeText(input.name ?? "", 80);
   if (!name) return null;
 
-  return {
+  let affiliations = (input.affiliations ?? [])
+    .slice(0, MAX_AFFILIATIONS)
+    .map((item) => normalizeAffiliation(item))
+    .filter((item): item is RelationAffiliation => Boolean(item));
+
+  // Legacy rows: flat org fields only → one affiliation
+  if (affiliations.length === 0) {
+    const legacy = normalizeAffiliation({
+      orgKind: input.orgKind,
+      orgName: input.orgName,
+      unitName: "",
+      title: input.title,
+      email: input.email,
+      phone: input.phone,
+      startedOn: input.startedOn,
+      endedOn: input.endedOn,
+      notes: "",
+    });
+    if (legacy) affiliations = [legacy];
+  }
+
+  const base: RelationPerson = {
     id: existingId ?? (sanitizeText(input.id ?? "", 64) || randomUUID()),
     name,
     orgKind: asOrgKind(input.orgKind),
     orgName: sanitizeText(input.orgName ?? "", 120),
     title: sanitizeText(input.title ?? "", 120),
+    email: asEmail(input.email),
+    phone: sanitizeText(String(input.phone ?? ""), 40),
     status: asStatus(input.status),
     startedOn: asDateOrNull(input.startedOn),
     endedOn: asDateOrNull(input.endedOn),
+    affiliations,
     notes: sanitizeText(input.notes ?? "", 2000),
     tags: (input.tags ?? [])
       .slice(0, 8)
       .map((tag) => sanitizeText(String(tag), 24))
       .filter(Boolean),
   };
+
+  return syncPersonMirror(base);
 }
 
 export function normalizeEdge(
