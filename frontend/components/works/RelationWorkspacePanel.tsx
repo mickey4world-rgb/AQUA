@@ -2,17 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import RelationFaceCropModal from "@/components/works/RelationFaceCropModal";
+import RelationOrgMap, {
+  emptyRelationLayout,
+} from "@/components/works/RelationOrgMap";
 import { worksPanelClass } from "@/lib/works-utils";
 import {
   affiliationAt,
   displayOrgKind,
-  displayOrgLabel,
   edgeVisibleAt,
   emptyAffiliation,
   formatAffiliationPeriod,
-  nodeRingColors,
-  orgGroupKey,
-  orgGroupTitle,
   personVisibleAt,
   RELATION_ORG_COLORS,
 } from "@/lib/work-relations-utils";
@@ -30,6 +29,7 @@ import {
   type RelationClientLinkKind,
   type RelationEdge,
   type RelationEdgeKind,
+  type RelationMapLayout,
   type RelationMemoParseResult,
   type RelationOrgKind,
   type RelationPerson,
@@ -44,422 +44,6 @@ type ResidencyInfo = {
 };
 
 type GraphMode = "all" | "asOf";
-
-type GraphNode = {
-  id: string;
-  person: RelationPerson;
-  orgKind: RelationOrgKind;
-  ringColors: string[];
-  label: string;
-  groupKey: string;
-  groupTitle: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-};
-
-type GraphGroup = {
-  key: string;
-  title: string;
-  orgKind: RelationOrgKind;
-  color: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  memberCount: number;
-};
-
-function layoutGraph(
-  people: RelationPerson[],
-  edges: RelationEdge[],
-  mode: GraphMode,
-  asOf: string | null,
-  width: number,
-  height: number,
-): { nodes: GraphNode[]; groups: GraphGroup[] } {
-  const cx = width / 2;
-  const cy = height / 2;
-  const margin = 56;
-
-  const buckets = new Map<string, RelationPerson[]>();
-  for (const person of people) {
-    const key = orgGroupKey(person, mode, asOf);
-    const list = buckets.get(key) ?? [];
-    list.push(person);
-    buckets.set(key, list);
-  }
-
-  const multiGroups = [...buckets.entries()]
-    .filter(([, members]) => members.length >= 2)
-    .sort((a, b) => {
-      const kindOrder = (k: string) => {
-        if (k.startsWith("supreme_court")) return 0;
-        if (k.startsWith("cabinet")) return 1;
-        if (k.startsWith("vendor")) return 2;
-        return 3;
-      };
-      const d = kindOrder(a[0]) - kindOrder(b[0]);
-      if (d !== 0) return d;
-      return b[1].length - a[1].length;
-    });
-
-  const singles = [...buckets.entries()]
-    .filter(([, members]) => members.length === 1)
-    .flatMap(([, members]) => members);
-
-  const nodes: GraphNode[] = [];
-  const groups: GraphGroup[] = [];
-  const groupCount = Math.max(multiGroups.length, 1);
-  const orbit =
-    Math.min(width, height) *
-    (multiGroups.length <= 1 ? 0 : multiGroups.length <= 3 ? 0.22 : 0.3);
-
-  multiGroups.forEach(([key, members], index) => {
-    const angle =
-      multiGroups.length === 1
-        ? 0
-        : (index / groupCount) * Math.PI * 2 - Math.PI / 2;
-    const packCenter =
-      multiGroups.length === 1
-        ? { x: cx, y: cy * 0.92 }
-        : {
-            x: cx + Math.cos(angle) * orbit,
-            y: cy + Math.sin(angle) * orbit,
-          };
-
-    // 人数に応じたグリッドで枠内に配置
-    const cols = Math.ceil(Math.sqrt(members.length));
-    const rows = Math.ceil(members.length / cols);
-    const cell = 72;
-    const innerPadX = 28;
-    const innerPadY = 40;
-    const boxW = Math.max(cols * cell + innerPadX * 2, 160);
-    const boxH = Math.max(rows * cell + innerPadY + 24, 130);
-    const boxX = Math.min(
-      width - margin - boxW,
-      Math.max(margin, packCenter.x - boxW / 2),
-    );
-    const boxY = Math.min(
-      height - margin - boxH,
-      Math.max(margin, packCenter.y - boxH / 2),
-    );
-
-    const samplePerson = members[0];
-    const orgKind = displayOrgKind(samplePerson, mode, asOf);
-    groups.push({
-      key,
-      title: orgGroupTitle(samplePerson, mode, asOf),
-      orgKind,
-      color: RELATION_ORG_COLORS[orgKind],
-      x: boxX,
-      y: boxY,
-      width: boxW,
-      height: boxH,
-      memberCount: members.length,
-    });
-
-    members.forEach((person, memberIndex) => {
-      const col = memberIndex % cols;
-      const row = Math.floor(memberIndex / cols);
-      const gridW = (cols - 1) * cell;
-      const gridH = (rows - 1) * cell;
-      const startX = boxX + boxW / 2 - gridW / 2;
-      const startY = boxY + innerPadY + (boxH - innerPadY - 20) / 2 - gridH / 2;
-      nodes.push({
-        id: person.id,
-        person,
-        orgKind: displayOrgKind(person, mode, asOf),
-        ringColors: nodeRingColors(person, mode, asOf),
-        label: displayOrgLabel(person, mode, asOf),
-        groupKey: key,
-        groupTitle: orgGroupTitle(person, mode, asOf),
-        x: startX + col * cell,
-        y: startY + row * cell,
-        vx: 0,
-        vy: 0,
-      });
-    });
-  });
-
-  // 単独の人はグループ枠の外側に配置
-  singles.forEach((person, index) => {
-    const angle =
-      (index / Math.max(singles.length, 1)) * Math.PI * 2 -
-      Math.PI / 2 +
-      0.35;
-    const radius =
-      Math.min(width, height) * (multiGroups.length > 0 ? 0.38 : 0.28);
-    nodes.push({
-      id: person.id,
-      person,
-      orgKind: displayOrgKind(person, mode, asOf),
-      ringColors: nodeRingColors(person, mode, asOf),
-      label: displayOrgLabel(person, mode, asOf),
-      groupKey: orgGroupKey(person, mode, asOf),
-      groupTitle: orgGroupTitle(person, mode, asOf),
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-      vx: 0,
-      vy: 0,
-    });
-  });
-
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const multiKeys = new Set(multiGroups.map(([key]) => key));
-  const boxByKey = new Map(groups.map((g) => [g.key, g]));
-
-  for (let iter = 0; iter < 60; iter += 1) {
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const a = nodes[i];
-        const b = nodes[j];
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        let dist = Math.hypot(dx, dy) || 1;
-        const sameMulti =
-          a.groupKey === b.groupKey && multiKeys.has(a.groupKey);
-        const minDist = sameMulti ? 52 : 96;
-        if (dist < minDist) {
-          const force = ((minDist - dist) / dist) * (sameMulti ? 0.08 : 0.1);
-          dx *= force;
-          dy *= force;
-          a.vx += dx;
-          a.vy += dy;
-          b.vx -= dx;
-          b.vy -= dy;
-        }
-      }
-    }
-
-    for (const edge of edges) {
-      const a = byId.get(edge.fromPersonId);
-      const b = byId.get(edge.toPersonId);
-      if (!a || !b) continue;
-      // グループ内の線は位置を崩しすぎない
-      if (a.groupKey === b.groupKey && multiKeys.has(a.groupKey)) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const target = 150 - edge.strength * 10;
-      const force = ((dist - target) / dist) * 0.012;
-      a.vx += dx * force;
-      a.vy += dy * force;
-      b.vx -= dx * force;
-      b.vy -= dy * force;
-    }
-
-    for (const node of nodes) {
-      const box = boxByKey.get(node.groupKey);
-      if (box && multiKeys.has(node.groupKey)) {
-        // 複数人グループは角丸枠の内側に留める
-        const minX = box.x + 34;
-        const maxX = box.x + box.width - 34;
-        const minY = box.y + 48;
-        const maxY = box.y + box.height - 34;
-        const midX = (minX + maxX) / 2;
-        const midY = (minY + maxY) / 2;
-        node.vx += (midX - node.x) * 0.02;
-        node.vy += (midY - node.y) * 0.02;
-        node.vx *= 0.82;
-        node.vy *= 0.82;
-        node.x = Math.min(maxX, Math.max(minX, node.x + node.vx));
-        node.y = Math.min(maxY, Math.max(minY, node.y + node.vy));
-      } else {
-        node.vx += (cx - node.x) * 0.004;
-        node.vy += (cy - node.y) * 0.004;
-        node.vx *= 0.86;
-        node.vy *= 0.86;
-        node.x = Math.min(width - 48, Math.max(48, node.x + node.vx));
-        node.y = Math.min(height - 48, Math.max(48, node.y + node.vy));
-      }
-    }
-  }
-
-  // 枠サイズを最終メンバー位置に合わせて再計算（複数人のみ）
-  for (const group of groups) {
-    const memberNodes = nodes.filter((n) => n.groupKey === group.key);
-    if (memberNodes.length < 2) continue;
-    const padX = 40;
-    const padTop = 44;
-    const padBottom = 36;
-    const minX = Math.min(...memberNodes.map((n) => n.x)) - padX;
-    const maxX = Math.max(...memberNodes.map((n) => n.x)) + padX;
-    const minY = Math.min(...memberNodes.map((n) => n.y)) - padTop;
-    const maxY = Math.max(...memberNodes.map((n) => n.y)) + padBottom;
-    group.x = Math.max(16, minX);
-    group.y = Math.max(16, minY);
-    group.width = Math.min(width - group.x - 16, Math.max(maxX - minX, 150));
-    group.height = Math.min(height - group.y - 16, Math.max(maxY - minY, 120));
-  }
-
-  return { nodes, groups };
-}
-
-function RelationMapSvgContent({
-  nodes,
-  groups,
-  edges,
-  selectedId,
-  onSelect,
-  clipPrefix = "face",
-}: {
-  nodes: GraphNode[];
-  groups: GraphGroup[];
-  edges: RelationEdge[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  clipPrefix?: string;
-}) {
-  return (
-    <>
-      <defs>
-        {nodes.map((node) =>
-          node.person.facePhotoDataUrl ? (
-            <clipPath
-              key={`clip-${clipPrefix}-${node.id}`}
-              id={`${clipPrefix}-clip-${node.id}`}
-            >
-              <circle cx={node.x} cy={node.y} r={16} />
-            </clipPath>
-          ) : null,
-        )}
-      </defs>
-      {groups.map((group) => (
-        <g key={`group-${group.key}`}>
-          <rect
-            x={group.x}
-            y={group.y}
-            width={group.width}
-            height={group.height}
-            rx={18}
-            ry={18}
-            fill={group.color}
-            fillOpacity={0.16}
-            stroke={group.color}
-            strokeOpacity={0.85}
-            strokeWidth={2.2}
-          />
-          <text
-            x={group.x + 14}
-            y={group.y + 22}
-            textAnchor="start"
-            fontSize="12"
-            fontWeight={600}
-            className="fill-slate-50"
-          >
-            {group.title.length > 36
-              ? `${group.title.slice(0, 36)}…`
-              : group.title}
-            {`（${group.memberCount}）`}
-          </text>
-        </g>
-      ))}
-      {edges.map((edge) => {
-        const from = nodes.find((node) => node.id === edge.fromPersonId);
-        const to = nodes.find((node) => node.id === edge.toPersonId);
-        if (!from || !to) return null;
-        return (
-          <g key={edge.id}>
-            <line
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
-              stroke="rgba(148,163,184,0.45)"
-              strokeWidth={edge.strength}
-            />
-            <text
-              x={(from.x + to.x) / 2}
-              y={(from.y + to.y) / 2 - 6}
-              textAnchor="middle"
-              className="fill-slate-500"
-              fontSize="10"
-            >
-              {edge.label || RELATION_EDGE_LABELS[edge.kind]}
-            </text>
-          </g>
-        );
-      })}
-      {nodes.map((node) => {
-        const selectedNode = node.id === selectedId;
-        const colors = node.ringColors;
-        const r = selectedNode ? 22 : 18;
-        return (
-          <g
-            key={node.id}
-            className="cursor-pointer"
-            onClick={() => onSelect(node.id)}
-          >
-            {colors.length <= 1 ? (
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={r}
-                fill="rgba(15,23,42,0.95)"
-                stroke={colors[0] ?? RELATION_ORG_COLORS.other}
-                strokeWidth={selectedNode ? 3 : 2.5}
-              />
-            ) : (
-              <>
-                <circle
-                  cx={node.x}
-                  cy={node.y}
-                  r={r}
-                  fill="rgba(15,23,42,0.95)"
-                  stroke={RELATION_ORG_COLORS.vendor}
-                  strokeWidth={1}
-                />
-                {colors.map((color, index) => {
-                  const start =
-                    (index / colors.length) * Math.PI * 2 - Math.PI / 2;
-                  const end =
-                    ((index + 1) / colors.length) * Math.PI * 2 - Math.PI / 2;
-                  const x1 = node.x + Math.cos(start) * r;
-                  const y1 = node.y + Math.sin(start) * r;
-                  const x2 = node.x + Math.cos(end) * r;
-                  const y2 = node.y + Math.sin(end) * r;
-                  const large = end - start > Math.PI ? 1 : 0;
-                  return (
-                    <path
-                      key={`${node.id}-arc-${color}`}
-                      d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`}
-                      fill="none"
-                      stroke={color}
-                      strokeWidth={selectedNode ? 4 : 3}
-                      strokeLinecap="butt"
-                    />
-                  );
-                })}
-              </>
-            )}
-            {node.person.facePhotoDataUrl ? (
-              <image
-                href={node.person.facePhotoDataUrl}
-                x={node.x - 16}
-                y={node.y - 16}
-                width={32}
-                height={32}
-                clipPath={`url(#${clipPrefix}-clip-${node.id})`}
-                preserveAspectRatio="xMidYMid slice"
-              />
-            ) : null}
-            <text
-              x={node.x}
-              y={node.y + 34}
-              textAnchor="middle"
-              className="fill-slate-200"
-              fontSize="11"
-            >
-              {node.person.name}
-            </text>
-          </g>
-        );
-      })}
-    </>
-  );
-}
 
 function newId() {
   return crypto.randomUUID();
@@ -643,20 +227,18 @@ export default function RelationWorkspacePanel() {
 
   const mapSize = mapExpanded
     ? { w: 1400, h: 860 }
-    : { w: 960, h: 560 };
+    : { w: 1100, h: 640 };
 
-  const { nodes, groups } = useMemo(
-    () =>
-      layoutGraph(
-        filteredPeople,
-        filteredEdges,
-        graphMode,
-        asOf,
-        mapSize.w,
-        mapSize.h,
-      ),
-    [filteredPeople, filteredEdges, graphMode, asOf, mapSize.w, mapSize.h],
-  );
+  async function saveLayout(nextLayout: RelationMapLayout) {
+    if (!workspace) return;
+    const next = {
+      ...workspace,
+      layout: nextLayout,
+      groupEdges: workspace.groupEdges ?? [],
+    };
+    setWorkspace(next);
+    await persist(next);
+  }
 
   const listRows = useMemo(() => {
     if (!workspace) return [];
@@ -947,6 +529,14 @@ export default function RelationWorkspacePanel() {
     );
   }
 
+  if (!workspace) {
+    return (
+      <div className={`${worksPanelClass} p-6 text-sm text-rose-100`}>
+        {error ?? "関係図を読み込めませんでした。"}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/5 px-4 py-3 text-sm text-emerald-50/90">
@@ -1098,18 +688,20 @@ export default function RelationWorkspacePanel() {
           )}
 
           <div className="mt-4 overflow-auto rounded-xl border border-white/8 bg-[#071018]">
-            <svg
-              viewBox={`0 0 ${mapSize.w} ${mapSize.h}`}
-              className="h-[480px] w-full min-w-[640px]"
-            >
-              <RelationMapSvgContent
-                nodes={nodes}
-                groups={groups}
-                edges={filteredEdges}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-              />
-            </svg>
+            <RelationOrgMap
+              people={filteredPeople}
+              edges={filteredEdges}
+              groupEdges={workspace.groupEdges ?? []}
+              layout={workspace.layout ?? emptyRelationLayout()}
+              mode={graphMode}
+              asOf={asOf}
+              selectedId={selectedId}
+              onSelectPerson={setSelectedId}
+              onLayoutChange={saveLayout}
+              width={mapSize.w}
+              height={mapSize.h}
+              className="w-full min-w-[720px]"
+            />
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
             {RELATION_ORG_KINDS.map((kind) => (
@@ -1121,16 +713,11 @@ export default function RelationWorkspacePanel() {
                 {RELATION_ORG_LABELS[kind]}
               </span>
             ))}
+            <span className="text-slate-500">
+              角丸枠＝組織グループ（中に要員）· 青線＝グループ関係 · 細線＝人間関係 ·
+              枠・人をドラッグで配置を保存
+            </span>
           </div>
-          {groups.length === 0 && filteredPeople.length >= 2 ? (
-            <p className="mt-2 text-[12px] leading-relaxed text-amber-100/80">
-              いま角丸枠はありません。同じ会社・組織名（最高裁／内閣官房は種別）の人が2人以上いると、その枠の中にまとまります。部署名だけでは分けません。組織名が空の業者は枠の対象外です。
-            </p>
-          ) : (
-            <p className="mt-2 text-[12px] text-slate-500">
-              同じ会社・組織は角丸枠でグループ化（2人以上）。枠数: {groups.length}
-            </p>
-          )}
         </section>
 
         <section className="space-y-5">
@@ -1862,21 +1449,21 @@ export default function RelationWorkspacePanel() {
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-white/10 bg-[#071018]">
-            <svg
-              viewBox={`0 0 ${mapSize.w} ${mapSize.h}`}
+            <RelationOrgMap
+              people={filteredPeople}
+              edges={filteredEdges}
+              groupEdges={workspace.groupEdges ?? []}
+              layout={workspace.layout ?? emptyRelationLayout()}
+              mode={graphMode}
+              asOf={asOf}
+              selectedId={selectedId}
+              onSelectPerson={setSelectedId}
+              onLayoutChange={saveLayout}
+              width={mapSize.w}
+              height={mapSize.h}
+              expanded
               className="h-full min-h-[70vh] w-full"
-            >
-              <RelationMapSvgContent
-                nodes={nodes}
-                groups={groups}
-                edges={filteredEdges}
-                selectedId={selectedId}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                }}
-                clipPrefix="face-xl"
-              />
-            </svg>
+            />
           </div>
         </div>
       )}
