@@ -10,6 +10,7 @@ import {
 import {
   RELATION_EDGE_LABELS,
   RELATION_GROUP_BOX_COLORS,
+  RELATION_GROUP_BOX_FILLS,
   type RelationEdge,
   type RelationGroupEdge,
   type RelationMapLayout,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/types/work-relations";
 import {
   displayOrgKind,
+  nodeRingColors,
   orgGroupKey,
   orgGroupTitle,
 } from "@/lib/work-relations-utils";
@@ -30,6 +32,7 @@ type OrgBucket = {
   title: string;
   orgKind: RelationOrgKind;
   color: string;
+  fill: string;
   members: RelationPerson[];
 };
 
@@ -112,6 +115,7 @@ function buildBuckets(
       title: orgGroupTitle(person, mode, asOf),
       orgKind,
       color: RELATION_GROUP_BOX_COLORS[orgKind],
+      fill: RELATION_GROUP_BOX_FILLS[orgKind],
       members: [person],
     });
   }
@@ -271,6 +275,7 @@ export default function RelationOrgMap({
       x: number;
       y: number;
       color: string;
+      ringColors: string[];
     }> = [];
 
     for (const group of groupRects) {
@@ -283,18 +288,20 @@ export default function RelationOrgMap({
         const baseY = BOX_PAD_TOP + PERSON_R + row * CELL;
         const ox = offset?.x ?? baseX;
         const oy = offset?.y ?? baseY;
+        const rings = nodeRingColors(person, mode, asOf);
         nodes.push({
           id: person.id,
           person,
           groupKey: group.key,
           x: group.x + Math.min(Math.max(ox, PERSON_R + 8), group.w - PERSON_R - 8),
           y: group.y + Math.min(Math.max(oy, BOX_PAD_TOP), group.h - PERSON_R - 8),
-          color: group.color,
+          color: rings[0] ?? group.color,
+          ringColors: rings,
         });
       });
     }
     return nodes;
-  }, [groupRects, localLayout.personOffsets, dragVersion]);
+  }, [groupRects, localLayout.personOffsets, dragVersion, mode, asOf]);
 
   const personById = useMemo(
     () => new Map(personNodes.map((n) => [n.id, n])),
@@ -435,9 +442,9 @@ export default function RelationOrgMap({
               height={group.h}
               rx={14}
               ry={14}
-              fill="rgba(15,23,42,0.55)"
+              fill={group.fill}
               stroke={group.color}
-              strokeWidth={2}
+              strokeWidth={1.75}
             />
             <text
               x={group.x + group.w / 2}
@@ -474,7 +481,7 @@ export default function RelationOrgMap({
               <path
                 d={d}
                 fill="none"
-                stroke="#60a5fa"
+                stroke="rgba(125, 211, 252, 0.75)"
                 strokeWidth={1.6}
                 strokeOpacity={0.9}
               />
@@ -545,14 +552,35 @@ export default function RelationOrgMap({
                       <circle cx={node.x} cy={node.y} r={PERSON_R - 2} />
                     </clipPath>
                   </defs>
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={PERSON_R}
-                    fill="#0f172a"
-                    stroke={node.color}
-                    strokeWidth={selected ? 3 : 2}
-                  />
+                  {node.ringColors.length > 1 ? (
+                    <>
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={PERSON_R + 2}
+                        fill="none"
+                        stroke={node.ringColors[1]}
+                        strokeWidth={selected ? 2.5 : 2}
+                      />
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={PERSON_R}
+                        fill="#0f172a"
+                        stroke={node.ringColors[0]}
+                        strokeWidth={selected ? 2.5 : 2}
+                      />
+                    </>
+                  ) : (
+                    <circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={PERSON_R}
+                      fill="#0f172a"
+                      stroke={node.color}
+                      strokeWidth={selected ? 3 : 2}
+                    />
+                  )}
                   <image
                     href={node.person.facePhotoDataUrl}
                     x={node.x - (PERSON_R - 2)}
@@ -561,6 +589,25 @@ export default function RelationOrgMap({
                     height={(PERSON_R - 2) * 2}
                     clipPath={`url(#org-face-${node.id})`}
                     preserveAspectRatio="xMidYMid slice"
+                  />
+                </>
+              ) : node.ringColors.length > 1 ? (
+                <>
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={PERSON_R + 2}
+                    fill="none"
+                    stroke={node.ringColors[1]}
+                    strokeWidth={selected ? 2.5 : 2}
+                  />
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={PERSON_R}
+                    fill="#0f172a"
+                    stroke={node.ringColors[0]}
+                    strokeWidth={selected ? 2.5 : 2}
                   />
                 </>
               ) : (

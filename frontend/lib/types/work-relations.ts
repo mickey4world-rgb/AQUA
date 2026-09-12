@@ -22,12 +22,17 @@ export const RELATION_ORG_COLORS: Record<RelationOrgKind, string> = {
   other: "#c4b5fd",
 };
 
-/** 相関図の組織枠カラー（依頼スケッチ準拠） */
+/** 組織枠も要員と同じ従来パレット（どぎつい別色は使わない） */
 export const RELATION_GROUP_BOX_COLORS: Record<RelationOrgKind, string> = {
-  supreme_court: "#3b82f6",
-  cabinet: "#f97316",
-  vendor: "#22c55e",
-  other: "#a78bfa",
+  ...RELATION_ORG_COLORS,
+};
+
+/** 組織枠のごく薄い塗り */
+export const RELATION_GROUP_BOX_FILLS: Record<RelationOrgKind, string> = {
+  supreme_court: "rgba(125, 211, 252, 0.07)",
+  cabinet: "rgba(94, 234, 212, 0.07)",
+  vendor: "rgba(252, 211, 77, 0.07)",
+  other: "rgba(196, 181, 253, 0.07)",
 };
 
 /** 業者が取引・関連する官庁 */
