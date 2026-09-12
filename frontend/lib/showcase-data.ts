@@ -106,6 +106,17 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     href: "/soluna",
     tag: "Companion",
   },
+  {
+    id: "relations",
+    index: "09",
+    title: "Relations Map",
+    titleJa: "関係図ワークスペース",
+    description:
+      "複数勤務先・異動履歴をそのまま管理。組織グループの相関図と時点フィルタ、名刺カメラでの自動登録まで。顔写真・人間関係・官庁／業者リンクを一画面で扱えます。",
+    accent: "#fcd34d",
+    href: "/works/misc/relations",
+    tag: "WORKS",
+  },
 ];
 
 export const SHOWCASE_SANKEY_NODES: MoneyFlowNode[] = [
@@ -471,3 +482,156 @@ export const SHOWCASE_SOLUNA_SCENARIOS: ShowcaseSolunaScenario[] = [
     tags: ["知能 Lv.3 · 親密度 81+", "深い整理 → Claude", "最新モデル優先"],
   },
 ];
+
+/** 関係図ワークスペース — SHOWCASE 用フィクスチャ（架空データ） */
+export type ShowcaseRelationOrgKind =
+  | "supreme_court"
+  | "cabinet"
+  | "vendor";
+
+export type ShowcaseRelationGroup = {
+  key: string;
+  title: string;
+  orgKind: ShowcaseRelationOrgKind;
+  color: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  members: Array<{ id: string; name: string; cx: number; cy: number }>;
+};
+
+export type ShowcaseRelationEdge = {
+  fromId: string;
+  toId: string;
+  label: string;
+};
+
+export type ShowcaseRelationGroupLink = {
+  fromKey: string;
+  toKey: string;
+  label: string;
+};
+
+export type ShowcaseRelationAffiliation = {
+  orgKind: ShowcaseRelationOrgKind;
+  orgName: string;
+  unitName: string;
+  title: string;
+  startedOn: string;
+  endedOn: string | null;
+};
+
+export const SHOWCASE_RELATION_COLORS: Record<ShowcaseRelationOrgKind, string> = {
+  supreme_court: "#7dd3fc",
+  cabinet: "#5eead4",
+  vendor: "#fcd34d",
+};
+
+export const SHOWCASE_RELATION_GROUPS: ShowcaseRelationGroup[] = [
+  {
+    key: "supreme_court",
+    title: "最高裁 職員グループ",
+    orgKind: "supreme_court",
+    color: "#7dd3fc",
+    x: 24,
+    y: 36,
+    w: 200,
+    h: 128,
+    members: [
+      { id: "p-goto", name: "後藤", cx: 74, cy: 92 },
+      { id: "p-sasaki", name: "佐々木", cx: 154, cy: 92 },
+    ],
+  },
+  {
+    key: "cabinet",
+    title: "内閣官房 職員グループ",
+    orgKind: "cabinet",
+    color: "#5eead4",
+    x: 280,
+    y: 28,
+    w: 250,
+    h: 140,
+    members: [
+      { id: "p-take", name: "武富", cx: 330, cy: 88 },
+      { id: "p-narita", name: "成田", cx: 405, cy: 88 },
+      { id: "p-yoshida", name: "吉田", cx: 480, cy: 88 },
+    ],
+  },
+  {
+    key: "bellcore",
+    title: "ベルコア・コンサルティング",
+    orgKind: "vendor",
+    color: "#fcd34d",
+    x: 24,
+    y: 220,
+    w: 220,
+    h: 128,
+    members: [
+      { id: "p-seri", name: "芹澤", cx: 78, cy: 276 },
+      { id: "p-yoneda", name: "米田", cx: 168, cy: 276 },
+    ],
+  },
+  {
+    key: "abeam",
+    title: "アビームコンサルティング",
+    orgKind: "vendor",
+    color: "#fcd34d",
+    x: 280,
+    y: 210,
+    w: 250,
+    h: 150,
+    members: [
+      { id: "p-hosoe", name: "細江", cx: 330, cy: 268 },
+      { id: "p-oda", name: "織田", cx: 405, cy: 268 },
+      { id: "p-tanaka", name: "田中", cx: 480, cy: 268 },
+      { id: "p-kondo", name: "近藤", cx: 367, cy: 322 },
+      { id: "p-abe", name: "安部", cx: 442, cy: 322 },
+    ],
+  },
+];
+
+export const SHOWCASE_RELATION_PERSON_EDGES: ShowcaseRelationEdge[] = [
+  { fromId: "p-take", toId: "p-narita", label: "職員C班" },
+  { fromId: "p-narita", toId: "p-yoshida", label: "職員C班" },
+  { fromId: "p-take", toId: "p-yoshida", label: "職員C班" },
+];
+
+export const SHOWCASE_RELATION_GROUP_LINKS: ShowcaseRelationGroupLink[] = [
+  { fromKey: "supreme_court", toKey: "bellcore", label: "最高裁関連" },
+  { fromKey: "cabinet", toKey: "abeam", label: "内閣官房関連" },
+];
+
+/** 複数勤務先の時系列デモ（同一人物の所属履歴） */
+export const SHOWCASE_RELATION_TIMELINE_PERSON = {
+  name: "米田 佑",
+  note: "業者側窓口。官庁案件ごとに所属が切り替わっても履歴で追える。",
+  affiliations: [
+    {
+      orgKind: "vendor" as const,
+      orgName: "ベルコア・コンサルティング",
+      unitName: "公共コンサル部",
+      title: "シニアコンサルタント",
+      startedOn: "2022-04-01",
+      endedOn: "2024-03-31",
+    },
+    {
+      orgKind: "vendor" as const,
+      orgName: "アビームコンサルティング",
+      unitName: "官公庁アカウント",
+      title: "マネージャー",
+      startedOn: "2024-04-01",
+      endedOn: null,
+    },
+  ] satisfies ShowcaseRelationAffiliation[],
+};
+
+export const SHOWCASE_RELATION_CARD_SCAN = {
+  orgName: "アクセンチュア株式会社",
+  name: "和田 一樹",
+  unitName: "公共サービス本部",
+  title: "マネジング・ディレクター",
+  email: "demo.wada@example.co.jp",
+  orgKindLabel: "関連業者",
+  clientLinks: ["最高裁判所関連", "内閣官房関連"],
+};

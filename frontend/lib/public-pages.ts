@@ -21,6 +21,7 @@ export const SHOWCASE_SECTION_LABELS: Record<string, string> = {
   disney: "SHOWCASE · ディズニー",
   asteroid: "SHOWCASE · 小惑星",
   soluna: "SHOWCASE · Soluna",
+  relations: "SHOWCASE · 関係図",
 };
 
 export function isPublicTrackablePath(pathname: string): boolean {

@@ -8,6 +8,7 @@ import CouncilShowcaseDemo from "@/components/showcase/demos/CouncilShowcaseDemo
 import DisneyShowcaseDemo from "@/components/showcase/demos/DisneyShowcaseDemo";
 import JudicialShowcaseDemo from "@/components/showcase/demos/JudicialShowcaseDemo";
 import NewsSearchShowcaseDemo from "@/components/showcase/demos/NewsSearchShowcaseDemo";
+import RelationsShowcaseDemo from "@/components/showcase/demos/RelationsShowcaseDemo";
 import SankeyShowcaseDemo from "@/components/showcase/demos/SankeyShowcaseDemo";
 import SolunaShowcaseDemo from "@/components/showcase/demos/SolunaShowcaseDemo";
 import StocksShowcaseDemo from "@/components/showcase/demos/StocksShowcaseDemo";
@@ -22,6 +23,7 @@ const DEMO_MAP = {
   disney: DisneyShowcaseDemo,
   asteroid: AsteroidShowcaseDemo,
   soluna: SolunaShowcaseDemo,
+  relations: RelationsShowcaseDemo,
 } as const;
 
 function ShowcaseSection({

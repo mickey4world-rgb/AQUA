@@ -122,10 +122,10 @@ const panels: Panel[] = [
       {
         title: "Relations",
         titleJa: "関係図ワークスペース",
-        desc: "顔写真・異動在籍期間つき相関図。業者の両官庁関連と時点フィルタ、名刺撮影対応。",
+        desc: "複数勤務先・異動履歴を相関図と時点で管理。名刺カメラで自動登録、顔写真・官庁／業者リンク対応。",
         href: "/works/misc/relations",
         status: "ready",
-        points: ["顔写真", "在籍期間", "両官庁関連"],
+        points: ["複数勤務先", "相関図・時点", "名刺カメラ"],
         accent: "#fbbf24",
       },
     ],
