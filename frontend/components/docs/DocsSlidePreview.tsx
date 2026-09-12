@@ -2,11 +2,15 @@
 
 import type { DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
 
-const layoutLabels = {
+const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   title: "表紙",
+  section: "章扉",
   content: "本文",
+  twoColumn: "2列",
+  cards: "カード",
+  stat: "KPI",
   closing: "まとめ",
-} as const;
+};
 
 const visualTypeLabels = {
   flow: "フロー",
@@ -127,25 +131,46 @@ function VisualPreview({ visual }: { visual: DocSlideVisual }) {
   );
 }
 
+function KeyMessage({ text, dark }: { text: string; dark?: boolean }) {
+  return (
+    <p
+      className={`mt-1.5 rounded border-l-2 px-2 py-1 text-[10px] leading-snug ${
+        dark
+          ? "border-[#0BD0D9] bg-white/10 text-[#9DD4CF]"
+          : "border-[#0BD0D9] bg-[#E8F4F8] text-[#156082]"
+      }`}
+    >
+      {text}
+    </p>
+  );
+}
+
 function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) {
   const isTitle = slide.layout === "title";
+  const isSection = slide.layout === "section";
   const isClosing = slide.layout === "closing";
-  const isDark = isTitle || isClosing;
+  const isDark = isTitle || isClosing || isSection;
+  const layoutLabel = layoutLabels[slide.layout];
 
   return (
     <div
       className={`flex flex-col overflow-hidden rounded-xl border ${
         isTitle
           ? "border-[#156082]/40 bg-gradient-to-br from-[#0E2841] to-[#156082]"
-          : isClosing
-            ? "border-[#156082]/30 bg-[#0E2841]"
-            : "border-[#467886]/25 bg-white"
+          : isSection
+            ? "border-[#156082]/35 bg-gradient-to-br from-[#156082] to-[#0E2841]"
+            : isClosing
+              ? "border-[#156082]/30 bg-[#0E2841]"
+              : "border-[#467886]/25 bg-white"
       }`}
     >
-      {!isTitle && (
+      {!isTitle && !isSection && (
         <div className="flex items-center gap-1.5 bg-[#0E2841] px-2 py-1.5">
           <div className="h-3 w-0.5 shrink-0 bg-[#0BD0D9]" />
           <p className="flex-1 truncate text-[11px] font-semibold text-white">{slide.title}</p>
+          <span className="rounded bg-[#156082]/60 px-1 py-0.5 text-[7px] text-[#9DD4CF]">
+            {layoutLabel}
+          </span>
           {slide.visual && (
             <span className="rounded bg-[#156082]/60 px-1 py-0.5 text-[7px] text-[#9DD4CF]">
               {visualTypeLabels[slide.visual.type]}
@@ -154,17 +179,17 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
         </div>
       )}
 
-      <div className={`flex flex-1 flex-col px-3 pb-3 ${isTitle ? "pt-3" : "pt-2"}`}>
-        {isTitle && (
+      <div className={`flex flex-1 flex-col px-3 pb-3 ${isTitle || isSection ? "pt-3" : "pt-2"}`}>
+        {(isTitle || isSection) && (
           <>
             <div className="mb-2 h-0.5 w-12 bg-[#0BD0D9]" />
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#9DD4CF]">
-              {index + 1}. {layoutLabels[slide.layout]}
+              {index + 1}. {layoutLabel}
             </p>
           </>
         )}
 
-        {isTitle && (
+        {(isTitle || isSection) && (
           <p className="mt-1 text-sm font-bold text-white">{slide.title}</p>
         )}
 
@@ -174,27 +199,122 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           </p>
         )}
 
-        {slide.bullets.length > 0 && (
-          <ul
-            className={`mt-2 space-y-1 text-xs ${
-              isClosing ? "text-blue-50" : isTitle ? "text-blue-100" : "text-slate-600"
+        {slide.keyMessage && <KeyMessage text={slide.keyMessage} dark={isDark} />}
+
+        {slide.image?.query ? (
+          <div
+            className={`mt-2 overflow-hidden rounded border ${
+              isDark ? "border-white/20 bg-white/10" : "border-[#467886]/30 bg-[#E8F4F8]"
             }`}
           >
-            {slide.bullets.map((item) => (
-              <li key={item} className="flex gap-1.5">
-                <span className="text-[#0BD0D9]">•</span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+            <div
+              className={`flex h-14 items-end bg-gradient-to-br from-[#156082] via-[#0F9ED5] to-[#0BD0D9] px-2 pb-1.5 ${
+                slide.image.placement === "hero" ? "h-16" : ""
+              }`}
+            >
+              <span className="rounded bg-black/35 px-1.5 py-0.5 text-[7px] text-white">
+                画像 · {slide.image.placement === "hero" ? "ヒーロー" : "サイド"} ·{" "}
+                {slide.image.query}
+              </span>
+            </div>
+          </div>
+        ) : null}
 
-        {slide.visual && <VisualPreview visual={slide.visual} />}
+        {slide.layout === "twoColumn" && slide.columns && slide.columns.length >= 2 ? (
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {slide.columns.slice(0, 2).map((col, i) => (
+              <div
+                key={col.title}
+                className={`overflow-hidden rounded border border-[#467886]/30 ${
+                  i === 0 ? "bg-[#E8F4F8]" : "bg-white"
+                }`}
+              >
+                <div
+                  className={`px-1.5 py-0.5 text-[8px] font-semibold text-white ${
+                    i === 0 ? "bg-[#467886]" : "bg-[#156082]"
+                  }`}
+                >
+                  {col.title}
+                </div>
+                <ul className="space-y-0.5 p-1.5 text-[9px] text-slate-600">
+                  {col.bullets.slice(0, 3).map((b) => (
+                    <li key={b} className="flex gap-1">
+                      <span className="text-[#0BD0D9]">•</span>
+                      <span className="line-clamp-2">{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {slide.layout === "cards" && slide.bullets.length > 0 ? (
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {slide.bullets.slice(0, 4).map((title, i) => (
+              <div
+                key={title}
+                className="overflow-hidden rounded border border-[#467886]/25 bg-white"
+              >
+                <div className={`h-0.5 ${BLUE_HEADERS[i % BLUE_HEADERS.length]}`} />
+                <p className="px-1.5 pt-1 text-[9px] font-semibold text-[#0E2841]">{title}</p>
+                {slide.cardDetails?.[i] ? (
+                  <p className="line-clamp-2 px-1.5 pb-1 text-[8px] text-slate-500">
+                    {slide.cardDetails[i]}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {slide.layout === "stat" && slide.stats && slide.stats.length > 0 ? (
+          <div className="mt-2 flex gap-1.5">
+            {slide.stats.slice(0, 4).map((stat, i) => (
+              <div
+                key={`${stat.label}-${i}`}
+                className="flex-1 overflow-hidden rounded border border-[#467886]/25 bg-white text-center"
+              >
+                <div className={`h-0.5 ${BLUE_HEADERS[i % BLUE_HEADERS.length]}`} />
+                <p className="px-0.5 pt-1.5 text-[11px] font-bold text-[#0E2841]">{stat.value}</p>
+                <p className="line-clamp-2 px-0.5 pb-1 text-[7px] text-slate-500">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {(() => {
+          const structured =
+            (slide.layout === "twoColumn" && (slide.columns?.length ?? 0) >= 2) ||
+            (slide.layout === "cards" && slide.bullets.length > 0) ||
+            (slide.layout === "stat" && (slide.stats?.length ?? 0) > 0);
+          if (structured || slide.bullets.length === 0) return null;
+          return (
+            <ul
+              className={`mt-2 space-y-1 text-xs ${
+                isClosing || isSection
+                  ? "text-blue-50"
+                  : isTitle
+                    ? "text-blue-100"
+                    : "text-slate-600"
+              }`}
+            >
+              {slide.bullets.map((item) => (
+                <li key={item} className="flex gap-1.5">
+                  <span className="text-[#0BD0D9]">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        })()}
+
+        {slide.visual && slide.layout !== "cards" && slide.layout !== "stat" && (
+          <VisualPreview visual={slide.visual} />
+        )}
       </div>
 
-      {!isTitle && (
-        <div className="h-0.5 bg-[#156082]" />
-      )}
+      {!isTitle && !isSection && <div className="h-0.5 bg-[#156082]" />}
     </div>
   );
 }
@@ -210,7 +330,7 @@ export default function DocsSlidePreview({ outline }: DocsSlidePreviewProps) {
         スライドプレビュー
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        {outline.documentTitle} — {outline.slides.length} 枚 · 青系テンプレート
+        {outline.documentTitle} — {outline.slides.length} 枚 · 青系テンプレート（カード/2列/KPI/画像）
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {outline.slides.map((slide, index) => (
