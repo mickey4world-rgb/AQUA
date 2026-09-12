@@ -3,6 +3,7 @@
 export const PUBLIC_PAGE_LABELS: Record<string, string> = {
   "/": "HOME",
   "/sample": "SHOWCASE",
+  "/profile": "PROFILE",
   "/login": "ログイン",
   "/tdr-preview": "SHOWCASE詳細 · TDRプレビュー",
   "/works-preview": "SHOWCASE詳細 · サンキープレビュー",
@@ -36,8 +37,9 @@ export function publicPageLabel(pathname: string, section?: string | null): stri
 export function publicPageGroup(
   pathname: string,
   section?: string | null,
-): "home" | "showcase" | "showcase-detail" | "login" | "preview" | "other" {
+): "home" | "showcase" | "showcase-detail" | "login" | "preview" | "profile" | "other" {
   if (pathname === "/") return "home";
+  if (pathname === "/profile") return "profile";
   if (pathname === "/login") return "login";
   if (pathname === "/sample") {
     return section && section !== "intro" ? "showcase-detail" : "showcase";
@@ -59,5 +61,6 @@ export const PAGE_GROUP_LABELS: Record<string, string> = {
   "showcase-detail": "SHOWCASE詳細",
   login: "ログイン",
   preview: "公開プレビュー",
+  profile: "PROFILE",
   other: "その他",
 };

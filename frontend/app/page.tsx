@@ -93,6 +93,7 @@ const marqueeItems = [
   "Cosmos DB",
   "Azure OpenAI",
   "Gemini",
+  "Claude",
   "CesiumJS",
   "Three.js",
   "TypeScript",
@@ -100,9 +101,14 @@ const marqueeItems = [
 
 const stats = [
   { label: "Modules", value: "07" },
-  { label: "Engines", value: "GPT / Gemini" },
+  { label: "Engines", value: "GPT / Gemini / Claude" },
   { label: "Region", value: "Japan East" },
-];
+  {
+    label: "Profile",
+    value: "清水健利 →",
+    href: "/profile",
+  },
+] as const;
 
 export default function Home() {
   return (
@@ -194,15 +200,33 @@ export default function Home() {
           </Reveal>
 
           <Reveal delayMs={120}>
-            <dl className="mt-10 grid grid-cols-3 gap-3">
-              {stats.map((stat) => (
-                <div key={stat.label} className="rounded-xl px-1 py-2">
-                  <dt className="font-display text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">
-                    {stat.label}
-                  </dt>
-                  <dd className="mt-1.5 font-mono text-sm text-cyan-100/80">{stat.value}</dd>
-                </div>
-              ))}
+            <dl className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {stats.map((stat) => {
+                const body = (
+                  <>
+                    <dt className="font-display text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">
+                      {stat.label}
+                    </dt>
+                    <dd className="mt-1.5 font-mono text-sm text-cyan-100/80">{stat.value}</dd>
+                  </>
+                );
+                if ("href" in stat && stat.href) {
+                  return (
+                    <Link
+                      key={stat.label}
+                      href={stat.href}
+                      className="group rounded-xl px-1 py-2 transition hover:bg-white/[0.04]"
+                    >
+                      {body}
+                    </Link>
+                  );
+                }
+                return (
+                  <div key={stat.label} className="rounded-xl px-1 py-2">
+                    {body}
+                  </div>
+                );
+              })}
             </dl>
           </Reveal>
         </section>
