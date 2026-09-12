@@ -42,6 +42,8 @@ type CesiumEntity = any;
 
 const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
+/** 同一オリジンの全日テクスチャ（外部タイル全滅時も大陸を保証） */
+const LOCAL_EARTH_TEXTURE = "/space/earth-day.jpg";
 /** Esri 衛星画像（失敗時は OSM / Carto にフォールバック） */
 const ESRI_IMAGERY =
   "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -51,7 +53,7 @@ const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ESRI_LABELS =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
-type ImageryKind = "satellite" | "map" | "labels";
+type ImageryKind = "satellite" | "map" | "labels" | "base";
 
 type ImageryCandidate = {
   kind: ImageryKind;
@@ -81,24 +83,34 @@ function makeUrlImageryProvider(Cesium: CesiumModule, candidate: ImageryCandidat
   });
 }
 
-/** Cesium 同梱の Natural Earth — 外部タイルが落ちても必ず大陸が見える */
-async function createNaturalEarthLayer(Cesium: CesiumModule) {
-  const url = Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII");
-  try {
-    if (Cesium.TileMapServiceImageryProvider?.fromUrl && Cesium.ImageryLayer?.fromProviderAsync) {
-      return await Cesium.ImageryLayer.fromProviderAsync(
-        Cesium.TileMapServiceImageryProvider.fromUrl(url, {
-          credit: "Natural Earth II",
-        }),
-      );
-    }
-  } catch (error) {
-    console.warn("[EagleEye] NaturalEarth async failed, sync fallback", error);
+/**
+ * Cesium CDN 同梱 Natural Earth II（Geographic + reverseY JPG）。
+ * TileMapService.fromUrl は tilemapresource / CORS で落ちやすいので URL テンプレ固定。
+ */
+function createNaturalEarthProvider(Cesium: CesiumModule) {
+  const base = Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII");
+  return new Cesium.UrlTemplateImageryProvider({
+    url: `${base}/{z}/{x}/{reverseY}.jpg`,
+    tilingScheme: new Cesium.GeographicTilingScheme(),
+    maximumLevel: 5,
+    credit: "Natural Earth II",
+  });
+}
+
+/** 同一オリジンの全日 JPG — 外部依存ゼロの最終土台 */
+async function createLocalEarthLayer(Cesium: CesiumModule) {
+  if (Cesium.SingleTileImageryProvider?.fromUrl && Cesium.ImageryLayer?.fromProviderAsync) {
+    return Cesium.ImageryLayer.fromProviderAsync(
+      Cesium.SingleTileImageryProvider.fromUrl(LOCAL_EARTH_TEXTURE, {
+        credit: "NASA Blue Marble (local)",
+      }),
+    );
   }
+  // 旧 API 互換
   return new Cesium.ImageryLayer(
-    new Cesium.TileMapServiceImageryProvider({
-      url,
-      credit: "Natural Earth II",
+    new Cesium.SingleTileImageryProvider({
+      url: LOCAL_EARTH_TEXTURE,
+      credit: "NASA Blue Marble (local)",
     }),
   );
 }
@@ -117,7 +129,7 @@ function addUrlImageryLayer(
     let failures = 0;
     provider.errorEvent.addEventListener(() => {
       failures += 1;
-      if (failures >= 6) {
+      if (failures >= 8) {
         try {
           viewer.imageryLayers.remove(layer, false);
         } catch {
@@ -130,11 +142,12 @@ function addUrlImageryLayer(
 }
 
 /**
- * 地球の見た目を確実にする:
- * 1) Natural Earth（同梱）を土台
- * 2) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
- * 3) 任意で地名ラベル
- * 戻り値で「層が載ったか」を返す。0層は呼び出し側で失敗扱い必須。
+ * 地球の見た目を確実にする（弱オラクル禁止）:
+ * 1) Natural Earth（CDN 同梱・正しい URL テンプレ）
+ * 2) 失敗時は同一オリジン earth-day.jpg
+ * 3) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
+ * 4) 任意で地名ラベル
+ * layerCount=0 は呼び出し側で失敗扱い必須。
  */
 async function ensureEarthImagery(
   viewer: CesiumViewer,
@@ -143,6 +156,7 @@ async function ensureEarthImagery(
 ): Promise<{
   layerCount: number;
   usedNaturalEarth: boolean;
+  usedLocalEarth: boolean;
   usedOverlay: boolean;
 }> {
   viewer.imageryLayers.removeAll();
@@ -155,20 +169,44 @@ async function ensureEarthImagery(
   }
 
   let usedNaturalEarth = false;
+  let usedLocalEarth = false;
   let usedOverlay = false;
 
   try {
-    const natural = await createNaturalEarthLayer(Cesium);
-    viewer.imageryLayers.add(natural);
+    const natural = viewer.imageryLayers.addImageryProvider(
+      createNaturalEarthProvider(Cesium),
+    );
+    natural.alpha = 1;
     usedNaturalEarth = true;
   } catch (error) {
-    console.warn("[EagleEye] Natural Earth base missing", error);
+    console.warn("[EagleEye] Natural Earth template failed", error);
+  }
+
+  if (!usedNaturalEarth) {
+    try {
+      const local = await createLocalEarthLayer(Cesium);
+      viewer.imageryLayers.add(local);
+      usedLocalEarth = true;
+    } catch (error) {
+      console.warn("[EagleEye] local earth texture failed", error);
+    }
+  } else {
+    // Natural Earth が載っていても、万一タイルが全滅したとき用に下にローカルも仕込む
+    try {
+      const local = await createLocalEarthLayer(Cesium);
+      viewer.imageryLayers.add(local);
+      // Natural を上に保つため、local を最下位へ
+      viewer.imageryLayers.lowerToBottom(local);
+      usedLocalEarth = true;
+    } catch {
+      /* optional underlay */
+    }
   }
 
   const candidates = options.preferSatellite ? SATELLITE_CANDIDATES : MAP_CANDIDATES;
   for (const candidate of candidates) {
     try {
-      addUrlImageryLayer(viewer, Cesium, candidate, 1);
+      addUrlImageryLayer(viewer, Cesium, candidate, usedNaturalEarth || usedLocalEarth ? 0.92 : 1);
       usedOverlay = true;
       break;
     } catch (error) {
@@ -176,7 +214,7 @@ async function ensureEarthImagery(
     }
   }
 
-  if (options.withLabels && (usedNaturalEarth || usedOverlay)) {
+  if (options.withLabels && (usedNaturalEarth || usedLocalEarth || usedOverlay)) {
     try {
       addUrlImageryLayer(
         viewer,
@@ -197,11 +235,27 @@ async function ensureEarthImagery(
   const layerCount = viewer.imageryLayers.length as number;
   if (layerCount < 1) {
     throw new Error(
-      "地球テクスチャを1枚も載せられませんでした（Natural Earth / 外部タイル全滅）。",
+      "地球テクスチャを1枚も載せられませんでした（Natural Earth / ローカル / 外部タイル全滅）。",
     );
   }
 
-  return { layerCount, usedNaturalEarth, usedOverlay };
+  return { layerCount, usedNaturalEarth, usedLocalEarth, usedOverlay };
+}
+
+function describeEarthLayer(imagery: {
+  usedNaturalEarth: boolean;
+  usedLocalEarth: boolean;
+  usedOverlay: boolean;
+}, mode: "orbit" | "map"): string {
+  const base = imagery.usedNaturalEarth
+    ? "Natural Earth"
+    : imagery.usedLocalEarth
+      ? "ローカル地球"
+      : "なし";
+  const overlay = imagery.usedOverlay ? " · タイル上乗せ" : "";
+  return mode === "map"
+    ? `地図 · ${base}${overlay}`
+    : `${base}${overlay}`;
 }
 
 export type EagleEyeViewerState = {
@@ -501,9 +555,7 @@ export default function EagleEyeViewer({
               if (!viewer || viewer.isDestroyed()) return;
               setHud((prev) => ({
                 ...prev,
-                earthLayer: imagery.usedOverlay
-                  ? "地図モード · タイル"
-                  : "地図モード · Natural Earth",
+                earthLayer: describeEarthLayer(imagery, "map"),
               }));
               viewer.scene.morphTo2D(1.6);
             })
@@ -593,11 +645,7 @@ export default function EagleEyeViewer({
       .then((imagery) => {
         setHud((prev) => ({
           ...prev,
-          earthLayer: imagery.usedOverlay
-            ? imagery.usedNaturalEarth
-              ? "地球地図 · 衛星タイル"
-              : "衛星／道路タイル"
-            : "Natural Earth（同梱）",
+          earthLayer: describeEarthLayer(imagery, "orbit"),
         }));
       })
       .catch((error) => {
@@ -771,11 +819,7 @@ export default function EagleEyeViewer({
           withLabels: false,
           preferSatellite: true,
         }).then((imagery) => {
-          const earthLayer = imagery.usedOverlay
-            ? imagery.usedNaturalEarth
-              ? "地球地図 · 衛星タイル"
-              : "衛星／道路タイル"
-            : "Natural Earth（同梱）";
+          const earthLayer = describeEarthLayer(imagery, "orbit");
           setHud((prev) => ({ ...prev, earthLayer }));
         });
         viewer.scene.globe.show = true;
@@ -1064,12 +1108,12 @@ export default function EagleEyeViewer({
           onClick={exitMapMode}
           className="absolute right-3 top-3 z-10 rounded-lg border border-cyan-400/40 bg-black/80 px-3 py-2 text-xs font-semibold text-cyan-200 shadow-lg transition hover:bg-cyan-500/20"
         >
-          🌍 地球表示に戻る
+          地球表示に戻る
         </button>
       )}
       {ready && !isMapMode && (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/60 px-3 py-2 text-xs text-slate-300">
-          🟡=撮影可能 · 衛星クリック→上空写真クローズアップ
+          撮影可能は強調表示 · 衛星クリックで上空写真へ
         </div>
       )}
       {ready && isMapMode && mapSatellite && (
@@ -1077,7 +1121,7 @@ export default function EagleEyeViewer({
           <p className="text-amber-200/90">スキャン画像エリア</p>
           <p className="mt-0.5">{footprintLabel ?? mapSatellite.name}</p>
           <p className="mt-1 text-[10px] text-slate-400">
-            🎥=映像ピン · 🖼=画像ピン · クリックで地上へ降下
+            地上ピンをクリックでカメラへ降下 · 右側に MapLibre 地図
           </p>
         </div>
       )}
