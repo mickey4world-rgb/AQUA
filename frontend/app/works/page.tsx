@@ -107,7 +107,7 @@ const panels: Panel[] = [
     index: "04",
     label: "Misc",
     labelJa: "その他",
-    description: "資料作成など、分野を問わないユーティリティをまとめます。",
+    description: "資料作成や個人の関係管理など、分野を問わないユーティリティをまとめます。",
     accent: "#fcd34d",
     apps: [
       {
@@ -118,6 +118,15 @@ const panels: Panel[] = [
         status: "ready",
         points: ["pptx 自動生成", "参考資料添付", "スライドプレビュー"],
         accent: "#fcd34d",
+      },
+      {
+        title: "Relations",
+        titleJa: "関係図ワークスペース",
+        desc: "官公庁・業者の人物相関図を個人管理。異動メモから AI 抽出（日本リージョン Azure のみ）。",
+        href: "/works/misc/relations",
+        status: "ready",
+        points: ["相関図", "異動・在任", "国内AI抽出"],
+        accent: "#fbbf24",
       },
     ],
   },
