@@ -81,6 +81,7 @@ function layoutGraph(
 ): { nodes: GraphNode[]; groups: GraphGroup[] } {
   const cx = width / 2;
   const cy = height / 2;
+  const margin = 56;
 
   const buckets = new Map<string, RelationPerson[]>();
   for (const person of people) {
@@ -90,44 +91,82 @@ function layoutGraph(
     buckets.set(key, list);
   }
 
-  const groupEntries = [...buckets.entries()].sort((a, b) => {
-    const kindOrder = (k: string) => {
-      if (k.startsWith("supreme_court")) return 0;
-      if (k.startsWith("cabinet")) return 1;
-      if (k.startsWith("vendor")) return 2;
-      return 3;
-    };
-    const d = kindOrder(a[0]) - kindOrder(b[0]);
-    if (d !== 0) return d;
-    return b[1].length - a[1].length;
-  });
-
-  const groupCenters = new Map<string, { x: number; y: number }>();
-  const groupCount = Math.max(groupEntries.length, 1);
-  const orbit = Math.min(width, height) * (groupCount <= 2 ? 0.18 : 0.28);
-
-  groupEntries.forEach(([key], index) => {
-    if (groupCount === 1) {
-      groupCenters.set(key, { x: cx, y: cy });
-      return;
-    }
-    const angle = (index / groupCount) * Math.PI * 2 - Math.PI / 2;
-    groupCenters.set(key, {
-      x: cx + Math.cos(angle) * orbit,
-      y: cy + Math.sin(angle) * orbit,
+  const multiGroups = [...buckets.entries()]
+    .filter(([, members]) => members.length >= 2)
+    .sort((a, b) => {
+      const kindOrder = (k: string) => {
+        if (k.startsWith("supreme_court")) return 0;
+        if (k.startsWith("cabinet")) return 1;
+        if (k.startsWith("vendor")) return 2;
+        return 3;
+      };
+      const d = kindOrder(a[0]) - kindOrder(b[0]);
+      if (d !== 0) return d;
+      return b[1].length - a[1].length;
     });
-  });
+
+  const singles = [...buckets.entries()]
+    .filter(([, members]) => members.length === 1)
+    .flatMap(([, members]) => members);
 
   const nodes: GraphNode[] = [];
-  for (const [key, members] of groupEntries) {
-    const center = groupCenters.get(key) ?? { x: cx, y: cy };
-    const localRadius = Math.min(70, 28 + members.length * 10);
-    members.forEach((person, index) => {
-      const angle =
-        members.length === 1
-          ? 0
-          : (index / members.length) * Math.PI * 2 - Math.PI / 2;
-      const jitter = members.length === 1 ? 0 : localRadius * 0.55;
+  const groups: GraphGroup[] = [];
+  const groupCount = Math.max(multiGroups.length, 1);
+  const orbit =
+    Math.min(width, height) *
+    (multiGroups.length <= 1 ? 0 : multiGroups.length <= 3 ? 0.22 : 0.3);
+
+  multiGroups.forEach(([key, members], index) => {
+    const angle =
+      multiGroups.length === 1
+        ? 0
+        : (index / groupCount) * Math.PI * 2 - Math.PI / 2;
+    const packCenter =
+      multiGroups.length === 1
+        ? { x: cx, y: cy * 0.92 }
+        : {
+            x: cx + Math.cos(angle) * orbit,
+            y: cy + Math.sin(angle) * orbit,
+          };
+
+    // 人数に応じたグリッドで枠内に配置
+    const cols = Math.ceil(Math.sqrt(members.length));
+    const rows = Math.ceil(members.length / cols);
+    const cell = 72;
+    const innerPadX = 28;
+    const innerPadY = 40;
+    const boxW = Math.max(cols * cell + innerPadX * 2, 160);
+    const boxH = Math.max(rows * cell + innerPadY + 24, 130);
+    const boxX = Math.min(
+      width - margin - boxW,
+      Math.max(margin, packCenter.x - boxW / 2),
+    );
+    const boxY = Math.min(
+      height - margin - boxH,
+      Math.max(margin, packCenter.y - boxH / 2),
+    );
+
+    const samplePerson = members[0];
+    const orgKind = displayOrgKind(samplePerson, mode, asOf);
+    groups.push({
+      key,
+      title: orgGroupTitle(samplePerson, mode, asOf),
+      orgKind,
+      color: RELATION_ORG_COLORS[orgKind],
+      x: boxX,
+      y: boxY,
+      width: boxW,
+      height: boxH,
+      memberCount: members.length,
+    });
+
+    members.forEach((person, memberIndex) => {
+      const col = memberIndex % cols;
+      const row = Math.floor(memberIndex / cols);
+      const gridW = (cols - 1) * cell;
+      const gridH = (rows - 1) * cell;
+      const startX = boxX + boxW / 2 - gridW / 2;
+      const startY = boxY + innerPadY + (boxH - innerPadY - 20) / 2 - gridH / 2;
       nodes.push({
         id: person.id,
         person,
@@ -136,18 +175,42 @@ function layoutGraph(
         label: displayOrgLabel(person, mode, asOf),
         groupKey: key,
         groupTitle: orgGroupTitle(person, mode, asOf),
-        x: center.x + Math.cos(angle) * jitter,
-        y: center.y + Math.sin(angle) * jitter,
+        x: startX + col * cell,
+        y: startY + row * cell,
         vx: 0,
         vy: 0,
       });
     });
-  }
+  });
+
+  // 単独の人はグループ枠の外側に配置
+  singles.forEach((person, index) => {
+    const angle =
+      (index / Math.max(singles.length, 1)) * Math.PI * 2 -
+      Math.PI / 2 +
+      0.35;
+    const radius =
+      Math.min(width, height) * (multiGroups.length > 0 ? 0.38 : 0.28);
+    nodes.push({
+      id: person.id,
+      person,
+      orgKind: displayOrgKind(person, mode, asOf),
+      ringColors: nodeRingColors(person, mode, asOf),
+      label: displayOrgLabel(person, mode, asOf),
+      groupKey: orgGroupKey(person, mode, asOf),
+      groupTitle: orgGroupTitle(person, mode, asOf),
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+      vx: 0,
+      vy: 0,
+    });
+  });
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const centersByKey = groupCenters;
+  const multiKeys = new Set(multiGroups.map(([key]) => key));
+  const boxByKey = new Map(groups.map((g) => [g.key, g]));
 
-  for (let iter = 0; iter < 100; iter += 1) {
+  for (let iter = 0; iter < 60; iter += 1) {
     for (let i = 0; i < nodes.length; i += 1) {
       for (let j = i + 1; j < nodes.length; j += 1) {
         const a = nodes[i];
@@ -155,24 +218,17 @@ function layoutGraph(
         let dx = a.x - b.x;
         let dy = a.y - b.y;
         let dist = Math.hypot(dx, dy) || 1;
-        const sameGroup = a.groupKey === b.groupKey;
-        const minDist = sameGroup ? 56 : 110;
+        const sameMulti =
+          a.groupKey === b.groupKey && multiKeys.has(a.groupKey);
+        const minDist = sameMulti ? 52 : 96;
         if (dist < minDist) {
-          const force = ((minDist - dist) / dist) * (sameGroup ? 0.1 : 0.12);
+          const force = ((minDist - dist) / dist) * (sameMulti ? 0.08 : 0.1);
           dx *= force;
           dy *= force;
           a.vx += dx;
           a.vy += dy;
           b.vx -= dx;
           b.vy -= dy;
-        }
-        // 同グループは互いに引き寄せる
-        if (sameGroup && dist > 70) {
-          const pull = ((dist - 70) / dist) * 0.015;
-          a.vx -= dx * pull;
-          a.vy -= dy * pull;
-          b.vx += dx * pull;
-          b.vy += dy * pull;
         }
       }
     }
@@ -181,14 +237,13 @@ function layoutGraph(
       const a = byId.get(edge.fromPersonId);
       const b = byId.get(edge.toPersonId);
       if (!a || !b) continue;
+      // グループ内の線は位置を崩しすぎない
+      if (a.groupKey === b.groupKey && multiKeys.has(a.groupKey)) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const target =
-        a.groupKey === b.groupKey
-          ? 70 - edge.strength * 6
-          : 160 - edge.strength * 12;
-      const force = ((dist - target) / dist) * 0.02;
+      const target = 150 - edge.strength * 10;
+      const force = ((dist - target) / dist) * 0.012;
       a.vx += dx * force;
       a.vy += dy * force;
       b.vx -= dx * force;
@@ -196,47 +251,47 @@ function layoutGraph(
     }
 
     for (const node of nodes) {
-      const g = centersByKey.get(node.groupKey) ?? { x: cx, y: cy };
-      node.vx += (g.x - node.x) * 0.035;
-      node.vy += (g.y - node.y) * 0.035;
-      node.vx += (cx - node.x) * 0.002;
-      node.vy += (cy - node.y) * 0.002;
-      node.vx *= 0.84;
-      node.vy *= 0.84;
-      node.x = Math.min(width - 48, Math.max(48, node.x + node.vx));
-      node.y = Math.min(height - 48, Math.max(48, node.y + node.vy));
+      const box = boxByKey.get(node.groupKey);
+      if (box && multiKeys.has(node.groupKey)) {
+        // 複数人グループは角丸枠の内側に留める
+        const minX = box.x + 34;
+        const maxX = box.x + box.width - 34;
+        const minY = box.y + 48;
+        const maxY = box.y + box.height - 34;
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+        node.vx += (midX - node.x) * 0.02;
+        node.vy += (midY - node.y) * 0.02;
+        node.vx *= 0.82;
+        node.vy *= 0.82;
+        node.x = Math.min(maxX, Math.max(minX, node.x + node.vx));
+        node.y = Math.min(maxY, Math.max(minY, node.y + node.vy));
+      } else {
+        node.vx += (cx - node.x) * 0.004;
+        node.vy += (cy - node.y) * 0.004;
+        node.vx *= 0.86;
+        node.vy *= 0.86;
+        node.x = Math.min(width - 48, Math.max(48, node.x + node.vx));
+        node.y = Math.min(height - 48, Math.max(48, node.y + node.vy));
+      }
     }
   }
 
-  // グループ中心をメンバー平均に更新し、角丸四角のバウンドを計算
-  const groups: GraphGroup[] = [];
-  for (const [key] of groupEntries) {
-    const memberNodes = nodes.filter((n) => n.groupKey === key);
-    if (memberNodes.length === 0) continue;
-    const pad = 36;
-    const minX = Math.min(...memberNodes.map((n) => n.x)) - pad;
-    const maxX = Math.max(...memberNodes.map((n) => n.x)) + pad;
-    const minY = Math.min(...memberNodes.map((n) => n.y)) - pad - 8;
-    const maxY = Math.max(...memberNodes.map((n) => n.y)) + pad + 10;
-    const avgX =
-      memberNodes.reduce((sum, n) => sum + n.x, 0) / memberNodes.length;
-    const avgY =
-      memberNodes.reduce((sum, n) => sum + n.y, 0) / memberNodes.length;
-    // グループ中心を記録（次フレーム向けに centers は描画用にのみ使用）
-    void avgX;
-    void avgY;
-    const sample = memberNodes[0];
-    groups.push({
-      key,
-      title: sample.groupTitle,
-      orgKind: sample.orgKind,
-      color: RELATION_ORG_COLORS[sample.orgKind],
-      x: minX,
-      y: minY,
-      width: Math.max(maxX - minX, 96),
-      height: Math.max(maxY - minY, 88),
-      memberCount: memberNodes.length,
-    });
+  // 枠サイズを最終メンバー位置に合わせて再計算（複数人のみ）
+  for (const group of groups) {
+    const memberNodes = nodes.filter((n) => n.groupKey === group.key);
+    if (memberNodes.length < 2) continue;
+    const padX = 40;
+    const padTop = 44;
+    const padBottom = 36;
+    const minX = Math.min(...memberNodes.map((n) => n.x)) - padX;
+    const maxX = Math.max(...memberNodes.map((n) => n.x)) + padX;
+    const minY = Math.min(...memberNodes.map((n) => n.y)) - padTop;
+    const maxY = Math.max(...memberNodes.map((n) => n.y)) + padBottom;
+    group.x = Math.max(16, minX);
+    group.y = Math.max(16, minY);
+    group.width = Math.min(width - group.x - 16, Math.max(maxX - minX, 150));
+    group.height = Math.min(height - group.y - 16, Math.max(maxY - minY, 120));
   }
 
   return { nodes, groups };
@@ -283,13 +338,12 @@ function RelationMapSvgContent({
             fill={group.color}
             fillOpacity={0.1}
             stroke={group.color}
-            strokeOpacity={0.55}
-            strokeWidth={1.6}
-            strokeDasharray={group.memberCount > 1 ? "0" : "5 4"}
+            strokeOpacity={0.6}
+            strokeWidth={1.8}
           />
           <text
             x={group.x + 14}
-            y={group.y + 18}
+            y={group.y + 20}
             textAnchor="start"
             fontSize="11"
             className="fill-slate-100"
@@ -297,7 +351,7 @@ function RelationMapSvgContent({
             {group.title.length > 36
               ? `${group.title.slice(0, 36)}…`
               : group.title}
-            {group.memberCount > 1 ? `（${group.memberCount}）` : ""}
+            {`（${group.memberCount}）`}
           </text>
         </g>
       ))}
@@ -1067,7 +1121,7 @@ export default function RelationWorkspacePanel() {
               </span>
             ))}
             <span className="text-slate-500">
-              同じ組織・所属は角丸の四角でグループ化。業者の両官庁関連は両色リング
+              同じ組織に複数人がいるときだけ角丸枠でグループ化（1人組織は枠なし）
             </span>
           </div>
         </section>
