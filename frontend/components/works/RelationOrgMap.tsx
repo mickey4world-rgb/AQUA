@@ -55,33 +55,48 @@ type DragState =
       origY: number;
     };
 
-const BOX_PAD_X = 16;
-const BOX_PAD_TOP = 36;
-const BOX_PAD_BOTTOM = 16;
+const BOX_PAD_X = 14;
+const BOX_PAD_TOP = 42;
+const BOX_PAD_BOTTOM = 18;
 const PERSON_R = 18;
 const CELL = 70;
+/** グループ関係線専用（所属色・人間関係線と被らない控えめな色） */
+const GROUP_EDGE_STROKE = "rgba(120, 130, 148, 0.85)";
+
+function estimateTitleWidth(title: string, memberCount: number): number {
+  const label = `${title}（${memberCount}）`;
+  // CJK 中心の概算幅（枠内に収めるため）
+  return Math.min(460, 28 + [...label].length * 12);
+}
 
 function defaultGroupPosition(
   index: number,
   orgKind: RelationOrgKind,
   width: number,
 ): { x: number; y: number } {
-  // スケッチ準拠: 官庁は上段、業者は下段
-  if (orgKind === "supreme_court") return { x: 48, y: 40 };
-  if (orgKind === "cabinet") return { x: Math.max(360, width * 0.42), y: 40 };
+  // 官庁は上段、業者は下段
+  if (orgKind === "supreme_court") return { x: 48, y: 48 };
+  if (orgKind === "cabinet") return { x: Math.max(360, width * 0.42), y: 48 };
   const col = index % 3;
   const row = Math.floor(index / 3);
   return {
-    x: 48 + col * 280,
-    y: 280 + row * 220,
+    x: 48 + col * 300,
+    y: 300 + row * 230,
   };
 }
 
-function boxSize(memberCount: number): { w: number; h: number } {
+function boxSize(
+  memberCount: number,
+  title: string,
+): { w: number; h: number } {
   const cols = Math.max(1, Math.ceil(Math.sqrt(memberCount)));
   const rows = Math.max(1, Math.ceil(memberCount / cols));
   return {
-    w: Math.max(200, cols * CELL + BOX_PAD_X * 2),
+    w: Math.max(
+      200,
+      cols * CELL + BOX_PAD_X * 2,
+      estimateTitleWidth(title, memberCount),
+    ),
     h: Math.max(120, rows * CELL + BOX_PAD_TOP + BOX_PAD_BOTTOM),
   };
 }
@@ -128,7 +143,7 @@ function buildBuckets(
   });
 }
 
-/** clientLinks から官庁グループ ↔ 業者グループの線を自動生成 */
+/** clientLinks から官庁グループ ↔ 業者グループの線を自動生成（官庁同士は結ばない） */
 function autoGroupEdges(
   buckets: OrgBucket[],
   people: RelationPerson[],
@@ -137,10 +152,17 @@ function autoGroupEdges(
   manual: RelationGroupEdge[],
 ): RelationGroupEdge[] {
   const agencyKey = new Map<string, string>();
+  const kindByKey = new Map<string, RelationOrgKind>();
   for (const bucket of buckets) {
+    kindByKey.set(bucket.key, bucket.orgKind);
     if (bucket.orgKind === "supreme_court") agencyKey.set("supreme_court", bucket.key);
     if (bucket.orgKind === "cabinet") agencyKey.set("cabinet", bucket.key);
   }
+
+  const isAgency = (key: string) => {
+    const kind = kindByKey.get(key);
+    return kind === "supreme_court" || kind === "cabinet";
+  };
 
   const derived: RelationGroupEdge[] = [];
   const seen = new Set(
@@ -165,22 +187,12 @@ function autoGroupEdges(
     }
   }
 
-  // 官庁同士が両方あるとき上段をつなぐ（スケッチ）
-  const sc = agencyKey.get("supreme_court");
-  const cab = agencyKey.get("cabinet");
-  if (sc && cab) {
-    const id = `${sc}<->${cab}`;
-    if (!seen.has(`${sc}->${cab}`) && !seen.has(`${cab}->${sc}`)) {
-      derived.push({
-        id: `auto-${id}`,
-        fromGroupKey: sc,
-        toGroupKey: cab,
-        label: "",
-      });
-    }
-  }
+  // 手動線も官庁同士は除外（最高裁↔内閣官房は不要）
+  const manualKept = manual.filter(
+    (edge) => !(isAgency(edge.fromGroupKey) && isAgency(edge.toGroupKey)),
+  );
 
-  return [...manual, ...derived];
+  return [...manualKept, ...derived];
 }
 
 type RelationOrgMapProps = {
@@ -252,7 +264,7 @@ export default function RelationOrgMap({
 
   const groupRects = useMemo(() => {
     return buckets.map((bucket) => {
-      const size = boxSize(bucket.members.length);
+      const size = boxSize(bucket.members.length, bucket.title);
       const saved = localLayout.groupPositions[bucket.key];
       const fallbackIndex =
         bucket.orgKind === "vendor" || bucket.orgKind === "other"
@@ -447,10 +459,11 @@ export default function RelationOrgMap({
               strokeWidth={1.75}
             />
             <text
-              x={group.x + group.w / 2}
-              y={group.y + 22}
-              textAnchor="middle"
-              fontSize="13"
+              x={group.x + BOX_PAD_X}
+              y={group.y + 12}
+              dominantBaseline="hanging"
+              textAnchor="start"
+              fontSize="12"
               fontWeight={600}
               fill={group.color}
             >
@@ -469,29 +482,22 @@ export default function RelationOrgMap({
           const y1 = from.y + from.h;
           const x2 = to.x + to.w / 2;
           const y2 = to.y;
-          // 同じ段（官庁同士）は下辺どうしを水平接続（スケッチ準拠）
-          const sameRow = Math.abs(from.y - to.y) < 40;
-          const d = sameRow
-            ? `M ${x1} ${y1} L ${x2} ${from.y + from.h}`
-            : orthogonalPath(x1, y1, x2, y2);
-          const labelX = sameRow ? (x1 + x2) / 2 : (x1 + x2) / 2;
-          const labelY = sameRow ? y1 + 14 : (y1 + y2) / 2 - 6;
+          const d = orthogonalPath(x1, y1, x2, y2);
           return (
             <g key={edge.id}>
               <path
                 d={d}
                 fill="none"
-                stroke="rgba(125, 211, 252, 0.75)"
-                strokeWidth={1.6}
-                strokeOpacity={0.9}
+                stroke={GROUP_EDGE_STROKE}
+                strokeWidth={1.4}
               />
               {edge.label ? (
                 <text
-                  x={labelX}
-                  y={labelY}
+                  x={(x1 + x2) / 2}
+                  y={(y1 + y2) / 2 - 6}
                   textAnchor="middle"
                   fontSize="10"
-                  className="fill-slate-400"
+                  fill="rgba(148, 163, 184, 0.9)"
                 >
                   {edge.label}
                 </text>
