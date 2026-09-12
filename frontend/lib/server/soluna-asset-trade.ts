@@ -2,7 +2,7 @@
  * 資産運用 API クライアント + Soluna マルチ資産ロジック
  *
  * 運用ルール:
- *   1. 1回の取引は最大 10,000 円（確信度でサイズ可変）
+ *   1. 1回の取引は銘柄あたり最大 10,000 円（確信度でサイズ可変）
  *   2. 利確は短期でも可。損切りは原則しない／長期保有（〜1年）で回復を待つ
  *      ・現金 50 万円以下では損切り禁止（含み損は持ち越し）
  *      ・1年未満は損切りしない。1年超かつ深い含み損（-15%〜-25%）のみ例外
@@ -13,6 +13,7 @@
  *      ※ SOL_JPY・LTC_JPY・BCH_JPY は bitFlyer Spot に JPY 建てが無い
  *      ※ FX_BTC_JPY はレバレッジ CFD のため自動売買対象外
  *   6. 分散: 現金下限 / 単一銘柄上限 / 暗号合計上限
+ *   7. 買い条件を満たした銘柄は競合せず同時に買う（日次・現金・分散枠内で按分）
  */
 
 import crypto from "crypto";
@@ -470,15 +471,21 @@ function rolloverMonthIfNeeded(ledger: SolunaAssetLedger): SolunaAssetLedger {
   };
 }
 
+type BuyLeg = {
+  product: TradeableProduct;
+  amountJpy: number;
+  pulse: MarketPulse;
+  tradeReason: "dca";
+  ruleIds: number[];
+  reason: string;
+};
+
 type TradeDecision =
   | {
       action: "BUY";
-      product: TradeableProduct;
+      buys: BuyLeg[];
       reason: string;
-      amountJpy: number;
-      tradeReason: SolunaTradeRecord["reason"];
       ruleIds: number[];
-      pulse: MarketPulse;
     }
   | {
       action: "SELL";
@@ -496,6 +503,30 @@ function formatReasonWithRuleIds(ruleIds: number[], detail: string): string {
     .map((id) => `#${id}`)
     .join("+");
   return tag ? `${tag} ${detail}` : detail;
+}
+
+/** 買い約定後の台帳をシミュレーション（同バッチ内の枠計算用） */
+function applyBuyToLedger(
+  ledger: SolunaAssetLedger,
+  product: TradeableProduct,
+  amountJpy: number,
+  price: number,
+): SolunaAssetLedger {
+  if (price <= 0 || amountJpy <= 0) return ledger;
+  const size = amountJpy / price;
+  const next = { ...ledger, cashYen: Math.max(0, ledger.cashYen - amountJpy) };
+  if (product === "BTC_JPY") next.btcHeld = (ledger.btcHeld ?? 0) + size;
+  else if (product === "ETH_JPY") next.ethHeld = (ledger.ethHeld ?? 0) + size;
+  else if (product === "XRP_JPY") next.xrpHeld = (ledger.xrpHeld ?? 0) + size;
+  else next.xlmHeld = (ledger.xlmHeld ?? 0) + size;
+  next.totalYen = Math.round(
+    next.cashYen +
+      (next.btcHeld ?? 0) * (ledger.btcPriceYen || 0) +
+      (next.ethHeld ?? 0) * (ledger.ethPriceYen || 0) +
+      (next.xrpHeld ?? 0) * (ledger.xrpPriceYen || 0) +
+      (next.xlmHeld ?? 0) * (ledger.xlmPriceYen || 0),
+  );
+  return next;
 }
 function jstDayKey(date = new Date()): string {
   return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -807,28 +838,21 @@ function decideTrade(
   if (newsSentiment === "positive") buyThreshold -= 6;
   if (battleMode === "attack") buyThreshold -= 5;
 
-  const buyCandidates = pulses
+  const qualified = pulses
     .filter((p) => {
       if (p.bias !== "bullish" || p.score < buyThreshold || p.spreadBps > MAX_SPREAD_BPS) {
         return false;
       }
-      // 中長期が強い下落なら、短期スコアが高くても見送る
       const horizonScore = p.horizon?.score ?? 0;
       if (horizonScore <= -28 && p.score < STRONG_BULLISH_SCORE + 10) return false;
-      // 昨日〜1週間が明確に弱いときは閾値を少し厳しく
       if ((p.horizon?.change1d ?? 0) < -0.04 && (p.horizon?.change1w ?? 0) < -0.06) {
         return p.score >= buyThreshold + 8;
       }
       return true;
     })
-    .map((p) => {
-      const room = maxBuyRoomYen(ledger, p.product, prices);
-      return { pulse: p, room };
-    })
-    .filter((c) => c.room >= 1000)
-    .sort((a, b) => b.pulse.score - a.pulse.score || b.room - a.room);
+    .sort((a, b) => b.score - a.score);
 
-  if (buyCandidates.length === 0) {
+  if (qualified.length === 0) {
     return {
       action: "HOLD",
       ruleIds: [8, 9, 10],
@@ -839,28 +863,68 @@ function decideTrade(
     };
   }
 
-  const best = buyCandidates[0]!;
-  const conviction =
-    best.pulse.score >= STRONG_BULLISH_SCORE
-      ? 1
-      : 0.45 + ((best.pulse.score - buyThreshold) / 80) * 0.55;
-  const amountJpy = Math.max(
-    1000,
-    Math.min(best.room, dailyBuyRoom, Math.round(MAX_TRADE_YEN * conviction)),
-  );
-  const meta = PRODUCT_META[best.pulse.product];
-  const ruleIds = [1, 2, 6, 7, 8];
+  // 条件を満たした銘柄は競合させず、枠の許す限り同時に買う（スコア順に予算消化）
+  let working: SolunaAssetLedger = {
+    ...ledger,
+    btcPriceYen: prices.BTC_JPY,
+    ethPriceYen: prices.ETH_JPY,
+    xrpPriceYen: prices.XRP_JPY,
+    xlmPriceYen: prices.XLM_JPY,
+  };
+  let remainingDaily = dailyBuyRoom;
+  const buys: BuyLeg[] = [];
+  const ruleIds = [1, 2, 6, 7, 8, 19];
 
+  for (const pulse of qualified) {
+    if (remainingDaily < 1000) break;
+    const room = maxBuyRoomYen(working, pulse.product, prices);
+    if (room < 1000) continue;
+    const conviction =
+      pulse.score >= STRONG_BULLISH_SCORE
+        ? 1
+        : 0.45 + ((pulse.score - buyThreshold) / 80) * 0.55;
+    const amountJpy = Math.max(
+      1000,
+      Math.min(room, remainingDaily, Math.round(MAX_TRADE_YEN * conviction)),
+    );
+    if (amountJpy < 1000) continue;
+    const meta = PRODUCT_META[pulse.product];
+    buys.push({
+      product: pulse.product,
+      amountJpy,
+      pulse,
+      tradeReason: "dca",
+      ruleIds,
+      reason: formatReasonWithRuleIds(
+        ruleIds,
+        `${meta.rpgName}へ分散召喚 ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%／同時買 ${qualified.length}銘柄候補／単一上限${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号上限${(MAX_CRYPTO_RATIO * 100).toFixed(0)}%）｜${pulse.summary}`,
+      ),
+    });
+    working = applyBuyToLedger(working, pulse.product, amountJpy, pulse.ltp);
+    remainingDaily -= amountJpy;
+  }
+
+  if (buys.length === 0) {
+    return {
+      action: "HOLD",
+      ruleIds: [5, 6, 7],
+      reason: formatReasonWithRuleIds(
+        [5, 6, 7],
+        `強気銘柄はあるが分散・現金枠不足（閾値 ${buyThreshold}）｜${pulseSummary}`,
+      ),
+    };
+  }
+
+  const labels = buys
+    .map((b) => `${PRODUCT_META[b.product].label} ${b.amountJpy.toLocaleString()}円`)
+    .join("・");
   return {
     action: "BUY",
-    product: best.pulse.product,
-    tradeReason: "dca",
+    buys,
     ruleIds,
-    amountJpy,
-    pulse: best.pulse,
     reason: formatReasonWithRuleIds(
       ruleIds,
-      `${meta.rpgName}へ分散召喚 ${amountJpy.toLocaleString()}円（確信度 ${(conviction * 100).toFixed(0)}%／単一上限${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号上限${(MAX_CRYPTO_RATIO * 100).toFixed(0)}%）｜${best.pulse.summary}`,
+      `条件達成 ${buys.length}銘柄を同時召喚: ${labels}｜${pulseSummary}`,
     ),
   };
 }
@@ -975,31 +1039,36 @@ export async function runDailyAssetTrade(input: {
   console.log(`[asset-trade] 市場: ${pulses.map((p) => p.summary).join(" || ")}`);
   console.log(`[asset-trade] 判断: ${decision.action} — ${decision.reason}`);
 
-  let traded: SolunaTradeRecord | null = null;
+  const executedTrades: SolunaTradeRecord[] = [];
 
   if (decision.action === "BUY") {
-    await sendOrder(decision.product, "BUY", decision.amountJpy, decision.pulse.ltp);
-    const trade: SolunaTradeRecord = {
-      id: `trade-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      side: "BUY",
-      product: decision.product,
-      sizeJpy: decision.amountJpy,
-      priceBtc: decision.pulse.ltp,
-      reason: decision.tradeReason,
-      ruleIds: decision.ruleIds,
-      reasonDetail: decision.reason,
-      briefingId: input.briefingId,
-    };
-    newTrades = [...newTrades.slice(-29), trade];
-    traded = trade;
-    updatedBalance = await getBitFlyerBalance();
+    for (const [index, leg] of decision.buys.entries()) {
+      await sendOrder(leg.product, "BUY", leg.amountJpy, leg.pulse.ltp);
+      const trade: SolunaTradeRecord = {
+        id: `trade-${Date.now()}-${index}`,
+        createdAt: new Date().toISOString(),
+        side: "BUY",
+        product: leg.product,
+        sizeJpy: leg.amountJpy,
+        priceBtc: leg.pulse.ltp,
+        reason: leg.tradeReason,
+        ruleIds: leg.ruleIds,
+        reasonDetail: leg.reason,
+        briefingId: input.briefingId,
+      };
+      newTrades = [...newTrades.slice(-29), trade];
+      executedTrades.push(trade);
+      // 実残高を都度取り、次の銘柄の枠計算は取引所側に寄せる
+      updatedBalance = await getBitFlyerBalance();
+    }
   } else if (decision.action === "SELL") {
     const held = heldAmount(ledger, decision.product);
     const meta = PRODUCT_META[decision.product];
     if (held >= meta.minSize) {
       const sellValueJpy = Math.round(held * decision.pulse.ltp);
-      const avgBuyPrice = averageBuyPrice({ ...ledger, trades: newTrades }, decision.product) ?? decision.pulse.ltp;
+      const avgBuyPrice =
+        averageBuyPrice({ ...ledger, trades: newTrades }, decision.product) ??
+        decision.pulse.ltp;
       const costJpy = Math.round(held * avgBuyPrice);
       const pnl = sellValueJpy - costJpy;
       monthlyPnl += pnl;
@@ -1019,7 +1088,7 @@ export async function runDailyAssetTrade(input: {
         briefingId: input.briefingId,
       };
       newTrades = [...newTrades.slice(-29), trade];
-      traded = trade;
+      executedTrades.push(trade);
       updatedBalance = await getBitFlyerBalance();
     }
   }
@@ -1033,23 +1102,32 @@ export async function runDailyAssetTrade(input: {
       updatedBalance.xlmHeld * xlmPrice,
   );
 
-  const buyAmount = decision.action === "BUY" ? decision.amountJpy : 0;
+  const buyTotal =
+    decision.action === "BUY"
+      ? decision.buys.reduce((sum, leg) => sum + leg.amountJpy, 0)
+      : 0;
+  const buyLabels =
+    decision.action === "BUY"
+      ? decision.buys.map((leg) => PRODUCT_META[leg.product].label).join("/")
+      : "";
   const isTp = decision.action === "SELL" && decision.tradeReason === "take-profit";
-  const productLabel =
-    decision.action === "HOLD" ? "" : PRODUCT_META[decision.product].rpgName;
+  const sellLabel =
+    decision.action === "SELL" ? PRODUCT_META[decision.product].rpgName : "";
 
-  const solComments: Record<string, string> = {
-    BUY: `分散召喚！ ${buyAmount.toLocaleString()} MP を ${productLabel} に投入。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`,
-    SELL: `${isTp ? "利確ドロップ成功" : "例外的な長期損切り"}（${productLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`,
-    HOLD: `見送り。含み損は長期保有で待つ。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`,
-  };
-  const lunaComments: Record<string, string> = {
-    BUY: `単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% の上限内で入れたわ。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`,
-    SELL: `${isTp ? "利益を確定" : "1年超の深い含み損のみ例外処理"}。次の召喚枠は BTC/ETH/XRP/XLM のスコア次第よ。`,
-    HOLD: sleepMode
+  let solComment = "";
+  let lunaComment = "";
+  if (decision.action === "BUY") {
+    solComment = `分散召喚！ ${buyLabels} に合計 ${buyTotal.toLocaleString()} MP（${decision.buys.length}銘柄同時）。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`;
+    lunaComment = `条件を満たした銘柄は競わせず同時に入れた（#19）。単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% 内。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`;
+  } else if (decision.action === "SELL") {
+    solComment = `${isTp ? "利確ドロップ成功" : "例外的な長期損切り"}（${sellLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`;
+    lunaComment = `${isTp ? "利益を確定" : "1年超の深い含み損のみ例外処理"}。次の召喚枠は条件達成銘柄を同時に検討するわ。`;
+  } else {
+    solComment = `見送り。含み損は長期保有で待つ。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`;
+    lunaComment = sleepMode
       ? "おやすみモード中（月次10%超）。今月のゴールドは守りきる。"
-      : `少額積立は焦らない。現金が薄いときは損切りせず、プラス転換を待つ判断よ。${decision.reason}`,
-  };
+      : `少額積立は焦らない。現金が薄いときは損切りせず、プラス転換を待つ判断よ。${decision.reason}`;
+  }
 
   const closingDayChange = updatedTotal - previousTotalYen;
   const closingBattleMode = resolveBattleMode(closingDayChange);
@@ -1077,18 +1155,18 @@ export async function runDailyAssetTrade(input: {
     lastPromptBattleMode: battleMode,
     trades: newTrades,
     status: "done",
-    solComment: solComments[decision.action],
-    lunaComment: lunaComments[decision.action],
+    solComment,
+    lunaComment,
     updatedAt: new Date().toISOString(),
   };
 
-  if (traded) {
+  for (const trade of executedTrades) {
     try {
       const { notifyAssetTradeExecuted } = await import(
         "@/lib/server/soluna-asset-trade-notify"
       );
       await notifyAssetTradeExecuted({
-        trade: traded,
+        trade,
         solComment: updatedLedger.solComment,
         lunaComment: updatedLedger.lunaComment,
         totalYen: updatedLedger.totalYen,

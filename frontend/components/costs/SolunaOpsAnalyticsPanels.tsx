@@ -456,8 +456,8 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
               />
               <Stat
                 label="分散ルール"
-                value="下限28%"
-                hint="単一42% / 暗号合計72%（BTC・ETH・XRP・XLM）"
+                value="同時買い可"
+                hint="条件達成銘柄は競合せず同時購入 · 現金28% / 単一42% / 暗号72%"
               />
             </div>
 

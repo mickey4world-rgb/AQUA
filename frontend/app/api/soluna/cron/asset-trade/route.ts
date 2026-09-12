@@ -69,6 +69,7 @@ export async function POST(request: Request) {
       monthlyRealizedPnlYen: assets.monthlyRealizedPnlYen,
       monthlyTargetYen: assets.monthlyTargetYen,
       lastTrade: assets.trades[assets.trades.length - 1] ?? null,
+      recentTrades: assets.trades.slice(-4),
       marketNote: assets.solComment,
       lunaComment: assets.lunaComment,
       updatedAt: assets.updatedAt,
