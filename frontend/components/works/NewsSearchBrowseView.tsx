@@ -8,6 +8,7 @@ import {
   type NewsSearchDigest,
   type NewsSearchItem,
 } from "@/lib/types/works-news-search";
+import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
 
 function attentionTone(score: number): string {
   if (score >= 80) return "border-rose-300/30 bg-rose-300/10 text-rose-100";
@@ -40,12 +41,13 @@ export default function NewsSearchBrowseView({
     const first = NEWS_SEARCH_CATEGORIES.find((c) => digest.categories[c].length > 0);
     return first ?? "ai";
   });
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => digest.categories[category]?.[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const list = sortNewsItemsByAttention(digest.categories[category] ?? []);
+    return list[0]?.id ?? null;
+  });
 
   const items = useMemo(
-    () => digest.categories[category] ?? [],
+    () => sortNewsItemsByAttention(digest.categories[category] ?? []),
     [digest, category],
   );
 
@@ -88,7 +90,8 @@ export default function NewsSearchBrowseView({
             type="button"
             onClick={() => {
               setCategory(c);
-              setSelectedId(digest.categories[c][0]?.id ?? null);
+              const list = sortNewsItemsByAttention(digest.categories[c] ?? []);
+              setSelectedId(list[0]?.id ?? null);
             }}
             className={`rounded-full border px-3 py-1.5 text-xs transition ${
               category === c
