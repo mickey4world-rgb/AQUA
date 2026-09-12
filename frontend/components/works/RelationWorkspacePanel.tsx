@@ -11,6 +11,8 @@ import {
   emptyAffiliation,
   formatAffiliationPeriod,
   nodeRingColors,
+  orgGroupKey,
+  orgGroupTitle,
   personVisibleAt,
   RELATION_ORG_COLORS,
 } from "@/lib/work-relations-utils";
@@ -49,11 +51,196 @@ type GraphNode = {
   orgKind: RelationOrgKind;
   ringColors: string[];
   label: string;
+  groupKey: string;
+  groupTitle: string;
   x: number;
   y: number;
   vx: number;
   vy: number;
 };
+
+type GraphGroup = {
+  key: string;
+  title: string;
+  orgKind: RelationOrgKind;
+  color: string;
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  memberCount: number;
+};
+
+function layoutGraph(
+  people: RelationPerson[],
+  edges: RelationEdge[],
+  mode: GraphMode,
+  asOf: string | null,
+  width: number,
+  height: number,
+): { nodes: GraphNode[]; groups: GraphGroup[] } {
+  const cx = width / 2;
+  const cy = height / 2;
+
+  const buckets = new Map<string, RelationPerson[]>();
+  for (const person of people) {
+    const key = orgGroupKey(person, mode, asOf);
+    const list = buckets.get(key) ?? [];
+    list.push(person);
+    buckets.set(key, list);
+  }
+
+  const groupEntries = [...buckets.entries()].sort((a, b) => {
+    const kindOrder = (k: string) => {
+      if (k.startsWith("supreme_court")) return 0;
+      if (k.startsWith("cabinet")) return 1;
+      if (k.startsWith("vendor")) return 2;
+      return 3;
+    };
+    const d = kindOrder(a[0]) - kindOrder(b[0]);
+    if (d !== 0) return d;
+    return b[1].length - a[1].length;
+  });
+
+  const groupCenters = new Map<string, { x: number; y: number }>();
+  const groupCount = Math.max(groupEntries.length, 1);
+  const orbit = Math.min(width, height) * (groupCount <= 2 ? 0.18 : 0.28);
+
+  groupEntries.forEach(([key], index) => {
+    if (groupCount === 1) {
+      groupCenters.set(key, { x: cx, y: cy });
+      return;
+    }
+    const angle = (index / groupCount) * Math.PI * 2 - Math.PI / 2;
+    groupCenters.set(key, {
+      x: cx + Math.cos(angle) * orbit,
+      y: cy + Math.sin(angle) * orbit,
+    });
+  });
+
+  const nodes: GraphNode[] = [];
+  for (const [key, members] of groupEntries) {
+    const center = groupCenters.get(key) ?? { x: cx, y: cy };
+    const localRadius = Math.min(70, 28 + members.length * 10);
+    members.forEach((person, index) => {
+      const angle =
+        members.length === 1
+          ? 0
+          : (index / members.length) * Math.PI * 2 - Math.PI / 2;
+      const jitter = members.length === 1 ? 0 : localRadius * 0.55;
+      nodes.push({
+        id: person.id,
+        person,
+        orgKind: displayOrgKind(person, mode, asOf),
+        ringColors: nodeRingColors(person, mode, asOf),
+        label: displayOrgLabel(person, mode, asOf),
+        groupKey: key,
+        groupTitle: orgGroupTitle(person, mode, asOf),
+        x: center.x + Math.cos(angle) * jitter,
+        y: center.y + Math.sin(angle) * jitter,
+        vx: 0,
+        vy: 0,
+      });
+    });
+  }
+
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const centersByKey = groupCenters;
+
+  for (let iter = 0; iter < 100; iter += 1) {
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const a = nodes[i];
+        const b = nodes[j];
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        let dist = Math.hypot(dx, dy) || 1;
+        const sameGroup = a.groupKey === b.groupKey;
+        const minDist = sameGroup ? 56 : 110;
+        if (dist < minDist) {
+          const force = ((minDist - dist) / dist) * (sameGroup ? 0.1 : 0.12);
+          dx *= force;
+          dy *= force;
+          a.vx += dx;
+          a.vy += dy;
+          b.vx -= dx;
+          b.vy -= dy;
+        }
+        // 同グループは互いに引き寄せる
+        if (sameGroup && dist > 70) {
+          const pull = ((dist - 70) / dist) * 0.015;
+          a.vx -= dx * pull;
+          a.vy -= dy * pull;
+          b.vx += dx * pull;
+          b.vy += dy * pull;
+        }
+      }
+    }
+
+    for (const edge of edges) {
+      const a = byId.get(edge.fromPersonId);
+      const b = byId.get(edge.toPersonId);
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const target =
+        a.groupKey === b.groupKey
+          ? 70 - edge.strength * 6
+          : 160 - edge.strength * 12;
+      const force = ((dist - target) / dist) * 0.02;
+      a.vx += dx * force;
+      a.vy += dy * force;
+      b.vx -= dx * force;
+      b.vy -= dy * force;
+    }
+
+    for (const node of nodes) {
+      const g = centersByKey.get(node.groupKey) ?? { x: cx, y: cy };
+      node.vx += (g.x - node.x) * 0.035;
+      node.vy += (g.y - node.y) * 0.035;
+      node.vx += (cx - node.x) * 0.002;
+      node.vy += (cy - node.y) * 0.002;
+      node.vx *= 0.84;
+      node.vy *= 0.84;
+      node.x = Math.min(width - 48, Math.max(48, node.x + node.vx));
+      node.y = Math.min(height - 48, Math.max(48, node.y + node.vy));
+    }
+  }
+
+  // グループ中心をメンバー平均に更新し、楕円バウンドを計算
+  const groups: GraphGroup[] = [];
+  for (const [key, members] of groupEntries) {
+    const memberNodes = nodes.filter((n) => n.groupKey === key);
+    if (memberNodes.length === 0) continue;
+    const avgX =
+      memberNodes.reduce((sum, n) => sum + n.x, 0) / memberNodes.length;
+    const avgY =
+      memberNodes.reduce((sum, n) => sum + n.y, 0) / memberNodes.length;
+    const spreadX = Math.max(
+      ...memberNodes.map((n) => Math.abs(n.x - avgX)),
+      28,
+    );
+    const spreadY = Math.max(
+      ...memberNodes.map((n) => Math.abs(n.y - avgY)),
+      28,
+    );
+    const sample = memberNodes[0];
+    groups.push({
+      key,
+      title: sample.groupTitle,
+      orgKind: sample.orgKind,
+      color: RELATION_ORG_COLORS[sample.orgKind],
+      cx: avgX,
+      cy: avgY,
+      rx: spreadX + 42,
+      ry: spreadY + 42,
+      memberCount: memberNodes.length,
+    });
+  }
+
+  return { nodes, groups };
+}
 
 function newId() {
   return crypto.randomUUID();
@@ -78,82 +265,6 @@ function emptyPerson(): RelationPerson {
     notes: "",
     tags: [],
   };
-}
-
-function layoutNodes(
-  people: RelationPerson[],
-  edges: RelationEdge[],
-  mode: GraphMode,
-  asOf: string | null,
-  width: number,
-  height: number,
-): GraphNode[] {
-  const cx = width / 2;
-  const cy = height / 2;
-  const nodes: GraphNode[] = people.map((person, index) => {
-    const angle = (index / Math.max(people.length, 1)) * Math.PI * 2;
-    const radius = Math.min(width, height) * 0.32;
-    return {
-      id: person.id,
-      person,
-      orgKind: displayOrgKind(person, mode, asOf),
-      ringColors: nodeRingColors(person, mode, asOf),
-      label: displayOrgLabel(person, mode, asOf),
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-      vx: 0,
-      vy: 0,
-    };
-  });
-
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  for (let iter = 0; iter < 80; iter += 1) {
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const a = nodes[i];
-        const b = nodes[j];
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        let dist = Math.hypot(dx, dy) || 1;
-        const minDist = 88;
-        if (dist < minDist) {
-          const force = ((minDist - dist) / dist) * 0.08;
-          dx *= force;
-          dy *= force;
-          a.vx += dx;
-          a.vy += dy;
-          b.vx -= dx;
-          b.vy -= dy;
-        }
-      }
-    }
-
-    for (const edge of edges) {
-      const a = byId.get(edge.fromPersonId);
-      const b = byId.get(edge.toPersonId);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const target = 140 - edge.strength * 18;
-      const force = ((dist - target) / dist) * 0.02;
-      a.vx += dx * force;
-      a.vy += dy * force;
-      b.vx -= dx * force;
-      b.vy -= dy * force;
-    }
-
-    for (const node of nodes) {
-      node.vx += (cx - node.x) * 0.004;
-      node.vy += (cy - node.y) * 0.004;
-      node.vx *= 0.86;
-      node.vy *= 0.86;
-      node.x = Math.min(width - 40, Math.max(40, node.x + node.vx));
-      node.y = Math.min(height - 40, Math.max(40, node.y + node.vy));
-    }
-  }
-
-  return nodes;
 }
 
 async function compressImageFile(file: File): Promise<string> {
@@ -290,8 +401,8 @@ export default function RelationWorkspacePanel() {
     );
   }, [workspace, filteredPeople, graphMode, asOf]);
 
-  const nodes = useMemo(
-    () => layoutNodes(filteredPeople, filteredEdges, graphMode, asOf, 720, 420),
+  const { nodes, groups } = useMemo(
+    () => layoutGraph(filteredPeople, filteredEdges, graphMode, asOf, 720, 420),
     [filteredPeople, filteredEdges, graphMode, asOf],
   );
 
@@ -696,6 +807,34 @@ export default function RelationWorkspacePanel() {
                   ) : null,
                 )}
               </defs>
+              {groups.map((group) => (
+                <g key={`group-${group.key}`}>
+                  <ellipse
+                    cx={group.cx}
+                    cy={group.cy}
+                    rx={group.rx}
+                    ry={group.ry}
+                    fill={group.color}
+                    fillOpacity={0.1}
+                    stroke={group.color}
+                    strokeOpacity={0.45}
+                    strokeWidth={1.5}
+                    strokeDasharray={group.memberCount > 1 ? "0" : "4 4"}
+                  />
+                  <text
+                    x={group.cx}
+                    y={group.cy - group.ry + 14}
+                    textAnchor="middle"
+                    fontSize="11"
+                    className="fill-slate-200"
+                  >
+                    {group.title.length > 28
+                      ? `${group.title.slice(0, 28)}…`
+                      : group.title}
+                    {group.memberCount > 1 ? `（${group.memberCount}）` : ""}
+                  </text>
+                </g>
+              ))}
               {filteredEdges.map((edge) => {
                 const from = nodes.find((node) => node.id === edge.fromPersonId);
                 const to = nodes.find((node) => node.id === edge.toPersonId);
@@ -809,7 +948,7 @@ export default function RelationWorkspacePanel() {
               </span>
             ))}
             <span className="text-slate-500">
-              業者の両官庁関連は最高裁色＋内閣官房色のリング
+              同じ組織・所属は自動でグループ配置。業者の両官庁関連は両色リング
             </span>
           </div>
         </section>

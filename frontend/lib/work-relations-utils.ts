@@ -142,6 +142,45 @@ export function displayOrgLabel(
   return [aff.orgName, aff.unitName].filter(Boolean).join(" / ") || "所属不明";
 }
 
+/** 同じ組織・所属をまとめるためのキー */
+export function orgGroupKey(
+  person: RelationPerson,
+  mode: "all" | "asOf",
+  asOf: string | null,
+): string {
+  const aff =
+    mode === "asOf" && asOf
+      ? affiliationAt(person, asOf)
+      : currentAffiliation(person);
+  const kind = aff?.orgKind ?? person.orgKind;
+  const orgName = (aff?.orgName || person.orgName || "").trim().toLowerCase();
+  const unitName = (aff?.unitName || "").trim().toLowerCase();
+  // 組織名が同じなら同グループ。部署があれば部署単位でさらに分割
+  if (orgName) {
+    return unitName ? `${kind}|${orgName}|${unitName}` : `${kind}|${orgName}|`;
+  }
+  return `${kind}|__unknown__|`;
+}
+
+export function orgGroupTitle(
+  person: RelationPerson,
+  mode: "all" | "asOf",
+  asOf: string | null,
+): string {
+  const kind = displayOrgKind(person, mode, asOf);
+  const label = displayOrgLabel(person, mode, asOf);
+  const kindLabel =
+    kind === "supreme_court"
+      ? "最高裁"
+      : kind === "cabinet"
+        ? "内閣官房"
+        : kind === "vendor"
+          ? "業者"
+          : "その他";
+  if (!label || label === "所属不明") return kindLabel;
+  return `${kindLabel} · ${label}`;
+}
+
 /** 相関図リングに使う色。業者で両官庁関連なら両方の色 */
 export function nodeRingColors(
   person: RelationPerson,
