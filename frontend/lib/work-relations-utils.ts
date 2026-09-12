@@ -142,7 +142,21 @@ export function displayOrgLabel(
   return [aff.orgName, aff.unitName].filter(Boolean).join(" / ") || "所属不明";
 }
 
-/** 同じ組織・所属をまとめるためのキー */
+/** 会社・組織名のゆれを潰してグルーピング用に正規化 */
+export function normalizeOrgNameForGroup(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/株式会社|有限会社|合同会社|合資会社|㈱|（株）|\(株\)/g, "")
+    .replace(/[\s　・･.\-_/／]/g, "");
+}
+
+/**
+ * 相関図の角丸枠用キー。
+ * 依頼どおり「同じ会社・組織」でまとめる。部署では分けない。
+ * - 最高裁 / 内閣官房: 種別そのものが組織（組織名空でも同枠）
+ * - 業者 / その他: 正規化した組織名が同じときのみ同枠（空なら枠なし＝単独）
+ */
 export function orgGroupKey(
   person: RelationPerson,
   mode: "all" | "asOf",
@@ -153,13 +167,20 @@ export function orgGroupKey(
       ? affiliationAt(person, asOf)
       : currentAffiliation(person);
   const kind = aff?.orgKind ?? person.orgKind;
-  const orgName = (aff?.orgName || person.orgName || "").trim().toLowerCase();
-  const unitName = (aff?.unitName || "").trim().toLowerCase();
-  // 組織名が同じなら同グループ。部署があれば部署単位でさらに分割
-  if (orgName) {
-    return unitName ? `${kind}|${orgName}|${unitName}` : `${kind}|${orgName}|`;
+  const orgName = normalizeOrgNameForGroup(
+    aff?.orgName || person.orgName || "",
+  );
+
+  if (kind === "supreme_court" || kind === "cabinet") {
+    return `${kind}|${orgName || "_agency_"}`;
   }
-  return `${kind}|__unknown__|`;
+
+  if (orgName) {
+    return `${kind}|${orgName}`;
+  }
+
+  // 組織名未入力の業者等はグルーピングしない（N=1 扱い）
+  return `${kind}|__ungrouped__|${person.id}`;
 }
 
 export function orgGroupTitle(
@@ -168,7 +189,10 @@ export function orgGroupTitle(
   asOf: string | null,
 ): string {
   const kind = displayOrgKind(person, mode, asOf);
-  const label = displayOrgLabel(person, mode, asOf);
+  const aff =
+    mode === "asOf" && asOf
+      ? affiliationAt(person, asOf)
+      : currentAffiliation(person);
   const kindLabel =
     kind === "supreme_court"
       ? "最高裁"
@@ -177,8 +201,9 @@ export function orgGroupTitle(
         : kind === "vendor"
           ? "業者"
           : "その他";
-  if (!label || label === "所属不明") return kindLabel;
-  return `${kindLabel} · ${label}`;
+  const orgName = (aff?.orgName || person.orgName || "").trim();
+  if (orgName) return `${kindLabel} · ${orgName}`;
+  return kindLabel;
 }
 
 /** 相関図リングに使う色。業者で両官庁関連なら両方の色 */

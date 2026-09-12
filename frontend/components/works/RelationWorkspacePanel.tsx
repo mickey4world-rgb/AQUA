@@ -336,17 +336,18 @@ function RelationMapSvgContent({
             rx={18}
             ry={18}
             fill={group.color}
-            fillOpacity={0.1}
+            fillOpacity={0.16}
             stroke={group.color}
-            strokeOpacity={0.6}
-            strokeWidth={1.8}
+            strokeOpacity={0.85}
+            strokeWidth={2.2}
           />
           <text
             x={group.x + 14}
-            y={group.y + 20}
+            y={group.y + 22}
             textAnchor="start"
-            fontSize="11"
-            className="fill-slate-100"
+            fontSize="12"
+            fontWeight={600}
+            className="fill-slate-50"
           >
             {group.title.length > 36
               ? `${group.title.slice(0, 36)}…`
@@ -1120,10 +1121,16 @@ export default function RelationWorkspacePanel() {
                 {RELATION_ORG_LABELS[kind]}
               </span>
             ))}
-            <span className="text-slate-500">
-              同じ組織に複数人がいるときだけ角丸枠でグループ化（1人組織は枠なし）
-            </span>
           </div>
+          {groups.length === 0 && filteredPeople.length >= 2 ? (
+            <p className="mt-2 text-[12px] leading-relaxed text-amber-100/80">
+              いま角丸枠はありません。同じ会社・組織名（最高裁／内閣官房は種別）の人が2人以上いると、その枠の中にまとまります。部署名だけでは分けません。組織名が空の業者は枠の対象外です。
+            </p>
+          ) : (
+            <p className="mt-2 text-[12px] text-slate-500">
+              同じ会社・組織は角丸枠でグループ化（2人以上）。枠数: {groups.length}
+            </p>
+          )}
         </section>
 
         <section className="space-y-5">
