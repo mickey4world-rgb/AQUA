@@ -30,12 +30,19 @@ export async function runDocsGenerate(
   }
 
   try {
-    const { base64, fileName } = await buildPptxFromOutline(aiResult.outline);
+    const { base64, fileName, imageCount } = await buildPptxFromOutline(
+      aiResult.outline,
+    );
+
+    const imageNote =
+      imageCount > 0
+        ? ` ストック画像を ${imageCount} 枚挿入しました。`
+        : "";
 
     return {
       ok: true,
       outline: aiResult.outline,
-      reply: aiResult.reply,
+      reply: `${aiResult.reply}${imageNote}`,
       pptxBase64: base64,
       fileName,
       model: aiResult.model,
