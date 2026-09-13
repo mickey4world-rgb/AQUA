@@ -1,6 +1,13 @@
 "use client";
 
-import type { DocCloudArchitecture, DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
+import type {
+  DocCloudArchitecture,
+  DocCloudArchZone,
+  DocOutline,
+  DocSlideOutline,
+  DocSlideVisual,
+} from "@/lib/types/docs";
+import { enrichCloudArchZones } from "@/lib/server/docs-cloud-zones";
 
 const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   title: "表紙",
@@ -142,40 +149,122 @@ function formatYen(n: number): string {
   return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
 
-function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
+function NodeChip({
+  label,
+  service,
+  iconBase,
+  monthlyCostJpy,
+}: {
+  label: string;
+  service: string;
+  iconBase: string;
+  monthlyCostJpy?: number;
+}) {
+  return (
+    <div className="min-w-[2.8rem] rounded border border-[#5BA3B5]/35 bg-white px-1 py-1 text-center">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`${iconBase}/${service}.png`}
+        alt={service}
+        width={18}
+        height={18}
+        className="mx-auto mb-0.5 h-4 w-4 object-contain"
+        loading="lazy"
+      />
+      <p className="text-[7px] font-semibold text-[#0F4568]">{label}</p>
+      <p className="truncate text-[6px] text-slate-500">{service}</p>
+      {typeof monthlyCostJpy === "number" ? (
+        <p className="text-[6px] font-semibold text-[#1A8CA6]">{formatYen(monthlyCostJpy)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ZoneBox({
+  zone,
+  arch,
+  iconBase,
+  nested,
+}: {
+  zone: DocCloudArchZone;
+  arch: DocCloudArchitecture;
+  iconBase: string;
+  nested?: boolean;
+}) {
+  const byId = new Map(arch.nodes.map((n) => [n.id, n]));
+  const chrome = new Set(["vnet", "subnet", "vpc"]);
+  const nodes = zone.nodeIds
+    .map((id) => byId.get(id))
+    .filter((n): n is NonNullable<typeof n> => Boolean(n) && !chrome.has(n!.service));
+  const childZones = (zone.childZoneIds ?? [])
+    .map((id) => arch.zones?.find((z) => z.id === id))
+    .filter((z): z is DocCloudArchZone => Boolean(z));
+  const kind = zone.kind ?? "group";
+  const shell =
+    kind === "vnet" || kind === "vpc"
+      ? "border-[#1A8CA6] bg-[#E3F5FA]/80"
+      : kind === "private"
+        ? "border-dashed border-[#3DD5E0] bg-white/80"
+        : kind === "mgmt"
+          ? "border-dashed border-[#5BA3B5] bg-white"
+          : "border-[#5BA3B5]/50 bg-[#F0F7F9]";
+
+  return (
+    <div className={`rounded border p-1 ${shell} ${nested ? "mt-1" : ""}`}>
+      <p className="mb-1 text-[7px] font-bold text-[#0F4568]">{zone.label}</p>
+      <div className="flex flex-wrap gap-1">
+        {nodes.map((n) => (
+          <NodeChip
+            key={n.id}
+            label={n.label}
+            service={n.service}
+            iconBase={iconBase}
+            monthlyCostJpy={n.monthlyCostJpy}
+          />
+        ))}
+      </div>
+      {childZones.map((cz) => (
+        <ZoneBox key={cz.id} zone={cz} arch={arch} iconBase={iconBase} nested />
+      ))}
+    </div>
+  );
+}
+
+function CloudArchPreview({ arch: rawArch }: { arch: DocCloudArchitecture }) {
+  const arch = enrichCloudArchZones(rawArch);
   const provider = arch.provider === "aws" ? "AWS" : "Azure";
   const iconBase = arch.provider === "aws" ? "/docs/aws-icons" : "/docs/azure-icons";
   const total = arch.totalMonthlyJpy ?? arch.nodes.reduce((a, n) => a + (n.monthlyCostJpy ?? 0), 0);
+  const zones = arch.zones ?? [];
+  const childIds = new Set(zones.flatMap((z) => z.childZoneIds ?? []));
+  const topZones = zones.filter((z) => !childIds.has(z.id));
+  const useZones = topZones.length > 0;
+
   return (
     <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9] p-1.5">
       <p className="mb-1 text-[7px] text-[#4F7F8F]">
         {arch.caption ?? `想定 ${provider} 構成`} · {provider} 公式アイコン
+        {useZones ? " · 領域枠" : ""}
       </p>
-      <div className="flex flex-wrap gap-1">
-        {arch.nodes.slice(0, 12).map((n) => (
-          <div
-            key={n.id}
-            className="min-w-[3.2rem] flex-1 rounded border border-[#5BA3B5]/35 bg-white px-1 py-1 text-center"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`${iconBase}/${n.service}.png`}
-              alt={n.service}
-              width={20}
-              height={20}
-              className="mx-auto mb-0.5 h-5 w-5 object-contain"
-              loading="lazy"
+      {useZones ? (
+        <div className="space-y-1">
+          {topZones.map((z) => (
+            <ZoneBox key={z.id} zone={z} arch={arch} iconBase={iconBase} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1">
+          {arch.nodes.slice(0, 12).map((n) => (
+            <NodeChip
+              key={n.id}
+              label={n.label}
+              service={n.service}
+              iconBase={iconBase}
+              monthlyCostJpy={n.monthlyCostJpy}
             />
-            <p className="text-[8px] font-semibold text-[#0F4568]">{n.label}</p>
-            <p className="truncate text-[6px] text-slate-500">{n.service}</p>
-            {typeof n.monthlyCostJpy === "number" ? (
-              <p className="text-[6px] font-semibold text-[#1A8CA6]">
-                {formatYen(n.monthlyCostJpy)}
-              </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <div className="mt-1.5 flex items-center justify-between rounded bg-white px-1.5 py-1">
         <span className="text-[7px] text-[#4F7F8F]">月額想定合計（概算）</span>
         <span className="text-[10px] font-bold text-[#1A8CA6]">{formatYen(total)}</span>
