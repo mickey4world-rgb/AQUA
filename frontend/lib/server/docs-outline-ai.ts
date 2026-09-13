@@ -14,6 +14,9 @@ import {
 } from "@/lib/server/token-usage";
 import { DOCS_DEFAULT_SLIDES, DOCS_MAX_SLIDES } from "@/lib/docs-utils";
 import type {
+  DocAzureArchitecture,
+  DocAzureArchEdge,
+  DocAzureArchNode,
   DocOutline,
   DocSlideLayout,
   DocSlideOutline,
@@ -22,9 +25,16 @@ import type {
   DocsChatMessage,
 } from "@/lib/types/docs";
 import { ensureOutlineImages } from "@/lib/server/docs-stock-images";
+import {
+  listAzureServicesForPrompt,
+  normalizeAzureServiceId,
+} from "@/lib/server/docs-azure-icons";
+
+const AZURE_SERVICE_LIST = listAzureServicesForPrompt();
 
 const SYSTEM_PROMPT = `あなたは内部提案向け PowerPoint の構成・編集デザインを設計する専門家です。
 Gamma / Presenti のような「余白・階層・図解・写真」優先の緻密な資料を目指します。
+クラウド／Azure の話では、公式 Azure アイコンによる想定構成図を必ず含めます。
 ユーザーの依頼に基づき、JSON のみで返してください。
 
 ## 出力形式（厳守）
@@ -33,82 +43,82 @@ Gamma / Presenti のような「余白・階層・図解・写真」優先の緻
 - 日本語。です・ます調。簡潔
 - **1スライド1メッセージ**: 箇条書きは最大4点、各32文字以内
 - keyMessage は任意だが、本文では1行（28文字以内）のリード文を推奨
-- 文字だけのスライドは禁止。visual / cards / twoColumn / stat / image のいずれかを使う
+- 文字だけのスライドは禁止。visual / cards / twoColumn / stat / image / azureArch のいずれかを使う
 - visual.labels は2〜5個、各10文字以内
 
 ## 画像（image）— Gamma風の自動写真
 - 表紙（title）は必ず image を付ける（placement: "hero"）
-- content の約半数に image（placement: "side"）を付ける。visual と両方ある場合は image を優先して右側に写真
-- query は**英語** 2〜6語（例: "modern office collaboration", "data analytics dashboard", "city skyline dusk"）
+- content の約半数に image（placement: "side"）を付ける。visual / azureArch と両方ある場合は azureArch を優先
+- query は**英語** 2〜6語
 - 人物の実名や実在企業ロゴを連想させるクエリは禁止
-- cards / twoColumn / stat には image 不要（レイアウト自体がビジュアル）
+- cards / twoColumn / stat / azureArch には image 不要
+
+## Azure 構成図（azureArch）— 最重要
+依頼に Azure・クラウド・構成図・App Service・Functions・Cosmos・OpenAI・SWA・AKS 等が含まれる、またはインフラ／システム構成の提案なら:
+- layout "azureArch" のスライドを **1枚** 入れる（タイトル例: 「想定 Azure 構成」）
+- azureArch.nodes は 4〜7個。各 node: { id, service, label }
+- service は次の許可キーのみ: ${AZURE_SERVICE_LIST}
+- label は日本語または短い役割名（例: Web, API, DB, 認証）
+- edges でデータの流れを示す（from/to は node.id）。3〜6本
+- 指示が曖昧でも、一般的なベストプラクティスで**想定構成**を描く（空にしない）
+- 例: Web系 → front-door or app-gateway → app-service or static-web-apps → cosmos-db/sql-database + key-vault + entra-id + monitor
+- AI系 → app-service/function-apps → openai + search + storage + key-vault
 
 ## layout（必須で使い分ける）
 - "title": 表紙（1枚目のみ）
-- "section": 章扉（紺地・短いタイトル）。長い資料の区切りに1枚まで可
-- "content": 左に要点＋右に visual または image（最も基本）
-- "twoColumn": 左右比較（columns 必須・各2〜3点）
-- "cards": 3〜4枚のカードグリッド（bullets=見出し、cardDetails=補足・同数）
-- "stat": KPI・効果（stats 2〜4個。value は短く「30%」「3ヶ月」等）
-- "closing": まとめ（最終）
+- "section": 章扉
+- "content": 左に要点＋右に visual / image / azureArch
+- "twoColumn": 左右比較
+- "cards": 3〜4枚カード
+- "stat": KPI
+- "azureArch": Azure アイコン構成図（フル幅）。azureArch フィールド必須
+- "closing": まとめ
 
-visual.type:
-- "flow" | "comparison" | "timeline" | "pyramid" | "icons"
+visual.type: "flow" | "comparison" | "timeline" | "pyramid" | "icons"
 
 ## 構成のおすすめ
-title（+hero画像）→（任意 section）→ content/twoColumn/cards/stat を混ぜる → closing
-同じ layout を連続させすぎない。
+title →（任意 section）→ content/twoColumn/cards/stat/azureArch を混ぜる → closing
 
-## JSON スキーマ例
+## JSON スキーマ例（Azure 提案時）
 {
-  "documentTitle": "提案タイトル",
-  "subtitle": "副題",
-  "author": "所属",
+  "documentTitle": "Azure 基盤提案",
+  "subtitle": "想定構成",
   "slides": [
     {
       "layout": "title",
       "title": "表紙",
-      "subtitle": "副題",
+      "subtitle": "クラウド構成案",
       "bullets": [],
-      "image": { "query": "modern business skyline", "placement": "hero" }
+      "image": { "query": "modern cloud datacenter", "placement": "hero" }
     },
     {
-      "layout": "content",
-      "title": "背景と課題",
-      "keyMessage": "現状のボトルネックを特定する",
-      "bullets": ["課題A", "課題B", "影響"],
-      "image": { "query": "office workflow challenges", "placement": "side" }
-    },
-    {
-      "layout": "twoColumn",
-      "title": "現状と提案",
-      "columns": [
-        { "title": "現状", "bullets": ["手作業", "属人化"] },
-        { "title": "提案", "bullets": ["自動化", "標準化"] }
-      ],
-      "bullets": []
-    },
-    {
-      "layout": "cards",
-      "title": "施策の柱",
-      "bullets": ["可視化", "自動化", "定着"],
-      "cardDetails": ["ダッシュボード", "定型処理の削減", "研修と運用"]
-    },
-    {
-      "layout": "stat",
-      "title": "期待効果",
-      "stats": [
-        { "value": "30%", "label": "工数削減" },
-        { "value": "3ヶ月", "label": "導入期間" },
-        { "value": "4部署", "label": "展開範囲" }
-      ],
-      "bullets": []
+      "layout": "azureArch",
+      "title": "想定 Azure 構成",
+      "keyMessage": "エッジからデータ層まで分離する",
+      "bullets": ["Front Door で入口を集約", "App Service で API", "Cosmos で永続化"],
+      "azureArch": {
+        "caption": "想定構成（指示内容からの推定）",
+        "nodes": [
+          { "id": "fd", "service": "front-door", "label": "入口" },
+          { "id": "web", "service": "app-service", "label": "Web/API" },
+          { "id": "db", "service": "cosmos-db", "label": "データ" },
+          { "id": "kv", "service": "key-vault", "label": "秘密情報" },
+          { "id": "id", "service": "entra-id", "label": "認証" },
+          { "id": "mon", "service": "monitor", "label": "監視" }
+        ],
+        "edges": [
+          { "from": "fd", "to": "web" },
+          { "from": "web", "to": "db" },
+          { "from": "web", "to": "kv" },
+          { "from": "id", "to": "web", "label": "認証" },
+          { "from": "web", "to": "mon" }
+        ]
+      }
     },
     {
       "layout": "closing",
       "title": "次のアクション",
-      "keyMessage": "小さく始めて効果を測る",
-      "bullets": ["PoC範囲の確定", "関係者合意", "キックオフ"],
+      "bullets": ["構成レビュー", "PoC 範囲確定"],
       "visual": { "type": "timeline", "labels": ["合意", "PoC", "展開"] }
     }
   ]
@@ -133,6 +143,7 @@ function isLayout(value: unknown): value is DocSlideLayout {
     value === "twoColumn" ||
     value === "cards" ||
     value === "stat" ||
+    value === "azureArch" ||
     value === "closing"
   );
 }
@@ -172,6 +183,54 @@ function parseImage(raw: unknown): DocSlideOutline["image"] | undefined {
       ? obj.placement
       : undefined;
   return { query, placement };
+}
+
+function parseAzureArch(raw: unknown): DocAzureArchitecture | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.nodes)) return undefined;
+
+  const nodes: DocAzureArchNode[] = [];
+  const seen = new Set<string>();
+  for (const row of obj.nodes) {
+    if (!row || typeof row !== "object") continue;
+    const n = row as Record<string, unknown>;
+    const id = String(n.id ?? "")
+      .trim()
+      .replace(/[^\w\-]/g, "")
+      .slice(0, 24);
+    const service = normalizeAzureServiceId(String(n.service ?? ""));
+    const label = String(n.label ?? "").trim().slice(0, 18);
+    if (!id || !service || !label || seen.has(id)) continue;
+    seen.add(id);
+    nodes.push({ id, service, label });
+    if (nodes.length >= 8) break;
+  }
+  if (nodes.length < 3) return undefined;
+
+  const idSet = new Set(nodes.map((n) => n.id));
+  const edges: DocAzureArchEdge[] = [];
+  if (Array.isArray(obj.edges)) {
+    for (const row of obj.edges) {
+      if (!row || typeof row !== "object") continue;
+      const e = row as Record<string, unknown>;
+      const from = String(e.from ?? "").trim();
+      const to = String(e.to ?? "").trim();
+      if (!idSet.has(from) || !idSet.has(to) || from === to) continue;
+      edges.push({
+        from,
+        to,
+        label: e.label ? String(e.label).trim().slice(0, 12) : undefined,
+      });
+      if (edges.length >= 10) break;
+    }
+  }
+
+  return {
+    caption: obj.caption ? String(obj.caption).trim().slice(0, 48) : undefined,
+    nodes,
+    edges: edges.length ? edges : undefined,
+  };
 }
 
 function parseSlide(raw: unknown): DocSlideOutline | null {
@@ -221,9 +280,12 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
 
   const visual = parseVisual(obj.visual);
   const image = parseImage(obj.image);
+  const azureArch = parseAzureArch(obj.azureArch);
   const keyMessage = obj.keyMessage
     ? String(obj.keyMessage).trim().slice(0, 40)
     : undefined;
+
+  if (layout === "azureArch" && !azureArch) return null;
 
   return {
     layout,
@@ -236,7 +298,84 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
     stats: stats?.length ? stats : undefined,
     visual,
     image,
+    azureArch,
   };
+}
+
+function looksLikeAzureRequest(text: string): boolean {
+  return /azure|クラウド|構成図|インフラ|App\s*Service|Functions?|Cosmos|OpenAI|AKS|SWA|Static\s*Web|Key\s*Vault|Entra|VNet|Container\s*Apps|アーキテクチャ|システム構成/i.test(
+    text,
+  );
+}
+
+function defaultAzureArch(kind: "web" | "ai"): DocAzureArchitecture {
+  if (kind === "ai") {
+    return {
+      caption: "想定構成（指示内容からの推定）",
+      nodes: [
+        { id: "user", service: "users", label: "利用者" },
+        { id: "web", service: "app-service", label: "アプリ" },
+        { id: "aoai", service: "openai", label: "OpenAI" },
+        { id: "search", service: "search", label: "検索" },
+        { id: "store", service: "storage", label: "ストレージ" },
+        { id: "kv", service: "key-vault", label: "Key Vault" },
+        { id: "mon", service: "monitor", label: "監視" },
+      ],
+      edges: [
+        { from: "user", to: "web" },
+        { from: "web", to: "aoai" },
+        { from: "web", to: "search" },
+        { from: "web", to: "store" },
+        { from: "web", to: "kv" },
+        { from: "web", to: "mon" },
+      ],
+    };
+  }
+  return {
+    caption: "想定構成（指示内容からの推定）",
+    nodes: [
+      { id: "fd", service: "front-door", label: "入口" },
+      { id: "web", service: "app-service", label: "Web/API" },
+      { id: "db", service: "cosmos-db", label: "データ" },
+      { id: "kv", service: "key-vault", label: "秘密情報" },
+      { id: "id", service: "entra-id", label: "認証" },
+      { id: "mon", service: "monitor", label: "監視" },
+    ],
+    edges: [
+      { from: "fd", to: "web" },
+      { from: "web", to: "db" },
+      { from: "web", to: "kv" },
+      { from: "id", to: "web", label: "認証" },
+      { from: "web", to: "mon" },
+    ],
+  };
+}
+
+/** クラウド依頼なのに構成図が無い場合、想定図を1枚差し込む（空成功禁止） */
+export function ensureOutlineAzureArch(outline: DocOutline, userMessage: string): void {
+  const hasArch = outline.slides.some((s) => s.azureArch && s.azureArch.nodes.length >= 3);
+  if (hasArch) return;
+  if (!looksLikeAzureRequest(userMessage) && !looksLikeAzureRequest(outline.documentTitle)) {
+    return;
+  }
+  const kind = /openai|gpt|llm|生成ai|rag|認知|ai\b/i.test(userMessage + outline.documentTitle)
+    ? "ai"
+    : "web";
+  const arch = defaultAzureArch(kind);
+  const slide: DocSlideOutline = {
+    layout: "azureArch",
+    title: "想定 Azure 構成",
+    keyMessage: "指示内容から推定した構成案",
+    bullets: arch.nodes.slice(0, 4).map((n) => `${n.label}（${n.service}）`),
+    azureArch: arch,
+  };
+  // closing の直前、なければ末尾手前
+  const closingIdx = outline.slides.findIndex((s) => s.layout === "closing");
+  if (closingIdx >= 0) {
+    outline.slides.splice(closingIdx, 0, slide);
+  } else {
+    outline.slides.push(slide);
+  }
 }
 
 export function parseDocOutline(raw: unknown): DocOutline | null {
@@ -334,7 +473,7 @@ export async function generateDocOutline(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 1800,
+      max_completion_tokens: 2200,
       messages,
       response_format: { type: "json_object" },
     });
@@ -357,6 +496,7 @@ export async function generateDocOutline(
     }
 
     ensureOutlineImages(outline);
+    ensureOutlineAzureArch(outline, trimmed);
 
     const modelUsed = completion.model ?? model;
     if (completion.usage) {

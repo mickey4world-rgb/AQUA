@@ -30,19 +30,18 @@ export async function runDocsGenerate(
   }
 
   try {
-    const { base64, fileName, imageCount } = await buildPptxFromOutline(
-      aiResult.outline,
-    );
+    const { base64, fileName, imageCount, azureArchCount } =
+      await buildPptxFromOutline(aiResult.outline);
 
-    const imageNote =
-      imageCount > 0
-        ? ` ストック画像を ${imageCount} 枚挿入しました。`
-        : "";
+    const notes: string[] = [];
+    if (imageCount > 0) notes.push(`ストック画像を ${imageCount} 枚挿入`);
+    if (azureArchCount > 0) notes.push(`Azure 構成図を ${azureArchCount} 枚描画`);
+    const extra = notes.length ? ` ${notes.join("／")}しました。` : "";
 
     return {
       ok: true,
       outline: aiResult.outline,
-      reply: `${aiResult.reply}${imageNote}`,
+      reply: `${aiResult.reply}${extra}`,
       pptxBase64: base64,
       fileName,
       model: aiResult.model,
