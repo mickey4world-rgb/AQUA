@@ -14,9 +14,10 @@ import {
 } from "@/lib/server/token-usage";
 import { DOCS_DEFAULT_SLIDES, DOCS_MAX_SLIDES } from "@/lib/docs-utils";
 import type {
-  DocAzureArchitecture,
-  DocAzureArchEdge,
-  DocAzureArchNode,
+  DocCloudArchitecture,
+  DocCloudArchEdge,
+  DocCloudArchNode,
+  DocCloudProvider,
   DocOutline,
   DocSlideLayout,
   DocSlideOutline,
@@ -29,12 +30,18 @@ import {
   listAzureServicesForPrompt,
   normalizeAzureServiceId,
 } from "@/lib/server/docs-azure-icons";
+import {
+  listAwsServicesForPrompt,
+  normalizeAwsServiceId,
+} from "@/lib/server/docs-aws-icons";
+import { enrichCloudArchCosts } from "@/lib/server/docs-cloud-arch";
 
 const AZURE_SERVICE_LIST = listAzureServicesForPrompt();
+const AWS_SERVICE_LIST = listAwsServicesForPrompt();
 
 const SYSTEM_PROMPT = `あなたは内部提案向け PowerPoint の構成・編集デザインを設計する専門家です。
 Gamma / Presenti のような「余白・階層・図解・写真」優先の緻密な資料を目指します。
-クラウド／Azure の話では、公式 Azure アイコンによる想定構成図を必ず含めます。
+クラウド構成の依頼では、公式クラウドアイコンの想定構成図＋サービス一覧＋月額想定費用を必ず含めます。
 ユーザーの依頼に基づき、JSON のみで返してください。
 
 ## 出力形式（厳守）
@@ -43,84 +50,65 @@ Gamma / Presenti のような「余白・階層・図解・写真」優先の緻
 - 日本語。です・ます調。簡潔
 - **1スライド1メッセージ**: 箇条書きは最大4点、各32文字以内
 - keyMessage は任意だが、本文では1行（28文字以内）のリード文を推奨
-- 文字だけのスライドは禁止。visual / cards / twoColumn / stat / image / azureArch のいずれかを使う
+- 文字だけのスライドは禁止。visual / cards / twoColumn / stat / image / cloudArch のいずれかを使う
 - visual.labels は2〜5個、各10文字以内
 
-## 画像（image）— Gamma風の自動写真
-- 表紙（title）は必ず image を付ける（placement: "hero"）
-- content の約半数に image（placement: "side"）を付ける。visual / azureArch と両方ある場合は azureArch を優先
-- query は**英語** 2〜6語
-- 人物の実名や実在企業ロゴを連想させるクエリは禁止
-- cards / twoColumn / stat / azureArch には image 不要
+## 画像（image）
+- 表紙（title）は必ず image（placement: "hero"）
+- content の約半数に image。cloudArch がある場合は cloudArch を優先
+- query は英語 2〜6語。実在企業ロゴ連想は禁止
+- cards / twoColumn / stat / cloudArch には image 不要
 
-## Azure 構成図（azureArch）— 最重要
-依頼に Azure・クラウド・構成図・App Service・Functions・Cosmos・OpenAI・SWA・AKS 等が含まれる、またはインフラ／システム構成の提案なら:
-- layout "azureArch" のスライドを **1枚** 入れる（タイトル例: 「想定 Azure 構成」）
-- azureArch.nodes は 4〜7個。各 node: { id, service, label }
-- service は次の許可キーのみ: ${AZURE_SERVICE_LIST}
-- label は日本語または短い役割名（例: Web, API, DB, 認証）
-- edges でデータの流れを示す（from/to は node.id）。3〜6本
-- 指示が曖昧でも、一般的なベストプラクティスで**想定構成**を描く（空にしない）
-- 例: Web系 → front-door or app-gateway → app-service or static-web-apps → cosmos-db/sql-database + key-vault + entra-id + monitor
-- AI系 → app-service/function-apps → openai + search + storage + key-vault
+## クラウド構成図（cloudArch）— 最重要
+- 依頼に AWS が含まれる（Amazon / Lambda / S3 / EC2 / Bedrock 等）→ provider:"aws"
+- 依頼に Azure が含まれる、またはクラウド全般で AWS 指定なし → provider:"azure"
+- layout "cloudArch" を **1枚**（タイトル例: 「想定 Azure 構成」または「想定 AWS 構成」）
+- cloudArch: { provider, caption, nodes, edges }
+- nodes は 4〜7個。各 { id, service, label, monthlyCostJpy? }
+  - monthlyCostJpy は日本円の月額想定（概算）。省略可（サーバがカタログ補完）
+- Azure service 許可: ${AZURE_SERVICE_LIST}
+- AWS service 許可: ${AWS_SERVICE_LIST}
+- edges 3〜6本。指示が曖昧でもベストプラクティスで想定構成を描く（空禁止）
+- Azure Web例: front-door → app-service → cosmos-db + key-vault + entra-id + monitor
+- Azure AI例: app-service → openai + search + storage + key-vault
+- AWS Web例: cloudfront → alb/api-gateway → ecs-fargate or lambda → dynamodb/rds + secrets-manager + cognito + cloudwatch
+- AWS AI例: api-gateway → lambda → bedrock + s3 + opensearch + cloudwatch
 
-## layout（必須で使い分ける）
-- "title": 表紙（1枚目のみ）
-- "section": 章扉
-- "content": 左に要点＋右に visual / image / azureArch
-- "twoColumn": 左右比較
-- "cards": 3〜4枚カード
-- "stat": KPI
-- "azureArch": Azure アイコン構成図（フル幅）。azureArch フィールド必須
-- "closing": まとめ
+## layout
+- "title" | "section" | "content" | "twoColumn" | "cards" | "stat" | "cloudArch" | "closing"
+- "azureArch" も後方互換で可（provider azure 扱い）
 
-visual.type: "flow" | "comparison" | "timeline" | "pyramid" | "icons"
-
-## 構成のおすすめ
-title →（任意 section）→ content/twoColumn/cards/stat/azureArch を混ぜる → closing
-
-## JSON スキーマ例（Azure 提案時）
+## JSON 例（AWS）
 {
-  "documentTitle": "Azure 基盤提案",
-  "subtitle": "想定構成",
+  "documentTitle": "AWS 基盤提案",
   "slides": [
+    { "layout": "title", "title": "表紙", "subtitle": "想定構成", "bullets": [], "image": { "query": "cloud infrastructure", "placement": "hero" } },
     {
-      "layout": "title",
-      "title": "表紙",
-      "subtitle": "クラウド構成案",
-      "bullets": [],
-      "image": { "query": "modern cloud datacenter", "placement": "hero" }
-    },
-    {
-      "layout": "azureArch",
-      "title": "想定 Azure 構成",
-      "keyMessage": "エッジからデータ層まで分離する",
-      "bullets": ["Front Door で入口を集約", "App Service で API", "Cosmos で永続化"],
-      "azureArch": {
+      "layout": "cloudArch",
+      "title": "想定 AWS 構成",
+      "keyMessage": "マネージド中心で運用負荷を抑える",
+      "bullets": ["CloudFront で配信", "Lambda で API", "DynamoDB で永続化"],
+      "cloudArch": {
+        "provider": "aws",
         "caption": "想定構成（指示内容からの推定）",
         "nodes": [
-          { "id": "fd", "service": "front-door", "label": "入口" },
-          { "id": "web", "service": "app-service", "label": "Web/API" },
-          { "id": "db", "service": "cosmos-db", "label": "データ" },
-          { "id": "kv", "service": "key-vault", "label": "秘密情報" },
-          { "id": "id", "service": "entra-id", "label": "認証" },
-          { "id": "mon", "service": "monitor", "label": "監視" }
+          { "id": "cf", "service": "cloudfront", "label": "配信", "monthlyCostJpy": 6000 },
+          { "id": "apigw", "service": "api-gateway", "label": "API", "monthlyCostJpy": 5000 },
+          { "id": "fn", "service": "lambda", "label": "処理", "monthlyCostJpy": 4000 },
+          { "id": "db", "service": "dynamodb", "label": "データ", "monthlyCostJpy": 12000 },
+          { "id": "sec", "service": "secrets-manager", "label": "秘密情報", "monthlyCostJpy": 2000 },
+          { "id": "mon", "service": "cloudwatch", "label": "監視", "monthlyCostJpy": 6000 }
         ],
         "edges": [
-          { "from": "fd", "to": "web" },
-          { "from": "web", "to": "db" },
-          { "from": "web", "to": "kv" },
-          { "from": "id", "to": "web", "label": "認証" },
-          { "from": "web", "to": "mon" }
+          { "from": "cf", "to": "apigw" },
+          { "from": "apigw", "to": "fn" },
+          { "from": "fn", "to": "db" },
+          { "from": "fn", "to": "sec" },
+          { "from": "fn", "to": "mon" }
         ]
       }
     },
-    {
-      "layout": "closing",
-      "title": "次のアクション",
-      "bullets": ["構成レビュー", "PoC 範囲確定"],
-      "visual": { "type": "timeline", "labels": ["合意", "PoC", "展開"] }
-    }
+    { "layout": "closing", "title": "次のアクション", "bullets": ["構成レビュー", "PoC"], "visual": { "type": "timeline", "labels": ["合意", "PoC", "展開"] } }
   ]
 }`;
 
@@ -143,6 +131,7 @@ function isLayout(value: unknown): value is DocSlideLayout {
     value === "twoColumn" ||
     value === "cards" ||
     value === "stat" ||
+    value === "cloudArch" ||
     value === "azureArch" ||
     value === "closing"
   );
@@ -185,12 +174,20 @@ function parseImage(raw: unknown): DocSlideOutline["image"] | undefined {
   return { query, placement };
 }
 
-function parseAzureArch(raw: unknown): DocAzureArchitecture | undefined {
+function parseCloudArch(
+  raw: unknown,
+  fallbackProvider: DocCloudProvider = "azure",
+): DocCloudArchitecture | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const obj = raw as Record<string, unknown>;
   if (!Array.isArray(obj.nodes)) return undefined;
 
-  const nodes: DocAzureArchNode[] = [];
+  const provider: DocCloudProvider =
+    obj.provider === "aws" || obj.provider === "azure"
+      ? obj.provider
+      : fallbackProvider;
+
+  const nodes: DocCloudArchNode[] = [];
   const seen = new Set<string>();
   for (const row of obj.nodes) {
     if (!row || typeof row !== "object") continue;
@@ -199,17 +196,25 @@ function parseAzureArch(raw: unknown): DocAzureArchitecture | undefined {
       .trim()
       .replace(/[^\w\-]/g, "")
       .slice(0, 24);
-    const service = normalizeAzureServiceId(String(n.service ?? ""));
+    const serviceRaw = String(n.service ?? "");
+    const service =
+      provider === "aws"
+        ? normalizeAwsServiceId(serviceRaw)
+        : normalizeAzureServiceId(serviceRaw);
     const label = String(n.label ?? "").trim().slice(0, 18);
     if (!id || !service || !label || seen.has(id)) continue;
     seen.add(id);
-    nodes.push({ id, service, label });
+    const monthly =
+      typeof n.monthlyCostJpy === "number" && Number.isFinite(n.monthlyCostJpy)
+        ? Math.max(0, Math.round(n.monthlyCostJpy))
+        : undefined;
+    nodes.push({ id, service, label, monthlyCostJpy: monthly });
     if (nodes.length >= 8) break;
   }
   if (nodes.length < 3) return undefined;
 
   const idSet = new Set(nodes.map((n) => n.id));
-  const edges: DocAzureArchEdge[] = [];
+  const edges: DocCloudArchEdge[] = [];
   if (Array.isArray(obj.edges)) {
     for (const row of obj.edges) {
       if (!row || typeof row !== "object") continue;
@@ -226,11 +231,13 @@ function parseAzureArch(raw: unknown): DocAzureArchitecture | undefined {
     }
   }
 
-  return {
+  return enrichCloudArchCosts({
+    provider,
     caption: obj.caption ? String(obj.caption).trim().slice(0, 48) : undefined,
     nodes,
     edges: edges.length ? edges : undefined,
-  };
+    costNote: obj.costNote ? String(obj.costNote).trim().slice(0, 80) : undefined,
+  });
 }
 
 function parseSlide(raw: unknown): DocSlideOutline | null {
@@ -280,15 +287,25 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
 
   const visual = parseVisual(obj.visual);
   const image = parseImage(obj.image);
-  const azureArch = parseAzureArch(obj.azureArch);
+  const cloudArch =
+    parseCloudArch(obj.cloudArch) ??
+    parseCloudArch(obj.azureArch, "azure");
   const keyMessage = obj.keyMessage
     ? String(obj.keyMessage).trim().slice(0, 40)
     : undefined;
 
-  if (layout === "azureArch" && !azureArch) return null;
+  const normalizedLayout: DocSlideLayout =
+    layout === "azureArch" ? "cloudArch" : layout;
+
+  if (
+    (normalizedLayout === "cloudArch" || layout === "azureArch") &&
+    !cloudArch
+  ) {
+    return null;
+  }
 
   return {
-    layout,
+    layout: normalizedLayout,
     title: title.slice(0, 48),
     subtitle: obj.subtitle ? String(obj.subtitle).trim().slice(0, 60) : undefined,
     keyMessage,
@@ -298,19 +315,79 @@ function parseSlide(raw: unknown): DocSlideOutline | null {
     stats: stats?.length ? stats : undefined,
     visual,
     image,
-    azureArch,
+    cloudArch,
   };
 }
 
-function looksLikeAzureRequest(text: string): boolean {
-  return /azure|クラウド|構成図|インフラ|App\s*Service|Functions?|Cosmos|OpenAI|AKS|SWA|Static\s*Web|Key\s*Vault|Entra|VNet|Container\s*Apps|アーキテクチャ|システム構成/i.test(
+function looksLikeAwsRequest(text: string): boolean {
+  return /\baws\b|amazon\s*web|lambda|s3\b|ec2\b|dynamodb|bedrock|cloudfront|api\s*gateway|fargate|\beks\b|\becs\b/i.test(
     text,
   );
 }
 
-function defaultAzureArch(kind: "web" | "ai"): DocAzureArchitecture {
+function looksLikeCloudRequest(text: string): boolean {
+  return (
+    looksLikeAwsRequest(text) ||
+    /azure|クラウド|構成図|インフラ|App\s*Service|Functions?|Cosmos|OpenAI|AKS|SWA|Static\s*Web|Key\s*Vault|Entra|VNet|Container\s*Apps|アーキテクチャ|システム構成/i.test(
+      text,
+    )
+  );
+}
+
+function defaultCloudArch(
+  provider: DocCloudProvider,
+  kind: "web" | "ai",
+): DocCloudArchitecture {
+  if (provider === "aws") {
+    if (kind === "ai") {
+      return enrichCloudArchCosts({
+        provider: "aws",
+        caption: "想定構成（指示内容からの推定）",
+        nodes: [
+          { id: "user", service: "users", label: "利用者" },
+          { id: "apigw", service: "api-gateway", label: "API" },
+          { id: "fn", service: "lambda", label: "処理" },
+          { id: "br", service: "bedrock", label: "生成AI" },
+          { id: "s3", service: "s3", label: "ストレージ" },
+          { id: "os", service: "opensearch", label: "検索" },
+          { id: "mon", service: "cloudwatch", label: "監視" },
+        ],
+        edges: [
+          { from: "user", to: "apigw" },
+          { from: "apigw", to: "fn" },
+          { from: "fn", to: "br" },
+          { from: "fn", to: "s3" },
+          { from: "fn", to: "os" },
+          { from: "fn", to: "mon" },
+        ],
+      });
+    }
+    return enrichCloudArchCosts({
+      provider: "aws",
+      caption: "想定構成（指示内容からの推定）",
+      nodes: [
+        { id: "cf", service: "cloudfront", label: "配信" },
+        { id: "alb", service: "alb", label: "LB" },
+        { id: "app", service: "ecs-fargate", label: "アプリ" },
+        { id: "db", service: "dynamodb", label: "データ" },
+        { id: "sec", service: "secrets-manager", label: "秘密情報" },
+        { id: "id", service: "cognito", label: "認証" },
+        { id: "mon", service: "cloudwatch", label: "監視" },
+      ],
+      edges: [
+        { from: "cf", to: "alb" },
+        { from: "alb", to: "app" },
+        { from: "app", to: "db" },
+        { from: "app", to: "sec" },
+        { from: "id", to: "app", label: "認証" },
+        { from: "app", to: "mon" },
+      ],
+    });
+  }
+
   if (kind === "ai") {
-    return {
+    return enrichCloudArchCosts({
+      provider: "azure",
       caption: "想定構成（指示内容からの推定）",
       nodes: [
         { id: "user", service: "users", label: "利用者" },
@@ -329,9 +406,10 @@ function defaultAzureArch(kind: "web" | "ai"): DocAzureArchitecture {
         { from: "web", to: "kv" },
         { from: "web", to: "mon" },
       ],
-    };
+    });
   }
-  return {
+  return enrichCloudArchCosts({
+    provider: "azure",
     caption: "想定構成（指示内容からの推定）",
     nodes: [
       { id: "fd", service: "front-door", label: "入口" },
@@ -348,34 +426,39 @@ function defaultAzureArch(kind: "web" | "ai"): DocAzureArchitecture {
       { from: "id", to: "web", label: "認証" },
       { from: "web", to: "mon" },
     ],
-  };
+  });
 }
 
 /** クラウド依頼なのに構成図が無い場合、想定図を1枚差し込む（空成功禁止） */
-export function ensureOutlineAzureArch(outline: DocOutline, userMessage: string): void {
-  const hasArch = outline.slides.some((s) => s.azureArch && s.azureArch.nodes.length >= 3);
+export function ensureOutlineCloudArch(outline: DocOutline, userMessage: string): void {
+  const hasArch = outline.slides.some(
+    (s) => (s.cloudArch ?? s.azureArch)?.nodes.length && (s.cloudArch ?? s.azureArch)!.nodes.length >= 3,
+  );
   if (hasArch) return;
-  if (!looksLikeAzureRequest(userMessage) && !looksLikeAzureRequest(outline.documentTitle)) {
-    return;
-  }
-  const kind = /openai|gpt|llm|生成ai|rag|認知|ai\b/i.test(userMessage + outline.documentTitle)
+  const hay = `${userMessage}\n${outline.documentTitle}`;
+  if (!looksLikeCloudRequest(hay)) return;
+
+  const provider: DocCloudProvider = looksLikeAwsRequest(hay) ? "aws" : "azure";
+  const kind = /openai|gpt|llm|生成ai|rag|bedrock|認知|\bai\b/i.test(hay)
     ? "ai"
     : "web";
-  const arch = defaultAzureArch(kind);
+  const arch = defaultCloudArch(provider, kind);
+  const label = provider === "aws" ? "AWS" : "Azure";
   const slide: DocSlideOutline = {
-    layout: "azureArch",
-    title: "想定 Azure 構成",
-    keyMessage: "指示内容から推定した構成案",
+    layout: "cloudArch",
+    title: `想定 ${label} 構成`,
+    keyMessage: "指示内容から推定した構成・費用感",
     bullets: arch.nodes.slice(0, 4).map((n) => `${n.label}（${n.service}）`),
-    azureArch: arch,
+    cloudArch: arch,
   };
-  // closing の直前、なければ末尾手前
   const closingIdx = outline.slides.findIndex((s) => s.layout === "closing");
-  if (closingIdx >= 0) {
-    outline.slides.splice(closingIdx, 0, slide);
-  } else {
-    outline.slides.push(slide);
-  }
+  if (closingIdx >= 0) outline.slides.splice(closingIdx, 0, slide);
+  else outline.slides.push(slide);
+}
+
+/** @deprecated use ensureOutlineCloudArch */
+export function ensureOutlineAzureArch(outline: DocOutline, userMessage: string): void {
+  ensureOutlineCloudArch(outline, userMessage);
 }
 
 export function parseDocOutline(raw: unknown): DocOutline | null {
@@ -473,7 +556,7 @@ export async function generateDocOutline(
   try {
     const completion = await client.chat.completions.create({
       model: getAzureOpenAiDeployment(),
-      max_completion_tokens: 2200,
+      max_completion_tokens: 2600,
       messages,
       response_format: { type: "json_object" },
     });
@@ -496,7 +579,7 @@ export async function generateDocOutline(
     }
 
     ensureOutlineImages(outline);
-    ensureOutlineAzureArch(outline, trimmed);
+    ensureOutlineCloudArch(outline, trimmed);
 
     const modelUsed = completion.model ?? model;
     if (completion.usage) {

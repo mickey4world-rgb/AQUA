@@ -5,6 +5,7 @@ export type DocSlideLayout =
   | "twoColumn"
   | "cards"
   | "stat"
+  | "cloudArch"
   | "azureArch"
   | "closing";
 
@@ -36,28 +37,44 @@ export interface DocSlideImage {
   placement?: DocSlideImagePlacement;
 }
 
-/** Azure 公式アイコンを使った想定クラウド構成図 */
-export interface DocAzureArchNode {
+export type DocCloudProvider = "azure" | "aws";
+
+/** クラウド公式アイコンを使った想定構成図 */
+export interface DocCloudArchNode {
   /** 図内一意 ID（edges 用） */
   id: string;
-  /** 許可リストのサービスキー（例: app-service, cosmos-db） */
+  /** 許可リストのサービスキー */
   service: string;
   /** 表示名（短く。例: Web / API / DB） */
   label: string;
+  /** 月額想定（円）。省略時はサーバ側カタログで補完 */
+  monthlyCostJpy?: number;
 }
 
-export interface DocAzureArchEdge {
+export interface DocCloudArchEdge {
   from: string;
   to: string;
   label?: string;
 }
 
-export interface DocAzureArchitecture {
+export interface DocCloudArchitecture {
+  provider: DocCloudProvider;
   /** 図のキャプション（任意） */
   caption?: string;
-  nodes: DocAzureArchNode[];
-  edges?: DocAzureArchEdge[];
+  nodes: DocCloudArchNode[];
+  edges?: DocCloudArchEdge[];
+  /** 合計月額（円）。サーバ再計算で上書き */
+  totalMonthlyJpy?: number;
+  /** 費用注記 */
+  costNote?: string;
 }
+
+/** @deprecated cloudArch を使用。後方互換用エイリアス */
+export type DocAzureArchNode = DocCloudArchNode;
+/** @deprecated */
+export type DocAzureArchEdge = DocCloudArchEdge;
+/** @deprecated */
+export type DocAzureArchitecture = DocCloudArchitecture;
 
 export interface DocSlideOutline {
   layout: DocSlideLayout;
@@ -76,8 +93,10 @@ export interface DocSlideOutline {
   visual?: DocSlideVisual;
   /** 自動挿入するストック画像 */
   image?: DocSlideImage;
-  /** Azure アイコン構成図（azureArch レイアウト／content 右ペイン） */
-  azureArch?: DocAzureArchitecture;
+  /** クラウド構成図（Azure / AWS） */
+  cloudArch?: DocCloudArchitecture;
+  /** @deprecated cloudArch へ移行。パース時に吸収 */
+  azureArch?: DocCloudArchitecture;
 }
 
 export interface DocOutline {
