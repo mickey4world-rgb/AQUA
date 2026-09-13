@@ -1,11 +1,23 @@
 import pptxgen from "pptxgenjs";
 import { sanitizeFileName } from "@/lib/docs-utils";
 import { DOCS_FONT, DOCS_THEME } from "@/lib/docs-theme";
-import type { DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
+import type {
+  DocAzureArchitecture,
+  DocAzureArchNode,
+  DocOutline,
+  DocSlideOutline,
+  DocSlideVisual,
+} from "@/lib/types/docs";
 import {
   resolveDocsStockImages,
   type DocsResolvedImage,
 } from "@/lib/server/docs-stock-images";
+import {
+  DOCS_AZURE_SERVICE_LABELS,
+  getAzureIconPngBase64,
+  normalizeAzureServiceId,
+  type DocsAzureServiceId,
+} from "@/lib/server/docs-azure-icons";
 
 const T = DOCS_THEME;
 const BLUE_FILLS = [...T.blues];
@@ -29,6 +41,222 @@ function addResolvedImage(
     h: opts.h,
     sizing: { type: "cover", w: opts.w, h: opts.h },
     transparency: opts.transparency,
+  });
+}
+
+/** ノードをエッジからレイヤー列に配置 */
+function layerAzureNodes(
+  nodes: DocAzureArchNode[],
+  edges: { from: string; to: string }[],
+): DocAzureArchNode[][] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const indeg = new Map(nodes.map((n) => [n.id, 0]));
+  const outs = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!byId.has(e.from) || !byId.has(e.to)) continue;
+    indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1);
+    const list = outs.get(e.from) ?? [];
+    list.push(e.to);
+    outs.set(e.from, list);
+  }
+  let frontier = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id);
+  if (!frontier.length) frontier = [nodes[0].id];
+  const layers: DocAzureArchNode[][] = [];
+  const placed = new Set<string>();
+  while (frontier.length && layers.length < 5) {
+    const layerNodes = frontier
+      .map((id) => byId.get(id))
+      .filter((n): n is DocAzureArchNode => Boolean(n && !placed.has(n.id)));
+    if (!layerNodes.length) break;
+    layers.push(layerNodes.slice(0, 4));
+    layerNodes.forEach((n) => placed.add(n.id));
+    const next: string[] = [];
+    for (const n of layerNodes) {
+      for (const t of outs.get(n.id) ?? []) {
+        if (!placed.has(t) && !next.includes(t)) next.push(t);
+      }
+    }
+    frontier = next;
+  }
+  const rest = nodes.filter((n) => !placed.has(n.id));
+  if (rest.length) layers.push(rest.slice(0, 4));
+  return layers.length ? layers : [nodes.slice(0, 4)];
+}
+
+function addAzureArchDiagram(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  arch: DocAzureArchitecture,
+  opts: { x: number; y: number; w: number; h: number },
+) {
+  addDiagramPanel(pptx, s, opts.x, opts.y, opts.w, opts.h);
+  if (arch.caption) {
+    s.addText(arch.caption, {
+      x: opts.x + 0.12,
+      y: opts.y + 0.08,
+      w: opts.w - 0.24,
+      h: 0.28,
+      fontSize: 10,
+      color: T.muted,
+      fontFace: DOCS_FONT,
+    });
+  }
+
+  const padTop = arch.caption ? 0.4 : 0.18;
+  const inner = {
+    x: opts.x + 0.18,
+    y: opts.y + padTop,
+    w: opts.w - 0.36,
+    h: opts.h - padTop - 0.18,
+  };
+  const edges = arch.edges ?? [];
+  const layers = layerAzureNodes(arch.nodes, edges);
+  const colN = layers.length;
+  const gapX = 0.22;
+  const colW = (inner.w - gapX * Math.max(0, colN - 1)) / Math.max(1, colN);
+  const positions = new Map<string, { cx: number; cy: number; w: number; h: number }>();
+
+  layers.forEach((layer, li) => {
+    const rowN = layer.length;
+    const gapY = 0.14;
+    const nodeH = Math.min(1.15, (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN));
+    const nodeW = Math.min(colW, 1.85);
+    const colX = inner.x + li * (colW + gapX) + (colW - nodeW) / 2;
+    layer.forEach((node, ri) => {
+      const y = inner.y + ri * (nodeH + gapY);
+      const service = normalizeAzureServiceId(node.service) as DocsAzureServiceId | null;
+      const png = getAzureIconPngBase64(node.service);
+      s.addShape(pptx.ShapeType.roundRect, {
+        x: colX,
+        y,
+        w: nodeW,
+        h: nodeH,
+        fill: { color: T.white },
+        line: { color: T.slate, width: 0.9 },
+        rectRadius: 0.08,
+      });
+      if (png) {
+        s.addImage({
+          data: `data:image/png;base64,${png}`,
+          x: colX + (nodeW - 0.42) / 2,
+          y: y + 0.08,
+          w: 0.42,
+          h: 0.42,
+        });
+      } else {
+        s.addShape(pptx.ShapeType.roundRect, {
+          x: colX + (nodeW - 0.42) / 2,
+          y: y + 0.08,
+          w: 0.42,
+          h: 0.42,
+          fill: { color: T.teal },
+          rectRadius: 0.06,
+        });
+      }
+      s.addText(node.label, {
+        x: colX + 0.06,
+        y: y + 0.52,
+        w: nodeW - 0.12,
+        h: 0.28,
+        fontSize: 10,
+        bold: true,
+        color: T.navy,
+        align: "center",
+        fontFace: DOCS_FONT,
+      });
+      const svcLabel =
+        (service && DOCS_AZURE_SERVICE_LABELS[service]) || node.service;
+      s.addText(svcLabel, {
+        x: colX + 0.04,
+        y: y + nodeH - 0.28,
+        w: nodeW - 0.08,
+        h: 0.22,
+        fontSize: 7,
+        color: T.muted,
+        align: "center",
+        fontFace: DOCS_FONT,
+      });
+      positions.set(node.id, {
+        cx: colX + nodeW / 2,
+        cy: y + nodeH / 2,
+        w: nodeW,
+        h: nodeH,
+      });
+    });
+  });
+
+  for (const e of edges.slice(0, 10)) {
+    const a = positions.get(e.from);
+    const b = positions.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.cx + a.w * 0.42;
+    const y1 = a.cy;
+    const x2 = b.cx - b.w * 0.42;
+    const y2 = b.cy;
+    const w = Math.max(0.05, x2 - x1);
+    s.addShape(pptx.ShapeType.line, {
+      x: x1,
+      y: y1,
+      w,
+      h: y2 - y1,
+      line: { color: T.cyan, width: 1.25, endArrowType: "triangle" },
+    });
+    if (e.label) {
+      s.addText(e.label, {
+        x: x1,
+        y: Math.min(y1, y2) - 0.18,
+        w,
+        h: 0.18,
+        fontSize: 7,
+        color: T.muted,
+        align: "center",
+        fontFace: DOCS_FONT,
+      });
+    }
+  }
+}
+
+function addAzureArchSlide(
+  pptx: pptxgen,
+  slide: DocSlideOutline,
+  index: number,
+  total: number,
+) {
+  const arch = slide.azureArch;
+  if (!arch || arch.nodes.length < 3) {
+    addContentSlide(pptx, { ...slide, layout: "content" }, index, total, false);
+    return;
+  }
+  const s = pptx.addSlide();
+  addSlideChrome(pptx, s, slide.title, index, total, false);
+  let y = 0.95;
+  if (slide.keyMessage) {
+    addKeyMessage(pptx, s, slide.keyMessage, { x: 0.4, y, w: 9.1 });
+    y += 0.55;
+  }
+  const bullets = slide.bullets.filter(Boolean).slice(0, 3);
+  if (bullets.length) {
+    s.addText(
+      bullets.map((text) => ({
+        text,
+        options: {
+          bullet: { code: "2022" },
+          breakLine: true,
+          fontSize: 11,
+          color: T.text,
+          fontFace: DOCS_FONT,
+          paraSpaceBefore: 4,
+        },
+      })),
+      { x: 0.45, y, w: 9.0, h: 0.7, valign: "top" },
+    );
+    y += 0.75;
+  }
+  addAzureArchDiagram(pptx, s, arch, {
+    x: 0.35,
+    y,
+    w: 9.2,
+    h: Math.max(2.8, 5.2 - y),
   });
 }
 
@@ -668,9 +896,10 @@ function addContentSlide(
   addSlideChrome(pptx, s, slide.title, index, total, closing);
 
   const bullets = slide.bullets.filter(Boolean);
-  const usePhoto = Boolean(resolved) && !closing;
-  const hasVisual = !!slide.visual && !usePhoto;
-  const hasSide = usePhoto || hasVisual;
+  const useAzure = Boolean(slide.azureArch && slide.azureArch.nodes.length >= 3) && !closing;
+  const usePhoto = Boolean(resolved) && !closing && !useAzure;
+  const hasVisual = !!slide.visual && !usePhoto && !useAzure;
+  const hasSide = useAzure || usePhoto || hasVisual;
   const hasKey = Boolean(slide.keyMessage);
   let y = 0.98;
   if (hasKey && slide.keyMessage) {
@@ -761,7 +990,14 @@ function addContentSlide(
   const sideW = bullets.length ? 4.75 : 9.0;
   const sideH = bullets.length ? 3.55 : 3.7;
 
-  if (usePhoto && resolved) {
+  if (useAzure && slide.azureArch) {
+    addAzureArchDiagram(pptx, s, slide.azureArch, {
+      x: sideX,
+      y: sideY,
+      w: sideW,
+      h: sideH,
+    });
+  } else if (usePhoto && resolved) {
     s.addShape(pptx.ShapeType.roundRect, {
       x: sideX,
       y: sideY,
@@ -986,6 +1222,7 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
   base64: string;
   fileName: string;
   imageCount: number;
+  azureArchCount: number;
 }> {
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
@@ -1025,6 +1262,9 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
       case "stat":
         addStatSlide(pptx, slide, n, total);
         break;
+      case "azureArch":
+        addAzureArchSlide(pptx, slide, n, total);
+        break;
       case "closing":
         addContentSlide(pptx, slide, n, total, true, undefined);
         break;
@@ -1033,10 +1273,16 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
     }
   });
 
+  const imageCount = images.size;
+  const azureCount = outline.slides.filter(
+    (s) => (s.azureArch?.nodes.length ?? 0) >= 3,
+  ).length;
+
   const base64 = (await pptx.write({ outputType: "base64" })) as string;
   return {
     base64,
     fileName: sanitizeFileName(outline.documentTitle),
-    imageCount: images.size,
+    imageCount,
+    azureArchCount: azureCount,
   };
 }

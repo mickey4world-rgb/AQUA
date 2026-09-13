@@ -9,6 +9,7 @@ const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   twoColumn: "2列",
   cards: "カード",
   stat: "KPI",
+  azureArch: "Azure構成",
   closing: "まとめ",
 };
 
@@ -145,12 +146,42 @@ function KeyMessage({ text, dark }: { text: string; dark?: boolean }) {
   );
 }
 
+function AzureArchPreview({
+  arch,
+}: {
+  arch: NonNullable<DocSlideOutline["azureArch"]>;
+}) {
+  return (
+    <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9] p-1.5">
+      {arch.caption ? <p className="mb-1 text-[7px] text-[#4F7F8F]">{arch.caption}</p> : null}
+      <div className="flex flex-wrap gap-1">
+        {arch.nodes.slice(0, 8).map((n) => (
+          <div
+            key={n.id}
+            className="min-w-[3.2rem] flex-1 rounded border border-[#5BA3B5]/35 bg-white px-1 py-1 text-center"
+          >
+            <div className="mx-auto mb-0.5 h-4 w-4 rounded bg-gradient-to-br from-[#1A8CA6] to-[#3DD5E0]" />
+            <p className="text-[8px] font-semibold text-[#0F4568]">{n.label}</p>
+            <p className="truncate text-[6px] text-slate-500">{n.service}</p>
+          </div>
+        ))}
+      </div>
+      {(arch.edges?.length ?? 0) > 0 ? (
+        <p className="mt-1 text-[7px] text-[#4F7F8F]">
+          接続 {arch.edges!.length} 本 · Azure 公式アイコン
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) {
   const isTitle = slide.layout === "title";
   const isSection = slide.layout === "section";
   const isClosing = slide.layout === "closing";
   const isDark = isTitle || isClosing || isSection;
   const layoutLabel = layoutLabels[slide.layout];
+  const hasAzure = (slide.azureArch?.nodes.length ?? 0) >= 3;
 
   return (
     <div
@@ -201,7 +232,9 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
 
         {slide.keyMessage && <KeyMessage text={slide.keyMessage} dark={isDark} />}
 
-        {slide.image?.query ? (
+        {hasAzure && slide.azureArch ? <AzureArchPreview arch={slide.azureArch} /> : null}
+
+        {!hasAzure && slide.image?.query ? (
           <div
             className={`mt-2 overflow-hidden rounded border ${
               isDark ? "border-white/20 bg-white/10" : "border-[#5BA3B5]/30 bg-[#E3F5FA]"
@@ -287,7 +320,8 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           const structured =
             (slide.layout === "twoColumn" && (slide.columns?.length ?? 0) >= 2) ||
             (slide.layout === "cards" && slide.bullets.length > 0) ||
-            (slide.layout === "stat" && (slide.stats?.length ?? 0) > 0);
+            (slide.layout === "stat" && (slide.stats?.length ?? 0) > 0) ||
+            hasAzure;
           if (structured || slide.bullets.length === 0) return null;
           return (
             <ul
@@ -309,9 +343,10 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           );
         })()}
 
-        {slide.visual && slide.layout !== "cards" && slide.layout !== "stat" && (
-          <VisualPreview visual={slide.visual} />
-        )}
+        {slide.visual &&
+          !hasAzure &&
+          slide.layout !== "cards" &&
+          slide.layout !== "stat" && <VisualPreview visual={slide.visual} />}
       </div>
 
       {!isTitle && !isSection && <div className="h-0.5 bg-[#1A8CA6]" />}
@@ -330,7 +365,7 @@ export default function DocsSlidePreview({ outline }: DocsSlidePreviewProps) {
         スライドプレビュー
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        {outline.documentTitle} — {outline.slides.length} 枚 · 爽やか青系（カード/2列/KPI/画像）
+        {outline.documentTitle} — {outline.slides.length} 枚 · 爽やか青系（カード/2列/KPI/画像/Azure構成）
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {outline.slides.map((slide, index) => (
