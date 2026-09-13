@@ -5,6 +5,7 @@ export type DocSlideLayout =
   | "twoColumn"
   | "cards"
   | "stat"
+  | "azureArch"
   | "closing";
 
 export type DocVisualType = "flow" | "comparison" | "timeline" | "pyramid" | "icons";
@@ -35,6 +36,29 @@ export interface DocSlideImage {
   placement?: DocSlideImagePlacement;
 }
 
+/** Azure 公式アイコンを使った想定クラウド構成図 */
+export interface DocAzureArchNode {
+  /** 図内一意 ID（edges 用） */
+  id: string;
+  /** 許可リストのサービスキー（例: app-service, cosmos-db） */
+  service: string;
+  /** 表示名（短く。例: Web / API / DB） */
+  label: string;
+}
+
+export interface DocAzureArchEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface DocAzureArchitecture {
+  /** 図のキャプション（任意） */
+  caption?: string;
+  nodes: DocAzureArchNode[];
+  edges?: DocAzureArchEdge[];
+}
+
 export interface DocSlideOutline {
   layout: DocSlideLayout;
   title: string;
@@ -52,6 +76,8 @@ export interface DocSlideOutline {
   visual?: DocSlideVisual;
   /** 自動挿入するストック画像 */
   image?: DocSlideImage;
+  /** Azure アイコン構成図（azureArch レイアウト／content 右ペイン） */
+  azureArch?: DocAzureArchitecture;
 }
 
 export interface DocOutline {

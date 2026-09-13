@@ -24,6 +24,8 @@
 # misc
 .DS_Store
 *.pem
+.tmp-azure-icons*
+.tmp-azure-icons/
 
 # debug
 npm-debug.log*

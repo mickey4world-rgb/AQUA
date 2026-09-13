@@ -1,0 +1,4 @@
+Azure product icons © Microsoft.
+Used under Azure Architecture Icons terms:
+https://learn.microsoft.com/azure/architecture/icons/
+Source pack: Azure_Public_Service_Icons_V19 (arch-center.azureedge.net).
