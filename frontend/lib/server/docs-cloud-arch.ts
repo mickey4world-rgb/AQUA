@@ -16,6 +16,7 @@ import {
   getAwsIconPngBase64,
   normalizeAwsServiceId,
 } from "@/lib/server/docs-aws-icons";
+import { enrichCloudArchZones } from "@/lib/server/docs-cloud-zones";
 
 export function getSlideCloudArch(slide: {
   cloudArch?: DocCloudArchitecture;
@@ -44,7 +45,7 @@ export function enrichCloudArchCosts(arch: DocCloudArchitecture): DocCloudArchit
       ),
     };
   });
-  return {
+  const withCosts: DocCloudArchitecture = {
     ...arch,
     provider,
     nodes,
@@ -53,6 +54,7 @@ export function enrichCloudArchCosts(arch: DocCloudArchitecture): DocCloudArchit
       arch.costNote ??
       "月額は小〜中規模の想定概算（税別・為替・予約割引未反映）。正式見積ではありません。",
   };
+  return enrichCloudArchZones(withCosts);
 }
 
 export function cloudServiceDisplayName(
