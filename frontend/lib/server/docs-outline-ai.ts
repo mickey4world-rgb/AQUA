@@ -35,6 +35,7 @@ import {
   normalizeAwsServiceId,
 } from "@/lib/server/docs-aws-icons";
 import { enrichCloudArchCosts } from "@/lib/server/docs-cloud-arch";
+import { parseCloudArchZones } from "@/lib/server/docs-cloud-zones";
 
 const AZURE_SERVICE_LIST = listAzureServicesForPrompt();
 const AWS_SERVICE_LIST = listAwsServicesForPrompt();
@@ -63,7 +64,7 @@ Gamma / Presenti のような「余白・階層・図解・写真」優先の緻
 - 依頼に AWS が含まれる（Amazon / Lambda / S3 / EC2 / Bedrock 等）→ provider:"aws"
 - 依頼に Azure が含まれる、またはクラウド全般で AWS 指定なし → provider:"azure"
 - layout "cloudArch" を **1枚**（タイトル例: 「想定 Azure 構成」または「想定 AWS 構成」）
-- cloudArch: { provider, caption, nodes, edges }
+- cloudArch: { provider, caption, nodes, edges, zones? }
 - 通常: nodes 4〜7個。各 { id, service, label, monthlyCostJpy? }
   - monthlyCostJpy は日本円の月額想定（概算）。省略可（サーバがカタログ補完）
 - Azure service 許可: ${AZURE_SERVICE_LIST}
@@ -82,6 +83,12 @@ Gamma / Presenti のような「余白・階層・図解・写真」優先の緻
 - Azure 詳細は必ず含める: vnet, subnet, nsg, private-endpoint（または private-link）, nat-gateway（または bastion）＋アプリ系
 - AWS 詳細は必ず含める: vpc, internet-gateway, nat-gateway, security-group（または nacl）, vpc-endpoint（または privatelink）＋アプリ系
 - caption に「詳細ネットワーク含む」と明記
+- **zones（領域枠）必須**: プロ向け構成図のように VNet/VPC を大きな箱で囲む
+  - zones: [{ id, label, kind, nodeIds, childZoneIds? }]
+  - kind: "edge" | "vnet" | "vpc" | "private" | "mgmt" | "group"
+  - Azure例: edge(入口) / vnet(中にアプリ+NSG+NAT, childZoneIds:[private]) / private(PE+データ系) / mgmt(監視・ID)
+  - AWS例: edge(CloudFront等) / vpc(中にアプリ+SG+NAT, childZoneIds:[private]) / private(VPCE+データ) / mgmt(CloudWatch)
+  - vnet/vpc/subnet は枠のラベル用。枠の中身はアプリ・制御・データノード
 - 通常モードではネットワーク部品を無理に増やさない（vnet/vpc 単体程度は可）
 
 ## layout
@@ -122,6 +129,18 @@ Gamma / Presenti のような「余白・階層・図解・写真」優先の緻
           { "from": "subnet", "to": "nat" },
           { "from": "web", "to": "kv" },
           { "from": "web", "to": "mon" }
+        ],
+        "zones": [
+          { "id": "edge", "label": "入口・外部", "kind": "edge", "nodeIds": ["fd"] },
+          {
+            "id": "vnet",
+            "label": "仮想ネットワーク (VNet)",
+            "kind": "vnet",
+            "nodeIds": ["web", "nsg", "nat", "subnet"],
+            "childZoneIds": ["private"]
+          },
+          { "id": "private", "label": "Private Endpoint", "kind": "private", "nodeIds": ["pe", "db", "kv"] },
+          { "id": "mgmt", "label": "共通基盤・運用", "kind": "mgmt", "nodeIds": ["mon"] }
         ]
       }
     },
@@ -253,6 +272,7 @@ function parseCloudArch(
     caption: obj.caption ? String(obj.caption).trim().slice(0, 48) : undefined,
     nodes,
     edges: edges.length ? edges : undefined,
+    zones: parseCloudArchZones(obj.zones, idSet),
     costNote: obj.costNote ? String(obj.costNote).trim().slice(0, 80) : undefined,
   });
 }
@@ -766,7 +786,7 @@ export async function generateDocOutline(
   const client = getAzureOpenAiClient();
 
   const detailHint = looksLikeDetailedNetworkRequest(trimmed)
-    ? "\n\n【必須】この依頼は詳細ネットワーク設計です。cloudArch に VNet/NSG/Subnet/Private Endpoint（Azure）または VPC/IGW/NAT/Security Group/VPC Endpoint（AWS）を必ず含め、nodes は 8〜12 個にしてください。"
+    ? "\n\n【必須】この依頼は詳細ネットワーク設計です。cloudArch に VNet/NSG/Subnet/Private Endpoint（Azure）または VPC/IGW/NAT/Security Group/VPC Endpoint（AWS）を含め、nodes は 8〜12 個、zones で VNet/VPC 領域枠と Private Endpoint 入れ子を必ず指定してください（フラットなアイコン列禁止）。"
     : "";
 
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [

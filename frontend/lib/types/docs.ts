@@ -57,12 +57,41 @@ export interface DocCloudArchEdge {
   label?: string;
 }
 
+/**
+ * 構成図の領域枠（VNet / VPC / Private Endpoint グループ等）。
+ * 参照: ネットワーク境界を「箱」で見せるプロ向け構成図。
+ */
+export type DocCloudArchZoneKind =
+  | "edge"
+  | "vnet"
+  | "vpc"
+  | "subnet"
+  | "private"
+  | "mgmt"
+  | "group";
+
+export interface DocCloudArchZone {
+  id: string;
+  /** 枠タイトル（例: 本番 VNet / Private Endpoint） */
+  label: string;
+  kind?: DocCloudArchZoneKind;
+  /** この枠に直接置くノード ID */
+  nodeIds: string[];
+  /** 入れ子の子領域 ID（親枠の内側に描画） */
+  childZoneIds?: string[];
+}
+
 export interface DocCloudArchitecture {
   provider: DocCloudProvider;
   /** 図のキャプション（任意） */
   caption?: string;
   nodes: DocCloudArchNode[];
   edges?: DocCloudArchEdge[];
+  /**
+   * 領域枠。詳細ネットワーク時は VNet/VPC を必ず含める。
+   * 省略時はサーバがサービス種別から推論する。
+   */
+  zones?: DocCloudArchZone[];
   /** 合計月額（円）。サーバ再計算で上書き */
   totalMonthlyJpy?: number;
   /** 費用注記 */

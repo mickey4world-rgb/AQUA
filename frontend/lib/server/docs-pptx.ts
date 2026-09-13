@@ -19,6 +19,11 @@ import {
   getCloudIconPngBase64,
   getSlideCloudArch,
 } from "@/lib/server/docs-cloud-arch";
+import {
+  diagramNodesForZoneLayout,
+  shouldUseZoneLayout,
+} from "@/lib/server/docs-cloud-zones";
+import type { DocCloudArchZone } from "@/lib/types/docs";
 
 const T = DOCS_THEME;
 const BLUE_FILLS = [...T.blues];
@@ -45,7 +50,7 @@ function addResolvedImage(
   });
 }
 
-/** ノードをエッジからレイヤー列に配置 */
+/** ノードをエッジからレイヤー列に配置（ゾーン無しの簡易図用） */
 function layerCloudNodes(
   nodes: DocCloudArchNode[],
   edges: { from: string; to: string }[],
@@ -88,6 +93,411 @@ function layerCloudNodes(
   return layers.length ? layers : [nodes.slice(0, 5)];
 }
 
+type NodePos = { cx: number; cy: number; w: number; h: number };
+
+function drawCloudNodeCard(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  provider: DocCloudArchitecture["provider"],
+  node: DocCloudArchNode,
+  box: { x: number; y: number; w: number; h: number },
+  positions: Map<string, NodePos>,
+) {
+  const png = getCloudIconPngBase64(provider, node.service);
+  const icon = Math.min(0.34, box.h * 0.38);
+  s.addShape(pptx.ShapeType.roundRect, {
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    fill: { color: T.white },
+    line: { color: T.slate, width: 0.85 },
+    rectRadius: 0.06,
+  });
+  if (png) {
+    s.addImage({
+      data: `data:image/png;base64,${png}`,
+      x: box.x + (box.w - icon) / 2,
+      y: box.y + 0.05,
+      w: icon,
+      h: icon,
+    });
+  } else {
+    s.addShape(pptx.ShapeType.roundRect, {
+      x: box.x + (box.w - icon) / 2,
+      y: box.y + 0.05,
+      w: icon,
+      h: icon,
+      fill: { color: T.teal },
+      rectRadius: 0.05,
+    });
+  }
+  s.addText(node.label, {
+    x: box.x + 0.03,
+    y: box.y + icon + 0.08,
+    w: box.w - 0.06,
+    h: 0.2,
+    fontSize: 8,
+    bold: true,
+    color: T.navy,
+    align: "center",
+    fontFace: DOCS_FONT,
+  });
+  if (box.h > 0.72) {
+    s.addText(cloudServiceDisplayName(provider, node.service), {
+      x: box.x + 0.03,
+      y: box.y + box.h - 0.2,
+      w: box.w - 0.06,
+      h: 0.16,
+      fontSize: 6,
+      color: T.muted,
+      align: "center",
+      fontFace: DOCS_FONT,
+    });
+  }
+  positions.set(node.id, {
+    cx: box.x + box.w / 2,
+    cy: box.y + box.h / 2,
+    w: box.w,
+    h: box.h,
+  });
+}
+
+function layoutNodesInRect(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  provider: DocCloudArchitecture["provider"],
+  nodes: DocCloudArchNode[],
+  rect: { x: number; y: number; w: number; h: number },
+  positions: Map<string, NodePos>,
+) {
+  if (!nodes.length) return;
+  const cols = Math.min(4, Math.max(1, nodes.length <= 3 ? nodes.length : 3));
+  const rows = Math.ceil(nodes.length / cols);
+  const gapX = 0.08;
+  const gapY = 0.08;
+  const cellW = (rect.w - gapX * (cols - 1)) / cols;
+  const cellH = Math.min(0.92, (rect.h - gapY * (rows - 1)) / rows);
+  nodes.forEach((node, i) => {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    drawCloudNodeCard(pptx, s, provider, node, {
+      x: rect.x + c * (cellW + gapX),
+      y: rect.y + r * (cellH + gapY),
+      w: cellW,
+      h: cellH,
+    }, positions);
+  });
+}
+
+function drawZoneFrame(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  zone: DocCloudArchZone,
+  box: { x: number; y: number; w: number; h: number },
+  provider: DocCloudArchitecture["provider"],
+) {
+  const kind = zone.kind ?? "group";
+  const isNet = kind === "vnet" || kind === "vpc";
+  const isPrivate = kind === "private";
+  const isMgmt = kind === "mgmt";
+  const fill = isNet ? T.pale : isPrivate ? "EEF2F5" : isMgmt ? T.white : T.panel;
+  const line = isPrivate || isMgmt ? T.cyan : T.teal;
+  const dash = isPrivate || isMgmt;
+  s.addShape(pptx.ShapeType.roundRect, {
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    fill: { color: fill },
+    line: {
+      color: line,
+      width: isNet ? 1.6 : 1.15,
+      dashType: dash ? "dash" : "solid",
+    },
+    rectRadius: 0.08,
+  });
+  const badgeService =
+    kind === "vpc" ? "vpc" : kind === "vnet" ? "vnet" : kind === "private"
+      ? provider === "aws"
+        ? "vpc-endpoint"
+        : "private-endpoint"
+      : null;
+  if (badgeService) {
+    const png = getCloudIconPngBase64(provider, badgeService);
+    if (png) {
+      s.addImage({
+        data: `data:image/png;base64,${png}`,
+        x: box.x + box.w - 0.32,
+        y: box.y + 0.06,
+        w: 0.24,
+        h: 0.24,
+      });
+    }
+  }
+  s.addText(zone.label, {
+    x: box.x + 0.1,
+    y: box.y + 0.06,
+    w: box.w - 0.45,
+    h: 0.24,
+    fontSize: 10,
+    bold: true,
+    color: T.navy,
+    fontFace: DOCS_FONT,
+  });
+}
+
+function addCloudArchZonedDiagram(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  arch: DocCloudArchitecture,
+  opts: { x: number; y: number; w: number; h: number },
+) {
+  const drawable = new Map(
+    diagramNodesForZoneLayout(arch).map((n) => [n.id, n]),
+  );
+  const zones = arch.zones ?? [];
+  const zoneById = new Map(zones.map((z) => [z.id, z]));
+  const childIds = new Set(zones.flatMap((z) => z.childZoneIds ?? []));
+  const topZones = zones.filter((z) => !childIds.has(z.id));
+
+  const edge = topZones.find((z) => z.kind === "edge");
+  const net = topZones.find((z) => z.kind === "vnet" || z.kind === "vpc");
+  const mgmt = topZones.find((z) => z.kind === "mgmt");
+  const otherTop = topZones.filter(
+    (z) => z !== edge && z !== net && z !== mgmt,
+  );
+
+  const positions = new Map<string, NodePos>();
+  const pad = 0.08;
+  let yCursor = opts.y;
+  const bodyH = opts.h - (mgmt ? 0.95 : 0);
+
+  // Left edge strip + right main
+  const edgeW = edge ? Math.min(1.55, opts.w * 0.28) : 0;
+  const mainX = opts.x + (edgeW ? edgeW + 0.12 : 0);
+  const mainW = opts.w - (edgeW ? edgeW + 0.12 : 0);
+
+  if (edge) {
+    const box = { x: opts.x, y: yCursor, w: edgeW, h: bodyH };
+    drawZoneFrame(pptx, s, edge, box, arch.provider);
+    const nodes = edge.nodeIds
+      .map((id) => drawable.get(id))
+      .filter((n): n is DocCloudArchNode => Boolean(n));
+    layoutNodesInRect(
+      pptx,
+      s,
+      arch.provider,
+      nodes,
+      {
+        x: box.x + pad,
+        y: box.y + 0.34,
+        w: box.w - pad * 2,
+        h: box.h - 0.42,
+      },
+      positions,
+    );
+  }
+
+  const stack: DocCloudArchZone[] = [];
+  if (net) stack.push(net);
+  stack.push(...otherTop);
+  const stackGap = 0.1;
+  const stackH =
+    (bodyH - stackGap * Math.max(0, stack.length - 1)) /
+    Math.max(1, stack.length);
+
+  stack.forEach((zone, zi) => {
+    const box = {
+      x: mainX,
+      y: yCursor + zi * (stackH + stackGap),
+      w: mainW,
+      h: stackH,
+    };
+    drawZoneFrame(pptx, s, zone, box, arch.provider);
+    const childZones = (zone.childZoneIds ?? [])
+      .map((id) => zoneById.get(id))
+      .filter((z): z is DocCloudArchZone => Boolean(z));
+    const directNodes = zone.nodeIds
+      .map((id) => drawable.get(id))
+      .filter((n): n is DocCloudArchNode => Boolean(n));
+
+    const contentY = box.y + 0.34;
+    const contentH = box.h - 0.42;
+    if (childZones.length) {
+      const leftW = directNodes.length
+        ? Math.min(mainW * 0.42, 2.2)
+        : 0;
+      if (directNodes.length) {
+        layoutNodesInRect(
+          pptx,
+          s,
+          arch.provider,
+          directNodes,
+          {
+            x: box.x + pad,
+            y: contentY,
+            w: leftW - pad,
+            h: contentH,
+          },
+          positions,
+        );
+      }
+      const child = childZones[0];
+      const cBox = {
+        x: box.x + leftW + (leftW ? 0.08 : pad),
+        y: contentY,
+        w: box.w - leftW - (leftW ? 0.16 : pad * 2),
+        h: contentH,
+      };
+      drawZoneFrame(pptx, s, child, cBox, arch.provider);
+      const childNodes = child.nodeIds
+        .map((id) => drawable.get(id))
+        .filter((n): n is DocCloudArchNode => Boolean(n));
+      layoutNodesInRect(
+        pptx,
+        s,
+        arch.provider,
+        childNodes,
+        {
+          x: cBox.x + pad,
+          y: cBox.y + 0.3,
+          w: cBox.w - pad * 2,
+          h: cBox.h - 0.38,
+        },
+        positions,
+      );
+    } else {
+      layoutNodesInRect(
+        pptx,
+        s,
+        arch.provider,
+        directNodes,
+        {
+          x: box.x + pad,
+          y: contentY,
+          w: box.w - pad * 2,
+          h: contentH,
+        },
+        positions,
+      );
+    }
+  });
+
+  if (mgmt) {
+    const box = {
+      x: opts.x,
+      y: opts.y + opts.h - 0.88,
+      w: opts.w,
+      h: 0.84,
+    };
+    drawZoneFrame(pptx, s, mgmt, box, arch.provider);
+    const nodes = mgmt.nodeIds
+      .map((id) => drawable.get(id))
+      .filter((n): n is DocCloudArchNode => Boolean(n));
+    layoutNodesInRect(
+      pptx,
+      s,
+      arch.provider,
+      nodes,
+      {
+        x: box.x + pad,
+        y: box.y + 0.3,
+        w: box.w - pad * 2,
+        h: box.h - 0.38,
+      },
+      positions,
+    );
+  }
+
+  // ゾーン間の主要エッジのみ（重なり防止）
+  const edges = (arch.edges ?? []).slice(0, 8);
+  for (const e of edges) {
+    const a = positions.get(e.from);
+    const b = positions.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.cx;
+    const y1 = a.cy;
+    const x2 = b.cx;
+    const y2 = b.cy;
+    s.addShape(pptx.ShapeType.line, {
+      x: Math.min(x1, x2),
+      y: Math.min(y1, y2),
+      w: Math.max(0.05, Math.abs(x2 - x1)),
+      h: Math.max(0.02, Math.abs(y2 - y1)),
+      line: { color: T.cyan, width: 1.1, endArrowType: "triangle" },
+    });
+  }
+}
+
+function addCloudArchFlatDiagram(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  arch: DocCloudArchitecture,
+  opts: { x: number; y: number; w: number; h: number },
+) {
+  const edges = arch.edges ?? [];
+  const layers = layerCloudNodes(arch.nodes, edges);
+  const colN = layers.length;
+  const gapX = 0.18;
+  const colW = (innerW(opts) - gapX * Math.max(0, colN - 1)) / Math.max(1, colN);
+  const positions = new Map<string, NodePos>();
+  const inner = {
+    x: opts.x,
+    y: opts.y,
+    w: opts.w,
+    h: opts.h,
+  };
+
+  layers.forEach((layer, li) => {
+    const rowN = layer.length;
+    const gapY = 0.1;
+    const nodeH = Math.min(
+      arch.nodes.length >= 9 ? 0.88 : 1.05,
+      (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN),
+    );
+    const nodeW = Math.min(colW, arch.nodes.length >= 9 ? 1.45 : 1.7);
+    const colX = inner.x + li * (colW + gapX) + (colW - nodeW) / 2;
+    layer.forEach((node, ri) => {
+      drawCloudNodeCard(
+        pptx,
+        s,
+        arch.provider,
+        node,
+        {
+          x: colX,
+          y: inner.y + ri * (nodeH + gapY),
+          w: nodeW,
+          h: nodeH,
+        },
+        positions,
+      );
+    });
+  });
+
+  for (const e of edges.slice(0, 10)) {
+    const a = positions.get(e.from);
+    const b = positions.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.cx + a.w * 0.4;
+    const y1 = a.cy;
+    const x2 = b.cx - b.w * 0.4;
+    const y2 = b.cy;
+    const w = Math.max(0.05, x2 - x1);
+    s.addShape(pptx.ShapeType.line, {
+      x: x1,
+      y: y1,
+      w,
+      h: y2 - y1,
+      line: { color: T.cyan, width: 1.25, endArrowType: "triangle" },
+    });
+  }
+}
+
+function innerW(opts: { w: number }) {
+  return opts.w;
+}
+
 function addCloudArchDiagramOnly(
   pptx: pptxgen,
   s: pptxgen.Slide,
@@ -110,115 +520,16 @@ function addCloudArchDiagramOnly(
   });
 
   const inner = {
-    x: opts.x + 0.14,
-    y: opts.y + 0.36,
-    w: opts.w - 0.28,
-    h: opts.h - 0.48,
+    x: opts.x + 0.12,
+    y: opts.y + 0.34,
+    w: opts.w - 0.24,
+    h: opts.h - 0.44,
   };
-  const edges = arch.edges ?? [];
-  const layers = layerCloudNodes(arch.nodes, edges);
-  const colN = layers.length;
-  const gapX = 0.18;
-  const colW = (inner.w - gapX * Math.max(0, colN - 1)) / Math.max(1, colN);
-  const positions = new Map<string, { cx: number; cy: number; w: number; h: number }>();
 
-  layers.forEach((layer, li) => {
-    const rowN = layer.length;
-    const gapY = 0.1;
-    const nodeH = Math.min(
-      arch.nodes.length >= 9 ? 0.88 : 1.05,
-      (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN),
-    );
-    const nodeW = Math.min(colW, arch.nodes.length >= 9 ? 1.45 : 1.7);
-    const colX = inner.x + li * (colW + gapX) + (colW - nodeW) / 2;
-    layer.forEach((node, ri) => {
-      const y = inner.y + ri * (nodeH + gapY);
-      const png = getCloudIconPngBase64(arch.provider, node.service);
-      s.addShape(pptx.ShapeType.roundRect, {
-        x: colX,
-        y,
-        w: nodeW,
-        h: nodeH,
-        fill: { color: T.white },
-        line: { color: T.slate, width: 0.9 },
-        rectRadius: 0.08,
-      });
-      if (png) {
-        s.addImage({
-          data: `data:image/png;base64,${png}`,
-          x: colX + (nodeW - 0.38) / 2,
-          y: y + 0.06,
-          w: 0.38,
-          h: 0.38,
-        });
-      } else {
-        s.addShape(pptx.ShapeType.roundRect, {
-          x: colX + (nodeW - 0.38) / 2,
-          y: y + 0.06,
-          w: 0.38,
-          h: 0.38,
-          fill: { color: T.teal },
-          rectRadius: 0.06,
-        });
-      }
-      s.addText(node.label, {
-        x: colX + 0.04,
-        y: y + 0.46,
-        w: nodeW - 0.08,
-        h: 0.24,
-        fontSize: 9,
-        bold: true,
-        color: T.navy,
-        align: "center",
-        fontFace: DOCS_FONT,
-      });
-      s.addText(cloudServiceDisplayName(arch.provider, node.service), {
-        x: colX + 0.04,
-        y: y + nodeH - 0.26,
-        w: nodeW - 0.08,
-        h: 0.2,
-        fontSize: 7,
-        color: T.muted,
-        align: "center",
-        fontFace: DOCS_FONT,
-      });
-      positions.set(node.id, {
-        cx: colX + nodeW / 2,
-        cy: y + nodeH / 2,
-        w: nodeW,
-        h: nodeH,
-      });
-    });
-  });
-
-  for (const e of edges.slice(0, 14)) {
-    const a = positions.get(e.from);
-    const b = positions.get(e.to);
-    if (!a || !b) continue;
-    const x1 = a.cx + a.w * 0.4;
-    const y1 = a.cy;
-    const x2 = b.cx - b.w * 0.4;
-    const y2 = b.cy;
-    const w = Math.max(0.05, x2 - x1);
-    s.addShape(pptx.ShapeType.line, {
-      x: x1,
-      y: y1,
-      w,
-      h: y2 - y1,
-      line: { color: T.cyan, width: 1.25, endArrowType: "triangle" },
-    });
-    if (e.label) {
-      s.addText(e.label, {
-        x: x1,
-        y: Math.min(y1, y2) - 0.16,
-        w,
-        h: 0.16,
-        fontSize: 7,
-        color: T.muted,
-        align: "center",
-        fontFace: DOCS_FONT,
-      });
-    }
+  if (shouldUseZoneLayout(arch) && (arch.zones?.length ?? 0) > 0) {
+    addCloudArchZonedDiagram(pptx, s, arch, inner);
+  } else {
+    addCloudArchFlatDiagram(pptx, s, arch, inner);
   }
 }
 
