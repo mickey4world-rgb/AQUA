@@ -64,12 +64,12 @@ function layerCloudNodes(
   if (!frontier.length) frontier = [nodes[0].id];
   const layers: DocCloudArchNode[][] = [];
   const placed = new Set<string>();
-  while (frontier.length && layers.length < 5) {
+  while (frontier.length && layers.length < 6) {
     const layerNodes = frontier
       .map((id) => byId.get(id))
       .filter((n): n is DocCloudArchNode => Boolean(n && !placed.has(n.id)));
     if (!layerNodes.length) break;
-    layers.push(layerNodes.slice(0, 4));
+    layers.push(layerNodes.slice(0, 5));
     layerNodes.forEach((n) => placed.add(n.id));
     const next: string[] = [];
     for (const n of layerNodes) {
@@ -80,8 +80,12 @@ function layerCloudNodes(
     frontier = next;
   }
   const rest = nodes.filter((n) => !placed.has(n.id));
-  if (rest.length) layers.push(rest.slice(0, 4));
-  return layers.length ? layers : [nodes.slice(0, 4)];
+  if (rest.length) {
+    for (let i = 0; i < rest.length; i += 5) {
+      layers.push(rest.slice(i, i + 5));
+    }
+  }
+  return layers.length ? layers : [nodes.slice(0, 5)];
 }
 
 function addCloudArchDiagramOnly(
@@ -121,8 +125,11 @@ function addCloudArchDiagramOnly(
   layers.forEach((layer, li) => {
     const rowN = layer.length;
     const gapY = 0.1;
-    const nodeH = Math.min(1.05, (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN));
-    const nodeW = Math.min(colW, 1.7);
+    const nodeH = Math.min(
+      arch.nodes.length >= 9 ? 0.88 : 1.05,
+      (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN),
+    );
+    const nodeW = Math.min(colW, arch.nodes.length >= 9 ? 1.45 : 1.7);
     const colX = inner.x + li * (colW + gapX) + (colW - nodeW) / 2;
     layer.forEach((node, ri) => {
       const y = inner.y + ri * (nodeH + gapY);
@@ -184,7 +191,7 @@ function addCloudArchDiagramOnly(
     });
   });
 
-  for (const e of edges.slice(0, 10)) {
+  for (const e of edges.slice(0, 14)) {
     const a = positions.get(e.from);
     const b = positions.get(e.to);
     if (!a || !b) continue;
@@ -221,9 +228,12 @@ function addCloudCostTable(
   arch: DocCloudArchitecture,
   opts: { x: number; y: number; w: number; h: number },
 ) {
-  const rows = arch.nodes.slice(0, 8);
-  const headerH = 0.32;
-  const rowH = Math.min(0.34, (opts.h - headerH - 0.45) / Math.max(1, rows.length));
+  const rows = arch.nodes.slice(0, 12);
+  const headerH = 0.28;
+  const rowH = Math.min(
+    rows.length >= 9 ? 0.26 : 0.34,
+    (opts.h - headerH - 0.45) / Math.max(1, rows.length),
+  );
   s.addText("サービス一覧と月額想定", {
     x: opts.x,
     y: opts.y,

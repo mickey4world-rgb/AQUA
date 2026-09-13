@@ -14,14 +14,6 @@ const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   closing: "まとめ",
 };
 
-const visualTypeLabels = {
-  flow: "フロー",
-  comparison: "比較",
-  timeline: "タイムライン",
-  pyramid: "ピラミッド",
-  icons: "構成図",
-} as const;
-
 const BLUE_HEADERS = [
   "bg-[#0F4568]",
   "bg-[#1A8CA6]",
@@ -152,6 +144,7 @@ function formatYen(n: number): string {
 
 function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
   const provider = arch.provider === "aws" ? "AWS" : "Azure";
+  const iconBase = arch.provider === "aws" ? "/docs/aws-icons" : "/docs/azure-icons";
   const total = arch.totalMonthlyJpy ?? arch.nodes.reduce((a, n) => a + (n.monthlyCostJpy ?? 0), 0);
   return (
     <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9] p-1.5">
@@ -159,12 +152,20 @@ function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
         {arch.caption ?? `想定 ${provider} 構成`} · {provider} 公式アイコン
       </p>
       <div className="flex flex-wrap gap-1">
-        {arch.nodes.slice(0, 8).map((n) => (
+        {arch.nodes.slice(0, 12).map((n) => (
           <div
             key={n.id}
             className="min-w-[3.2rem] flex-1 rounded border border-[#5BA3B5]/35 bg-white px-1 py-1 text-center"
           >
-            <div className="mx-auto mb-0.5 h-4 w-4 rounded bg-gradient-to-br from-[#1A8CA6] to-[#3DD5E0]" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${iconBase}/${n.service}.png`}
+              alt={n.service}
+              width={20}
+              height={20}
+              className="mx-auto mb-0.5 h-5 w-5 object-contain"
+              loading="lazy"
+            />
             <p className="text-[8px] font-semibold text-[#0F4568]">{n.label}</p>
             <p className="truncate text-[6px] text-slate-500">{n.service}</p>
             {typeof n.monthlyCostJpy === "number" ? (
