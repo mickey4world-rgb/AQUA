@@ -6,20 +6,23 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 
-const root = path.resolve(
-  ".tmp-aws-icons/Architecture-Service-Icons_07312026",
-);
+const roots = [
+  path.resolve(".tmp-aws-icons/Architecture-Service-Icons_07312026"),
+  path.resolve(".tmp-aws-icons/Resource-Icons_07312026"),
+];
 
 function find(fileName) {
   const hits = [];
   function walk(d) {
+    if (!fs.existsSync(d)) return;
     for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      if (ent.name.startsWith("._")) continue;
       const p = path.join(d, ent.name);
       if (ent.isDirectory()) walk(p);
       else if (ent.name === fileName) hits.push(p);
     }
   }
-  walk(root);
+  for (const root of roots) walk(root);
   return hits[0];
 }
 
@@ -50,6 +53,18 @@ const map = {
   waf: "Arch_AWS-WAF_64.svg",
   route53: "Arch_Amazon-Route-53_64.svg",
   vpc: "Arch_Amazon-Virtual-Private-Cloud_64.svg",
+  "nat-gateway": "Res_Amazon-VPC_NAT-Gateway_48.svg",
+  "internet-gateway": "Res_Amazon-VPC_Internet-Gateway_48.svg",
+  nacl: "Res_Amazon-VPC_Network-Access-Control-List_48.svg",
+  // Official pack has no dedicated SG icon; NACL resource is the closest perimeter control visual.
+  "security-group": "Res_Amazon-VPC_Network-Access-Control-List_48.svg",
+  "vpc-endpoint": "Res_Amazon-VPC_Endpoints_48.svg",
+  privatelink: "Arch_AWS-PrivateLink_64.svg",
+  "transit-gateway": "Arch_AWS-Transit-Gateway_64.svg",
+  "site-to-site-vpn": "Arch_AWS-Site-to-Site-VPN_64.svg",
+  "direct-connect": "Arch_AWS-Direct-Connect_64.svg",
+  "network-firewall": "Arch_AWS-Network-Firewall_64.svg",
+  "elastic-ip": "Res_Amazon-EC2_Elastic-IP-Address_48.svg",
   ecr: "Arch_Amazon-Elastic-Container-Registry_64.svg",
   amplify: "Arch_AWS-Amplify_64.svg",
   "elastic-beanstalk": "Arch_AWS-Elastic-Beanstalk_64.svg",

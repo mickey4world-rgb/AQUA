@@ -3,24 +3,16 @@
 import type { DocCloudArchitecture, DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
 
 const layoutLabels: Record<DocSlideOutline["layout"], string> = {
-  title: "è¡¨ç´",
-  section: "ç« æ",
-  content: "æ¬æ",
-  twoColumn: "2å",
-  cards: "ã«ã¼ã",
+  title: "表紙",
+  section: "章扉",
+  content: "本文",
+  twoColumn: "2列",
+  cards: "カード",
   stat: "KPI",
-  cloudArch: "ã¯ã©ã¦ãæ§æ",
-  azureArch: "Azureæ§æ",
-  closing: "ã¾ã¨ã",
+  cloudArch: "クラウド構成",
+  azureArch: "Azure構成",
+  closing: "まとめ",
 };
-
-const visualTypeLabels = {
-  flow: "ãã­ã¼",
-  comparison: "æ¯è¼",
-  timeline: "ã¿ã¤ã ã©ã¤ã³",
-  pyramid: "ãã©ããã",
-  icons: "æ§æå³",
-} as const;
 
 const BLUE_HEADERS = [
   "bg-[#0F4568]",
@@ -61,7 +53,7 @@ function VisualPreview({ visual }: { visual: DocSlideVisual }) {
               <div className="w-12">
                 <ArchBoxPreview label={label} headerClass={BLUE_HEADERS[i % BLUE_HEADERS.length]} />
               </div>
-              {i < labels.length - 1 && <span className="text-[10px] text-[#3DD5E0]">â</span>}
+              {i < labels.length - 1 && <span className="text-[10px] text-[#3DD5E0]">→</span>}
             </div>
           ))}
         </div>
@@ -74,7 +66,7 @@ function VisualPreview({ visual }: { visual: DocSlideVisual }) {
       <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9]/70 p-1.5">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
           <ArchBoxPreview label={labels[0] ?? ""} headerClass="bg-[#5BA3B5]" bodyClass="bg-[#E3F5FA]" />
-          <span className="text-[#3DD5E0]">â</span>
+          <span className="text-[#3DD5E0]">→</span>
           <ArchBoxPreview label={labels[1] ?? ""} headerClass="bg-[#1A8CA6]" />
         </div>
       </div>
@@ -147,7 +139,7 @@ function KeyMessage({ text, dark }: { text: string; dark?: boolean }) {
 }
 
 function formatYen(n: number): string {
-  return `Â¥${Math.round(n).toLocaleString("ja-JP")}`;
+  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
 
 function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
@@ -157,14 +149,15 @@ function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
   return (
     <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9] p-1.5">
       <p className="mb-1 text-[7px] text-[#4F7F8F]">
-        {arch.caption ?? `æ³å® ${provider} æ§æ`} Â· {provider} å¬å¼ã¢ã¤ã³ã³
+        {arch.caption ?? `想定 ${provider} 構成`} · {provider} 公式アイコン
       </p>
       <div className="flex flex-wrap gap-1">
-        {arch.nodes.slice(0, 8).map((n) => (
+        {arch.nodes.slice(0, 12).map((n) => (
           <div
             key={n.id}
             className="min-w-[3.2rem] flex-1 rounded border border-[#5BA3B5]/35 bg-white px-1 py-1 text-center"
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`${iconBase}/${n.service}.png`}
               alt={n.service}
@@ -184,7 +177,7 @@ function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
         ))}
       </div>
       <div className="mt-1.5 flex items-center justify-between rounded bg-white px-1.5 py-1">
-        <span className="text-[7px] text-[#4F7F8F]">æé¡æ³å®åè¨ï¼æ¦ç®ï¼</span>
+        <span className="text-[7px] text-[#4F7F8F]">月額想定合計（概算）</span>
         <span className="text-[10px] font-bold text-[#1A8CA6]">{formatYen(total)}</span>
       </div>
     </div>
@@ -254,7 +247,7 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           >
             <div className="flex h-14 items-end bg-gradient-to-br from-[#1A8CA6] via-[#2BB3C9] to-[#3DD5E0] px-2 pb-1.5">
               <span className="rounded bg-black/35 px-1.5 py-0.5 text-[7px] text-white">
-                ç»å Â· {slide.image.query}
+                画像 · {slide.image.query}
               </span>
             </div>
           </div>
@@ -279,7 +272,7 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
                 <ul className="space-y-0.5 p-1.5 text-[9px] text-slate-600">
                   {col.bullets.slice(0, 3).map((b) => (
                     <li key={b} className="flex gap-1">
-                      <span className="text-[#3DD5E0]">â¢</span>
+                      <span className="text-[#3DD5E0]">•</span>
                       <span className="line-clamp-2">{b}</span>
                     </li>
                   ))}
@@ -334,7 +327,7 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
             >
               {slide.bullets.map((item) => (
                 <li key={item} className="flex gap-1.5">
-                  <span className="text-[#3DD5E0]">â¢</span>
+                  <span className="text-[#3DD5E0]">•</span>
                   <span>{item}</span>
                 </li>
               ))}
@@ -360,10 +353,10 @@ export default function DocsSlidePreview({ outline }: DocsSlidePreviewProps) {
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-[0.25em] text-[#3DD5E0]/80">
-        ã¹ã©ã¤ããã¬ãã¥ã¼
+        スライドプレビュー
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        {outline.documentTitle} â {outline.slides.length} æ Â· Azure/AWS æ§æã»è²»ç¨å¯¾å¿
+        {outline.documentTitle} — {outline.slides.length} 枚 · Azure/AWS 構成・費用対応
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {outline.slides.map((slide, index) => (
