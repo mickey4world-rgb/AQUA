@@ -26,6 +26,8 @@
 *.pem
 .tmp-azure-icons*
 .tmp-azure-icons/
+.tmp-aws-icons*
+.tmp-aws-icons/
 
 # debug
 npm-debug.log*

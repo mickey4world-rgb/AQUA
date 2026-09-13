@@ -2,8 +2,8 @@ import pptxgen from "pptxgenjs";
 import { sanitizeFileName } from "@/lib/docs-utils";
 import { DOCS_FONT, DOCS_THEME } from "@/lib/docs-theme";
 import type {
-  DocAzureArchitecture,
-  DocAzureArchNode,
+  DocCloudArchitecture,
+  DocCloudArchNode,
   DocOutline,
   DocSlideOutline,
   DocSlideVisual,
@@ -13,11 +13,12 @@ import {
   type DocsResolvedImage,
 } from "@/lib/server/docs-stock-images";
 import {
-  DOCS_AZURE_SERVICE_LABELS,
-  getAzureIconPngBase64,
-  normalizeAzureServiceId,
-  type DocsAzureServiceId,
-} from "@/lib/server/docs-azure-icons";
+  cloudServiceDisplayName,
+  costHintFor,
+  formatYen,
+  getCloudIconPngBase64,
+  getSlideCloudArch,
+} from "@/lib/server/docs-cloud-arch";
 
 const T = DOCS_THEME;
 const BLUE_FILLS = [...T.blues];
@@ -45,10 +46,10 @@ function addResolvedImage(
 }
 
 /** ノードをエッジからレイヤー列に配置 */
-function layerAzureNodes(
-  nodes: DocAzureArchNode[],
+function layerCloudNodes(
+  nodes: DocCloudArchNode[],
   edges: { from: string; to: string }[],
-): DocAzureArchNode[][] {
+): DocCloudArchNode[][] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const indeg = new Map(nodes.map((n) => [n.id, 0]));
   const outs = new Map<string, string[]>();
@@ -61,12 +62,12 @@ function layerAzureNodes(
   }
   let frontier = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id);
   if (!frontier.length) frontier = [nodes[0].id];
-  const layers: DocAzureArchNode[][] = [];
+  const layers: DocCloudArchNode[][] = [];
   const placed = new Set<string>();
   while (frontier.length && layers.length < 5) {
     const layerNodes = frontier
       .map((id) => byId.get(id))
-      .filter((n): n is DocAzureArchNode => Boolean(n && !placed.has(n.id)));
+      .filter((n): n is DocCloudArchNode => Boolean(n && !placed.has(n.id)));
     if (!layerNodes.length) break;
     layers.push(layerNodes.slice(0, 4));
     layerNodes.forEach((n) => placed.add(n.id));
@@ -83,49 +84,49 @@ function layerAzureNodes(
   return layers.length ? layers : [nodes.slice(0, 4)];
 }
 
-function addAzureArchDiagram(
+function addCloudArchDiagramOnly(
   pptx: pptxgen,
   s: pptxgen.Slide,
-  arch: DocAzureArchitecture,
+  arch: DocCloudArchitecture,
   opts: { x: number; y: number; w: number; h: number },
 ) {
   addDiagramPanel(pptx, s, opts.x, opts.y, opts.w, opts.h);
-  if (arch.caption) {
-    s.addText(arch.caption, {
-      x: opts.x + 0.12,
-      y: opts.y + 0.08,
-      w: opts.w - 0.24,
-      h: 0.28,
-      fontSize: 10,
-      color: T.muted,
-      fontFace: DOCS_FONT,
-    });
-  }
+  const providerLabel = arch.provider === "aws" ? "AWS" : "Azure";
+  const caption = arch.caption
+    ? `${arch.caption} · ${providerLabel}`
+    : `想定 ${providerLabel} 構成`;
+  s.addText(caption, {
+    x: opts.x + 0.12,
+    y: opts.y + 0.06,
+    w: opts.w - 0.24,
+    h: 0.26,
+    fontSize: 10,
+    color: T.muted,
+    fontFace: DOCS_FONT,
+  });
 
-  const padTop = arch.caption ? 0.4 : 0.18;
   const inner = {
-    x: opts.x + 0.18,
-    y: opts.y + padTop,
-    w: opts.w - 0.36,
-    h: opts.h - padTop - 0.18,
+    x: opts.x + 0.14,
+    y: opts.y + 0.36,
+    w: opts.w - 0.28,
+    h: opts.h - 0.48,
   };
   const edges = arch.edges ?? [];
-  const layers = layerAzureNodes(arch.nodes, edges);
+  const layers = layerCloudNodes(arch.nodes, edges);
   const colN = layers.length;
-  const gapX = 0.22;
+  const gapX = 0.18;
   const colW = (inner.w - gapX * Math.max(0, colN - 1)) / Math.max(1, colN);
   const positions = new Map<string, { cx: number; cy: number; w: number; h: number }>();
 
   layers.forEach((layer, li) => {
     const rowN = layer.length;
-    const gapY = 0.14;
-    const nodeH = Math.min(1.15, (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN));
-    const nodeW = Math.min(colW, 1.85);
+    const gapY = 0.1;
+    const nodeH = Math.min(1.05, (inner.h - gapY * Math.max(0, rowN - 1)) / Math.max(1, rowN));
+    const nodeW = Math.min(colW, 1.7);
     const colX = inner.x + li * (colW + gapX) + (colW - nodeW) / 2;
     layer.forEach((node, ri) => {
       const y = inner.y + ri * (nodeH + gapY);
-      const service = normalizeAzureServiceId(node.service) as DocsAzureServiceId | null;
-      const png = getAzureIconPngBase64(node.service);
+      const png = getCloudIconPngBase64(arch.provider, node.service);
       s.addShape(pptx.ShapeType.roundRect, {
         x: colX,
         y,
@@ -138,39 +139,37 @@ function addAzureArchDiagram(
       if (png) {
         s.addImage({
           data: `data:image/png;base64,${png}`,
-          x: colX + (nodeW - 0.42) / 2,
-          y: y + 0.08,
-          w: 0.42,
-          h: 0.42,
+          x: colX + (nodeW - 0.38) / 2,
+          y: y + 0.06,
+          w: 0.38,
+          h: 0.38,
         });
       } else {
         s.addShape(pptx.ShapeType.roundRect, {
-          x: colX + (nodeW - 0.42) / 2,
-          y: y + 0.08,
-          w: 0.42,
-          h: 0.42,
+          x: colX + (nodeW - 0.38) / 2,
+          y: y + 0.06,
+          w: 0.38,
+          h: 0.38,
           fill: { color: T.teal },
           rectRadius: 0.06,
         });
       }
       s.addText(node.label, {
-        x: colX + 0.06,
-        y: y + 0.52,
-        w: nodeW - 0.12,
-        h: 0.28,
-        fontSize: 10,
+        x: colX + 0.04,
+        y: y + 0.46,
+        w: nodeW - 0.08,
+        h: 0.24,
+        fontSize: 9,
         bold: true,
         color: T.navy,
         align: "center",
         fontFace: DOCS_FONT,
       });
-      const svcLabel =
-        (service && DOCS_AZURE_SERVICE_LABELS[service]) || node.service;
-      s.addText(svcLabel, {
+      s.addText(cloudServiceDisplayName(arch.provider, node.service), {
         x: colX + 0.04,
-        y: y + nodeH - 0.28,
+        y: y + nodeH - 0.26,
         w: nodeW - 0.08,
-        h: 0.22,
+        h: 0.2,
         fontSize: 7,
         color: T.muted,
         align: "center",
@@ -189,9 +188,9 @@ function addAzureArchDiagram(
     const a = positions.get(e.from);
     const b = positions.get(e.to);
     if (!a || !b) continue;
-    const x1 = a.cx + a.w * 0.42;
+    const x1 = a.cx + a.w * 0.4;
     const y1 = a.cy;
-    const x2 = b.cx - b.w * 0.42;
+    const x2 = b.cx - b.w * 0.4;
     const y2 = b.cy;
     const w = Math.max(0.05, x2 - x1);
     s.addShape(pptx.ShapeType.line, {
@@ -204,9 +203,9 @@ function addAzureArchDiagram(
     if (e.label) {
       s.addText(e.label, {
         x: x1,
-        y: Math.min(y1, y2) - 0.18,
+        y: Math.min(y1, y2) - 0.16,
         w,
-        h: 0.18,
+        h: 0.16,
         fontSize: 7,
         color: T.muted,
         align: "center",
@@ -216,47 +215,163 @@ function addAzureArchDiagram(
   }
 }
 
-function addAzureArchSlide(
+function addCloudCostTable(
+  pptx: pptxgen,
+  s: pptxgen.Slide,
+  arch: DocCloudArchitecture,
+  opts: { x: number; y: number; w: number; h: number },
+) {
+  const rows = arch.nodes.slice(0, 8);
+  const headerH = 0.32;
+  const rowH = Math.min(0.34, (opts.h - headerH - 0.45) / Math.max(1, rows.length));
+  s.addText("サービス一覧と月額想定", {
+    x: opts.x,
+    y: opts.y,
+    w: opts.w,
+    h: 0.28,
+    fontSize: 12,
+    bold: true,
+    color: T.navy,
+    fontFace: DOCS_FONT,
+  });
+  const tableY = opts.y + 0.3;
+  s.addShape(pptx.ShapeType.rect, {
+    x: opts.x,
+    y: tableY,
+    w: opts.w,
+    h: headerH,
+    fill: { color: T.navy },
+  });
+  const cols = [
+    { label: "役割", x: 0, w: 0.18 },
+    { label: "サービス", x: 0.18, w: 0.28 },
+    { label: "前提（概算）", x: 0.46, w: 0.36 },
+    { label: "月額", x: 0.82, w: 0.18 },
+  ];
+  cols.forEach((c) => {
+    s.addText(c.label, {
+      x: opts.x + opts.w * c.x + 0.06,
+      y: tableY + 0.04,
+      w: opts.w * c.w - 0.08,
+      h: 0.24,
+      fontSize: 9,
+      bold: true,
+      color: T.white,
+      fontFace: DOCS_FONT,
+    });
+  });
+
+  rows.forEach((node, i) => {
+    const y = tableY + headerH + i * rowH;
+    if (i % 2 === 0) {
+      s.addShape(pptx.ShapeType.rect, {
+        x: opts.x,
+        y,
+        w: opts.w,
+        h: rowH,
+        fill: { color: T.panel },
+      });
+    }
+    const hint = costHintFor(arch.provider, node.service);
+    const cells = [
+      node.label,
+      cloudServiceDisplayName(arch.provider, node.service),
+      hint?.skuNote ?? "—",
+      formatYen(node.monthlyCostJpy ?? 0),
+    ];
+    cols.forEach((c, ci) => {
+      s.addText(cells[ci], {
+        x: opts.x + opts.w * c.x + 0.06,
+        y: y + 0.04,
+        w: opts.w * c.w - 0.08,
+        h: rowH - 0.06,
+        fontSize: 9,
+        color: T.text,
+        fontFace: DOCS_FONT,
+        valign: "middle",
+        bold: ci === 3,
+      });
+    });
+  });
+
+  const totalY = tableY + headerH + rows.length * rowH + 0.08;
+  s.addShape(pptx.ShapeType.roundRect, {
+    x: opts.x,
+    y: totalY,
+    w: opts.w,
+    h: 0.42,
+    fill: { color: T.pale },
+    line: { color: T.teal, width: 0.8 },
+    rectRadius: 0.06,
+  });
+  s.addText("想定月額合計（概算）", {
+    x: opts.x + 0.15,
+    y: totalY + 0.06,
+    w: opts.w * 0.55,
+    h: 0.3,
+    fontSize: 11,
+    bold: true,
+    color: T.navy,
+    fontFace: DOCS_FONT,
+    valign: "middle",
+  });
+  s.addText(formatYen(arch.totalMonthlyJpy ?? 0), {
+    x: opts.x + opts.w * 0.55,
+    y: totalY + 0.06,
+    w: opts.w * 0.42,
+    h: 0.3,
+    fontSize: 14,
+    bold: true,
+    color: T.teal,
+    align: "right",
+    fontFace: DOCS_FONT,
+    valign: "middle",
+  });
+  if (arch.costNote) {
+    s.addText(arch.costNote, {
+      x: opts.x,
+      y: totalY + 0.46,
+      w: opts.w,
+      h: 0.28,
+      fontSize: 8,
+      color: T.muted,
+      fontFace: DOCS_FONT,
+    });
+  }
+}
+
+function addCloudArchSlide(
   pptx: pptxgen,
   slide: DocSlideOutline,
   index: number,
   total: number,
 ) {
-  const arch = slide.azureArch;
-  if (!arch || arch.nodes.length < 3) {
+  const arch = getSlideCloudArch(slide);
+  if (!arch) {
     addContentSlide(pptx, { ...slide, layout: "content" }, index, total, false);
     return;
   }
   const s = pptx.addSlide();
   addSlideChrome(pptx, s, slide.title, index, total, false);
-  let y = 0.95;
+  let y = 0.92;
   if (slide.keyMessage) {
-    addKeyMessage(pptx, s, slide.keyMessage, { x: 0.4, y, w: 9.1 });
-    y += 0.55;
+    addKeyMessage(pptx, s, slide.keyMessage, { x: 0.35, y, w: 9.2 });
+    y += 0.5;
   }
-  const bullets = slide.bullets.filter(Boolean).slice(0, 3);
-  if (bullets.length) {
-    s.addText(
-      bullets.map((text) => ({
-        text,
-        options: {
-          bullet: { code: "2022" },
-          breakLine: true,
-          fontSize: 11,
-          color: T.text,
-          fontFace: DOCS_FONT,
-          paraSpaceBefore: 4,
-        },
-      })),
-      { x: 0.45, y, w: 9.0, h: 0.7, valign: "top" },
-    );
-    y += 0.75;
-  }
-  addAzureArchDiagram(pptx, s, arch, {
-    x: 0.35,
+
+  // 左: 構成図 / 右: 費用表
+  const diagramH = Math.min(3.55, 5.15 - y);
+  addCloudArchDiagramOnly(pptx, s, arch, {
+    x: 0.3,
     y,
-    w: 9.2,
-    h: Math.max(2.8, 5.2 - y),
+    w: 5.35,
+    h: diagramH,
+  });
+  addCloudCostTable(pptx, s, arch, {
+    x: 5.8,
+    y,
+    w: 3.75,
+    h: diagramH,
   });
 }
 
@@ -896,10 +1011,11 @@ function addContentSlide(
   addSlideChrome(pptx, s, slide.title, index, total, closing);
 
   const bullets = slide.bullets.filter(Boolean);
-  const useAzure = Boolean(slide.azureArch && slide.azureArch.nodes.length >= 3) && !closing;
-  const usePhoto = Boolean(resolved) && !closing && !useAzure;
-  const hasVisual = !!slide.visual && !usePhoto && !useAzure;
-  const hasSide = useAzure || usePhoto || hasVisual;
+  const cloudArch = getSlideCloudArch(slide);
+  const useCloud = Boolean(cloudArch) && !closing;
+  const usePhoto = Boolean(resolved) && !closing && !useCloud;
+  const hasVisual = !!slide.visual && !usePhoto && !useCloud;
+  const hasSide = useCloud || usePhoto || hasVisual;
   const hasKey = Boolean(slide.keyMessage);
   let y = 0.98;
   if (hasKey && slide.keyMessage) {
@@ -990,8 +1106,8 @@ function addContentSlide(
   const sideW = bullets.length ? 4.75 : 9.0;
   const sideH = bullets.length ? 3.55 : 3.7;
 
-  if (useAzure && slide.azureArch) {
-    addAzureArchDiagram(pptx, s, slide.azureArch, {
+  if (useCloud && cloudArch) {
+    addCloudArchDiagramOnly(pptx, s, cloudArch, {
       x: sideX,
       y: sideY,
       w: sideW,
@@ -1222,7 +1338,7 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
   base64: string;
   fileName: string;
   imageCount: number;
-  azureArchCount: number;
+  cloudArchCount: number;
 }> {
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
@@ -1262,8 +1378,9 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
       case "stat":
         addStatSlide(pptx, slide, n, total);
         break;
+      case "cloudArch":
       case "azureArch":
-        addAzureArchSlide(pptx, slide, n, total);
+        addCloudArchSlide(pptx, slide, n, total);
         break;
       case "closing":
         addContentSlide(pptx, slide, n, total, true, undefined);
@@ -1274,15 +1391,13 @@ export async function buildPptxFromOutline(outline: DocOutline): Promise<{
   });
 
   const imageCount = images.size;
-  const azureCount = outline.slides.filter(
-    (s) => (s.azureArch?.nodes.length ?? 0) >= 3,
-  ).length;
+  const cloudArchCount = outline.slides.filter((s) => getSlideCloudArch(s)).length;
 
   const base64 = (await pptx.write({ outputType: "base64" })) as string;
   return {
     base64,
     fileName: sanitizeFileName(outline.documentTitle),
     imageCount,
-    azureArchCount: azureCount,
+    cloudArchCount,
   };
 }

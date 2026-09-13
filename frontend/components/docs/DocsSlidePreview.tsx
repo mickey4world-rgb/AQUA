@@ -1,6 +1,6 @@
 "use client";
 
-import type { DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
+import type { DocCloudArchitecture, DocOutline, DocSlideOutline, DocSlideVisual } from "@/lib/types/docs";
 
 const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   title: "表紙",
@@ -9,6 +9,7 @@ const layoutLabels: Record<DocSlideOutline["layout"], string> = {
   twoColumn: "2列",
   cards: "カード",
   stat: "KPI",
+  cloudArch: "クラウド構成",
   azureArch: "Azure構成",
   closing: "まとめ",
 };
@@ -21,7 +22,6 @@ const visualTypeLabels = {
   icons: "構成図",
 } as const;
 
-/** 爽やか青〜アクア（docs-theme と同期） */
 const BLUE_HEADERS = [
   "bg-[#0F4568]",
   "bg-[#1A8CA6]",
@@ -146,14 +146,18 @@ function KeyMessage({ text, dark }: { text: string; dark?: boolean }) {
   );
 }
 
-function AzureArchPreview({
-  arch,
-}: {
-  arch: NonNullable<DocSlideOutline["azureArch"]>;
-}) {
+function formatYen(n: number): string {
+  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
+}
+
+function CloudArchPreview({ arch }: { arch: DocCloudArchitecture }) {
+  const provider = arch.provider === "aws" ? "AWS" : "Azure";
+  const total = arch.totalMonthlyJpy ?? arch.nodes.reduce((a, n) => a + (n.monthlyCostJpy ?? 0), 0);
   return (
     <div className="mt-2 rounded border border-[#5BA3B5]/30 bg-[#F0F7F9] p-1.5">
-      {arch.caption ? <p className="mb-1 text-[7px] text-[#4F7F8F]">{arch.caption}</p> : null}
+      <p className="mb-1 text-[7px] text-[#4F7F8F]">
+        {arch.caption ?? `想定 ${provider} 構成`} · {provider} 公式アイコン
+      </p>
       <div className="flex flex-wrap gap-1">
         {arch.nodes.slice(0, 8).map((n) => (
           <div
@@ -163,14 +167,18 @@ function AzureArchPreview({
             <div className="mx-auto mb-0.5 h-4 w-4 rounded bg-gradient-to-br from-[#1A8CA6] to-[#3DD5E0]" />
             <p className="text-[8px] font-semibold text-[#0F4568]">{n.label}</p>
             <p className="truncate text-[6px] text-slate-500">{n.service}</p>
+            {typeof n.monthlyCostJpy === "number" ? (
+              <p className="text-[6px] font-semibold text-[#1A8CA6]">
+                {formatYen(n.monthlyCostJpy)}
+              </p>
+            ) : null}
           </div>
         ))}
       </div>
-      {(arch.edges?.length ?? 0) > 0 ? (
-        <p className="mt-1 text-[7px] text-[#4F7F8F]">
-          接続 {arch.edges!.length} 本 · Azure 公式アイコン
-        </p>
-      ) : null}
+      <div className="mt-1.5 flex items-center justify-between rounded bg-white px-1.5 py-1">
+        <span className="text-[7px] text-[#4F7F8F]">月額想定合計（概算）</span>
+        <span className="text-[10px] font-bold text-[#1A8CA6]">{formatYen(total)}</span>
+      </div>
     </div>
   );
 }
@@ -181,7 +189,8 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
   const isClosing = slide.layout === "closing";
   const isDark = isTitle || isClosing || isSection;
   const layoutLabel = layoutLabels[slide.layout];
-  const hasAzure = (slide.azureArch?.nodes.length ?? 0) >= 3;
+  const arch = slide.cloudArch ?? slide.azureArch;
+  const hasCloud = (arch?.nodes.length ?? 0) >= 3;
 
   return (
     <div
@@ -202,11 +211,6 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           <span className="rounded bg-[#1A8CA6]/60 px-1 py-0.5 text-[7px] text-[#B8EDE6]">
             {layoutLabel}
           </span>
-          {slide.visual && (
-            <span className="rounded bg-[#1A8CA6]/60 px-1 py-0.5 text-[7px] text-[#B8EDE6]">
-              {visualTypeLabels[slide.visual.type]}
-            </span>
-          )}
         </div>
       )}
 
@@ -232,22 +236,17 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
 
         {slide.keyMessage && <KeyMessage text={slide.keyMessage} dark={isDark} />}
 
-        {hasAzure && slide.azureArch ? <AzureArchPreview arch={slide.azureArch} /> : null}
+        {hasCloud && arch ? <CloudArchPreview arch={arch} /> : null}
 
-        {!hasAzure && slide.image?.query ? (
+        {!hasCloud && slide.image?.query ? (
           <div
             className={`mt-2 overflow-hidden rounded border ${
               isDark ? "border-white/20 bg-white/10" : "border-[#5BA3B5]/30 bg-[#E3F5FA]"
             }`}
           >
-            <div
-              className={`flex h-14 items-end bg-gradient-to-br from-[#1A8CA6] via-[#2BB3C9] to-[#3DD5E0] px-2 pb-1.5 ${
-                slide.image.placement === "hero" ? "h-16" : ""
-              }`}
-            >
+            <div className="flex h-14 items-end bg-gradient-to-br from-[#1A8CA6] via-[#2BB3C9] to-[#3DD5E0] px-2 pb-1.5">
               <span className="rounded bg-black/35 px-1.5 py-0.5 text-[7px] text-white">
-                画像 · {slide.image.placement === "hero" ? "ヒーロー" : "サイド"} ·{" "}
-                {slide.image.query}
+                画像 · {slide.image.query}
               </span>
             </div>
           </div>
@@ -285,17 +284,9 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
         {slide.layout === "cards" && slide.bullets.length > 0 ? (
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             {slide.bullets.slice(0, 4).map((title, i) => (
-              <div
-                key={title}
-                className="overflow-hidden rounded border border-[#5BA3B5]/25 bg-white"
-              >
+              <div key={title} className="overflow-hidden rounded border border-[#5BA3B5]/25 bg-white">
                 <div className={`h-0.5 ${BLUE_HEADERS[i % BLUE_HEADERS.length]}`} />
                 <p className="px-1.5 pt-1 text-[9px] font-semibold text-[#0F4568]">{title}</p>
-                {slide.cardDetails?.[i] ? (
-                  <p className="line-clamp-2 px-1.5 pb-1 text-[8px] text-slate-500">
-                    {slide.cardDetails[i]}
-                  </p>
-                ) : null}
               </div>
             ))}
           </div>
@@ -321,7 +312,7 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
             (slide.layout === "twoColumn" && (slide.columns?.length ?? 0) >= 2) ||
             (slide.layout === "cards" && slide.bullets.length > 0) ||
             (slide.layout === "stat" && (slide.stats?.length ?? 0) > 0) ||
-            hasAzure;
+            hasCloud;
           if (structured || slide.bullets.length === 0) return null;
           return (
             <ul
@@ -343,10 +334,9 @@ function SlideCard({ slide, index }: { slide: DocSlideOutline; index: number }) 
           );
         })()}
 
-        {slide.visual &&
-          !hasAzure &&
-          slide.layout !== "cards" &&
-          slide.layout !== "stat" && <VisualPreview visual={slide.visual} />}
+        {slide.visual && !hasCloud && slide.layout !== "cards" && slide.layout !== "stat" && (
+          <VisualPreview visual={slide.visual} />
+        )}
       </div>
 
       {!isTitle && !isSection && <div className="h-0.5 bg-[#1A8CA6]" />}
@@ -365,7 +355,7 @@ export default function DocsSlidePreview({ outline }: DocsSlidePreviewProps) {
         スライドプレビュー
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        {outline.documentTitle} — {outline.slides.length} 枚 · 爽やか青系（カード/2列/KPI/画像/Azure構成）
+        {outline.documentTitle} — {outline.slides.length} 枚 · Azure/AWS 構成・費用対応
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {outline.slides.map((slide, index) => (

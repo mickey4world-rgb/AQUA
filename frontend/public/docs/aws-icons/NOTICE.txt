@@ -1,0 +1,4 @@
+AWS Architecture Icons © Amazon Web Services.
+Used under AWS Architecture Icons terms:
+https://aws.amazon.com/architecture/icons/
+Source pack: Icon-package_07312026 (d1.awsstatic.com).
