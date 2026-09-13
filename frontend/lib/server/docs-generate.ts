@@ -30,12 +30,14 @@ export async function runDocsGenerate(
   }
 
   try {
-    const { base64, fileName, imageCount, azureArchCount } =
+    const { base64, fileName, imageCount, cloudArchCount } =
       await buildPptxFromOutline(aiResult.outline);
 
     const notes: string[] = [];
     if (imageCount > 0) notes.push(`ストック画像を ${imageCount} 枚挿入`);
-    if (azureArchCount > 0) notes.push(`Azure 構成図を ${azureArchCount} 枚描画`);
+    if (cloudArchCount > 0) {
+      notes.push(`クラウド構成図（サービス一覧・月額想定付き）を ${cloudArchCount} 枚描画`);
+    }
     const extra = notes.length ? ` ${notes.join("／")}しました。` : "";
 
     return {
