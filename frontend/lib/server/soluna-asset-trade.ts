@@ -27,6 +27,13 @@ import { medalUnitScore } from "@/lib/server/soluna-battle";
 import type { SolunaHunterState } from "@/lib/types/soluna";
 import { resolveBattleMode } from "@/lib/server/soluna-asset-rpg";
 import {
+  appendTradeLesson,
+  deriveTradeLessonBias,
+  formatLessonNotesForPrompt,
+  reviewTradeDecision,
+  type TradeLessonBias,
+} from "@/lib/server/soluna-trade-lessons";
+import {
   fetchHorizonMomentums,
   type HorizonMomentum,
 } from "@/lib/server/soluna-asset-horizons";
@@ -639,6 +646,12 @@ function formatHoldDays(holdMs: number | null): string {
 function trySellDecision(
   ledger: SolunaAssetLedger,
   pulse: MarketPulse,
+  bias: TradeLessonBias = {
+    avoidChaseBuys: false,
+    preferDeferStopLoss: false,
+    preferEarlierTakeProfit: false,
+    notes: [],
+  },
 ): Extract<TradeDecision, { action: "SELL" }> | null {
   const product = pulse.product;
   const meta = PRODUCT_META[product];
@@ -663,8 +676,15 @@ function trySellDecision(
   const withinLongTermHorizon =
     holdMs == null || holdMs < LONG_TERM_RECOVERY_HORIZON_MS;
 
+  const hardTp = bias.preferEarlierTakeProfit
+    ? HARD_TAKE_PROFIT_RATE * 0.9
+    : HARD_TAKE_PROFIT_RATE;
+  const softTp = bias.preferEarlierTakeProfit
+    ? SOFT_TAKE_PROFIT_RATE * 0.85
+    : SOFT_TAKE_PROFIT_RATE;
+
   // プラス圏は利確（少額積立でも利益確定は継続）
-  if (changeRate >= HARD_TAKE_PROFIT_RATE) {
+  if (changeRate >= hardTp) {
     const ruleIds = [11];
     return {
       action: "SELL",
@@ -678,7 +698,7 @@ function trySellDecision(
       ),
     };
   }
-  if (changeRate >= SOFT_TAKE_PROFIT_RATE && fading) {
+  if (changeRate >= softTp && fading) {
     const ruleIds = [12];
     return {
       action: "SELL",
@@ -709,6 +729,16 @@ function trySellDecision(
       `[asset-trade] defer stop-loss ${meta.label} pnl=${(changeRate * 100).toFixed(1)}% ${holdLabel} → 1年以内は回復余地を優先 #14`,
     );
     return null;
+  }
+
+  // 反省メモが「損切り猶予」のとき、軟損切りは見送り（硬損切りのみ）
+  if (bias.preferDeferStopLoss) {
+    if (changeRate > HARD_STOP_LOSS_RATE) {
+      console.info(
+        `[asset-trade] lesson-bias defer soft stop-loss ${meta.label} pnl=${(changeRate * 100).toFixed(1)}%`,
+      );
+      return null;
+    }
   }
 
   // 1年以上保有・現金に余裕あり、かつ深い含み損のみ例外的に損切り
@@ -758,27 +788,38 @@ function decideTrade(
   pulses: MarketPulse[],
   newsSentiment: "positive" | "negative" | "neutral",
   battleMode: "attack" | "defense",
+  bias: TradeLessonBias = {
+    avoidChaseBuys: false,
+    preferDeferStopLoss: false,
+    preferEarlierTakeProfit: false,
+    notes: [],
+  },
 ): TradeDecision {
   const prices = Object.fromEntries(pulses.map((p) => [p.product, p.ltp])) as Record<
     TradeableProduct,
     number
   >;
   const pulseSummary = pulses.map((p) => `${PRODUCT_META[p.product].label}:${p.score}`).join(" ");
+  const lessonNote = formatLessonNotesForPrompt(bias);
+  const withLesson = (reason: string) =>
+    lessonNote ? `${reason}｜${lessonNote}` : reason;
 
   if (isSleepModeActive(ledger.monthlyRealizedPnlYen, ledger)) {
     return {
       action: "HOLD",
       ruleIds: [17],
-      reason: formatReasonWithRuleIds(
-        [17],
-        `月次おやすみ閾値（10%）達成済み｜${pulseSummary}`,
+      reason: withLesson(
+        formatReasonWithRuleIds(
+          [17],
+          `月次おやすみ閾値（10%）達成済み｜${pulseSummary}`,
+        ),
       ),
     };
   }
 
   // 利確・損切りを優先（損失が大きいもの → 利益が大きいもの）
   const sellCandidates = pulses
-    .map((p) => trySellDecision(ledger, p))
+    .map((p) => trySellDecision(ledger, p, bias))
     .filter((d): d is Extract<TradeDecision, { action: "SELL" }> => Boolean(d));
   if (sellCandidates.length > 0) {
     sellCandidates.sort((a, b) => {
@@ -788,7 +829,8 @@ function decideTrade(
       const chB = (b.pulse.ltp - avgB) / avgB;
       return chA - chB;
     });
-    return sellCandidates[0]!;
+    const top = sellCandidates[0]!;
+    return { ...top, reason: withLesson(top.reason) };
   }
 
   const lastBuy = lastBuyTrade(ledger);
@@ -799,9 +841,11 @@ function decideTrade(
       return {
         action: "HOLD",
         ruleIds: [4],
-        reason: formatReasonWithRuleIds(
-          [4],
-          `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulseSummary}`,
+        reason: withLesson(
+          formatReasonWithRuleIds(
+            [4],
+            `エントリー冷却中（あと約 ${remainH}h）。利確監視は継続｜${pulseSummary}`,
+          ),
         ),
       };
     }
@@ -813,9 +857,11 @@ function decideTrade(
     return {
       action: "HOLD",
       ruleIds: [3],
-      reason: formatReasonWithRuleIds(
-        [3],
-        `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulseSummary}`,
+      reason: withLesson(
+        formatReasonWithRuleIds(
+          [3],
+          `本日の購入枠を消化済み。利確・損切りのみ継続｜${pulseSummary}`,
+        ),
       ),
     };
   }
@@ -825,9 +871,11 @@ function decideTrade(
     return {
       action: "HOLD",
       ruleIds: [5],
-      reason: formatReasonWithRuleIds(
-        [5],
-        `現金下限（${(MIN_CASH_RATIO * 100).toFixed(0)}%）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+      reason: withLesson(
+        formatReasonWithRuleIds(
+          [5],
+          `現金下限（${(MIN_CASH_RATIO * 100).toFixed(0)}%）を維持｜残 ${Math.round(ledger.cashYen).toLocaleString()}円｜${pulseSummary}`,
+        ),
       ),
     };
   }
@@ -837,6 +885,8 @@ function decideTrade(
   if (newsSentiment === "negative") buyThreshold += 10;
   if (newsSentiment === "positive") buyThreshold -= 6;
   if (battleMode === "attack") buyThreshold -= 5;
+  // 反省メモ: 追いかけ買い抑制 → 買い閾値を上げる
+  if (bias.avoidChaseBuys) buyThreshold += 10;
 
   const qualified = pulses
     .filter((p) => {
@@ -856,9 +906,11 @@ function decideTrade(
     return {
       action: "HOLD",
       ruleIds: [8, 9, 10],
-      reason: formatReasonWithRuleIds(
-        [8, 9, 10],
-        `分散上限内で強気銘柄なし（閾値 ${buyThreshold}）｜${pulseSummary}`,
+      reason: withLesson(
+        formatReasonWithRuleIds(
+          [8, 9, 10],
+          `分散上限内で強気銘柄なし（閾値 ${buyThreshold}）｜${pulseSummary}`,
+        ),
       ),
     };
   }
@@ -908,9 +960,11 @@ function decideTrade(
     return {
       action: "HOLD",
       ruleIds: [5, 6, 7],
-      reason: formatReasonWithRuleIds(
-        [5, 6, 7],
-        `強気銘柄はあるが分散・現金枠不足（閾値 ${buyThreshold}）｜${pulseSummary}`,
+      reason: withLesson(
+        formatReasonWithRuleIds(
+          [5, 6, 7],
+          `強気銘柄はあるが分散・現金枠不足（閾値 ${buyThreshold}）｜${pulseSummary}`,
+        ),
       ),
     };
   }
@@ -922,9 +976,11 @@ function decideTrade(
     action: "BUY",
     buys,
     ruleIds,
-    reason: formatReasonWithRuleIds(
-      ruleIds,
-      `条件達成 ${buys.length}銘柄を同時召喚: ${labels}｜${pulseSummary}`,
+    reason: withLesson(
+      formatReasonWithRuleIds(
+        ruleIds,
+        `条件達成 ${buys.length}銘柄を同時召喚: ${labels}｜${pulseSummary}`,
+      ),
     ),
   };
 }
@@ -1030,7 +1086,8 @@ export async function runDailyAssetTrade(input: {
   ledger = { ...ledger, medalUnits };
 
   const sentiment = inferNewsSentiment(input.newsSummary);
-  const decision = decideTrade(ledger, pulses, sentiment, battleMode);
+  const lessonBias = deriveTradeLessonBias(ledger.tradeLessons);
+  const decision = decideTrade(ledger, pulses, sentiment, battleMode, lessonBias);
 
   let newTrades = [...ledger.trades];
   let monthlyPnl = ledger.monthlyRealizedPnlYen;
@@ -1132,7 +1189,7 @@ export async function runDailyAssetTrade(input: {
   const closingDayChange = updatedTotal - previousTotalYen;
   const closingBattleMode = resolveBattleMode(closingDayChange);
 
-  const updatedLedger: SolunaAssetLedger = {
+  let updatedLedger: SolunaAssetLedger = {
     ...ledger,
     cashYen: updatedBalance.cashYen,
     btcHeld: updatedBalance.btcHeld,
@@ -1159,6 +1216,40 @@ export async function runDailyAssetTrade(input: {
     lunaComment,
     updatedAt: new Date().toISOString(),
   };
+
+  // 別モデル監査: BUY/SELL の判断を評価し、反省を蓄積（失敗しても約定は成功のまま）
+  try {
+    const lesson = await reviewTradeDecision({
+      decision: {
+        action: decision.action,
+        reason: decision.reason,
+        ruleIds: decision.ruleIds,
+      },
+      trades: executedTrades,
+      ledger: updatedLedger,
+    });
+    if (lesson) {
+      updatedLedger = appendTradeLesson(updatedLedger, lesson);
+      const verdictJa =
+        lesson.verdict === "good"
+          ? "良"
+          : lesson.verdict === "bad"
+            ? "要改善"
+            : "良し悪し混在";
+      updatedLedger = {
+        ...updatedLedger,
+        lunaComment: `${updatedLedger.lunaComment} 監査AI（${verdictJa}/${lesson.provider}）: ${lesson.summary}`,
+      };
+      console.log(
+        `[asset-trade] lesson ${lesson.verdict} via ${lesson.provider}/${lesson.model}: ${lesson.summary}`,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[asset-trade] trade lesson review skipped:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   for (const trade of executedTrades) {
     try {
