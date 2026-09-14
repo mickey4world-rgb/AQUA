@@ -306,6 +306,19 @@ export interface SolunaOpsTradeRuleRow {
   summary: string;
 }
 
+/** 売買監査AIの1件（コスト画面用） */
+export interface SolunaOpsTradeLessonRow {
+  id: string;
+  createdAt: string;
+  decisionAction: "BUY" | "SELL" | "HOLD";
+  verdict: "good" | "mixed" | "bad";
+  summary: string;
+  reflections: string[];
+  praises: string[];
+  model: string;
+  provider: string;
+}
+
 /** JST 1日分の売買サマリー */
 export interface SolunaOpsDaySummary {
   date: string; // YYYY-MM-DD (JST)
@@ -403,6 +416,16 @@ export interface SolunaOpsProductMonthStat {
   valueYen: number;
   priceYen: number;
   allocationPct: number;
+  /** 平均取得単価（円） */
+  avgBuyPriceYen: number | null;
+  /** 軟利確の目安売値（平均取得 × soft TP） */
+  targetSellSoftYen: number | null;
+  /** 硬利確の目安売値（平均取得 × hard TP） */
+  targetSellHardYen: number | null;
+  /** 現状保有を軟利確で売った場合の想定利益（円） */
+  expectedProfitSoftYen: number | null;
+  /** 現状保有を硬利確で売った場合の想定利益（円） */
+  expectedProfitHardYen: number | null;
 }
 
 export interface SolunaOpsAnalyticsReport {
@@ -460,6 +483,8 @@ export interface SolunaOpsAnalyticsReport {
     trades: SolunaOpsTradeRow[];
     /** 自動売買条件カタログ（明細の #番号 と対応） */
     tradeRules?: SolunaOpsTradeRuleRow[];
+    /** 直近の売買監査AI評価（新しい順・最大8） */
+    tradeLessons?: SolunaOpsTradeLessonRow[];
     monthlySummaries: Array<{
       month: string;
       openingBalanceYen: number;

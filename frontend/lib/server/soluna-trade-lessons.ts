@@ -117,7 +117,8 @@ JSON のみで返答:
 {
   "verdict": "good" | "mixed" | "bad",
   "summary": "40文字以内の総評",
-  "reflections": ["反省または良かった点（最大4・各60文字以内）"],
+  "praises": ["良かった点・素晴らしい判断理由（最大4・各60文字以内）。反省がない／良い傾向なら必ず書く"],
+  "reflections": ["反省・改善点（最大4・各60文字以内）。問題がなければ空配列可"],
   "biasHints": {
     "avoidChaseBuys": boolean,
     "preferDeferStopLoss": boolean,
@@ -219,8 +220,20 @@ export async function reviewTradeDecision(input: {
           .filter(Boolean)
           .slice(0, 4)
       : [];
+    const praises = Array.isArray(parsed.praises)
+      ? parsed.praises
+          .map((r) => String(r).trim())
+          .filter(Boolean)
+          .slice(0, 4)
+      : [];
     const summary = String(parsed.summary ?? "").trim().slice(0, 48);
-    if (!summary && reflections.length === 0) return null;
+    if (!summary && reflections.length === 0 && praises.length === 0) return null;
+
+    const verdict = asVerdict(parsed.verdict);
+    const fallbackPraises =
+      verdict === "good" && praises.length === 0
+        ? ["ルール整合とリスク抑制のバランスが取れた判断"]
+        : praises;
 
     return {
       id: `lesson-${Date.now()}`,
@@ -228,12 +241,10 @@ export async function reviewTradeDecision(input: {
       tradeIds: input.trades.map((t) => t.id),
       decisionAction: input.decision.action,
       decisionReason: input.decision.reason.slice(0, 200),
-      verdict: asVerdict(parsed.verdict),
+      verdict,
       summary: summary || "評価メモを保存しました",
-      reflections:
-        reflections.length > 0
-          ? reflections
-          : ["評価本文が短いため、次回も同条件の見直しを推奨"],
+      reflections,
+      praises: fallbackPraises.length ? fallbackPraises : undefined,
       biasHints: asBiasHints(parsed.biasHints),
       model: result.model,
       provider: result.provider,
@@ -256,12 +267,41 @@ export function appendTradeLesson(
   return { ...ledger, tradeLessons: next };
 }
 
-/** 直近レッスンから次回判断用バイアスを合成（空成功禁止: notes は見える形で返す） */
+/** 同じ反省原因が「今月」に複数回出たときだけ対策バイアスを有効化 */
+const SAME_CAUSE_MONTH_THRESHOLD = 2;
+
+function jstMonthKey(iso: string): string {
+  return new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 7);
+}
+
+function causeKeysForLesson(lesson: SolunaTradeLesson): string[] {
+  const blob = `${lesson.summary} ${(lesson.reflections ?? []).join(" ")}`;
+  const keys = new Set<string>();
+  if (lesson.biasHints?.avoidChaseBuys || /追いかけ|焦っ|高値掴|追撃買/.test(blob)) {
+    keys.add("avoidChaseBuys");
+  }
+  if (
+    lesson.biasHints?.preferDeferStopLoss ||
+    /損切り.*早|含み損.*我慢|長期保有|損切急/.test(blob)
+  ) {
+    keys.add("preferDeferStopLoss");
+  }
+  if (
+    lesson.biasHints?.preferEarlierTakeProfit ||
+    /利確.*遅|伸ばしすぎ|利益確定.*遅/.test(blob)
+  ) {
+    keys.add("preferEarlierTakeProfit");
+  }
+  return [...keys];
+}
+
+/** 直近レッスンから次回判断用バイアスを合成。同因が月内で複数回のみ対策。 */
 export function deriveTradeLessonBias(
   lessons: SolunaTradeLesson[] | undefined,
 ): TradeLessonBias {
-  const recent = (lessons ?? []).slice(-8);
-  if (!recent.length) {
+  const month = jstMonthKey(new Date().toISOString());
+  const inMonth = (lessons ?? []).filter((l) => jstMonthKey(l.createdAt) === month);
+  if (!inMonth.length) {
     return {
       avoidChaseBuys: false,
       preferDeferStopLoss: false,
@@ -270,36 +310,55 @@ export function deriveTradeLessonBias(
     };
   }
 
-  let avoidChase = 0;
-  let deferStop = 0;
-  let earlierTp = 0;
+  const counts: Record<string, number> = {
+    avoidChaseBuys: 0,
+    preferDeferStopLoss: 0,
+    preferEarlierTakeProfit: 0,
+  };
   const notes: string[] = [];
-  for (const l of recent) {
-    if (l.biasHints?.avoidChaseBuys || /追いかけ|焦っ|高値/.test(l.summary + l.reflections.join(""))) {
-      avoidChase += l.verdict === "bad" ? 2 : 1;
+
+  for (const l of inMonth) {
+    for (const key of causeKeysForLesson(l)) {
+      counts[key] = (counts[key] ?? 0) + 1;
     }
-    if (
-      l.biasHints?.preferDeferStopLoss ||
-      /損切り.*早|含み損.*我慢|長期保有/.test(l.summary + l.reflections.join(""))
-    ) {
-      deferStop += l.verdict === "bad" ? 2 : 1;
-    }
-    if (
-      l.biasHints?.preferEarlierTakeProfit ||
-      /利確.*遅|伸ばしすぎ|利益確定/.test(l.summary + l.reflections.join(""))
-    ) {
-      earlierTp += l.verdict === "bad" ? 2 : 1;
-    }
-    if (l.verdict !== "good") {
+    if (l.verdict === "good" && (l.praises?.length ?? 0) > 0) {
+      notes.push(`【良】${l.summary}`);
+    } else if (l.verdict !== "good") {
       notes.push(`【${l.verdict}】${l.summary}`);
     }
   }
 
+  const avoidChaseBuys = (counts.avoidChaseBuys ?? 0) >= SAME_CAUSE_MONTH_THRESHOLD;
+  const preferDeferStopLoss =
+    (counts.preferDeferStopLoss ?? 0) >= SAME_CAUSE_MONTH_THRESHOLD;
+  const preferEarlierTakeProfit =
+    (counts.preferEarlierTakeProfit ?? 0) >= SAME_CAUSE_MONTH_THRESHOLD;
+
+  const activeNotes: string[] = [];
+  if (avoidChaseBuys) {
+    activeNotes.push(
+      `今月「追いかけ買い」系の反省が ${counts.avoidChaseBuys} 回 → 買い閾値を引き上げ`,
+    );
+  }
+  if (preferDeferStopLoss) {
+    activeNotes.push(
+      `今月「損切り急ぎ」系の反省が ${counts.preferDeferStopLoss} 回 → 軟損切りを抑制`,
+    );
+  }
+  if (preferEarlierTakeProfit) {
+    activeNotes.push(
+      `今月「利確遅れ」系の反省が ${counts.preferEarlierTakeProfit} 回 → 利確目安を前倒し`,
+    );
+  }
+  if (!activeNotes.length) {
+    activeNotes.push(...notes.filter((n) => n.startsWith("【良】")).slice(-2));
+  }
+
   return {
-    avoidChaseBuys: avoidChase >= 2,
-    preferDeferStopLoss: deferStop >= 2,
-    preferEarlierTakeProfit: earlierTp >= 2,
-    notes: notes.slice(-4),
+    avoidChaseBuys,
+    preferDeferStopLoss,
+    preferEarlierTakeProfit,
+    notes: activeNotes.slice(-4),
   };
 }
 

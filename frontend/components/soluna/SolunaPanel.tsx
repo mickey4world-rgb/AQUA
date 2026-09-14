@@ -322,6 +322,11 @@ export default function SolunaPanel() {
               costMode: payload.costMode,
               costReason: payload.costReason,
               costReasonBullets: payload.costReasonBullets,
+              costReasonDetail: payload.costReasonDetail,
+              latestTradeLesson:
+                payload.latestTradeLesson !== undefined
+                  ? payload.latestTradeLesson
+                  : prev.latestTradeLesson,
             }
           : prev,
       );
@@ -575,25 +580,6 @@ export default function SolunaPanel() {
             <p className="mt-1 text-[11px] text-slate-500">
               直近のやりとりのみ表示 · モデル自動切替 · 育つほど知能 Lv.UP
             </p>
-            {state.costMode && state.costMode !== "normal" && (
-              <div className="mt-2 max-w-xl rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2">
-                <p className="text-[10px] font-semibold tracking-wide text-amber-100/90">
-                  AIコスト投資の理由
-                  {state.costMode === "minimal"
-                    ? "（節約モード）"
-                    : "（コスト調整）"}
-                </p>
-                {state.costReasonBullets && state.costReasonBullets.length > 0 ? (
-                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-snug text-amber-50/90">
-                    {state.costReasonBullets.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                ) : state.costReason ? (
-                  <p className="mt-1 text-[11px] text-amber-200/80">{state.costReason}</p>
-                ) : null}
-              </div>
-            )}
           </div>
 
           {(sttSupported || ttsSupported) && (
@@ -656,6 +642,80 @@ export default function SolunaPanel() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="relative mt-3 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2.5">
+            <p className="text-[10px] font-semibold tracking-wide text-amber-100/90">
+              AIコスト投資の理由
+              {state.costMode === "minimal"
+                ? "（節約モード）"
+                : state.costMode === "economy"
+                  ? "（コスト調整）"
+                  : "（通常）"}
+            </p>
+            {state.costReasonDetail ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-50/90">
+                {state.costReasonDetail}
+              </p>
+            ) : state.costReason ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-200/80">
+                {state.costReason}
+              </p>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-amber-200/60">
+                推定コストに基づき、会話品質と残高のバランスでモデルを選んでいます。
+              </p>
+            )}
+            {state.costReasonBullets && state.costReasonBullets.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] leading-snug text-amber-50/85">
+                {state.costReasonBullets.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-indigo-300/25 bg-indigo-500/10 px-3 py-2.5">
+            <p className="text-[10px] font-semibold tracking-wide text-indigo-100/90">
+              監査AI（直近の売買評価）
+            </p>
+            {state.latestTradeLesson ? (
+              <>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-indigo-50/90">
+                  {state.latestTradeLesson.decisionAction} ·{" "}
+                  {state.latestTradeLesson.verdict === "good"
+                    ? "良い判断"
+                    : state.latestTradeLesson.verdict === "bad"
+                      ? "要反省"
+                      : "複合"}{" "}
+                  · {state.latestTradeLesson.summary}
+                </p>
+                {(state.latestTradeLesson.praises?.length ?? 0) > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] leading-snug text-emerald-200/90">
+                    {state.latestTradeLesson.praises!.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+                {(state.latestTradeLesson.reflections?.length ?? 0) > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] leading-snug text-amber-100/85">
+                    {state.latestTradeLesson.reflections.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+                {(state.latestTradeLesson.praises?.length ?? 0) === 0 &&
+                  (state.latestTradeLesson.reflections?.length ?? 0) === 0 && (
+                    <p className="mt-1.5 text-[11px] text-indigo-200/70">評価メモのみ保存されています。</p>
+                  )}
+              </>
+            ) : (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-indigo-200/70">
+                売買が実行されると、会話とは別モデルの監査結果がここに並びます。元々のサービスには無く、後から追加した機能です。
+              </p>
+            )}
+          </div>
         </div>
 
         {(listening || interimTranscript) && conversationMode && (
