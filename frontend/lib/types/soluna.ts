@@ -289,6 +289,32 @@ export interface SolunaTradeRecord {
   briefingId: string;
 }
 
+/** 売買判断の別モデル AI 評価（反省・次回参考用） */
+export type SolunaTradeLessonVerdict = "good" | "mixed" | "bad";
+
+export interface SolunaTradeLessonBiasHints {
+  /** 追いかけ買いを避ける */
+  avoidChaseBuys?: boolean;
+  /** 損切りを急がない */
+  preferDeferStopLoss?: boolean;
+  /** 利確を早めに検討する */
+  preferEarlierTakeProfit?: boolean;
+}
+
+export interface SolunaTradeLesson {
+  id: string;
+  createdAt: string;
+  tradeIds: string[];
+  decisionAction: "BUY" | "SELL" | "HOLD";
+  decisionReason: string;
+  verdict: SolunaTradeLessonVerdict;
+  summary: string;
+  reflections: string[];
+  biasHints?: SolunaTradeLessonBiasHints;
+  model: string;
+  provider: string;
+}
+
 /** 月次の資産サマリー */
 export interface SolunaMonthlyAssetSummary {
   /** "2026-08" 形式 */
@@ -348,6 +374,11 @@ export interface SolunaAssetLedger {
   lastPromptBattleMode?: SolunaBattleMode;
   /** 当月取引履歴 */
   trades: SolunaTradeRecord[];
+  /**
+   * 売買 AI 評価の蓄積（別モデルによる反省）。
+   * 直近を次回のルール判断で自動参考にする。
+   */
+  tradeLessons?: SolunaTradeLesson[];
   /** 月次サマリー履歴 */
   monthlySummaries: SolunaMonthlyAssetSummary[];
   medalUnits: number;
@@ -428,6 +459,8 @@ export interface SolunaStateResponse {
   configured: boolean;
   costMode?: "normal" | "economy" | "minimal";
   costReason?: string;
+  /** コスト／投資判断の日本語箇条書き */
+  costReasonBullets?: string[];
 }
 
 export interface SolunaChatReply {
@@ -472,6 +505,8 @@ export interface SolunaChatResponse {
   voiceLead?: SolunaCharacter;
   costMode?: "normal" | "economy" | "minimal";
   costReason?: string;
+  /** コスト／投資判断の日本語箇条書き */
+  costReasonBullets?: string[];
 }
 
 export const SOLUNA_SOL_STAGES: SolunaGrowthStage[] = [
