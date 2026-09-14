@@ -13,9 +13,14 @@ import type {
   SolunaOpsDaySummary,
   SolunaOpsHourBucket,
   SolunaOpsProductMonthStat,
+  SolunaOpsTradeLessonRow,
   SolunaOpsTradeRow,
 } from "@/lib/types/analytics";
 import type { SolunaTradeProduct, SolunaTradeRecord } from "@/lib/types/soluna";
+import {
+  HARD_TAKE_PROFIT_RATE,
+  SOFT_TAKE_PROFIT_RATE,
+} from "@/lib/soluna-asset-trade-constants";
 import {
   SOLUNA_TRADE_RULES,
   categoryLabelJa,
@@ -47,8 +52,21 @@ function productKey(t: SolunaTradeRecord): string {
   return t.product ?? "BTC_JPY";
 }
 
+/** 平均取得単価（加重）。保有がある銘柄向けの期待売値計算に使う */
+function averageBuyPriceForProduct(
+  allTrades: SolunaTradeRecord[],
+  product: SolunaTradeProduct,
+): number | null {
+  const buyTrades = allTrades.filter((t) => t.side === "BUY" && productKey(t) === product);
+  if (buyTrades.length === 0) return null;
+  const notional = buyTrades.reduce((s, t) => s + (t.sizeJpy ?? 0), 0);
+  if (notional <= 0) return null;
+  return buyTrades.reduce((s, t) => s + t.priceBtc * (t.sizeJpy ?? 0), 0) / notional;
+}
+
 function summarizeProductMonth(
   monthTrades: SolunaTradeRecord[],
+  allTrades: SolunaTradeRecord[],
   product: SolunaTradeProduct,
   held: number,
   priceYen: number,
@@ -58,6 +76,21 @@ function summarizeProductMonth(
   const buys = rows.filter((t) => t.side === "BUY");
   const sells = rows.filter((t) => t.side === "SELL");
   const valueYen = Math.round(held * priceYen);
+  const avgBuyPriceYen = averageBuyPriceForProduct(allTrades, product);
+  const targetSellSoftYen =
+    avgBuyPriceYen != null ? Math.round(avgBuyPriceYen * (1 + SOFT_TAKE_PROFIT_RATE)) : null;
+  const targetSellHardYen =
+    avgBuyPriceYen != null ? Math.round(avgBuyPriceYen * (1 + HARD_TAKE_PROFIT_RATE)) : null;
+  const costBasisYen =
+    avgBuyPriceYen != null && held > 0 ? Math.round(held * avgBuyPriceYen) : null;
+  const expectedProfitSoftYen =
+    targetSellSoftYen != null && costBasisYen != null
+      ? Math.round(held * targetSellSoftYen) - costBasisYen
+      : null;
+  const expectedProfitHardYen =
+    targetSellHardYen != null && costBasisYen != null
+      ? Math.round(held * targetSellHardYen) - costBasisYen
+      : null;
   return {
     product,
     label: PRODUCT_LABELS[product] ?? product.replace("_JPY", ""),
@@ -70,6 +103,11 @@ function summarizeProductMonth(
     valueYen,
     priceYen,
     allocationPct: totalYen > 0 ? Math.round((valueYen / totalYen) * 1000) / 10 : 0,
+    avgBuyPriceYen: avgBuyPriceYen != null ? Math.round(avgBuyPriceYen) : null,
+    targetSellSoftYen,
+    targetSellHardYen,
+    expectedProfitSoftYen,
+    expectedProfitHardYen,
   };
 }
 
@@ -287,11 +325,26 @@ export async function buildSolunaOpsAnalyticsReport(
   const pct = (part: number) => (totalYen > 0 ? Math.round((part / totalYen) * 1000) / 10 : 0);
 
   const byProduct: SolunaOpsProductMonthStat[] = [
-    summarizeProductMonth(monthTrades, "BTC_JPY", btcHeld, btcPrice, totalYen),
-    summarizeProductMonth(monthTrades, "ETH_JPY", ethHeld, ethPrice, totalYen),
-    summarizeProductMonth(monthTrades, "XRP_JPY", xrpHeld, xrpPrice, totalYen),
-    summarizeProductMonth(monthTrades, "XLM_JPY", xlmHeld, xlmPrice, totalYen),
+    summarizeProductMonth(monthTrades, allTrades, "BTC_JPY", btcHeld, btcPrice, totalYen),
+    summarizeProductMonth(monthTrades, allTrades, "ETH_JPY", ethHeld, ethPrice, totalYen),
+    summarizeProductMonth(monthTrades, allTrades, "XRP_JPY", xrpHeld, xrpPrice, totalYen),
+    summarizeProductMonth(monthTrades, allTrades, "XLM_JPY", xlmHeld, xlmPrice, totalYen),
   ];
+
+  const tradeLessons: SolunaOpsTradeLessonRow[] = [...(assets?.tradeLessons ?? [])]
+    .slice(-8)
+    .reverse()
+    .map((l) => ({
+      id: l.id,
+      createdAt: l.createdAt,
+      decisionAction: l.decisionAction,
+      verdict: l.verdict,
+      summary: l.summary,
+      reflections: l.reflections ?? [],
+      praises: l.praises ?? [],
+      model: l.model,
+      provider: l.provider,
+    }));
 
   const monthBoinc = boincRuns.filter((r) => inMonth(r.createdAt, month));
   const sumPlanned = (runs: typeof boincRuns) =>
@@ -357,6 +410,7 @@ export async function buildSolunaOpsAnalyticsReport(
             .reverse()
             .slice(0, 40)
             .map(toTradeRow),
+          tradeLessons,
           tradeRules: [...SOLUNA_TRADE_RULES]
             .sort((a, b) => a.id - b.id)
             .map((r) => ({

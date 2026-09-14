@@ -309,7 +309,10 @@ export interface SolunaTradeLesson {
   decisionReason: string;
   verdict: SolunaTradeLessonVerdict;
   summary: string;
+  /** 要改善・注意点（反省） */
   reflections: string[];
+  /** 良かった点・素晴らしい判断理由（反省がない／良い傾向） */
+  praises?: string[];
   biasHints?: SolunaTradeLessonBiasHints;
   model: string;
   provider: string;
@@ -461,6 +464,10 @@ export interface SolunaStateResponse {
   costReason?: string;
   /** コスト／投資判断の日本語箇条書き */
   costReasonBullets?: string[];
+  /** コスト／投資判断の解説文 */
+  costReasonDetail?: string;
+  /** 直近の売買監査AI評価（システム資産台帳） */
+  latestTradeLesson?: SolunaTradeLesson | null;
 }
 
 export interface SolunaChatReply {
@@ -507,6 +514,10 @@ export interface SolunaChatResponse {
   costReason?: string;
   /** コスト／投資判断の日本語箇条書き */
   costReasonBullets?: string[];
+  /** コスト／投資判断の解説文 */
+  costReasonDetail?: string;
+  /** 直近の売買監査AI評価（システム資産台帳） */
+  latestTradeLesson?: SolunaTradeLesson | null;
 }
 
 export const SOLUNA_SOL_STAGES: SolunaGrowthStage[] = [

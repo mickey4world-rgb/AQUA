@@ -9,19 +9,24 @@ import {
 } from "@/lib/server/soluna-store";
 import { getSolunaProvidersStatus } from "@/lib/server/soluna-chat";
 import { resolveGrowthTier } from "@/lib/server/soluna-router";
+import { getSystemAssets } from "@/lib/server/soluna-system-store";
 import { resolveGrowthStage } from "@/lib/soluna-utils";
 import type { SolunaStateResponse } from "@/lib/types/soluna";
 
 async function buildState(userId: string): Promise<SolunaStateResponse> {
   const profile = await getOrCreateProfile(userId);
-  const [solMemories, lunaMemories, messages, shortcutToken] = await Promise.all([
-    listMemories(userId, "sol"),
-    listMemories(userId, "luna"),
-    listMessages(userId),
-    getShortcutToken(userId),
-  ]);
+  const [solMemories, lunaMemories, messages, shortcutToken, systemAssets] =
+    await Promise.all([
+      listMemories(userId, "sol"),
+      listMemories(userId, "luna"),
+      listMessages(userId),
+      getShortcutToken(userId),
+      getSystemAssets().catch(() => null),
+    ]);
 
   const providers = await getSolunaProvidersStatus(userId);
+  const lessons = systemAssets?.tradeLessons ?? [];
+  const latestTradeLesson = lessons.length ? lessons[lessons.length - 1]! : null;
 
   return {
     profile,
@@ -59,9 +64,10 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
     shortcutToken,
     configured: isSolunaStorageConfigured(),
     costMode: providers.costMode,
-    costReason: providers.costMode !== "normal" ? providers.costReason : undefined,
-    costReasonBullets:
-      providers.costMode !== "normal" ? providers.costReasonBullets : undefined,
+    costReason: providers.costReason,
+    costReasonBullets: providers.costReasonBullets,
+    costReasonDetail: providers.costReasonDetail,
+    latestTradeLesson,
   };
 }
 

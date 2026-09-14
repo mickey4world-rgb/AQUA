@@ -97,6 +97,7 @@ export async function POST(request: Request) {
     costMode: result.data.costMode,
     costReason: result.data.costReason,
     costReasonBullets: result.data.costReasonBullets,
+    costReasonDetail: result.data.costReasonDetail,
   });
   logApiAccess(request, userId, response.status, startedAt);
   return response;
