@@ -270,8 +270,12 @@ export default function SolunaPanel() {
 
       const newMemories = payload.newMemories ?? [];
 
-      if (payload.costMode && payload.costMode !== "normal" && payload.costReason) {
-        setNotice(payload.costReason);
+      if (payload.costMode && payload.costMode !== "normal") {
+        const noticeText =
+          payload.costReasonBullets && payload.costReasonBullets.length > 0
+            ? payload.costReasonBullets.join(" / ")
+            : payload.costReason;
+        if (noticeText) setNotice(noticeText);
       }
       setState((prev) =>
         prev
@@ -317,6 +321,7 @@ export default function SolunaPanel() {
               },
               costMode: payload.costMode,
               costReason: payload.costReason,
+              costReasonBullets: payload.costReasonBullets,
             }
           : prev,
       );
@@ -570,8 +575,24 @@ export default function SolunaPanel() {
             <p className="mt-1 text-[11px] text-slate-500">
               直近のやりとりのみ表示 · モデル自動切替 · 育つほど知能 Lv.UP
             </p>
-            {state.costMode && state.costMode !== "normal" && state.costReason && (
-              <p className="mt-1 text-[11px] text-amber-200/80">{state.costReason}</p>
+            {state.costMode && state.costMode !== "normal" && (
+              <div className="mt-2 max-w-xl rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2">
+                <p className="text-[10px] font-semibold tracking-wide text-amber-100/90">
+                  AIコスト投資の理由
+                  {state.costMode === "minimal"
+                    ? "（節約モード）"
+                    : "（コスト調整）"}
+                </p>
+                {state.costReasonBullets && state.costReasonBullets.length > 0 ? (
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-snug text-amber-50/90">
+                    {state.costReasonBullets.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : state.costReason ? (
+                  <p className="mt-1 text-[11px] text-amber-200/80">{state.costReason}</p>
+                ) : null}
+              </div>
             )}
           </div>
 

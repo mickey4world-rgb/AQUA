@@ -96,6 +96,7 @@ export async function POST(request: Request) {
     lunaModelLabel: result.data.luna.modelLabel,
     costMode: result.data.costMode,
     costReason: result.data.costReason,
+    costReasonBullets: result.data.costReasonBullets,
   });
   logApiAccess(request, userId, response.status, startedAt);
   return response;
