@@ -60,6 +60,8 @@ async function buildState(userId: string): Promise<SolunaStateResponse> {
     configured: isSolunaStorageConfigured(),
     costMode: providers.costMode,
     costReason: providers.costMode !== "normal" ? providers.costReason : undefined,
+    costReasonBullets:
+      providers.costMode !== "normal" ? providers.costReasonBullets : undefined,
   };
 }
 

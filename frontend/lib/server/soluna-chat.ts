@@ -1607,6 +1607,8 @@ async function sendSolunaChatWithinBudget(
       voiceLead,
       costMode: costAssessment.mode,
       costReason: costAssessment.mode !== "normal" ? costAssessment.reason : undefined,
+      costReasonBullets:
+        costAssessment.mode !== "normal" ? costAssessment.reasonBullets : undefined,
     },
   };
 }
@@ -1625,6 +1627,7 @@ export async function getSolunaProvidersStatus(userId?: string) {
     globalRegion: true,
     costMode: costAssessment?.mode ?? "normal",
     costReason: costAssessment?.reason,
+    costReasonBullets: costAssessment?.reasonBullets,
     monthlyCostUsd: costAssessment?.monthlyCostUsd,
     sol: {
       provider: sampleRoute.sol.provider,
