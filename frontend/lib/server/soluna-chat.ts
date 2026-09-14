@@ -1252,6 +1252,12 @@ async function sendSolunaChatWithinBudget(
             tokenLimit: 0,
             usageRatio: 0,
             reason: "即答優先",
+            reasonBullets: [
+              "いまは応答速度を優先しています",
+              "通常どおり品質寄りのモデル配分です",
+            ],
+            reasonDetail:
+              "即答優先の経路のため、詳細な月次コスト計算を省略しています。会話の待ち時間を短くするため、通常モード相当でモデルを選んでいます。",
           })
         : assessSolunaCostMode(userId),
     ]);
@@ -1607,8 +1613,8 @@ async function sendSolunaChatWithinBudget(
       voiceLead,
       costMode: costAssessment.mode,
       costReason: costAssessment.mode !== "normal" ? costAssessment.reason : undefined,
-      costReasonBullets:
-        costAssessment.mode !== "normal" ? costAssessment.reasonBullets : undefined,
+      costReasonBullets: costAssessment.reasonBullets,
+      costReasonDetail: costAssessment.reasonDetail,
     },
   };
 }
@@ -1628,6 +1634,7 @@ export async function getSolunaProvidersStatus(userId?: string) {
     costMode: costAssessment?.mode ?? "normal",
     costReason: costAssessment?.reason,
     costReasonBullets: costAssessment?.reasonBullets,
+    costReasonDetail: costAssessment?.reasonDetail,
     monthlyCostUsd: costAssessment?.monthlyCostUsd,
     sol: {
       provider: sampleRoute.sol.provider,
