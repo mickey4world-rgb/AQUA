@@ -5,6 +5,8 @@ import type {
   SolunaOpsAnalyticsReport,
   SolunaOpsDaySummary,
   SolunaOpsHourBucket,
+  SolunaOpsProductMonthStat,
+  SolunaOpsTradeLessonRow,
 } from "@/lib/types/analytics";
 
 type Props = {
@@ -209,6 +211,177 @@ function HourlyChart({
               </ul>
             </li>
           ))}
+      </ul>
+    </div>
+  );
+}
+
+function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthStat[] }) {
+  const rows = products.filter(
+    (p) => p.held > 0 && p.avgBuyPriceYen != null && p.targetSellHardYen != null,
+  );
+  if (rows.length === 0) {
+    return (
+      <div className="mt-5">
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+          銘柄別・買値→予想売値
+        </p>
+        <p className="mt-2 text-sm text-slate-500">
+          保有がある銘柄の平均取得単価が出ると、利確目安までのグラフが表示されます。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+        銘柄別・買値→予想売値
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        平均取得単価から、軟利確（+3.5%）／硬利確（+5.5%）の目安売値と想定利益を表示します。
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {rows.map((p) => {
+          const avg = p.avgBuyPriceYen ?? 0;
+          const soft = p.targetSellSoftYen ?? avg;
+          const hard = p.targetSellHardYen ?? soft;
+          const now = p.priceYen || avg;
+          const max = Math.max(avg, soft, hard, now) * 1.02;
+          const min = Math.min(avg, soft, hard, now) * 0.98;
+          const span = Math.max(1, max - min);
+          const pct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
+          return (
+            <div
+              key={`proj-${p.product}`}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-3"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-semibold text-white">{p.label}</p>
+                <p className="text-[11px] text-slate-400">{formatHeld(p.product, p.held)}</p>
+              </div>
+              <div className="relative mt-4 h-3 rounded-full bg-white/5">
+                <div
+                  className="absolute top-0 h-3 rounded-full bg-gradient-to-r from-sky-500/40 via-amber-400/35 to-emerald-400/45"
+                  style={{ left: `${pct(avg)}%`, width: `${Math.max(4, pct(hard) - pct(avg))}%` }}
+                />
+                <span
+                  className="absolute top-1/2 h-3 w-1 -translate-y-1/2 rounded-full bg-sky-300"
+                  style={{ left: `${pct(avg)}%` }}
+                  title={`平均取得 ${formatUnitPrice(p.product, avg)}`}
+                />
+                <span
+                  className="absolute top-1/2 h-3 w-1 -translate-y-1/2 rounded-full bg-amber-300"
+                  style={{ left: `${pct(soft)}%` }}
+                  title={`軟利確 ${formatUnitPrice(p.product, soft)}`}
+                />
+                <span
+                  className="absolute top-1/2 h-3 w-1 -translate-y-1/2 rounded-full bg-emerald-300"
+                  style={{ left: `${pct(hard)}%` }}
+                  title={`硬利確 ${formatUnitPrice(p.product, hard)}`}
+                />
+                <span
+                  className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/40 bg-white"
+                  style={{ left: `${pct(now)}%` }}
+                  title={`現在値 ${formatUnitPrice(p.product, now)}`}
+                />
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                <div>
+                  <dt className="text-slate-500">平均取得</dt>
+                  <dd className="text-sky-200">{formatUnitPrice(p.product, avg)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">現在値</dt>
+                  <dd className="text-white">{formatUnitPrice(p.product, now)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">軟利確目安</dt>
+                  <dd className="text-amber-200">{formatUnitPrice(p.product, soft)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">硬利確目安</dt>
+                  <dd className="text-emerald-200">{formatUnitPrice(p.product, hard)}</dd>
+                </div>
+                <div className="col-span-2 border-t border-white/5 pt-1.5">
+                  <dt className="text-slate-500">想定利益（保有全部）</dt>
+                  <dd className="mt-0.5 text-slate-200">
+                    軟{" "}
+                    <span className="text-amber-200">
+                      {p.expectedProfitSoftYen != null
+                        ? signedYen(p.expectedProfitSoftYen)
+                        : "—"}
+                    </span>
+                    {" · "}硬{" "}
+                    <span className="text-emerald-200">
+                      {p.expectedProfitHardYen != null
+                        ? signedYen(p.expectedProfitHardYen)
+                        : "—"}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TradeLessonsPanel({ lessons }: { lessons: SolunaOpsTradeLessonRow[] }) {
+  if (lessons.length === 0) {
+    return (
+      <div className="mt-5">
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+          監査AI（直近）
+        </p>
+        <p className="mt-2 text-sm text-slate-500">
+          売買が実行されると、別モデルの監査結果がここに蓄積されます。
+        </p>
+      </div>
+    );
+  }
+
+  const verdictJa = (v: SolunaOpsTradeLessonRow["verdict"]) =>
+    v === "good" ? "良い判断" : v === "bad" ? "要反省" : "複合";
+
+  return (
+    <div className="mt-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+        監査AI（直近）
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        良い判断は賞賛を、反省は同因が月内で複数回出たときだけ次回の売買に反映します。
+      </p>
+      <ul className="mt-3 space-y-2">
+        {lessons.map((l) => (
+          <li
+            key={l.id}
+            className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-[12px]"
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="font-medium text-white">
+                {l.decisionAction} · {verdictJa(l.verdict)} · {l.summary}
+              </p>
+              <p className="text-[10px] text-slate-500">{formatJst(l.createdAt)}</p>
+            </div>
+            {l.praises.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-emerald-200/90">
+                {l.praises.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            )}
+            {l.reflections.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-amber-100/85">
+                {l.reflections.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -590,6 +763,8 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                     </tbody>
                   </table>
                 </div>
+                <ProductProjectionChart products={assets.byProduct} />
+                <TradeLessonsPanel lessons={assets.tradeLessons ?? []} />
               </div>
             )}
 

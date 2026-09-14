@@ -12,6 +12,8 @@ export type SolunaCostAssessment = {
   reason: string;
   /** UI 向け：投資／コスト判断の分かりやすい箇条書き */
   reasonBullets: string[];
+  /** UI 向け：なぜこの投資配分（モデル選択）にしたかの解説文 */
+  reasonDetail: string;
 };
 
 const ASSESSMENT_TTL_MS = 5 * 60 * 1000;
@@ -35,7 +37,7 @@ function formatPct(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
-function buildCostReasonBullets(input: {
+function buildCostCopy(input: {
   mode: SolunaCostMode;
   monthlyCostUsd: number;
   usageRatio: number;
@@ -45,7 +47,7 @@ function buildCostReasonBullets(input: {
   minimalUsd: number;
   economyRatio: number;
   minimalRatio: number;
-}): { reason: string; reasonBullets: string[] } {
+}): { reason: string; reasonBullets: string[]; reasonDetail: string } {
   const {
     mode,
     monthlyCostUsd,
@@ -75,6 +77,7 @@ function buildCostReasonBullets(input: {
         "高いモデルより安いモデルを優先し、会話品質よりコスト抑制を優先します。",
         "来月（または利用が落ち着いたら）自動で通常モードに戻ります。",
       ],
+      reasonDetail: `Soluna の会話・画像などに使う AI は、従量課金です。今月は推定 ${formatUsd(monthlyCostUsd)}、利用 ${formatPct(usageRatio)} に達しているため、意図的に「節約モード」へ切り替えています。これはサービスを止めるのではなく、より軽いモデルへ寄せて残高と月次上限を守る投資判断です。閾値はコスト約 ${formatUsd(minimalUsd)}、または利用 ${formatPct(minimalRatio)} です。利用が落ち着けば、次の請求期間では自動的に通常の品質優先へ戻ります。`,
     };
   }
 
@@ -89,6 +92,7 @@ function buildCostReasonBullets(input: {
         "最新の重いモデルは抑えめにし、バランスの良いモデルを選びます。",
         `さらに増えると（約 ${formatUsd(minimalUsd)} / 利用 ${formatPct(minimalRatio)}）完全な節約モードになります。`,
       ],
+      reasonDetail: `いまの推定 AI コストは ${formatUsd(monthlyCostUsd)}、利用は ${formatPct(usageRatio)} です。品質は維持しつつ、いちばん高いモデルの使用頻度を下げています（コスト調整モード）。これは「使いすぎの手前でハンドルを切る」ための投資判断で、閾値はコスト約 ${formatUsd(economyUsd)} または利用 ${formatPct(economyRatio)} です。このまま増えると節約モード（約 ${formatUsd(minimalUsd)} / ${formatPct(minimalRatio)}）へ進み、さらに軽いモデルへ寄せます。`,
     };
   }
 
@@ -101,6 +105,7 @@ function buildCostReasonBullets(input: {
       `コストが約 ${formatUsd(economyUsd)}、または利用が ${formatPct(economyRatio)} を超えると自動でコスト調整に入ります。`,
       "Soluna の会話・画像などの AI 利用が、この投資判断の対象です。",
     ],
+    reasonDetail: `現在は通常モードです。推定コスト ${formatUsd(monthlyCostUsd)}・利用 ${formatPct(usageRatio)} の範囲では、会話の分かりやすさや応答品質を優先してモデルを選んでいます。AI 利用は従量のため、コストが約 ${formatUsd(economyUsd)}、または利用が ${formatPct(economyRatio)} を超えると自動でコスト調整モードへ移り、重いモデルの比率を下げます。止めずに使い続けられるよう、閾値ベースで配分しています。`,
   };
 }
 
@@ -111,7 +116,6 @@ export async function assessSolunaCostMode(userId: string): Promise<SolunaCostAs
     return cached.value;
   }
 
-  // 早めに economy / minimal へ寄せて有料モデルを抑える（env で上書き可）
   const economyUsd = parseUsdEnv("SOLUNA_COST_ECONOMY_USD", 4);
   const minimalUsd = parseUsdEnv("SOLUNA_COST_MINIMAL_USD", 10);
   const economyRatio = parseUsdEnv("SOLUNA_COST_ECONOMY_RATIO", 0.5);
@@ -131,7 +135,7 @@ export async function assessSolunaCostMode(userId: string): Promise<SolunaCostAs
     mode = "economy";
   }
 
-  const { reason, reasonBullets } = buildCostReasonBullets({
+  const { reason, reasonBullets, reasonDetail } = buildCostCopy({
     mode,
     monthlyCostUsd,
     usageRatio,
@@ -151,6 +155,7 @@ export async function assessSolunaCostMode(userId: string): Promise<SolunaCostAs
     usageRatio,
     reason,
     reasonBullets,
+    reasonDetail,
   };
 
   assessmentCache.set(userId, { expiresAt: Date.now() + ASSESSMENT_TTL_MS, value });
