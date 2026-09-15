@@ -216,6 +216,9 @@ ${
   return `${buffBanner}
 ## 📊 召喚獣の育成ステータス（現在のポートフォリオ）
 
+【リアル】ギルド総資産 ${Math.round(assets.totalYen).toLocaleString("ja-JP")} 円相当（${dayChangeLabel}）
+【物語】召喚獣たちは、その数字を「魔力」として背負い、街の灯りを守っています。
+
 現在のギルド総資産：${Math.round(assets.totalYen).toLocaleString("ja-JP")} MP（${dayChangeLabel}）
 ${RPG_MP_TANK}（元本）: ${Math.round(assets.principalYen).toLocaleString("ja-JP")} MP
 分散ルール: 現金下限28% / 単一銘柄上限42% / 暗号合計上限72%（BTC・ETH・XRP・XLM）
@@ -225,7 +228,6 @@ ${btcBlock}
 
 ${golemBlock}${ethBlock}${xrpBlock}${xlmBlock}
 
-⚔️ ソル「${assets.solComment}」
-📖 ルーナの賢者投資メモ:
-「${assets.lunaComment}」`;
+⚔️ ソル「${assets.solComment || "……でかくなったな。俺より頼もしいやつが増えていく。"}」
+📖 ルーナ「${assets.lunaComment || "数字は嘘をつかないわ。でも、育てるのは私たちの心配りよ。"}」`;
 }
