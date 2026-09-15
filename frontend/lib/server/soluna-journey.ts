@@ -224,9 +224,14 @@ export function formatAdventureLogForNote(battle: {
 
   return `## 🗺️ 本日のソル＆ルーナ冒険日誌
 
-【現在の現在地】
+【現在地】
 ${place}
+ギルドを出発するとき、受付の子が「気をつけてね」と小さく手を振っていた——そんな朝です。
 
+## 発生ニュース（事実）
+${battle.newsPlain || "（本日の大ボス関連ニュース）"}
+
+## 読み解き＝討伐
 ${trashBlocks ? `${trashBlocks}\n\n` : ""}${bossBlock}
 
 📊 本日の遠征成果
@@ -235,7 +240,7 @@ ${
   battle.outcome === "escape" && (battle.wins ?? 0) > 0
     ? "大ボスには逃げられたが、小物討伐の利益を蒼竜のエサに補給！旅はまだまだ続く。"
     : battle.outcome === "victory"
-      ? "大ボス討伐成功。収穫をギルド金庫へ！"
+      ? "大ボス討伐成功。収穫をギルド金庫へ！帰り道の風が、少しだけ優しい。"
       : "厳しい一日。逃げ足の鱗を握りしめ、明日のリベンジへ。"
 }
 ${nextLine}`;
