@@ -214,7 +214,9 @@ export default function CouncilPanel() {
   const depthLabel =
     depth === "compact"
       ? `簡潔（${compactCalls}回・節約）`
-      : `標準（${standardCalls}回・詳細）`;
+      : depth === "deep"
+        ? `深掘り（${standardCalls}回・GPT-5）`
+        : `標準（${standardCalls}回・詳細）`;
   const azureBlocked = Boolean(config && !config.azureConfigured);
 
   return (
@@ -222,7 +224,7 @@ export default function CouncilPanel() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
         <h2 className="text-sm font-semibold text-white">相談モード</h2>
         <p className="mt-1 text-xs text-slate-400">
-          国内限定はプロンプト・添付データを日本リージョン Azure のみで処理。国内問わずは Azure 最新系デプロイ（GPT-5 等）。
+          国内限定は日本リージョン Azure のみ。国内問わずは簡潔／標準が安価モデル、深掘りのみ GPT-5。
         </p>
 
         {config && !config.azureConfigured && config.setupHint && (
@@ -257,7 +259,7 @@ export default function CouncilPanel() {
         <div className="mt-4">
           <p className="text-xs font-medium text-slate-300">合議の深さ</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            {(["compact", "standard"] as const).map((key) => (
+            {(["compact", "standard", "deep"] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -269,7 +271,11 @@ export default function CouncilPanel() {
                     : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"
                 }`}
               >
-                {key === "compact" ? "簡潔（推奨）" : "標準（詳細）"}
+                {key === "compact"
+                  ? "簡潔（推奨）"
+                  : key === "deep"
+                    ? "深掘り（GPT-5）"
+                    : "標準（詳細）"}
               </button>
             ))}
           </div>
@@ -402,9 +408,9 @@ export default function CouncilPanel() {
             <div className="space-y-2 text-xs text-slate-500">
               {progress && <p className="text-cyan-200/90">{progress}</p>}
               <p>① 各 AI が要点を述べています...</p>
-              {depth === "standard" && <p>② AI 同士が議論しています...</p>}
+              {(depth === "standard" || depth === "deep") && <p>② AI 同士が議論しています...</p>}
               <p>
-                {depth === "standard" ? "③" : "②"} 議長がまとめを作成しています...
+                {depth === "standard" || depth === "deep" ? "③" : "②"} 議長がまとめを作成しています...
               </p>
             </div>
           </div>

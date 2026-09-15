@@ -106,27 +106,22 @@ function scoreProvider(
   message: string,
   costMode: SolunaCostMode,
 ): number {
-  // Marketplace（Claude）課金抑制のため、Gemini / Azure OpenAI を中程度に優遇。
-  // Claude は明確な適合時のみ残す（完全停止はしない）。
+  // Marketplace（Claude）課金抑制。日常は Gemini 最優先、次に安価 OpenAI。
   let score = costBiasForProvider(provider, costMode);
 
   if (character === "sol") {
-    if (provider === "gemini" && SOL_GEMINI_HINTS.test(message)) score += 4;
-    if (provider === "openai" && SOL_CLAUDE_HINTS.test(message)) score += 3;
-    if (provider === "claude" && SOL_CLAUDE_HINTS.test(message)) score += 1;
-    if (provider === "gemini") score += 2;
-    if (provider === "openai") score += 2;
-    if (REFLECTIVE_HINTS.test(message) && provider === "openai") score += 2;
-    if (REFLECTIVE_HINTS.test(message) && provider === "claude") score += 1;
-  } else {
+    if (provider === "gemini" && SOL_GEMINI_HINTS.test(message)) score += 5;
     if (provider === "gemini") score += 3;
-    if (provider === "openai" && LUNA_OPENAI_HINTS.test(message)) score += 3;
-    if (provider === "openai" && LUNA_CLAUDE_HINTS.test(message)) score += 2;
+    if (provider === "openai" && SOL_CLAUDE_HINTS.test(message)) score += 1;
+    if (provider === "claude" && SOL_CLAUDE_HINTS.test(message)) score += 1;
+    if (provider === "openai") score += 0.5;
+    if (REFLECTIVE_HINTS.test(message) && provider === "gemini") score += 2;
+  } else {
+    if (provider === "gemini") score += 4;
+    if (provider === "openai" && LUNA_OPENAI_HINTS.test(message)) score += 1.5;
     if (provider === "claude" && LUNA_CLAUDE_HINTS.test(message)) score += 1;
-    if (provider === "openai") score += 2;
-    if (provider === "claude") score += 0;
-    if (REFLECTIVE_HINTS.test(message) && provider === "openai") score += 2;
-    if (REFLECTIVE_HINTS.test(message) && provider === "claude") score += 1;
+    if (provider === "openai") score += 0.5;
+    if (REFLECTIVE_HINTS.test(message) && provider === "gemini") score += 2;
   }
 
   return score;
