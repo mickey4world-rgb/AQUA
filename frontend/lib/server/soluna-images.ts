@@ -252,9 +252,27 @@ async function compressDataUrlToLimit(
     return { dataUrl, mimeType: parsed.mimeType, byteSize: parsed.byteSize };
   }
 
-  let sharpFn: (typeof import("sharp"))["default"];
+  type SharpFactory = (input: Buffer, options?: { failOn?: "none" }) => {
+    rotate: () => {
+      resize: (opts: {
+        width: number;
+        height: number;
+        fit: "inside";
+        withoutEnlargement: boolean;
+      }) => {
+        jpeg: (opts: { quality: number; mozjpeg: boolean }) => {
+          toBuffer: () => Promise<Buffer>;
+        };
+      };
+    };
+  };
+
+  let sharpFn: SharpFactory;
   try {
-    sharpFn = (await import("sharp")).default;
+    const sharpMod = await import("sharp");
+    // CJS/ESM どちらでも動くように default を優先
+    sharpFn = ((sharpMod as { default?: SharpFactory }).default ??
+      (sharpMod as unknown as SharpFactory)) as SharpFactory;
   } catch {
     throw new Error(
       `画像が大きすぎます（最大約 ${Math.round(maxBytes / 1024)}KB）。クライアント側で圧縮してから再送してください。`,
