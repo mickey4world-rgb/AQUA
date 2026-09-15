@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     const depth = body.depth ?? "compact";
-    if (depth !== "compact" && depth !== "standard") {
+    if (depth !== "compact" && depth !== "standard" && depth !== "deep") {
       return Response.json({ error: "Invalid depth" }, { status: 400 });
     }
 

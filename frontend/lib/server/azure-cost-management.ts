@@ -9,7 +9,8 @@ const COST_API = "2023-11-01";
 const MANAGEMENT_SCOPE = "https://management.azure.com/";
 
 const SERVICE_LABELS: Record<string, string> = {
-  "Foundry Models": "Foundry Models（Marketplace）",
+  // Foundry Models は Claude Marketplace 専用ではない（Azure OpenAI もこのメーターに載ることがある）
+  "Foundry Models": "Foundry Models（要リソース別確認）",
   "Azure Cosmos DB": "Cosmos DB",
   "Azure DNS": "DNS",
   Storage: "ストレージ",
@@ -91,7 +92,7 @@ function resourceLabel(
   focus?: "foundry-claude" | "azure-openai",
 ): string {
   if (focus === "foundry-claude") return "Foundry Claude（Marketplace）";
-  if (focus === "azure-openai") return "Azure OpenAI";
+  if (focus === "azure-openai") return "Azure OpenAI（openai-personal-apps-prod）";
   return resourceDisplayName(resourceId);
 }
 

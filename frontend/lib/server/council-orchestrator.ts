@@ -498,7 +498,7 @@ export async function runCouncilJudgeStep(
     }
 
     const depthConfig = councilDepthConfig(depth);
-    const judge = getCouncilJudge(mode);
+    const judge = getCouncilJudge(mode, depth);
     const configMeta = getCouncilConfigMeta();
     const opinionLines = [
       formatOpinionsForJudge(initial, depthConfig.judgeInputMaxChars),
@@ -668,7 +668,7 @@ export async function runCouncilDebate(
       return { ok: false, reason: "利用可能な AI モデルがありません。" };
     }
 
-    const judge = getCouncilJudge(mode);
+    const judge = getCouncilJudge(mode, depth);
     const configMeta = getCouncilConfigMeta();
     if (mode === "domestic" && !configMeta.domestic.available) {
       return {

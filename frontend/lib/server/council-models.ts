@@ -1,4 +1,6 @@
 import {
+  getAzureOpenAiCheapDeployment,
+  getAzureOpenAiDeepDeployment,
   getAzureOpenAiDeployment,
   getDomesticDataRegionLabel,
   isAzureOpenAiConfigured,
@@ -25,16 +27,13 @@ const PERSONAS = {
   judge: "議長。意見を統合し実用的な結論を出す。",
 } as const;
 
-function deploymentOrDefault(envKey: string, fallback?: string): string {
-  return process.env[envKey] ?? fallback ?? getAzureOpenAiDeployment();
-}
-
 const GLOBAL_DEPLOYMENT_ENV_KEYS = [
   "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
   "AZURE_OPENAI_DEPLOYMENT_GLOBAL_A",
   "AZURE_OPENAI_DEPLOYMENT_GLOBAL_B",
   "AZURE_OPENAI_DEPLOYMENT_GLOBAL_C",
   "AZURE_OPENAI_DEPLOYMENT_GLOBAL_JUDGE",
+  "AZURE_OPENAI_DEPLOYMENT_DEEP",
 ] as const;
 
 /** GLOBAL 系を個別指定しているか（未設定なら既定デプロイへ自動フォールバック） */
@@ -43,20 +42,11 @@ export function isGlobalCouncilExplicitlyConfigured(): boolean {
 }
 
 function globalDeploymentAutoNote(): string {
-  const defaultDep = getAzureOpenAiDeployment();
-  const sources: string[] = [`AZURE_OPENAI_DEPLOYMENT（${defaultDep}）`];
-
-  if (process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_B?.trim()) {
-    sources.push(`AZURE_OPENAI_DEPLOYMENT_DEBATE_B（${process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_B.trim()}）`);
-  }
-  if (process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_C?.trim()) {
-    sources.push(`AZURE_OPENAI_DEPLOYMENT_DEBATE_C（${process.env.AZURE_OPENAI_DEPLOYMENT_DEBATE_C.trim()}）`);
-  }
-
+  const cheap = getAzureOpenAiCheapDeployment();
+  const deep = getAzureOpenAiDeepDeployment();
   return (
-    "GLOBAL 系の環境変数が未設定のため、既存の Azure デプロイ名を自動利用しています。" +
-    ` 参照: ${sources.join("、")}。下の「使用モデル」に実際のデプロイ名が表示されます。` +
-    " 個別指定する場合のみ AZURE_OPENAI_DEPLOYMENT_GLOBAL_* を SWA に追加してください。"
+    `簡潔／標準は安価デプロイ（${cheap}）、深掘りのみ GPT-5 系（${deep}）を使います。` +
+    " 個別指定する場合は AZURE_OPENAI_DEPLOYMENT_GLOBAL_* / AZURE_OPENAI_DEPLOYMENT_DEEP を SWA に設定してください。"
   );
 }
 
@@ -66,6 +56,23 @@ function domesticDeployment(envKey: string): string {
     process.env[envKey] ??
     process.env.AZURE_OPENAI_DEPLOYMENT_DOMESTIC ??
     getAzureOpenAiDeployment()
+  );
+}
+
+function globalTierDeployment(envKey: string, depth: CouncilDepth): string {
+  const premium = councilDepthConfig(depth).usePremiumModels;
+  if (premium) {
+    return (
+      process.env.AZURE_OPENAI_DEPLOYMENT_DEEP?.trim() ||
+      process.env[envKey]?.trim() ||
+      getAzureOpenAiDeepDeployment()
+    );
+  }
+  // 簡潔／標準: FAST / GLOBAL が aqua-cheap ならそれを使う。未設定時も安価既定。
+  return (
+    process.env.AZURE_OPENAI_DEPLOYMENT_FAST?.trim() ||
+    process.env[envKey]?.trim() ||
+    getAzureOpenAiCheapDeployment()
   );
 }
 
@@ -143,49 +150,43 @@ export function getDomesticDebaters(): CouncilModelConfig[] {
   ];
 }
 
-/** 国内問わず — Azure OpenAI 最新系デプロイ（OpenAI 直 API 不要） */
-export function getGlobalDebaters(): CouncilModelConfig[] {
-  const latestDep = deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_GLOBAL", getAzureOpenAiDeployment());
+/** 国内問わず — 簡潔/標準は安価、deep のみ GPT-5 系 */
+export function getGlobalDebaters(depth: CouncilDepth = "compact"): CouncilModelConfig[] {
+  const premium = councilDepthConfig(depth).usePremiumModels;
 
   return [
     {
       id: "global-a",
       role: "logic",
-      label: "最新 Analyst",
+      label: premium ? "最新 Analyst" : "軽量 Analyst",
       provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_GLOBAL_A", latestDep),
+      deployment: globalTierDeployment("AZURE_OPENAI_DEPLOYMENT_GLOBAL_A", depth),
       persona: PERSONAS.logic,
       maxTokens: 480,
       featureSuffix: "global-a",
-      reasoningHeavy: true,
+      reasoningHeavy: premium,
     },
     {
       id: "global-b",
       role: "creative",
-      label: "最新 Planner",
+      label: premium ? "最新 Planner" : "軽量 Planner",
       provider: "azure",
-      deployment: deploymentOrDefault(
-        "AZURE_OPENAI_DEPLOYMENT_GLOBAL_B",
-        deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_B", latestDep),
-      ),
+      deployment: globalTierDeployment("AZURE_OPENAI_DEPLOYMENT_GLOBAL_B", depth),
       persona: PERSONAS.creative,
       maxTokens: 480,
       featureSuffix: "global-b",
-      reasoningHeavy: true,
+      reasoningHeavy: premium,
     },
     {
       id: "global-c",
       role: "skeptic",
-      label: "最新 Reviewer",
+      label: premium ? "最新 Reviewer" : "軽量 Reviewer",
       provider: "azure",
-      deployment: deploymentOrDefault(
-        "AZURE_OPENAI_DEPLOYMENT_GLOBAL_C",
-        deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_DEBATE_C", latestDep),
-      ),
+      deployment: globalTierDeployment("AZURE_OPENAI_DEPLOYMENT_GLOBAL_C", depth),
       persona: PERSONAS.skeptic,
       maxTokens: 480,
       featureSuffix: "global-c",
-      reasoningHeavy: true,
+      reasoningHeavy: premium,
     },
   ];
 }
@@ -194,7 +195,7 @@ export function getCouncilDebaters(
   mode: CouncilMode,
   depth: CouncilDepth = "compact",
 ): CouncilModelConfig[] {
-  const all = mode === "domestic" ? getDomesticDebaters() : getGlobalDebaters();
+  const all = mode === "domestic" ? getDomesticDebaters() : getGlobalDebaters(depth);
   const { debaterIds } = councilDepthConfig(depth);
 
   const list = debaterIds
@@ -209,22 +210,22 @@ export function getCouncilDebaters(
   return list;
 }
 
-export function getCouncilJudge(mode: CouncilMode): CouncilModelConfig {
+export function getCouncilJudge(
+  mode: CouncilMode,
+  depth: CouncilDepth = "compact",
+): CouncilModelConfig {
   if (mode === "global") {
-    const latestDep = deploymentOrDefault(
-      "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
-      getAzureOpenAiDeployment(),
-    );
+    const premium = councilDepthConfig(depth).usePremiumModels;
     return {
       id: "judge-global",
       role: "logic",
-      label: "合議議長（最新）",
+      label: premium ? "合議議長（GPT-5）" : "合議議長（軽量）",
       provider: "azure",
-      deployment: deploymentOrDefault("AZURE_OPENAI_DEPLOYMENT_GLOBAL_JUDGE", latestDep),
+      deployment: globalTierDeployment("AZURE_OPENAI_DEPLOYMENT_GLOBAL_JUDGE", depth),
       persona: PERSONAS.judge,
       maxTokens: 550,
       featureSuffix: "judge-global",
-      reasoningHeavy: true,
+      reasoningHeavy: premium,
     };
   }
 
@@ -247,12 +248,12 @@ export function getCouncilConfigMeta() {
   const geminiConfigured = isGeminiConfigured();
   const domesticResidencyOk = isDomesticJapanResidencyConfigured();
   const domesticDebaters = getDomesticDebaters().map(withDisplay);
-  const domesticJudge = withDisplay(getCouncilJudge("domestic"));
-  const globalDebaters = [
-    ...getGlobalDebaters(),
+  const domesticJudge = withDisplay(getCouncilJudge("domestic", "compact"));
+  const globalDebatersCheap = [
+    ...getGlobalDebaters("compact"),
     ...(geminiConfigured ? [getGeminiDebater()] : []),
   ].map(withDisplay);
-  const globalJudge = withDisplay(getCouncilJudge("global"));
+  const globalJudgeCheap = withDisplay(getCouncilJudge("global", "compact"));
 
   return {
     azureConfigured,
@@ -260,6 +261,11 @@ export function getCouncilConfigMeta() {
     setupHint: azureConfigured
       ? undefined
       : "Azure OpenAI（AZURE_OPENAI_ENDPOINT 等）が未設定です。SWA の環境変数を確認してください。",
+    depths: {
+      compact: councilDepthConfig("compact"),
+      standard: councilDepthConfig("standard"),
+      deep: councilDepthConfig("deep"),
+    },
     domestic: {
       available: azureConfigured && domesticResidencyOk,
       label: "国内限定",
@@ -277,17 +283,17 @@ export function getCouncilConfigMeta() {
       available: azureConfigured,
       label: "国内問わず（最新）",
       description: geminiConfigured
-        ? "Azure OpenAI の最新系デプロイに加え、Gemini が探査派として合議に参加します。"
-        : "Azure OpenAI の最新系デプロイを使用。OpenAI 直契約は不要です。GEMINI_API_KEY / 中継があれば Gemini も参加できます。",
-      models: globalDebaters,
-      judge: globalJudge,
+        ? `簡潔／標準は安価デプロイ（${getAzureOpenAiCheapDeployment()}）＋ Gemini。深掘りのみ GPT-5（${getAzureOpenAiDeepDeployment()}）。`
+        : `簡潔／標準は安価デプロイ（${getAzureOpenAiCheapDeployment()}）。深掘りのみ GPT-5（${getAzureOpenAiDeepDeployment()}）。`,
+      models: globalDebatersCheap,
+      judge: globalJudgeCheap,
       dataRegion: geminiConfigured
-        ? "Azure OpenAI — Latest tier + Gemini"
-        : "Azure OpenAI — Latest tier",
+        ? "Azure OpenAI — cheap / deep tier + Gemini"
+        : "Azure OpenAI — cheap / deep tier",
       info:
         azureConfigured && !isGlobalCouncilExplicitlyConfigured()
           ? globalDeploymentAutoNote()
-          : undefined,
+          : `深掘り時のみ ${getAzureOpenAiDeepDeployment()} を使用します。`,
     },
   };
 }

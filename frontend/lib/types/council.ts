@@ -1,6 +1,6 @@
 export type CouncilMode = "domestic" | "global";
 
-export type CouncilDepth = "compact" | "standard";
+export type CouncilDepth = "compact" | "standard" | "deep";
 
 export type CouncilPhase = "initial" | "rebuttal" | "synthesis" | "followup";
 
