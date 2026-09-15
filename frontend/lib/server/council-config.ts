@@ -1,4 +1,4 @@
-export type CouncilDepth = "compact" | "standard";
+export type CouncilDepth = "compact" | "standard" | "deep";
 
 export const COUNCIL_DEPTH_CONFIG = {
   compact: {
@@ -12,6 +12,8 @@ export const COUNCIL_DEPTH_CONFIG = {
     judgeInputMaxChars: 140,
     topicMaxLength: 600,
     apiCalls: 3,
+    /** GPT-5 系は使わない（安価デプロイ） */
+    usePremiumModels: false,
   },
   standard: {
     label: "標準（詳細）",
@@ -24,6 +26,21 @@ export const COUNCIL_DEPTH_CONFIG = {
     judgeInputMaxChars: 320,
     topicMaxLength: 1000,
     apiCalls: 7,
+    usePremiumModels: false,
+  },
+  deep: {
+    label: "深掘り（GPT-5）",
+    debaterIds: ["logic", "creative", "skeptic"] as const,
+    includeRebuttal: true,
+    debaterMaxTokens: 1400,
+    judgeMaxTokens: 1800,
+    debaterLengthHint: "200〜320文字",
+    judgeLengthHint: "280〜450文字。箇条書き可",
+    judgeInputMaxChars: 320,
+    topicMaxLength: 1000,
+    apiCalls: 7,
+    /** グローバル合議のみ GPT-5 系を使用 */
+    usePremiumModels: true,
   },
 } as const;
 
