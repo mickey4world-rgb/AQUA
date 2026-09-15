@@ -197,22 +197,56 @@ function harvestReflection(input: {
 }): string {
   const impression = (input.battle.impression || input.battle.outcomeWhy || "").trim();
   const next = (input.battle.nextMove || "").trim();
-  return `## 今日の感想
+  return `## 今日の感想（人間ぽく）
 ${impression || "今日のニュースも、討伐を通じて立体的に見えてきた。"}
 
 ${SOL_LABEL}
 ${
   input.escaped
-    ? "取り逃がしたのは悔しい。でも『逃げ足の鱗』があるなら、次はもっと上手く読めるはずだ！"
-    : "今日の収穫はちゃんとギルドの燃料にするぞ。ニュースが少し身近に感じられた！"
+    ? "正直、取り逃がしたときは膝が笑った……でも『逃げ足の鱗』があるなら、次はもっと上手く読めるはずだ！"
+    : "今日の収穫はギルドの燃料だ。受付の子が『おかえり』って微笑んでくれたのが、なんか一番嬉しかったな。"
 }
 
 ${LUNA_LABEL}
 ${
   next
-    ? `感想としては、${next}`
+    ? `心配していたの、あなたが無事に戻ってきたこと。感想としては、${next}——続きは、夜の街灯の下でゆっくりね。`
     : "たとえは味付け。大事なのはニュース自体が楽しく理解できること。そういう見方もあるね、で終われるのが理想よ。"
 }`;
+}
+
+/** 注目を引くタイトル（事実フック＋好奇心） */
+export function buildCuriosityNoteTitle(input: {
+  battle: SolunaBattleResult;
+  dateLabel: string;
+}): string {
+  const plain = (input.battle.newsPlain || input.battle.newsTitle || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hook =
+    plain.length > 36 ? `${plain.slice(0, 36)}…` : plain || input.battle.bossName;
+  const escaped = input.battle.outcome === "escape";
+  if (escaped) {
+    return `逃げられた朝｜${hook}——ソルは何を取り逃がした？｜${input.dateLabel}`;
+  }
+  return `気になる朝｜${hook}——2人はどう読み解く？｜${input.dateLabel}`;
+}
+
+function newsNarrationBlock(input: {
+  briefing: SolunaNewsBriefing;
+  battle: SolunaBattleResult;
+}): string {
+  const lines = input.briefing.items.slice(0, 3).map((item, i) => {
+    const sum = (item.summary || "").trim();
+    return `${i + 1}. ${item.title}${sum ? `\n　→ ${sum.slice(0, 100)}${sum.length > 100 ? "…" : ""}` : ""}`;
+  });
+  const plain = (input.battle.newsPlain || "").trim();
+  return `## きょうのニュース（ナレーション・事実）
+ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。
+
+${lines.join("\n\n") || plain || input.briefing.summary}
+
+このニュースを、ソルとルーナはモンスター討伐として読み解きます。ここから先が、今日の冒険です。`;
 }
 
 export function notePriceYen(): number {
@@ -268,19 +302,19 @@ export function composeDailyNote(input: {
   const boincMinutes = input.boinc?.result?.runMinutesActual ?? input.boincMinutes;
   const boincCredit = input.boinc?.result?.creditGranted;
 
-  const title = `⚔️ ${input.battle.bossName}を追え｜${dateLabel}｜ソルとルーナの朝討伐`;
+  const title = buildCuriosityNoteTitle({ battle: input.battle, dateLabel });
 
   const disclaimer = `※このnoteはAIがニュースを討伐するゲームです。初めての方は設定ページをご覧ください。
 設定ページ: ${NOTE_SETTINGS_GUIDE_URL}`;
 
   const escapeHook = escaped
     ? `
-## 取り逃がしたからこそ手に入るもの
+## 取り逃がしたからこそ、続きが気になる
 負けた記事ではありません。${boss}に逃げられたからこそ、有料エリアでは次が読めます。
 
-・リベンジ戦略: 次に同じ系統のモンスターが来たときの弱点（市場の見通し・防衛策）
-・逃げ足の鱗: 今日の失敗ログから読み解く、ポートフォリオ防衛の一手
-・反省会の白熱: 2人のドタバタ掛け合い（ボケ＆ツッコミ）全文`
+・リベンジ戦略: 次に同じ系統が来たときの弱点（市場の見通し・防衛策）
+・逃げ足の鱗: 今日の失敗ログから読む、ポートフォリオ防衛の一手
+・反省会の白熱: ドジなソルと、優しくてしたたかなルーナの掛け合い全文`
     : `
 ## 討伐成功の先にあるもの
 有料エリアでは、激闘の続きと収穫の使い道まで読めます。
@@ -291,13 +325,17 @@ export function composeDailyNote(input: {
 
   const paywallTeaser = escaped
     ? `${LUNA_LABEL}
-でもソル、この ${input.battle.bossName} を放置すると、私たちのサイフ（ポートフォリオ）にも影響が出るかもしれないわ。
-討伐には失敗したけれど、奴の『逃げ足の鱗』から次の防衛策が見えてきた。続きは有料で。`
+大丈夫、ソル。逃げられた朝は、ギルド受付の子も心配そうにしていたわ。
+でもね——${input.battle.bossName} が落とした『逃げ足の鱗』には、サイフを守るヒントがまだ眠っている。続きは、静かに深掘りしましょう。`
     : `${LUNA_LABEL}
-討伐はできた。でも収穫の使い道と、次に来るモンスターの弱点は、まだ話していないわ。
-続きが気になるなら↓へ。`;
+討伐はできたわ。でも収穫の使い道と、次に来る急所は、まだ話していない。
+ギルドの灯りが落ちる前に——続きが気になるなら↓へ。`;
 
   const adventureLog = formatAdventureLogForNote(input.battle);
+  const factBlock = newsNarrationBlock({
+    briefing: input.briefing,
+    battle: input.battle,
+  });
 
   // キャラ画像は見出し（eyecatch）のみ。本文へ aquacore 直リンクを置くと
   // note 公開時に「本文に利用できない内容が含まれています」で拒否される。
@@ -305,6 +343,7 @@ export function composeDailyNote(input: {
 
 ${SOL_LABEL} ／ ${LUNA_LABEL}
 今日もニュースをモンスターに変えて、2人が世界を旅しながら討伐に挑みます。
+まず事実を知り、それから物語でハラハラしながら理解する——それがこのギルドの朝の流儀です。
 ${
   (assets?.lastPromptBattleMode ?? assets?.battleMode) === "attack"
     ? `
@@ -318,6 +357,10 @@ ${
 `
       : ""
 }
+
+${factBlock}
+
+## そんなニュースを、彼らはどう読み解くか
 
 ${adventureLog}
 
@@ -334,8 +377,8 @@ ${paywallTeaser}
 【有料エリアの先にあるもの】
 ・激闘の続き: 小物戦の裏側＆大ボス戦の白熱全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
-・召喚獣育成ステータス: 聖なる魔力タンク（MP）とレベルアップ報告
-・拠点都市開拓: 購読パワーが街を育てる「街づくりレポート」
+・召喚獣育成: リアルな保有状況＋物語の感想
+・拠点都市開拓: 街の成長と、受付の子や風景への想い
 
 ${escapeHook}
 
@@ -360,15 +403,15 @@ ${paidDialogue || "（本日は2ターンで決着がつきました）"}
 ${
   escaped
     ? `${SOL_LABEL}
-くっそー！${input.battle.bossName} に逃げられちまった！でも次の一手は、もう見えている。
+くっそー！${input.battle.bossName} に逃げられちまった……膝が笑ってる。でも次の一手は、もう見えているはずだ。
 
 ${LUNA_LABEL}
-焦らないで。奴が落とした『逃げ足の鱗』を分析すれば、次に同じニュース（モンスター）が来た時の弱点が丸裸になるわ。`
+焦らないで。あなたの弱さを見せてくれたから、私も本気で立て直せる。奴が落とした『逃げ足の鱗』を読めば、次の弱点が丸裸になるわ。`
     : `${SOL_LABEL}
-今日の討伐は決まった。収穫はギルドの燃料にするぞ！
+今日の討伐は決まった！……あっ、ポーション落とした。まあいいか、収穫はギルドの燃料にするぞ！
 
 ${LUNA_LABEL}
-勝ち逃げも大事。ここで欲張らず、財務報告と拠点開拓に回しましょう。`
+ふふ、そういうところよ。勝ち逃げも大事。財務報告と拠点開拓に回しましょう——受付の子も、あなたの無事を待っているわ。`
 }
 
 ---
