@@ -109,10 +109,14 @@ function failureReason(
   status: number,
   body: GeminiApiResponse,
   model: string,
+  options?: { forImage?: boolean },
 ): string {
   if (status === 429) {
     // limit: 0 はレート超過ではなく、そのモデルに無料枠が割り当てられていない状態
     if (body.error?.message?.includes("limit: 0")) {
+      if (options?.forImage) {
+        return `${model} は無料枠の画像生成対象外です。別経路（Pollinations）へ切り替えます。`;
+      }
       return `${model} はこの Google プロジェクトの無料枠対象外です。GEMINI_MODEL に無料枠のあるモデル（例: gemini-flash-latest）を指定してください。`;
     }
     if (body.error?.message?.toLowerCase().includes("high demand")) {
@@ -298,9 +302,13 @@ export async function generateWithGemini(
   return { ok: false, reason: lastReason };
 }
 
-/** Nano Banana 2 → Nano Banana（GA のみ。preview は API 未提供） */
+/**
+ * Nano Banana 系（GA）。いずれも Google 公式料金表では Free Tier「Not available」。
+ * 無料枠キーでは limit:0 になり得るため、呼び出し側で Pollinations フォールバック必須。
+ */
 const GEMINI_IMAGE_MODEL_ALLOWLIST = [
   "gemini-3.1-flash-image",
+  "gemini-3.1-flash-lite-image",
   "gemini-2.5-flash-image",
 ] as const;
 
@@ -315,6 +323,12 @@ function resolveGeminiImageModelId(raw: string): string | null {
   if (bare === "gemini-3.1-flash-image" || bare === "gemini-3.1-flash-image-preview") {
     return "gemini-3.1-flash-image";
   }
+  if (
+    bare === "gemini-3.1-flash-lite-image" ||
+    bare === "gemini-3.1-flash-lite-image-preview"
+  ) {
+    return "gemini-3.1-flash-lite-image";
+  }
   if (bare === "gemini-2.5-flash-image" || bare === "gemini-2.5-flash-image-preview") {
     return "gemini-2.5-flash-image";
   }
@@ -322,6 +336,14 @@ function resolveGeminiImageModelId(raw: string): string | null {
     return null;
   }
   return (GEMINI_IMAGE_MODEL_ALLOWLIST as readonly string[]).includes(bare) ? bare : null;
+}
+
+export function isGeminiImageFreeTierBlock(reason: string): boolean {
+  return (
+    reason.includes("無料枠の画像生成対象外") ||
+    reason.includes("無料枠対象外") ||
+    /limit:\s*0/i.test(reason)
+  );
 }
 
 function getGeminiImageModelCandidates(): string[] {
@@ -416,12 +438,13 @@ export async function generateGeminiImage(
   let lastReason = "Gemini 画像生成に失敗しました。";
 
   outer: for (const model of models) {
-    const imageConfigVariants: Array<{ aspectRatio: string; imageSize?: string }> = model.includes("3.1")
-      ? [
-          { aspectRatio: request.aspectRatio ?? "1:1", imageSize: "2K" },
-          { aspectRatio: request.aspectRatio ?? "1:1" },
-        ]
-      : [{ aspectRatio: request.aspectRatio ?? "1:1" }];
+    const imageConfigVariants: Array<{ aspectRatio: string; imageSize?: string }> =
+      model === "gemini-3.1-flash-image"
+        ? [
+            { aspectRatio: request.aspectRatio ?? "1:1", imageSize: "2K" },
+            { aspectRatio: request.aspectRatio ?? "1:1" },
+          ]
+        : [{ aspectRatio: request.aspectRatio ?? "1:1" }];
 
     for (const imageConfig of imageConfigVariants) {
       const payload = {
@@ -461,7 +484,7 @@ export async function generateGeminiImage(
         });
         const body = (await response.json()) as GeminiImageApiResponse;
         if (!response.ok) {
-          lastReason = failureReason(response.status, body, model);
+          lastReason = failureReason(response.status, body, model, { forImage: true });
           if (shouldTryNextGeminiImageModel(response.status, body.error?.message)) {
             continue;
           }
@@ -495,11 +518,19 @@ export async function generateGeminiImage(
     }
   }
 
+  if (isGeminiImageFreeTierBlock(lastReason)) {
+    return {
+      ok: false,
+      reason:
+        "Gemini 画像モデルは無料枠対象外です。別経路（Pollinations）で生成を続けます。",
+    };
+  }
+
   return {
     ok: false,
     reason:
       lastReason.includes("not found") || lastReason.includes("not supported")
-        ? `画像生成モデルが利用できませんでした。Google AI Studio で gemini-3.1-flash-image または gemini-2.5-flash-image が有効か確認してください。`
+        ? `画像生成モデルが利用できませんでした。Google AI Studio で gemini-3.1-flash-image / gemini-3.1-flash-lite-image / gemini-2.5-flash-image が有効か確認してください。`
         : lastReason,
   };
 }
