@@ -19,6 +19,25 @@ export function getAzureOpenAiDeployment(): string {
   return process.env.AZURE_OPENAI_DEPLOYMENT ?? "stock-advice";
 }
 
+/** 日常チャット向けの安価デプロイ（未設定時は既定デプロイ） */
+export function getAzureOpenAiCheapDeployment(): string {
+  return (
+    process.env.AZURE_OPENAI_DEPLOYMENT_FAST?.trim() ||
+    process.env.SOLUNA_OPENAI_DEPLOYMENT_FAST?.trim() ||
+    process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ||
+    "aqua-cheap"
+  );
+}
+
+/** 合議 deep など高負荷向け（未設定時は council-gpt5） */
+export function getAzureOpenAiDeepDeployment(): string {
+  return (
+    process.env.AZURE_OPENAI_DEPLOYMENT_DEEP?.trim() ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_GLOBAL?.trim() ||
+    "council-gpt5"
+  );
+}
+
 export function getAzureOpenAiRegion(): string | undefined {
   return process.env.AZURE_OPENAI_REGION?.trim().toLowerCase();
 }
@@ -109,7 +128,11 @@ export function estimateTokenCostUsd(
   const rates: Record<string, { input: number; output: number }> = {
     "gpt-4o-mini": { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
     "gpt-4o": { input: 2.5 / 1_000_000, output: 10 / 1_000_000 },
+    "gpt-5-nano": { input: 0.05 / 1_000_000, output: 0.4 / 1_000_000 },
+    "gpt-5-mini": { input: 0.25 / 1_000_000, output: 2 / 1_000_000 },
     "gpt-5.4-mini": { input: 0.25 / 1_000_000, output: 2 / 1_000_000 },
+    "gpt-5": { input: 1.25 / 1_000_000, output: 10 / 1_000_000 },
+    "aqua-cheap": { input: 0.05 / 1_000_000, output: 0.4 / 1_000_000 },
   };
 
   const normalized = Object.entries(rates).find(([name]) =>

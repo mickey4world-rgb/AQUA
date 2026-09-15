@@ -115,11 +115,11 @@ export default function AzureInfraCostPanel({
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-white">AI リソース別（比較）</h3>
             <p className="mt-1 text-[11px] text-slate-500">
-              Foundry Claude（Marketplace）と Azure OpenAI を並べて確認できます。
+              「Foundry Models」サービス名だけでは Claude とは限りません。下のリソース別で Azure OpenAI と Foundry Claude を分けて確認してください。
             </p>
             {focus.length > 0 && (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {(["foundry-claude", "azure-openai"] as const).map((key) => {
+                {(["azure-openai", "foundry-claude"] as const).map((key) => {
                   const row = focus.find((r) => r.focus === key);
                   const amount = row?.costAmount ?? 0;
                   const title =
@@ -143,6 +143,11 @@ export default function AzureInfraCostPanel({
                       <p className={`mt-2 text-xl font-bold ${valueColor}`}>
                         {formatCurrency(amount, azure.currency)}
                       </p>
+                      {key === "azure-openai" && amount > 0 && (
+                        <p className="mt-1 text-[10px] text-sky-200/70">
+                          サービス名が Foundry Models でも、このリソースなら OpenAI 課金です
+                        </p>
+                      )}
                     </div>
                   );
                 })}

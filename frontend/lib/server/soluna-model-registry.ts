@@ -1,5 +1,7 @@
 import { getFoundryClaudeDeployment, isAnthropicConfigured, isAzureFoundryClaudeConfigured } from "@/lib/server/anthropic";
 import {
+  getAzureOpenAiCheapDeployment,
+  getAzureOpenAiDeepDeployment,
   getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
 } from "@/lib/server/azure-openai";
@@ -29,12 +31,14 @@ const TIER_RANK: Record<SolunaModelTier, number> = {
 
 /** 新しい順・高性能順（priority 大きいほど優先） */
 const MODEL_CATALOG: ModelCandidate[] = [
-  // OpenAI / Azure
-  { provider: "openai", modelId: "council-gpt5", displayName: "GPT-5 系", costClass: "premium", minTier: "growing", priority: 100 },
-  { provider: "openai", modelId: "gpt-5.5", displayName: "GPT-5.5", costClass: "premium", minTier: "growing", priority: 99 },
-  { provider: "openai", modelId: "gpt-4o", displayName: "GPT-4o", costClass: "high", minTier: "growing", priority: 70 },
-  { provider: "openai", modelId: "gpt-4o-mini", displayName: "GPT-4o mini", costClass: "low", minTier: "budding", priority: 40 },
-  { provider: "openai", modelId: "stock-advice", displayName: "Azure OpenAI", costClass: "medium", minTier: "budding", priority: 30 },
+  // OpenAI / Azure — 日常は aqua-cheap（nano）優先。premium は deep / 明示時のみ
+  { provider: "openai", modelId: "aqua-cheap", displayName: "Azure 軽量（nano）", costClass: "low", minTier: "budding", priority: 95 },
+  { provider: "openai", modelId: "gpt-5-nano", displayName: "GPT-5 nano", costClass: "low", minTier: "budding", priority: 94 },
+  { provider: "openai", modelId: "gpt-4o-mini", displayName: "GPT-4o mini", costClass: "low", minTier: "budding", priority: 90 },
+  { provider: "openai", modelId: "stock-advice", displayName: "Azure OpenAI（gpt-4o）", costClass: "high", minTier: "budding", priority: 50 },
+  { provider: "openai", modelId: "council-gpt5", displayName: "GPT-5 系", costClass: "premium", minTier: "mature", priority: 40 },
+  { provider: "openai", modelId: "gpt-5.5", displayName: "GPT-5.5", costClass: "premium", minTier: "mature", priority: 39 },
+  { provider: "openai", modelId: "gpt-4o", displayName: "GPT-4o", costClass: "high", minTier: "growing", priority: 45 },
 
   // Claude / Foundry
   { provider: "claude", modelId: "claude-opus-5", displayName: "Claude Opus 5", costClass: "premium", minTier: "mature", priority: 100 },
@@ -47,6 +51,7 @@ const MODEL_CATALOG: ModelCandidate[] = [
   { provider: "gemini", modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", costClass: "free", minTier: "mature", priority: 90 },
   { provider: "gemini", modelId: "gemini-flash-latest", displayName: "Gemini Flash", costClass: "free", minTier: "budding", priority: 80 },
   { provider: "gemini", modelId: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash", costClass: "free", minTier: "budding", priority: 70 },
+  { provider: "gemini", modelId: "gemini-3.6-flash", displayName: "Gemini 3.6 Flash", costClass: "free", minTier: "budding", priority: 85 },
 ];
 
 function trimEnv(key: string): string | undefined {
@@ -60,6 +65,8 @@ function collectEnvDeployments(): Set<string> {
     "SOLUNA_OPENAI_DEPLOYMENT",
     "SOLUNA_OPENAI_DEPLOYMENT_FAST",
     "SOLUNA_LUNA_DEPLOYMENT",
+    "AZURE_OPENAI_DEPLOYMENT_FAST",
+    "AZURE_OPENAI_DEPLOYMENT_DEEP",
     "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
     "AZURE_OPENAI_DEPLOYMENT_GLOBAL_A",
     "AZURE_OPENAI_DEPLOYMENT",
@@ -84,6 +91,8 @@ function collectEnvDeployments(): Set<string> {
     const value = trimEnv(key);
     if (value) set.add(value.toLowerCase());
   }
+  // 日常既定の安価デプロイ名（env 未反映時でも候補に載せる）
+  set.add("aqua-cheap");
   if (isAzureOpenAiConfigured()) {
     set.add(getAzureOpenAiDeployment().toLowerCase());
   }
@@ -132,10 +141,12 @@ function resolveDeploymentName(candidate: ModelCandidate, tier: SolunaModelTier)
   const envKeys =
     candidate.provider === "openai"
       ? [
-          "SOLUNA_OPENAI_DEPLOYMENT_ADVANCED",
-          "SOLUNA_OPENAI_DEPLOYMENT",
           "SOLUNA_OPENAI_DEPLOYMENT_FAST",
+          "AZURE_OPENAI_DEPLOYMENT_FAST",
+          "SOLUNA_OPENAI_DEPLOYMENT",
           "SOLUNA_LUNA_DEPLOYMENT",
+          "SOLUNA_OPENAI_DEPLOYMENT_ADVANCED",
+          "AZURE_OPENAI_DEPLOYMENT_DEEP",
           "AZURE_OPENAI_DEPLOYMENT_GLOBAL",
           "AZURE_OPENAI_DEPLOYMENT",
         ]
@@ -162,6 +173,12 @@ function resolveDeploymentName(candidate: ModelCandidate, tier: SolunaModelTier)
   }
 
   if (candidate.provider === "openai" && isAzureOpenAiConfigured()) {
+    if (candidate.costClass === "low" || candidate.costClass === "free") {
+      return getAzureOpenAiCheapDeployment();
+    }
+    if (candidate.costClass === "premium") {
+      return getAzureOpenAiDeepDeployment();
+    }
     return getAzureOpenAiDeployment();
   }
   if (candidate.provider === "gemini" && isGeminiConfigured()) {
@@ -266,10 +283,11 @@ export function resolveModelForProvider(
   // フォールバック — env から直接
   if (provider === "openai") {
     const dep =
-      trimEnv("SOLUNA_OPENAI_DEPLOYMENT_ADVANCED") ??
-      trimEnv("AZURE_OPENAI_DEPLOYMENT_GLOBAL") ??
+      trimEnv("SOLUNA_OPENAI_DEPLOYMENT_FAST") ??
+      trimEnv("AZURE_OPENAI_DEPLOYMENT_FAST") ??
+      trimEnv("SOLUNA_OPENAI_DEPLOYMENT") ??
       trimEnv("SOLUNA_LUNA_DEPLOYMENT") ??
-      getAzureOpenAiDeployment();
+      getAzureOpenAiCheapDeployment();
     return { modelId: dep, displayName: dep, reason: "設定デプロイ" };
   }
   if (provider === "claude") {
@@ -290,16 +308,16 @@ export function costBiasForProvider(
   provider: SolunaProvider,
   costMode: SolunaCostMode,
 ): number {
-  // normal でも Gemini / Azure OpenAI を優遇し、Claude（Marketplace）を抑える
+  // Gemini ≫ 安価 OpenAI ≫ GPT-5 / Claude（Marketplace）
   if (costMode === "normal") {
-    if (provider === "gemini") return 2;
-    if (provider === "openai") return 1.5;
-    if (provider === "claude") return -2;
+    if (provider === "gemini") return 4;
+    if (provider === "openai") return 1;
+    if (provider === "claude") return -3;
     return 0;
   }
-  if (provider === "gemini") return costMode === "minimal" ? 7 : 4;
-  if (provider === "openai") return costMode === "minimal" ? -1 : 0.5;
-  if (provider === "claude") return costMode === "minimal" ? -6 : -3.5;
+  if (provider === "gemini") return costMode === "minimal" ? 8 : 5;
+  if (provider === "openai") return costMode === "minimal" ? -0.5 : 0.5;
+  if (provider === "claude") return costMode === "minimal" ? -7 : -4;
   return 0;
 }
 
