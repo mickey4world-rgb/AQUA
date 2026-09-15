@@ -49,6 +49,8 @@ export interface SolunaImageListResponse {
   defaultModel: SolunaImageModelId;
   /** Gemini ネイティブ画像生成が使えるか */
   geminiDirect?: boolean;
+  /** アップロード保管の目安上限（バイト） */
+  maxUploadBytes?: number;
 }
 
 export interface SolunaImageGenerateResponse {

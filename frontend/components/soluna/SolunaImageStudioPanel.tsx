@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { compressImageForSolunaUpload } from "@/lib/soluna-image-compress";
 import type {
   SolunaImageAsset,
   SolunaImageGenerateResponse,
@@ -56,15 +57,6 @@ const FALLBACK_MODELS: SolunaImageModelOption[] = [
   },
 ];
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function extFromMime(mime: string): string {
   if (mime.includes("png")) return "png";
   if (mime.includes("webp")) return "webp";
@@ -119,7 +111,7 @@ export default function SolunaImageStudioPanel() {
       id: "welcome",
       role: "system",
       content:
-        "Nano Banana 2 は Google AI Studio と同系統の Gemini 直叩きを優先します。依頼は日本語のまま渡し、ON 時はベース立ち絵を参照して画風を寄せます。",
+        "Nano Banana 2 は Gemini を優先します。無料枠外のときは Pollinations へ自動切替します。大きい画像は見た目を保ったまま自動で軽量化してから保管します。",
     },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -224,7 +216,8 @@ export default function SolunaImageStudioPanel() {
     setBusy(true);
     setError(null);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const { dataUrl, compressed, originalBytes, finalBytes } =
+        await compressImageForSolunaUpload(file);
       const res = await fetch("/api/soluna/images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -238,12 +231,15 @@ export default function SolunaImageStudioPanel() {
         setError(data.error || "アップロードに失敗しました");
         return;
       }
+      const sizeNote = compressed
+        ? `（${Math.round(originalBytes / 1024)}KB → ${Math.round(finalBytes / 1024)}KB に軽量化）`
+        : "";
       setMessages((prev) => [
         ...prev,
         {
           id: `up-${Date.now()}`,
           role: "system",
-          content: "画像を保管しました",
+          content: `画像を保管しました${sizeNote}`,
           imageUrl: data.image?.imageUrl,
         },
       ]);
@@ -294,7 +290,7 @@ export default function SolunaImageStudioPanel() {
         <p className="text-[10px] tracking-[0.28em] text-cyan-200/80 uppercase">Image Studio</p>
         <h3 className="mt-1 text-lg font-semibold text-white">画像生成・保管</h3>
         <p className="mt-1 text-[12px] text-slate-400">
-          ベース立ち絵を登録済み。生成は無料枠（{meta?.generateProvider ?? "Pollinations"}）を優先します。
+          生成は {meta?.generateProvider ?? "無料経路"} を使います。アップロードは見た目を保ったまま自動軽量化します。
           保管上限 {meta?.maxImages ?? 24} 枚。
         </p>
       </div>
