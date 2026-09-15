@@ -6,7 +6,13 @@ import { randomUUID } from "crypto";
 import { readFile } from "fs/promises";
 import path from "path";
 import { COSMOS_CONTAINERS, getContainer, isCosmosConfigured } from "@/lib/server/cosmos";
-import { generateGeminiImage, generateWithGemini, isGeminiConfigured, stripJsonFence } from "@/lib/server/gemini";
+import {
+  generateGeminiImage,
+  generateWithGemini,
+  isGeminiConfigured,
+  isGeminiImageFreeTierBlock,
+  stripJsonFence,
+} from "@/lib/server/gemini";
 import { sanitizeText } from "@/lib/server/security";
 import type {
   SolunaImageAsset,
@@ -16,9 +22,13 @@ import type {
   SolunaImageSource,
 } from "@/lib/types/soluna-image";
 
+/** Cosmos ドキュメント余裕を見て約 900KB（data URL 本体） */
+export const SOLUNA_IMAGE_MAX_BYTES = 900_000;
 const MAX_IMAGES = 24;
-const MAX_BYTES = 900_000; // Cosmos ドキュメント余裕を見て約 900KB
+const MAX_BYTES = SOLUNA_IMAGE_MAX_BYTES;
 const DOC_TYPE = "solunaImage";
+/** Pollinations: Nano Banana がキー必須のとき落とす無料寄りモデル */
+const POLLINATIONS_FREE_FALLBACKS: SolunaImageModelId[] = ["flux", "turbo", "sana"];
 
 export const SOLUNA_BASE_IMAGE_PATH = "/soluna/characters-base.jpg";
 
@@ -227,10 +237,66 @@ function parseDataUrl(dataUrl: string): { mimeType: string; buffer: Buffer; byte
   const mimeType = match[1]!;
   const buffer = Buffer.from(match[2]!, "base64");
   if (buffer.byteLength < 32) throw new Error("画像が小さすぎます");
-  if (buffer.byteLength > MAX_BYTES) {
-    throw new Error(`画像が大きすぎます（最大約 ${Math.round(MAX_BYTES / 1024)}KB）`);
-  }
   return { mimeType, buffer, byteSize: buffer.byteLength };
+}
+
+/**
+ * 見た目（構図）を保ったまま JPEG 再エンコードで Cosmos 上限内へ落とす。
+ */
+async function compressDataUrlToLimit(
+  dataUrl: string,
+  maxBytes = MAX_BYTES,
+): Promise<{ dataUrl: string; mimeType: string; byteSize: number }> {
+  const parsed = parseDataUrl(dataUrl);
+  if (parsed.byteSize <= maxBytes) {
+    return { dataUrl, mimeType: parsed.mimeType, byteSize: parsed.byteSize };
+  }
+
+  let sharpFn: (typeof import("sharp"))["default"];
+  try {
+    sharpFn = (await import("sharp")).default;
+  } catch {
+    throw new Error(
+      `画像が大きすぎます（最大約 ${Math.round(maxBytes / 1024)}KB）。クライアント側で圧縮してから再送してください。`,
+    );
+  }
+
+  let width = 2048;
+  const qualities = [88, 80, 72, 64, 56, 48, 40];
+  let lastError: Error | null = null;
+
+  for (let pass = 0; pass < 5; pass += 1) {
+    for (const quality of qualities) {
+      try {
+        const out = await sharpFn(parsed.buffer, { failOn: "none" })
+          .rotate()
+          .resize({
+            width,
+            height: width,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .jpeg({ quality, mozjpeg: true })
+          .toBuffer();
+        if (out.byteLength <= maxBytes) {
+          return {
+            dataUrl: `data:image/jpeg;base64,${out.toString("base64")}`,
+            mimeType: "image/jpeg",
+            byteSize: out.byteLength,
+          };
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+    width = Math.max(640, Math.floor(width * 0.75));
+  }
+
+  throw new Error(
+    lastError?.message
+      ? `画像の圧縮に失敗しました: ${lastError.message}`
+      : `画像を約 ${Math.round(maxBytes / 1024)}KB 以下に圧縮できませんでした。`,
+  );
 }
 
 export async function saveSolunaImage(input: {
@@ -246,7 +312,7 @@ export async function saveSolunaImage(input: {
     throw new Error(`保存上限（${MAX_IMAGES}枚）に達しています。不要な画像を削除してください。`);
   }
 
-  const { mimeType, byteSize } = parseDataUrl(input.dataUrl);
+  const compressed = await compressDataUrlToLimit(input.dataUrl);
   const now = new Date().toISOString();
   const asset: StoredImage = {
     id: randomUUID(),
@@ -254,9 +320,9 @@ export async function saveSolunaImage(input: {
     title: sanitizeText(input.title, 80) || "無題の画像",
     prompt: input.prompt ? sanitizeText(input.prompt, 1200) : undefined,
     source: input.source,
-    imageUrl: input.dataUrl,
-    mimeType,
-    byteSize,
+    imageUrl: compressed.dataUrl,
+    mimeType: compressed.mimeType,
+    byteSize: compressed.byteSize,
     model: input.model,
     locked: false,
     createdAt: now,
@@ -359,11 +425,12 @@ async function enhancePromptWithGemini(
   }
 }
 
-function pollinationsConfigured(): boolean {
-  return Boolean(process.env.POLLINATIONS_API_KEY?.trim());
+function pollinationsModelChain(preferred: SolunaImageModelId): SolunaImageModelId[] {
+  const chain = [preferred, ...POLLINATIONS_FREE_FALLBACKS];
+  return [...new Set(chain)];
 }
 
-async function generateWithPollinations(
+async function generateWithPollinationsOnce(
   prompt: string,
   model: SolunaImageModelId,
   options?: { referenceImageUrl?: string | null },
@@ -377,7 +444,7 @@ async function generateWithPollinations(
     seed: String(Date.now() % 1_000_000),
   });
   if (model === "nanobanana-2" || model === "nanobanana-2-lite") {
-    params.set("resolution", "2k");
+    params.set("resolution", "1k");
   }
   if (options?.referenceImageUrl) {
     params.set("image", options.referenceImageUrl);
@@ -407,7 +474,7 @@ async function generateWithPollinations(
         throw new Error(
           pollinationsKey
             ? `Pollinations API 認証エラー（HTTP ${res.status}）。API キーを確認してください。`
-            : `Pollinations の ${model} は API キーが必要です。本番では Gemini 経由を使用します。`,
+            : `Pollinations の ${model} は API キーが必要です。`,
         );
       }
       throw new Error(`無料画像API HTTP ${res.status}（model=${model}）`);
@@ -418,19 +485,43 @@ async function generateWithPollinations(
     }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.byteLength < 1000) throw new Error("生成画像が空です");
-    if (buf.byteLength > MAX_BYTES) {
-      throw new Error("生成画像が大きすぎます。プロンプトを短くしてもう一度試してください。");
-    }
     const mimeType = contentType.split(";")[0]!.trim() || "image/jpeg";
     const dataUrl = `data:${mimeType};base64,${buf.toString("base64")}`;
-    return { dataUrl, mimeType };
+    const compressed = await compressDataUrlToLimit(dataUrl);
+    return { dataUrl: compressed.dataUrl, mimeType: compressed.mimeType };
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function generateWithPollinations(
+  prompt: string,
+  model: SolunaImageModelId,
+  options?: { referenceImageUrl?: string | null },
+): Promise<{ dataUrl: string; mimeType: string; usedModel: SolunaImageModelId }> {
+  let lastError: Error | null = null;
+  for (const candidate of pollinationsModelChain(model)) {
+    try {
+      // 参照画像はサポートするモデルだけ渡す（flux 等で無視／失敗しうる）
+      const ref =
+        modelSupportsReference(candidate) && options?.referenceImageUrl
+          ? options.referenceImageUrl
+          : null;
+      const generated = await generateWithPollinationsOnce(prompt, candidate, {
+        referenceImageUrl: ref,
+      });
+      return { ...generated, usedModel: candidate };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // キー必須・未対応は次モデルへ
+      continue;
+    }
+  }
+  throw lastError ?? new Error("無料画像APIでの生成に失敗しました");
+}
+
 /**
- * Gemini ネイティブ（Nano Banana 2）優先 → 失敗時 Pollinations フォールバック
+ * Gemini ネイティブ（Nano Banana 2）優先 → 失敗時（無料枠外含む）Pollinations フォールバック
  */
 export async function generateSolunaImage(
   userId: string,
@@ -449,16 +540,10 @@ export async function generateSolunaImage(
   let enhancedPrompt = composeGeminiImagePrompt(userPrompt, matchBaseStyle);
   let provider = "";
   let dataUrl = "";
-  let mimeType = "image/jpeg";
   let geminiError: string | null = null;
+  let usedModel: SolunaImageModelId = model;
 
-  if (isGeminiNativeImageModel(model)) {
-    if (!isGeminiConfigured()) {
-      throw new Error(
-        "Nano Banana 2 には GEMINI_RELAY（または GEMINI_API_KEY）の設定が必要です。",
-      );
-    }
-
+  if (isGeminiNativeImageModel(model) && isGeminiConfigured()) {
     const referenceImage = useReference ? await loadBaseReferenceImage() : undefined;
     const gemini = await generateGeminiImage({
       prompt: enhancedPrompt,
@@ -466,36 +551,46 @@ export async function generateSolunaImage(
       aspectRatio: "1:1",
     });
     if (gemini.ok) {
-      dataUrl = gemini.dataUrl;
-      mimeType = gemini.mimeType;
+      const compressed = await compressDataUrlToLimit(gemini.dataUrl);
+      dataUrl = compressed.dataUrl;
       provider = `gemini(${gemini.model})${referenceImage ? "+base-ref" : ""}`;
     } else {
       geminiError = gemini.reason;
     }
+  } else if (isGeminiNativeImageModel(model) && !isGeminiConfigured()) {
+    geminiError =
+      "Nano Banana 2 には GEMINI_RELAY（または GEMINI_API_KEY）の設定が必要です。無料経路へ切り替えます。";
   }
 
   if (!dataUrl) {
-    const pollinationsAllowed =
-      !isGeminiNativeImageModel(model) || pollinationsConfigured();
-    if (!pollinationsAllowed) {
-      throw new Error(
-        geminiError ??
-          "Gemini 画像生成に失敗しました。GEMINI_RELAY の設定と画像モデルの利用可否を確認してください。",
-      );
+    try {
+      const pollinationsPrompt = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
+      enhancedPrompt = pollinationsPrompt.enhancedPrompt;
+      const generated = await generateWithPollinations(enhancedPrompt, model, {
+        referenceImageUrl,
+      });
+      dataUrl = generated.dataUrl;
+      usedModel = generated.usedModel;
+      const modelLabel =
+        SOLUNA_IMAGE_MODELS.find((m) => m.id === usedModel)?.label ?? usedModel;
+      const refNote =
+        referenceImageUrl && modelSupportsReference(usedModel) ? "+base-ref" : "";
+      const viaFreeTier =
+        geminiError && isGeminiImageFreeTierBlock(geminiError) ? " via free-fallback" : "";
+      provider = `pollinations(${modelLabel})${refNote}${viaFreeTier}`;
+      comments.solComment = pollinationsPrompt.solComment;
+      comments.lunaComment = pollinationsPrompt.lunaComment;
+    } catch (err) {
+      const pollinationsReason = err instanceof Error ? err.message : "無料画像APIに失敗しました";
+      if (geminiError) {
+        throw new Error(
+          isGeminiImageFreeTierBlock(geminiError)
+            ? `Gemini 画像モデルは無料枠対象外のため代替生成を試しましたが失敗しました: ${pollinationsReason}`
+            : `${geminiError} / ${pollinationsReason}`,
+        );
+      }
+      throw new Error(pollinationsReason);
     }
-
-    const pollinationsPrompt = await enhancePromptWithGemini(userPrompt, matchBaseStyle);
-    enhancedPrompt = pollinationsPrompt.enhancedPrompt;
-    const generated = await generateWithPollinations(enhancedPrompt, model, {
-      referenceImageUrl,
-    });
-    dataUrl = generated.dataUrl;
-    mimeType = generated.mimeType;
-    const modelLabel = SOLUNA_IMAGE_MODELS.find((m) => m.id === model)?.label ?? model;
-    const refNote = referenceImageUrl ? "+base-ref" : "";
-    provider = `pollinations(${modelLabel})${refNote}`;
-    comments.solComment = pollinationsPrompt.solComment;
-    comments.lunaComment = pollinationsPrompt.lunaComment;
   }
 
   const image = await saveSolunaImage({
@@ -504,7 +599,7 @@ export async function generateSolunaImage(
     prompt: enhancedPrompt,
     source: "generate",
     dataUrl,
-    model,
+    model: usedModel,
   });
 
   return {
@@ -513,7 +608,7 @@ export async function generateSolunaImage(
     lunaComment: comments.lunaComment,
     enhancedPrompt,
     provider,
-    model,
+    model: usedModel,
   };
 }
 
@@ -523,11 +618,12 @@ export function imageStudioMeta() {
     baseImageUrl: SOLUNA_BASE_IMAGE_PATH,
     generateConfigured: true,
     generateProvider: geminiDirect
-      ? "Gemini Nano Banana 2（Google AI Studio 同系統）→ Pollinations フォールバック"
-      : "Pollinations Nano Banana 2 + 場面翻訳",
+      ? "Gemini（有料枠）優先 → 無料枠外時は Pollinations へ自動切替"
+      : "Pollinations（無料経路）+ 場面翻訳",
     maxImages: MAX_IMAGES,
     models: SOLUNA_IMAGE_MODELS,
     defaultModel: DEFAULT_SOLUNA_IMAGE_MODEL,
     geminiDirect,
+    maxUploadBytes: MAX_BYTES,
   };
 }
