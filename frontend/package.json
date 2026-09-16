@@ -8,6 +8,7 @@
     "postinstall": "node scripts/copy-pdf-worker.mjs",
     "start": "next start",
     "lint": "eslint",
+    "test:travel-geocode": "npx --yes tsx lib/travel-geocode-query.test.ts",
     "seed:users": "node scripts/seed-users.mjs",
     "setup:token-usage": "node scripts/setup-token-usage.mjs",
     "setup:access-logs": "node scripts/setup-access-logs.mjs",
