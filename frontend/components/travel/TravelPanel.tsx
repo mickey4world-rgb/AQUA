@@ -3,7 +3,10 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { compressImageForSolunaUpload } from "@/lib/soluna-image-compress";
-import { geocodeStopsInBrowser } from "@/lib/travel-geocode-client";
+import {
+  geocodeOneStopInBrowser,
+  geocodeStopsInBrowser,
+} from "@/lib/travel-geocode-client";
 import {
   assertTravelUploadPayloadSize,
   prepareTravelUploadFile,
@@ -429,6 +432,40 @@ export default function TravelPanel() {
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : "地図ピンの付与に失敗");
+      setUploadBusyLabel(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 選択中の1地点だけ住所・地名からピンを付け直す */
+  async function handleRepinSelected() {
+    if (!trip || !selectedStop || busy) return;
+    setBusy(true);
+    setError(null);
+    setUploadBusyLabel(`「${selectedStop.name}」のピンを付け直しています…`);
+    try {
+      const nextStop = await geocodeOneStopInBrowser(selectedStop, {
+        destinationHint: trip.destination,
+      });
+      if (!nextStop || nextStop.lat == null || nextStop.lon == null) {
+        setError(
+          "この地点の座標を取得できませんでした。住所や地点名を確認してください。",
+        );
+        setUploadBusyLabel(null);
+        return;
+      }
+      const stops = trip.stops.map((s) =>
+        s.id === nextStop.id ? nextStop : s,
+      );
+      const saved = await persistStops(trip.id, stops);
+      setTrip(saved);
+      setUploadBusyLabel(
+        `「${nextStop.name}」のピンを更新しました` +
+          (nextStop.address ? `（${nextStop.address}）` : ""),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ピンの付け直しに失敗");
       setUploadBusyLabel(null);
     } finally {
       setBusy(false);
@@ -1027,6 +1064,21 @@ export default function TravelPanel() {
                   {selectedStop.note && (
                     <p className="text-xs text-slate-400">{selectedStop.note}</p>
                   )}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleRepinSelected()}
+                      className="rounded-lg border border-amber-300/40 bg-amber-400/15 px-2.5 py-1 text-[11px] font-semibold text-amber-50 disabled:opacity-40"
+                    >
+                      この地点のピンを直す
+                    </button>
+                    {selectedStop.lat != null && selectedStop.lon != null && (
+                      <span className="self-center text-[10px] text-slate-500">
+                        {selectedStop.lat.toFixed(4)}, {selectedStop.lon.toFixed(4)}
+                      </span>
+                    )}
+                  </div>
                   <WeatherCard stop={selectedStop} />
                   {selectedStop.tip && (
                     <p className="rounded-lg border border-amber-300/20 bg-amber-400/10 px-2.5 py-2 text-xs text-amber-50">

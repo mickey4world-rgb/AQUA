@@ -1,11 +1,14 @@
 /**
  * 地名 → 座標。Nominatim は Azure SWA から弾かれやすいので
- * ローカル辞書 → Photon → Open-Meteo → Nominatim の順で試す。
+ * 住所付き候補 → Photon（複数候補を住所で選別）→ ローカル → Open-Meteo → Nominatim。
  */
 import { sanitizeText } from "@/lib/server/security";
 import {
   buildGeocodeCandidates,
+  extractAddressHints,
+  pickBestPhotonFeature,
   resolveLocalTravelPlace,
+  type PhotonFeatureLike,
 } from "@/lib/travel-geocode-query";
 
 export type GeocodeHit = {
@@ -48,15 +51,15 @@ async function fetchJson(
   }
 }
 
-async function geocodePhoton(query: string): Promise<GeocodeHit | null> {
-  const url = `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
+async function geocodePhoton(
+  query: string,
+  addressHints: string[] = [],
+): Promise<GeocodeHit | null> {
+  const url = `https://photon.komoot.io/api/?limit=5&q=${encodeURIComponent(query)}`;
   const data = (await fetchJson(url)) as {
-    features?: Array<{
-      geometry?: { coordinates?: number[] };
-      properties?: { name?: string; city?: string; state?: string; country?: string };
-    }>;
+    features?: PhotonFeatureLike[];
   } | null;
-  const feat = data?.features?.[0];
+  const feat = pickBestPhotonFeature(data?.features, addressHints);
   const coords = feat?.geometry?.coordinates;
   if (!coords || coords.length < 2) return null;
   const lon = Number(coords[0]);
@@ -111,36 +114,46 @@ async function geocodeNominatim(query: string): Promise<GeocodeHit | null> {
   };
 }
 
-function tryLocal(query: string): GeocodeHit | null {
-  const hit = resolveLocalTravelPlace(query);
-  if (!hit) return null;
-  return {
-    lat: hit.lat,
-    lon: hit.lon,
-    displayName: hit.label,
-    source: "local",
-  };
-}
-
 /** 複数クエリ候補を順に試す（行程文 → 切り出した地名） */
 export async function geocodePlace(
   query: string,
-  options?: { timeoutMs?: number; destinationHint?: string },
+  options?: { timeoutMs?: number; destinationHint?: string; address?: string },
 ): Promise<GeocodeHit | null> {
   void options?.timeoutMs;
   const base = cleanQuery(query);
   if (!base) return null;
 
+  const address = options?.address;
+  const hints = extractAddressHints(address);
   const candidates = buildGeocodeCandidates(
-    { name: base },
+    { name: base, address },
     options?.destinationHint,
   );
   if (!candidates.includes(base)) candidates.unshift(base);
 
+  // 住所があるときは API を先に（誤ったローカル一致を避ける）
+  if (address) {
+    for (const q of candidates) {
+      const photon = await geocodePhoton(q, hints);
+      if (photon) return photon;
+      const om = await geocodeOpenMeteo(q);
+      if (om) return om;
+      const nom = await geocodeNominatim(q);
+      if (nom) return nom;
+    }
+  }
+
   for (const q of candidates) {
-    const local = tryLocal(q);
-    if (local) return local;
-    const photon = await geocodePhoton(q);
+    const local = resolveLocalTravelPlace(q);
+    if (local) {
+      return {
+        lat: local.lat,
+        lon: local.lon,
+        displayName: local.label,
+        source: "local",
+      };
+    }
+    const photon = await geocodePhoton(q, hints);
     if (photon) return photon;
     const om = await geocodeOpenMeteo(q);
     if (om) return om;
@@ -160,11 +173,24 @@ export async function geocodeTravelStopFields(
   },
   destinationHint?: string,
 ): Promise<GeocodeHit | null> {
-  const local = resolveLocalTravelPlace(
-    [stop.name, stop.address, stop.note, stop.sourceSnippet]
-      .filter(Boolean)
-      .join(" "),
-  );
+  const hints = extractAddressHints(stop.address);
+  const candidates = buildGeocodeCandidates(stop, destinationHint);
+  const blob = [stop.name, stop.address, stop.note, stop.sourceSnippet]
+    .filter(Boolean)
+    .join(" ");
+
+  if (stop.address) {
+    for (const q of candidates) {
+      const photon = await geocodePhoton(q, hints);
+      if (photon) return photon;
+      const om = await geocodeOpenMeteo(q);
+      if (om) return om;
+      const nom = await geocodeNominatim(q);
+      if (nom) return nom;
+    }
+  }
+
+  const local = resolveLocalTravelPlace(blob);
   if (local) {
     return {
       lat: local.lat,
@@ -174,9 +200,8 @@ export async function geocodeTravelStopFields(
     };
   }
 
-  const candidates = buildGeocodeCandidates(stop, destinationHint);
   for (const q of candidates) {
-    const photon = await geocodePhoton(q);
+    const photon = await geocodePhoton(q, hints);
     if (photon) return photon;
     const om = await geocodeOpenMeteo(q);
     if (om) return om;
