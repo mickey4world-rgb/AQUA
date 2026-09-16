@@ -285,7 +285,7 @@ export default function TravelMap({
         <p className="mt-1.5 text-[11px] text-slate-500">
           MapLibre · 日付番号ピンと行程ライン。
           {mappedCount === 0 && stops.length > 0
-            ? " 位置が付いた地点がまだありません（資料の地名を確認して再判読）。"
+            ? " 位置未確定の地点があります。「地図ピンを付ける」で座標を取得できます。"
             : " ピンを押すと詳細へ。"}
         </p>
       )}

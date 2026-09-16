@@ -1,9 +1,11 @@
 /**
- * 旅行会社資料 → 行程ストップ抽出 + 無料ジオコーディング（Nominatim）
+ * 旅行会社資料 → 行程ストップ抽出 + ジオコーディング
  * LLM: 安価 OpenAI 優先 → Gemini → ルール簡易抽出（最後の砦）
  */
 import { randomUUID } from "crypto";
 import { sanitizeText } from "@/lib/server/security";
+import { geocodePlace } from "@/lib/server/travel-geocode";
+export { geocodePlace } from "@/lib/server/travel-geocode";
 import {
   generateTravelJson,
   isTravelLlmConfigured,
@@ -65,52 +67,14 @@ function asTransport(raw: string | undefined): TravelTransportMode | undefined {
   return TRANSPORT_SET.has(t) ? t : undefined;
 }
 
-/** OpenStreetMap Nominatim（利用規定: 明確な User-Agent・控えめな頻度） */
-export async function geocodePlace(
-  query: string,
-  options?: { timeoutMs?: number },
-): Promise<{ lat: number; lon: number; displayName?: string } | null> {
-  const q = query.trim();
-  if (!q) return null;
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
-  const controller = new AbortController();
-  const timeoutMs = options?.timeoutMs ?? 4_000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "AquaTravelApp/1.0 (personal; contact=aquacore.net)",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as Array<{
-      lat?: string;
-      lon?: string;
-      display_name?: string;
-    }>;
-    const hit = data[0];
-    if (!hit?.lat || !hit?.lon) return null;
-    return {
-      lat: Number(hit.lat),
-      lon: Number(hit.lon),
-      displayName: hit.display_name,
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+/** 地名ジオコード（Photon / Open-Meteo / Nominatim）— travel-geocode に委譲 */
 
 async function geocodeStops(
   pending: Array<{ stop: TravelStop; query: string }>,
   options?: { maxGeocode?: number; delayMs?: number },
 ): Promise<TravelStop[]> {
   const maxGeocode = options?.maxGeocode ?? 0;
-  const delayMs = options?.delayMs ?? 700;
+  const delayMs = options?.delayMs ?? 250;
   const stops: TravelStop[] = [];
   let geocodeCount = 0;
   for (let i = 0; i < pending.length; i += 1) {
@@ -118,7 +82,7 @@ async function geocodeStops(
     let geo: { lat: number; lon: number; displayName?: string } | null = null;
     if (geocodeCount < maxGeocode && item.query.trim()) {
       if (geocodeCount > 0) await new Promise((r) => setTimeout(r, delayMs));
-      geo = await geocodePlace(item.query, { timeoutMs: 3500 });
+      geo = await geocodePlace(item.query);
       geocodeCount += 1;
     }
     stops.push({
@@ -291,12 +255,16 @@ export async function geocodeTravelStops(
         : heuristicGeocodeQuery(stop, options?.destinationHint),
   }));
   // Prefer filling stops that lack coords first
-  const need = pending.filter((p) => !p.stop.lat && p.query);
-  const have = pending.filter((p) => p.stop.lat != null || !p.query);
+  const need = pending.filter(
+    (p) => (p.stop.lat == null || p.stop.lon == null) && p.query,
+  );
+  const have = pending.filter(
+    (p) => (p.stop.lat != null && p.stop.lon != null) || !p.query,
+  );
   const ordered = [...need, ...have];
   const next = await geocodeStops(ordered, {
     maxGeocode,
-    delayMs: 650,
+    delayMs: 220,
   });
   // restore original order by id
   const byId = new Map(next.map((s) => [s.id, s]));
