@@ -10,6 +10,7 @@ import {
 } from "@/lib/travel-icons";
 import { formatTravelWeatherLine } from "@/lib/travel-weather-format";
 import type {
+  TravelMaterial,
   TravelStop,
   TravelStopKind,
   TravelTransportMode,
@@ -70,6 +71,7 @@ export default function TravelPanel() {
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
   const [materialText, setMaterialText] = useState("");
   const [journalBody, setJournalBody] = useState("");
+  const [uploadBusyLabel, setUploadBusyLabel] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     title: "",
     destination: "",
@@ -152,9 +154,84 @@ export default function TravelPanel() {
     }
   }
 
-  async function handleParse() {
-    if (!trip || busy || !materialText.trim()) return;
+  async function fileToBase64(file: File): Promise<string> {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function handleUploadMaterials(fileList: FileList | null) {
+    if (!trip || busy || !fileList?.length) return;
     setBusy(true);
+    setUploadBusyLabel("資料を読み取り中…");
+    setError(null);
+    try {
+      const files = [];
+      for (const file of Array.from(fileList).slice(0, 3)) {
+        files.push({
+          name: file.name,
+          mimeType: file.type || undefined,
+          base64: await fileToBase64(file),
+        });
+      }
+      const res = await fetch(
+        `/api/travel/trips/${encodeURIComponent(trip.id)}/materials`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files }),
+        },
+      );
+      const data = (await res.json()) as {
+        trip?: TravelTrip;
+        error?: string;
+        added?: Array<{ fileName: string; chunkCount: number }>;
+      };
+      if (!res.ok) throw new Error(data.error || "資料のアップロードに失敗");
+      setTrip(data.trip ?? null);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "資料のアップロードに失敗");
+    } finally {
+      setBusy(false);
+      setUploadBusyLabel(null);
+    }
+  }
+
+  async function handleDeleteMaterial(materialId: string) {
+    if (!trip || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/travel/trips/${encodeURIComponent(trip.id)}/materials`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ materialId }),
+        },
+      );
+      const data = (await res.json()) as { trip?: TravelTrip; error?: string };
+      if (!res.ok) throw new Error(data.error || "資料の削除に失敗");
+      setTrip(data.trip ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "資料の削除に失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleParse() {
+    if (!trip || busy) return;
+    const hasMaterials = (trip.materials?.length ?? 0) > 0;
+    if (!materialText.trim() && !hasMaterials) return;
+    setBusy(true);
+    setUploadBusyLabel("RAG 判読中…");
     setError(null);
     try {
       const res = await fetch(
@@ -162,7 +239,10 @@ export default function TravelPanel() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: materialText }),
+          body: JSON.stringify({
+            text: materialText,
+            useMaterials: true,
+          }),
         },
       );
       const data = (await res.json()) as { trip?: TravelTrip; error?: string };
@@ -174,6 +254,7 @@ export default function TravelPanel() {
       setError(err instanceof Error ? err.message : "資料の判読に失敗");
     } finally {
       setBusy(false);
+      setUploadBusyLabel(null);
     }
   }
 
@@ -614,27 +695,81 @@ export default function TravelPanel() {
 
               <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                 <p className="text-[11px] font-medium text-teal-100">
-                  旅行会社資料を読み込む
+                  旅行会社資料（電子ファイル / テキスト）
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  しおりや行程表のテキストを貼り付け → AI がポイント抽出（Gemini 不可時は安価
-                  OpenAI）
+                  PDF・DOCX・画像・テキストをアップロード → チャンク化して RAG
+                  判読。手貼りテキストも併用可。
                 </p>
+                <label className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-teal-300/35 bg-teal-400/5 px-3 py-5 text-center transition hover:bg-teal-400/10">
+                  <span className="text-sm font-medium text-teal-50">
+                    ファイルを選択してアップロード
+                  </span>
+                  <span className="mt-1 text-[10px] text-slate-500">
+                    PDF / DOCX / JPG・PNG / TXT・MD · 最大3件 · 各約4.5MB
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md,.csv,.html,image/jpeg,image/png,image/webp,application/pdf"
+                    multiple
+                    className="hidden"
+                    disabled={busy}
+                    onChange={(e) => {
+                      const list = e.target.files;
+                      e.target.value = "";
+                      void handleUploadMaterials(list);
+                    }}
+                  />
+                </label>
+
+                {(trip.materials?.length ?? 0) > 0 && (
+                  <ul className="mt-3 space-y-1.5">
+                    {(trip.materials as TravelMaterial[]).map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex items-start justify-between gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-100">
+                            {m.fileName}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {m.kind} · {m.chunkCount}チャンク ·{" "}
+                            {m.extractedChars.toLocaleString("ja-JP")}字 ·{" "}
+                            {m.extractMethod}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void handleDeleteMaterial(m.id)}
+                          className="shrink-0 text-[10px] text-rose-200/90 underline disabled:opacity-40"
+                        >
+                          削除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 <textarea
                   value={materialText}
                   onChange={(e) => setMaterialText(e.target.value)}
-                  rows={8}
-                  placeholder="例: 1日目 10:00 清水寺 …"
+                  rows={5}
+                  placeholder="補足メモや、ファイルがない場合の行程テキスト…"
                   className="mt-3 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-600"
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={busy || !materialText.trim()}
+                    disabled={
+                      busy ||
+                      (!materialText.trim() && !(trip.materials?.length ?? 0))
+                    }
                     onClick={() => void handleParse()}
                     className="rounded-xl bg-teal-400/90 px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-40"
                   >
-                    判読して地図へ
+                    {uploadBusyLabel || "RAG判読して地図へ"}
                   </button>
                   <button
                     type="button"
