@@ -34,6 +34,17 @@ export async function POST(request: Request, context: Ctx) {
     if (!files.length) {
       return Response.json({ error: "ファイルを送ってください" }, { status: 400 });
     }
+    for (const file of files) {
+      if (!file?.name) {
+        return Response.json({ error: "ファイル名が空です" }, { status: 400 });
+      }
+      if (!file.extractedText?.trim() && !file.base64?.trim()) {
+        return Response.json(
+          { error: `${file.name}: 本文もファイルデータもありません` },
+          { status: 400 },
+        );
+      }
+    }
     if (files.length > TRAVEL_MATERIAL_MAX_FILES) {
       return Response.json(
         { error: `一度にアップロードできるのは ${TRAVEL_MATERIAL_MAX_FILES} 件までです` },
@@ -49,6 +60,8 @@ export async function POST(request: Request, context: Ctx) {
             name: file.name,
             mimeType: file.mimeType,
             base64: file.base64,
+            extractedText: file.extractedText,
+            extractMethodHint: file.extractMethodHint,
           }),
         );
       }

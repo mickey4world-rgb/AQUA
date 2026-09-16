@@ -8,7 +8,10 @@ export type TravelMaterialExtractMethod =
   | "docx"
   | "gemini-ocr"
   | "gemini-pdf"
-  | "openai-ocr";
+  | "openai-ocr"
+  | "pdfjs-client"
+  | "text-client"
+  | "docx-client";
 
 export interface TravelMaterialChunk {
   id: string;
@@ -171,6 +174,9 @@ export interface AddTravelStopRequest {
 export interface TravelMaterialUploadFile {
   name: string;
   mimeType?: string;
-  /** raw base64（data URL 可） */
-  base64: string;
+  /** raw base64（data URL 可）— 画像 OCR 等 */
+  base64?: string;
+  /** クライアント側で抽出済み本文（PDF/DOCX/TXT）。ある場合はこちらを優先 */
+  extractedText?: string;
+  extractMethodHint?: "pdfjs-client" | "text-client" | "docx-client" | string;
 }
