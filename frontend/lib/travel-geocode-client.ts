@@ -1,23 +1,18 @@
 /**
- * ブラウザから直接ジオコード（CORS 可）。SWA サーバー経由が空振りしても地図ピンを付ける。
+ * ブラウザから直接ジオコード（CORS 可）。
+ * 行程文から地名を切り出し、ローカル辞書 → Photon → Open-Meteo。
  */
 import type { TravelStop } from "@/lib/types/travel";
+import {
+  buildGeocodeCandidates,
+  resolveLocalTravelPlace,
+} from "@/lib/travel-geocode-query";
 
 export type ClientGeocodeHit = {
   lat: number;
   lon: number;
   displayName?: string;
 };
-
-function cleanQuery(query: string): string {
-  return query
-    .replace(/\d{1,2}:\d{2}/g, " ")
-    .replace(/【[^】]*】/g, " ")
-    .replace(/[◆●・■□]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 160);
-}
 
 async function photon(query: string): Promise<ClientGeocodeHit | null> {
   const url = `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
@@ -69,21 +64,36 @@ async function openMeteo(query: string): Promise<ClientGeocodeHit | null> {
 
 export async function geocodeQueryInBrowser(
   query: string,
+  destinationHint?: string,
 ): Promise<ClientGeocodeHit | null> {
-  const q = cleanQuery(query);
-  if (!q) return null;
-  try {
-    return (await photon(q)) || (await openMeteo(q));
-  } catch {
-    return null;
+  const local = resolveLocalTravelPlace(
+    [destinationHint, query].filter(Boolean).join(" "),
+  );
+  if (local) {
+    return { lat: local.lat, lon: local.lon, displayName: local.label };
   }
+
+  const candidates = buildGeocodeCandidates({ name: query }, destinationHint);
+  if (query.trim() && !candidates.includes(query.trim())) {
+    candidates.unshift(query.trim().slice(0, 80));
+  }
+
+  for (const q of candidates) {
+    try {
+      const hit = (await photon(q)) || (await openMeteo(q));
+      if (hit) return hit;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 export function buildStopGeocodeQuery(
   stop: TravelStop,
   destinationHint?: string,
 ): string {
-  return [destinationHint, stop.name, stop.address].filter(Boolean).join(" ");
+  return buildGeocodeCandidates(stop, destinationHint)[0] || stop.name;
 }
 
 /**
@@ -97,7 +107,7 @@ export async function geocodeStopsInBrowser(
     onProgress?: (done: number, total: number, name: string) => void;
   },
 ): Promise<{ stops: TravelStop[]; updated: number }> {
-  const maxCount = options?.maxCount ?? 20;
+  const maxCount = options?.maxCount ?? 24;
   const need = stops.filter((s) => s.lat == null || s.lon == null);
   const targets = need.slice(0, maxCount);
   const byId = new Map(stops.map((s) => [s.id, { ...s }]));
@@ -106,8 +116,28 @@ export async function geocodeStopsInBrowser(
   for (let i = 0; i < targets.length; i += 1) {
     const stop = targets[i]!;
     options?.onProgress?.(i + 1, targets.length, stop.name);
-    const query = buildStopGeocodeQuery(stop, options?.destinationHint);
-    const hit = await geocodeQueryInBrowser(query);
+
+    const local = resolveLocalTravelPlace(
+      [stop.name, stop.address, stop.note, stop.sourceSnippet]
+        .filter(Boolean)
+        .join(" "),
+    );
+    let hit: ClientGeocodeHit | null = local
+      ? { lat: local.lat, lon: local.lon, displayName: local.label }
+      : null;
+
+    if (!hit) {
+      const candidates = buildGeocodeCandidates(stop, options?.destinationHint);
+      for (const q of candidates) {
+        try {
+          hit = (await photon(q)) || (await openMeteo(q));
+        } catch {
+          hit = null;
+        }
+        if (hit) break;
+      }
+    }
+
     if (hit) {
       const cur = byId.get(stop.id);
       if (cur) {
@@ -121,7 +151,7 @@ export async function geocodeStopsInBrowser(
       }
     }
     if (i < targets.length - 1) {
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 120));
     }
   }
 
