@@ -1,0 +1,29 @@
+---
+description: Travel map pins must stay near trip destination; geocode regression required
+globs: frontend/**/travel-geocode*.ts,frontend/components/travel/**
+alwaysApply: false
+---
+
+# Travel geocode invariant
+
+## User-visible contract
+
+**地図ピンは、その旅の行き先の近傍にある。**  
+「ピンが付いた」「API が 200」は成功ではない。豊橋・中国・他県に飛んだら失敗。
+
+## Design invariant (not Hokkaido-specific)
+
+1. Infer a **region bias from `trip.destination`** (prefecture / city keys → bbox). Any future destination (京都・沖縄・関西…) must work the same way — **no one-off hardcode for the current trip**.
+2. Resolve order: **local lexicon (name only) → region-biased Photon → reject out-of-bbox / non-JP when japanOnly**.
+3. **Polluted addresses** from prior wrong pins (other pref / abroad) must be **discarded** on repin, not reused as hints.
+4. Counterexamples that must fail the ship: `ニュー阿寒ホテル`+北海道 → 豊橋; `知床`+北海道 → 中国/他県; `清水寺`+京都 → 北海道.
+
+## Before declaring geocode work done
+
+1. Run `npm run test:travel-geocode` in `frontend/` (offline oracle).
+2. Stranger test: given destination D and stop name S, would a stranger accept the pin as “near D”?
+3. If you only fixed one misspelled lake / one hotel — **you patched a symptom**. Re-ask: is the class “near destination” enforced for the next trip?
+
+## Same class as thorough-failure-audit “degraded success”
+
+Accepting Photon’s first hit while the trip destination implies another region is **substitute that changes meaning**.
