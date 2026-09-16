@@ -1,6 +1,7 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
 import { sanitizeText } from "@/lib/server/security";
 import { parseTravelMaterial } from "@/lib/server/travel-parse";
+import { retrieveTravelMaterialContext } from "@/lib/server/travel-rag";
 import {
   getTravelTrip,
   isTravelStoreConfigured,
@@ -22,15 +23,45 @@ export async function POST(request: Request, context: Ctx) {
     const trip = await getTravelTrip(auth.userId, id);
     if (!trip) return Response.json({ error: "見つかりません" }, { status: 404 });
 
-    let body: { text?: string };
+    let body: { text?: string; useMaterials?: boolean };
     try {
-      body = (await request.json()) as { text?: string };
+      body = (await request.json()) as typeof body;
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    const text = sanitizeText(body.text ?? "", 12000);
-    if (!text) {
-      return Response.json({ error: "資料テキストを送ってください" }, { status: 400 });
+
+    const pasted = sanitizeText(body.text ?? "", 12000);
+    const useMaterials = body.useMaterials !== false;
+    const materials = trip.materials ?? [];
+
+    let ragBlock = "";
+    let ragMeta: { usedChunkCount: number; materialNames: string[] } | null = null;
+    if (useMaterials && materials.length > 0) {
+      const retrieved = retrieveTravelMaterialContext({
+        materials,
+        trip,
+        extraQuery: pasted,
+      });
+      ragBlock = retrieved.text;
+      ragMeta = {
+        usedChunkCount: retrieved.usedChunkCount,
+        materialNames: retrieved.materialNames,
+      };
+    }
+
+    const text = [ragBlock, pasted ? `\n【追加メモ】\n${pasted}` : ""]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+
+    if (!text || text.replace(/\s/g, "").length < 20) {
+      return Response.json(
+        {
+          error:
+            "判読する本文がありません。電子ファイルをアップロードするか、テキストを貼り付けてください。",
+        },
+        { status: 400 },
+      );
     }
 
     try {
@@ -63,6 +94,7 @@ export async function POST(request: Request, context: Ctx) {
         parsedStopCount: parsed.stops.length,
         weatherUpdated: weathered.updated,
         provider: parsed.provider,
+        rag: ragMeta,
       });
     } catch (err) {
       return Response.json(
