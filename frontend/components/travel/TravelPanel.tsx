@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { compressImageForSolunaUpload } from "@/lib/soluna-image-compress";
+import { geocodeStopsInBrowser } from "@/lib/travel-geocode-client";
 import {
   assertTravelUploadPayloadSize,
   prepareTravelUploadFile,
@@ -43,6 +44,10 @@ const KIND_LABEL: Record<TravelStopKind, string> = {
 };
 
 const TRANSPORT_OPTIONS = Object.keys(TRANSPORT_LABEL) as TravelTransportMode[];
+
+function missingCoordCount(stops: TravelStop[]): number {
+  return stops.filter((s) => s.lat == null || s.lon == null).length;
+}
 
 function WeatherCard({ stop }: { stop: TravelStop }) {
   const w = stop.weather;
@@ -117,7 +122,80 @@ export default function TravelPanel() {
     if (data.trip?.startDate) {
       setStopDraft((d) => ({ ...d, date: d.date || data.trip!.startDate }));
     }
+    return data.trip ?? null;
   }, []);
+
+  async function persistStops(
+    tripId: string,
+    stops: TravelStop[],
+  ): Promise<TravelTrip> {
+    const res = await fetch(`/api/travel/trips/${encodeURIComponent(tripId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stops }),
+    });
+    if (!res.ok) throw new Error(await readApiErrorMessage(res, "座標の保存"));
+    const data = (await res.json()) as { trip?: TravelTrip };
+    if (!data.trip) throw new Error("座標の保存結果を受け取れませんでした");
+    return data.trip;
+  }
+
+  /** サーバー → ブラウザの順で座標を付け、地図にピンが出るようにする */
+  async function ensureMapPins(
+    current: TravelTrip,
+    onProgress: (label: string) => void,
+  ): Promise<{ trip: TravelTrip; pinned: number }> {
+    let working = current;
+    let pinned = 0;
+
+    if (missingCoordCount(working.stops) < 1) {
+      return { trip: working, pinned: 0 };
+    }
+
+    onProgress("サーバーで地図座標を取得中…");
+    try {
+      const geoRes = await fetch(
+        `/api/travel/trips/${encodeURIComponent(working.id)}/geocode`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ maxGeocode: 12 }),
+        },
+      );
+      if (geoRes.ok) {
+        const geoData = (await geoRes.json()) as {
+          trip?: TravelTrip;
+          geocodeUpdated?: number;
+        };
+        if (geoData.trip) {
+          working = geoData.trip;
+          pinned += geoData.geocodeUpdated ?? 0;
+        }
+      }
+    } catch {
+      // ブラウザ側へフォールバック
+    }
+
+    const stillMissing = missingCoordCount(working.stops);
+    if (stillMissing < 1) {
+      return { trip: working, pinned };
+    }
+
+    onProgress(`ブラウザから座標取得中（残り ${stillMissing}）…`);
+    const { stops, updated } = await geocodeStopsInBrowser(working.stops, {
+      destinationHint: working.destination,
+      maxCount: 24,
+      onProgress: (done, total, name) => {
+        onProgress(`座標取得 ${done}/${total}: ${name}`);
+      },
+    });
+    if (updated > 0) {
+      working = await persistStops(working.id, stops);
+      pinned += updated;
+    }
+
+    return { trip: working, pinned };
+  }
 
   useEffect(() => {
     void (async () => {
@@ -290,40 +368,67 @@ export default function TravelPanel() {
         `判読完了: ${data.trip.stops.length} 地点${via}。地図座標を取得中…`,
       );
 
-      try {
-        const geoRes = await fetch(
-          `/api/travel/trips/${encodeURIComponent(trip.id)}/geocode`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ maxGeocode: 8 }),
-          },
-        );
-        if (geoRes.ok) {
-          const geoData = (await geoRes.json()) as {
-            trip?: TravelTrip;
-            geocodeUpdated?: number;
-          };
-          if (geoData.trip) {
-            setTrip(geoData.trip);
-            setUploadBusyLabel(
-              `判読完了: ${geoData.trip.stops.length} 地点 · 座標 ${geoData.geocodeUpdated ?? 0} 件${via}`,
-            );
-          }
-        } else {
-          setUploadBusyLabel(
-            `判読完了: ${data.trip.stops.length} 地点${via}（座標は未取得。日程一覧は確認できます）`,
-          );
-        }
-      } catch {
+      const { trip: pinnedTrip, pinned } = await ensureMapPins(
+        data.trip,
+        setUploadBusyLabel,
+      );
+      setTrip(pinnedTrip);
+      const still = missingCoordCount(pinnedTrip.stops);
+      if (pinned > 0) {
         setUploadBusyLabel(
-          `判読完了: ${data.trip.stops.length} 地点${via}（座標取得スキップ）`,
+          `判読完了: ${pinnedTrip.stops.length} 地点 · 地図ピン ${pinned} 件${via}` +
+            (still > 0 ? `（未確定 ${still}）` : ""),
+        );
+      } else if (still > 0) {
+        setUploadBusyLabel(
+          `判読完了: ${pinnedTrip.stops.length} 地点${via}（ピン未付与。『地図ピンを付ける』を押してください）`,
+        );
+      } else {
+        setUploadBusyLabel(
+          `判読完了: ${pinnedTrip.stops.length} 地点 · 地図ピン済み${via}`,
         );
       }
 
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : "資料の判読に失敗");
+      setUploadBusyLabel(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePinMap() {
+    if (!trip || busy) return;
+    if (!trip.stops.length) {
+      setError("地点がありません。先に RAG 判読してください。");
+      return;
+    }
+    if (missingCoordCount(trip.stops) < 1) {
+      setUploadBusyLabel("すべての地点に地図ピンがあります");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setUploadBusyLabel("地図ピンを付けています…");
+    try {
+      const { trip: next, pinned } = await ensureMapPins(trip, setUploadBusyLabel);
+      setTrip(next);
+      const still = missingCoordCount(next.stops);
+      if (pinned < 1 && still > 0) {
+        setError(
+          `地図ピンを付けられませんでした（未確定 ${still}）。行き先や地点名を確認してください。`,
+        );
+        setUploadBusyLabel(null);
+      } else {
+        setUploadBusyLabel(
+          `地図ピン ${pinned} 件を付けました` +
+            (still > 0 ? `（未確定 ${still}）` : ""),
+        );
+      }
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "地図ピンの付与に失敗");
       setUploadBusyLabel(null);
     } finally {
       setBusy(false);
@@ -619,6 +724,16 @@ export default function TravelPanel() {
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
+                  {trip.stops.some((s) => s.lat == null || s.lon == null) && (
+                    <button
+                      type="button"
+                      disabled={busy || !trip.stops.length}
+                      onClick={() => void handlePinMap()}
+                      className="rounded-xl border border-amber-300/40 bg-amber-400/15 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-40"
+                    >
+                      地図ピンを付ける
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={busy || !trip.stops.length}
@@ -638,12 +753,18 @@ export default function TravelPanel() {
                 </div>
               </div>
 
-              <div className="mt-4">
+                <div className="mt-4">
                 <TravelMap
                   stops={trip.stops}
                   selectedStopId={selectedStopId}
                   onSelectStop={(s) => setSelectedStopId(s.id)}
                 />
+                {trip.stops.length > 0 &&
+                  trip.stops.every((s) => s.lat == null || s.lon == null) && (
+                    <p className="mt-2 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-50">
+                      行程はあるのに地図ピンがありません。「地図ピンを付ける」を押すと座標を取得します。
+                    </p>
+                  )}
               </div>
             </div>
 
@@ -855,6 +976,18 @@ export default function TravelPanel() {
                     className="rounded-xl bg-teal-400/90 px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-40"
                   >
                     {uploadBusyLabel || "RAG判読して地図へ"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      !trip.stops.length ||
+                      !trip.stops.some((s) => s.lat == null || s.lon == null)
+                    }
+                    onClick={() => void handlePinMap()}
+                    className="rounded-xl border border-amber-300/40 bg-amber-400/15 px-3 py-1.5 text-xs font-semibold text-amber-50 disabled:opacity-40"
+                  >
+                    地図ピンを付ける
                   </button>
                   <button
                     type="button"
