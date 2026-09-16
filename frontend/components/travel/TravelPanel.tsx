@@ -275,12 +275,18 @@ export default function TravelPanel() {
         },
       );
       if (!res.ok) throw new Error(await readApiErrorMessage(res));
-      const data = (await res.json()) as { trip?: TravelTrip; error?: string };
+      const data = (await res.json()) as {
+        trip?: TravelTrip;
+        error?: string;
+        provider?: string;
+        parsedStopCount?: number;
+      };
       if (!data.trip) throw new Error(data.error || "判読結果を受け取れませんでした");
       setTrip(data.trip);
       setSelectedStopId(data.trip.stops[0]?.id ?? null);
+      const via = data.provider ? `（${data.provider}）` : "";
       setUploadBusyLabel(
-        `判読完了: ${data.trip.stops.length} 地点を地図に反映しました`,
+        `判読完了: ${data.trip.stops.length} 地点を地図に反映${via}`,
       );
       await loadList();
     } catch (err) {
