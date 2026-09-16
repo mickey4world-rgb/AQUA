@@ -4,6 +4,12 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { compressImageForSolunaUpload } from "@/lib/soluna-image-compress";
 import {
+  assertTravelUploadPayloadSize,
+  prepareTravelUploadFile,
+  readApiErrorMessage,
+  TRAVEL_UPLOAD_ACCEPT,
+} from "@/lib/travel-material-client";
+import {
   stopMapEmoji,
   TRANSPORT_EMOJI,
   TRANSPORT_LABEL,
@@ -154,31 +160,31 @@ export default function TravelPanel() {
     }
   }
 
-  async function fileToBase64(file: File): Promise<string> {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = "";
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
-  }
-
   async function handleUploadMaterials(fileList: FileList | null) {
-    if (!trip || busy || !fileList?.length) return;
+    if (!trip) {
+      setError("先に旅行を作成または選択してからアップロードしてください。");
+      return;
+    }
+    if (busy) {
+      setError("別の処理が終わるまでお待ちください。");
+      return;
+    }
+    if (!fileList?.length) {
+      setError("ファイルが選択されませんでした。");
+      return;
+    }
     setBusy(true);
-    setUploadBusyLabel("資料を読み取り中…");
+    setUploadBusyLabel("資料を準備中…");
     setError(null);
     try {
       const files = [];
       for (const file of Array.from(fileList).slice(0, 3)) {
-        files.push({
-          name: file.name,
-          mimeType: file.type || undefined,
-          base64: await fileToBase64(file),
-        });
+        files.push(
+          await prepareTravelUploadFile(file, (msg) => setUploadBusyLabel(msg)),
+        );
       }
+      assertTravelUploadPayloadSize(files);
+      setUploadBusyLabel("サーバーへ送信・保存中…");
       const res = await fetch(
         `/api/travel/trips/${encodeURIComponent(trip.id)}/materials`,
         {
@@ -187,19 +193,32 @@ export default function TravelPanel() {
           body: JSON.stringify({ files }),
         },
       );
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res));
+      }
       const data = (await res.json()) as {
         trip?: TravelTrip;
         error?: string;
-        added?: Array<{ fileName: string; chunkCount: number }>;
+        added?: Array<{ fileName: string; chunkCount: number; extractedChars: number }>;
       };
-      if (!res.ok) throw new Error(data.error || "資料のアップロードに失敗");
-      setTrip(data.trip ?? null);
+      if (!data.trip) {
+        throw new Error(data.error || "保存結果を受け取れませんでした");
+      }
+      setTrip(data.trip);
+      const summary = (data.added ?? [])
+        .map((a) => `${a.fileName}（${a.chunkCount}チャンク）`)
+        .join("、");
+      setUploadBusyLabel(
+        summary
+          ? `取り込み完了: ${summary} →「RAG判読して地図へ」を押してください`
+          : "取り込み完了 →「RAG判読して地図へ」を押してください",
+      );
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : "資料のアップロードに失敗");
+      setUploadBusyLabel(null);
     } finally {
       setBusy(false);
-      setUploadBusyLabel(null);
     }
   }
 
@@ -227,9 +246,19 @@ export default function TravelPanel() {
   }
 
   async function handleParse() {
-    if (!trip || busy) return;
+    if (!trip) {
+      setError("先に旅行を選択してください。");
+      return;
+    }
+    if (busy) {
+      setError("別の処理が終わるまでお待ちください。");
+      return;
+    }
     const hasMaterials = (trip.materials?.length ?? 0) > 0;
-    if (!materialText.trim() && !hasMaterials) return;
+    if (!materialText.trim() && !hasMaterials) {
+      setError("電子ファイルをアップロードするか、テキストを貼り付けてください。");
+      return;
+    }
     setBusy(true);
     setUploadBusyLabel("RAG 判読中…");
     setError(null);
@@ -245,16 +274,20 @@ export default function TravelPanel() {
           }),
         },
       );
+      if (!res.ok) throw new Error(await readApiErrorMessage(res));
       const data = (await res.json()) as { trip?: TravelTrip; error?: string };
-      if (!res.ok) throw new Error(data.error || "資料の判読に失敗");
-      setTrip(data.trip ?? null);
-      setSelectedStopId(data.trip?.stops[0]?.id ?? null);
+      if (!data.trip) throw new Error(data.error || "判読結果を受け取れませんでした");
+      setTrip(data.trip);
+      setSelectedStopId(data.trip.stops[0]?.id ?? null);
+      setUploadBusyLabel(
+        `判読完了: ${data.trip.stops.length} 地点を地図に反映しました`,
+      );
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : "資料の判読に失敗");
+      setUploadBusyLabel(null);
     } finally {
       setBusy(false);
-      setUploadBusyLabel(null);
     }
   }
 
@@ -703,14 +736,16 @@ export default function TravelPanel() {
                 </p>
                 <label className="mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-teal-300/35 bg-teal-400/5 px-3 py-5 text-center transition hover:bg-teal-400/10">
                   <span className="text-sm font-medium text-teal-50">
-                    ファイルを選択してアップロード
+                    {busy && uploadBusyLabel
+                      ? uploadBusyLabel
+                      : "ファイルを選択してアップロード"}
                   </span>
                   <span className="mt-1 text-[10px] text-slate-500">
-                    PDF / DOCX / JPG・PNG / TXT・MD · 最大3件 · 各約4.5MB
+                    PDF / DOCX / JPG・PNG / TXT・MD · 最大3件 · ブラウザはブラウザで先に読み取り
                   </span>
                   <input
                     type="file"
-                    accept=".pdf,.docx,.txt,.md,.csv,.html,image/jpeg,image/png,image/webp,application/pdf"
+                    accept={TRAVEL_UPLOAD_ACCEPT}
                     multiple
                     className="hidden"
                     disabled={busy}
@@ -721,6 +756,14 @@ export default function TravelPanel() {
                     }}
                   />
                 </label>
+                {uploadBusyLabel && !busy && (
+                  <p className="mt-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1.5 text-[11px] text-emerald-50">
+                    {uploadBusyLabel}
+                  </p>
+                )}
+                {busy && uploadBusyLabel && (
+                  <p className="mt-2 text-[11px] text-amber-100/90">{uploadBusyLabel}</p>
+                )}
 
                 {(trip.materials?.length ?? 0) > 0 && (
                   <ul className="mt-3 space-y-1.5">
