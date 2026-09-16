@@ -8,6 +8,10 @@ import {
   geocodeStopsInBrowser,
 } from "@/lib/travel-geocode-client";
 import {
+  inferRegionBias,
+  isCoordInRegion,
+} from "@/lib/travel-geocode-query";
+import {
   assertTravelUploadPayloadSize,
   prepareTravelUploadFile,
   readApiErrorMessage,
@@ -455,6 +459,17 @@ export default function TravelPanel() {
         setUploadBusyLabel(null);
         return;
       }
+      const region = inferRegionBias(trip.destination);
+      if (
+        region &&
+        !isCoordInRegion(nextStop.lat, nextStop.lon, region)
+      ) {
+        setError(
+          `行き先（${region.label}）の外に出てしまいました。地点名を確認してください。`,
+        );
+        setUploadBusyLabel(null);
+        return;
+      }
       const stops = trip.stops.map((s) =>
         s.id === nextStop.id ? nextStop : s,
       );
@@ -462,10 +477,79 @@ export default function TravelPanel() {
       setTrip(saved);
       setUploadBusyLabel(
         `「${nextStop.name}」のピンを更新しました` +
-          (nextStop.address ? `（${nextStop.address}）` : ""),
+          (nextStop.lat != null && nextStop.lon != null
+            ? `（${nextStop.lat.toFixed(3)}, ${nextStop.lon.toFixed(3)}）`
+            : ""),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "ピンの付け直しに失敗");
+      setUploadBusyLabel(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 行き先の外に飛んだピンをまとめて付け直す */
+  async function handleRepinOutOfRegion() {
+    if (!trip || busy) return;
+    const region = inferRegionBias(trip.destination);
+    if (!region) {
+      setError("行き先が分からないため領域チェックができません。行き先に「北海道」などを入れてください。");
+      return;
+    }
+    const targets = trip.stops.filter(
+      (s) =>
+        s.lat == null ||
+        s.lon == null ||
+        !isCoordInRegion(s.lat, s.lon, region),
+    );
+    if (!targets.length) {
+      setUploadBusyLabel(`すべてのピンが${region.label}内です`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setUploadBusyLabel(`${region.label}の外のピン ${targets.length} 件を付け直しています…`);
+    try {
+      let workingStops = [...trip.stops];
+      let fixed = 0;
+      for (let i = 0; i < targets.length; i += 1) {
+        const stop = targets[i]!;
+        setUploadBusyLabel(
+          `付け直し ${i + 1}/${targets.length}: ${stop.name}`,
+        );
+        const next = await geocodeOneStopInBrowser(stop, {
+          destinationHint: trip.destination,
+        });
+        if (
+          next &&
+          next.lat != null &&
+          next.lon != null &&
+          isCoordInRegion(next.lat, next.lon, region)
+        ) {
+          workingStops = workingStops.map((s) =>
+            s.id === next.id ? next : s,
+          );
+          fixed += 1;
+        }
+      }
+      const saved = await persistStops(trip.id, workingStops);
+      setTrip(saved);
+      const stillBad = saved.stops.filter(
+        (s) =>
+          s.lat == null ||
+          s.lon == null ||
+          !isCoordInRegion(s.lat, s.lon, region),
+      ).length;
+      setUploadBusyLabel(
+        `${region.label}内へ ${fixed} 件を付け直しました` +
+          (stillBad > 0 ? `（未解決 ${stillBad}）` : ""),
+      );
+      if (fixed < 1) {
+        setError("付け直しに失敗しました。地点名を確認してください。");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "一括ピン直しに失敗");
       setUploadBusyLabel(null);
     } finally {
       setBusy(false);
@@ -633,6 +717,18 @@ export default function TravelPanel() {
     return [...map.entries()].sort((a, b) => a[0] - b[0]);
   }, [trip]);
 
+  const outOfRegionCount = useMemo(() => {
+    if (!trip?.destination || !trip.stops.length) return 0;
+    const region = inferRegionBias(trip.destination);
+    if (!region) return 0;
+    return trip.stops.filter(
+      (s) =>
+        s.lat == null ||
+        s.lon == null ||
+        !isCoordInRegion(s.lat, s.lon, region),
+    ).length;
+  }, [trip]);
+
   const inputClass =
     "w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-white";
 
@@ -771,6 +867,16 @@ export default function TravelPanel() {
                       地図ピンを付ける
                     </button>
                   )}
+                  {outOfRegionCount > 0 && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleRepinOutOfRegion()}
+                      className="rounded-xl border border-rose-300/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-50 disabled:opacity-40"
+                    >
+                      行き先の外のピンを直す（{outOfRegionCount}）
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={busy || !trip.stops.length}
@@ -802,6 +908,12 @@ export default function TravelPanel() {
                       行程はあるのに地図ピンがありません。「地図ピンを付ける」を押すと座標を取得します。
                     </p>
                   )}
+                {outOfRegionCount > 0 && (
+                  <p className="mt-2 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-50">
+                    行き先の外に飛んだピンが {outOfRegionCount}{" "}
+                    件あります。「行き先の外のピンを直す」で一括修正できます。
+                  </p>
+                )}
               </div>
             </div>
 
