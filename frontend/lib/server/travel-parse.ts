@@ -1,6 +1,6 @@
 /**
  * 旅行会社資料 → 行程ストップ抽出 + 無料ジオコーディング（Nominatim）
- * LLM: Gemini → 安価 Azure OpenAI フォールバック
+ * LLM: 安価 OpenAI 優先 → Gemini → ルール簡易抽出（最後の砦）
  */
 import { randomUUID } from "crypto";
 import { sanitizeText } from "@/lib/server/security";
@@ -9,6 +9,10 @@ import {
   isTravelLlmConfigured,
   parseTravelJsonText,
 } from "@/lib/server/travel-llm";
+import {
+  heuristicGeocodeQuery,
+  parseTravelMaterialHeuristic,
+} from "@/lib/server/travel-parse-heuristic";
 import type {
   TravelStop,
   TravelStopKind,
@@ -94,6 +98,68 @@ export async function geocodePlace(
   }
 }
 
+async function geocodeStops(
+  pending: Array<{ stop: TravelStop; query: string }>,
+): Promise<TravelStop[]> {
+  const stops: TravelStop[] = [];
+  const MAX_GEOCODE = 20;
+  let geocodeCount = 0;
+  for (let i = 0; i < pending.length; i += 1) {
+    const item = pending[i]!;
+    let geo: { lat: number; lon: number; displayName?: string } | null = null;
+    if (geocodeCount < MAX_GEOCODE && item.query.trim()) {
+      if (geocodeCount > 0) await new Promise((r) => setTimeout(r, 900));
+      geo = await geocodePlace(item.query);
+      geocodeCount += 1;
+    }
+    stops.push({
+      ...item.stop,
+      address: item.stop.address
+        ? item.stop.address
+        : geo?.displayName
+          ? sanitizeText(geo.displayName, 200)
+          : undefined,
+      lat: geo?.lat ?? item.stop.lat,
+      lon: geo?.lon ?? item.stop.lon,
+    });
+  }
+  return stops;
+}
+
+function rawToPending(
+  raw: ParsedStopRaw,
+  index: number,
+  destinationHint?: string,
+): { stop: TravelStop; query: string } | null {
+  const name = sanitizeText(raw.name ?? "", 120);
+  if (!name) return null;
+  const kind = asKind(raw.kind);
+  const transportMode =
+    asTransport(raw.transportMode) ||
+    (kind === "transport" ? ("other" as const) : undefined);
+  const query =
+    sanitizeText(raw.queryForGeocode ?? "", 160) ||
+    [destinationHint, name, raw.address].filter(Boolean).join(" ");
+  return {
+    query,
+    stop: {
+      id: randomUUID(),
+      dayIndex: Number.isFinite(raw.dayIndex) ? Math.max(0, Number(raw.dayIndex)) : 0,
+      order: Number.isFinite(raw.order) ? Number(raw.order) : index,
+      name,
+      kind,
+      transportMode,
+      date: raw.date ? sanitizeText(raw.date, 32) : undefined,
+      timeLabel: raw.timeLabel ? sanitizeText(raw.timeLabel, 32) : undefined,
+      address: raw.address ? sanitizeText(raw.address, 200) : undefined,
+      note: raw.note ? sanitizeText(raw.note, 600) : undefined,
+      sourceSnippet: raw.sourceSnippet
+        ? sanitizeText(raw.sourceSnippet, 400)
+        : undefined,
+    },
+  };
+}
+
 export async function parseTravelMaterial(input: {
   text: string;
   destinationHint?: string;
@@ -108,11 +174,6 @@ export async function parseTravelMaterial(input: {
   const text = sanitizeText(input.text, 12000);
   if (!text || text.length < 20) {
     throw new Error("資料テキストが短すぎます（もう少し貼り付けてください）");
-  }
-  if (!isTravelLlmConfigured()) {
-    throw new Error(
-      "Gemini / Azure OpenAI のどちらも未設定のため資料の判読ができません",
-    );
   }
 
   const system = `あなたは旅行日程の構造化アシスタントです。旅行会社のしおり・行程表から、地図に載せる観光ポイントを JSON で抽出します。
@@ -131,84 +192,73 @@ JSONのみ:
 --- 資料 ---
 ${text}`;
 
-  const result = await generateTravelJson({
-    system,
-    user,
-    maxOutputTokens: 3500,
-    temperature: 0.2,
-  });
-
-  if (!result.ok) {
-    throw new Error(result.reason || "資料の解析に失敗しました");
-  }
-
-  let parsed: {
-    tripTitle?: string;
-    summary?: string;
-    stops?: ParsedStopRaw[];
-  };
-  try {
-    parsed = parseTravelJsonText(result.text);
-  } catch {
-    throw new Error("資料解析の応答が JSON ではありませんでした");
-  }
-
-  const rawStops = Array.isArray(parsed.stops) ? parsed.stops : [];
-  const stops: TravelStop[] = [];
-
-  const MAX_GEOCODE = 28;
-  let geocodeCount = 0;
-  for (let i = 0; i < Math.min(rawStops.length, 60); i += 1) {
-    const raw = rawStops[i]!;
-    const name = sanitizeText(raw.name ?? "", 120);
-    if (!name) continue;
-    const query =
-      sanitizeText(raw.queryForGeocode ?? "", 160) ||
-      [input.destinationHint, name, raw.address].filter(Boolean).join(" ");
-    let geo: { lat: number; lon: number; displayName?: string } | null = null;
-    if (geocodeCount < MAX_GEOCODE) {
-      if (geocodeCount > 0) await new Promise((r) => setTimeout(r, 1100));
-      geo = await geocodePlace(query);
-      geocodeCount += 1;
-    }
-
-    const kind = asKind(raw.kind);
-    const transportMode =
-      asTransport(raw.transportMode) ||
-      (kind === "transport" ? ("other" as const) : undefined);
-
-    stops.push({
-      id: randomUUID(),
-      dayIndex: Number.isFinite(raw.dayIndex) ? Math.max(0, Number(raw.dayIndex)) : 0,
-      order: Number.isFinite(raw.order) ? Number(raw.order) : i,
-      name,
-      kind,
-      transportMode,
-      date: raw.date ? sanitizeText(raw.date, 32) : undefined,
-      timeLabel: raw.timeLabel ? sanitizeText(raw.timeLabel, 32) : undefined,
-      address: raw.address
-        ? sanitizeText(raw.address, 200)
-        : geo?.displayName
-          ? sanitizeText(geo.displayName, 200)
-          : undefined,
-      lat: geo?.lat,
-      lon: geo?.lon,
-      note: raw.note ? sanitizeText(raw.note, 600) : undefined,
-      sourceSnippet: raw.sourceSnippet
-        ? sanitizeText(raw.sourceSnippet, 400)
-        : undefined,
+  let llmError = "";
+  if (isTravelLlmConfigured()) {
+    const result = await generateTravelJson({
+      system,
+      user,
+      maxOutputTokens: 3500,
+      temperature: 0.2,
     });
+
+    if (result.ok) {
+      try {
+        const parsed = parseTravelJsonText<{
+          tripTitle?: string;
+          summary?: string;
+          stops?: ParsedStopRaw[];
+        }>(result.text);
+        const rawStops = Array.isArray(parsed.stops) ? parsed.stops : [];
+        const pending = rawStops
+          .slice(0, 60)
+          .map((raw, i) => rawToPending(raw, i, input.destinationHint))
+          .filter((v): v is NonNullable<typeof v> => Boolean(v));
+
+        if (pending.length >= 1) {
+          const stops = await geocodeStops(pending);
+          return {
+            stops,
+            tripTitle: parsed.tripTitle
+              ? sanitizeText(parsed.tripTitle, 120)
+              : undefined,
+            summary: parsed.summary
+              ? sanitizeText(parsed.summary, 800)
+              : undefined,
+            provider: `${result.provider}:${result.model}`,
+          };
+        }
+        llmError = "AI応答に有効な地点がありませんでした";
+      } catch {
+        llmError = "AI応答の JSON 解析に失敗しました";
+      }
+    } else {
+      llmError = result.reason;
+    }
+  } else {
+    llmError = "Gemini / Azure OpenAI 未設定";
   }
 
-  if (stops.length < 1) {
-    throw new Error("資料から観光ポイントを抽出できませんでした。別の抜粋を試してください。");
+  const heuristic = parseTravelMaterialHeuristic({
+    text,
+    destinationHint: input.destinationHint,
+    startDate: input.startDate,
+  });
+  if (heuristic.stops.length < 1) {
+    throw new Error(
+      `資料から観光ポイントを抽出できませんでした（${llmError}）。テキスト付きしおりか、時刻付き行程の抜粋を試してください。`,
+    );
   }
 
+  const pending = heuristic.stops.map((stop) => ({
+    stop,
+    query: heuristicGeocodeQuery(stop, input.destinationHint),
+  }));
+  const stops = await geocodeStops(pending);
   return {
     stops,
-    tripTitle: parsed.tripTitle ? sanitizeText(parsed.tripTitle, 120) : undefined,
-    summary: parsed.summary ? sanitizeText(parsed.summary, 800) : undefined,
-    provider: `${result.provider}:${result.model}`,
+    tripTitle: heuristic.tripTitle,
+    summary: heuristic.summary,
+    provider: `heuristic(fallback; ${llmError.slice(0, 120)})`,
   };
 }
 
