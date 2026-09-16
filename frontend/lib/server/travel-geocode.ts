@@ -1,14 +1,18 @@
 /**
  * 地名 → 座標。Nominatim は Azure SWA から弾かれやすいので
- * Photon → Open-Meteo → Nominatim の順で試す。
+ * ローカル辞書 → Photon → Open-Meteo → Nominatim の順で試す。
  */
 import { sanitizeText } from "@/lib/server/security";
+import {
+  buildGeocodeCandidates,
+  resolveLocalTravelPlace,
+} from "@/lib/travel-geocode-query";
 
 export type GeocodeHit = {
   lat: number;
   lon: number;
   displayName?: string;
-  source: "photon" | "open-meteo" | "nominatim";
+  source: "local" | "photon" | "open-meteo" | "nominatim";
 };
 
 function cleanQuery(query: string): string {
@@ -45,8 +49,7 @@ async function fetchJson(
 }
 
 async function geocodePhoton(query: string): Promise<GeocodeHit | null> {
-  const url =
-    `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
+  const url = `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
   const data = (await fetchJson(url)) as {
     features?: Array<{
       geometry?: { coordinates?: number[] };
@@ -108,21 +111,70 @@ async function geocodeNominatim(query: string): Promise<GeocodeHit | null> {
   };
 }
 
-/** 複数クエリ候補を順に試す（例: 「清水寺」→「京都 清水寺」） */
+function tryLocal(query: string): GeocodeHit | null {
+  const hit = resolveLocalTravelPlace(query);
+  if (!hit) return null;
+  return {
+    lat: hit.lat,
+    lon: hit.lon,
+    displayName: hit.label,
+    source: "local",
+  };
+}
+
+/** 複数クエリ候補を順に試す（行程文 → 切り出した地名） */
 export async function geocodePlace(
   query: string,
-  options?: { timeoutMs?: number },
+  options?: { timeoutMs?: number; destinationHint?: string },
 ): Promise<GeocodeHit | null> {
-  void options;
+  void options?.timeoutMs;
   const base = cleanQuery(query);
   if (!base) return null;
 
-  const candidates = [base];
-  // 長すぎるクエリを短縮（先頭の地名らしき部分）
-  if (base.length > 40) {
-    candidates.push(base.slice(0, 40));
+  const candidates = buildGeocodeCandidates(
+    { name: base },
+    options?.destinationHint,
+  );
+  if (!candidates.includes(base)) candidates.unshift(base);
+
+  for (const q of candidates) {
+    const local = tryLocal(q);
+    if (local) return local;
+    const photon = await geocodePhoton(q);
+    if (photon) return photon;
+    const om = await geocodeOpenMeteo(q);
+    if (om) return om;
+    const nom = await geocodeNominatim(q);
+    if (nom) return nom;
+  }
+  return null;
+}
+
+/** ストップ単位で候補生成してジオコード */
+export async function geocodeTravelStopFields(
+  stop: {
+    name: string;
+    address?: string;
+    note?: string;
+    sourceSnippet?: string;
+  },
+  destinationHint?: string,
+): Promise<GeocodeHit | null> {
+  const local = resolveLocalTravelPlace(
+    [stop.name, stop.address, stop.note, stop.sourceSnippet]
+      .filter(Boolean)
+      .join(" "),
+  );
+  if (local) {
+    return {
+      lat: local.lat,
+      lon: local.lon,
+      displayName: local.label,
+      source: "local",
+    };
   }
 
+  const candidates = buildGeocodeCandidates(stop, destinationHint);
   for (const q of candidates) {
     const photon = await geocodePhoton(q);
     if (photon) return photon;

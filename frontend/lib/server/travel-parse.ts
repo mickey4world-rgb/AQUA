@@ -4,7 +4,7 @@
  */
 import { randomUUID } from "crypto";
 import { sanitizeText } from "@/lib/server/security";
-import { geocodePlace } from "@/lib/server/travel-geocode";
+import { geocodePlace, geocodeTravelStopFields } from "@/lib/server/travel-geocode";
 export { geocodePlace } from "@/lib/server/travel-geocode";
 import {
   generateTravelJson,
@@ -15,6 +15,7 @@ import {
   heuristicGeocodeQuery,
   parseTravelMaterialHeuristic,
 } from "@/lib/server/travel-parse-heuristic";
+import { buildGeocodeCandidates } from "@/lib/travel-geocode-query";
 import type {
   TravelStop,
   TravelStopKind,
@@ -71,7 +72,11 @@ function asTransport(raw: string | undefined): TravelTransportMode | undefined {
 
 async function geocodeStops(
   pending: Array<{ stop: TravelStop; query: string }>,
-  options?: { maxGeocode?: number; delayMs?: number },
+  options?: {
+    maxGeocode?: number;
+    delayMs?: number;
+    destinationHint?: string;
+  },
 ): Promise<TravelStop[]> {
   const maxGeocode = options?.maxGeocode ?? 0;
   const delayMs = options?.delayMs ?? 250;
@@ -80,9 +85,14 @@ async function geocodeStops(
   for (let i = 0; i < pending.length; i += 1) {
     const item = pending[i]!;
     let geo: { lat: number; lon: number; displayName?: string } | null = null;
-    if (geocodeCount < maxGeocode && item.query.trim()) {
+    if (geocodeCount < maxGeocode && (item.query.trim() || item.stop.name)) {
       if (geocodeCount > 0) await new Promise((r) => setTimeout(r, delayMs));
-      geo = await geocodePlace(item.query);
+      geo = await geocodeTravelStopFields(item.stop, options?.destinationHint);
+      if (!geo && item.query.trim()) {
+        geo = await geocodePlace(item.query, {
+          destinationHint: options?.destinationHint,
+        });
+      }
       geocodeCount += 1;
     }
     stops.push({
@@ -112,6 +122,10 @@ function rawToPending(
     (kind === "transport" ? ("other" as const) : undefined);
   const query =
     sanitizeText(raw.queryForGeocode ?? "", 160) ||
+    buildGeocodeCandidates(
+      { name, address: raw.address, note: raw.note, sourceSnippet: raw.sourceSnippet },
+      destinationHint,
+    )[0] ||
     [destinationHint, name, raw.address].filter(Boolean).join(" ");
   return {
     query,
@@ -264,7 +278,8 @@ export async function geocodeTravelStops(
   const ordered = [...need, ...have];
   const next = await geocodeStops(ordered, {
     maxGeocode,
-    delayMs: 220,
+    delayMs: 180,
+    destinationHint: options?.destinationHint,
   });
   // restore original order by id
   const byId = new Map(next.map((s) => [s.id, s]));
