@@ -35,10 +35,11 @@ import {
   EAGLE_EYE_MAP_CANDIDATES,
   EAGLE_EYE_SATELLITE_CANDIDATES,
   createVerifiedLocalEarthLayer,
-  createVerifiedNaturalEarthLayer,
   describeEagleEyeEarthLayer,
+  ensureEarthEllipsoidEntity,
   probeReachableImage,
   resolveEagleEyeBaseLayer,
+  setEarthEllipsoidEntityVisible,
   type EagleEyeImageryCandidate,
 } from "@/lib/eagle-eye-earth-imagery";
 
@@ -91,59 +92,50 @@ function addUrlImageryLayer(
 
 /**
  * 地球の見た目を確実にする（弱オラクル禁止）:
- * 1) Natural Earth（公式 TMS・タイル probe 済み）
- * 2) 失敗時は認証壁の外にある同一オリジン Blue Marble
- * 3) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
- * layerCount=0 / 到達不能テクスチャは throw。
+ * - removeAll で検証済み base を捨てない（初回は base を維持、再適用時のみ付け直す）
+ * - 必須: ローカル Blue Marble
+ * - 必須保険: テクスチャ付き楕円体 Entity（Imagery が黒でも大陸が見える）
+ * - 任意: Carto/OSM 上乗せ（probe 済みのみ）
  */
 async function ensureEarthImagery(
   viewer: CesiumViewer,
   Cesium: CesiumModule,
-  options: { withLabels: boolean; preferSatellite: boolean },
+  options: {
+    withLabels: boolean;
+    preferSatellite: boolean;
+    /** true のときだけ removeAll→ローカル再載（モード切替用） */
+    resetBase?: boolean;
+  },
 ): Promise<{
   layerCount: number;
   usedNaturalEarth: boolean;
   usedLocalEarth: boolean;
   usedOverlay: boolean;
+  usedEarthEntity: boolean;
 }> {
-  viewer.imageryLayers.removeAll();
   viewer.scene.globe.show = true;
-  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1a4d80");
+  // Imagery が遅れても球が真っ黒に見えないよう、海色をはっきり出す
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1b6ca8");
   viewer.scene.globe.enableLighting = false;
-  viewer.scene.globe.showGroundAtmosphere = true;
+  viewer.scene.globe.showGroundAtmosphere = false;
   if (viewer.scene.skyAtmosphere) {
     viewer.scene.skyAtmosphere.show = true;
   }
 
-  let usedNaturalEarth = false;
-  let usedLocalEarth = false;
+  let usedLocalEarth = viewer.imageryLayers.length > 0;
   let usedOverlay = false;
 
-  try {
-    const natural = await createVerifiedNaturalEarthLayer(Cesium);
-    viewer.imageryLayers.add(natural);
-    usedNaturalEarth = true;
-  } catch (error) {
-    console.warn("[EagleEye] Natural Earth failed", error);
-  }
-
-  if (!usedNaturalEarth) {
+  if (options.resetBase || viewer.imageryLayers.length < 1) {
+    viewer.imageryLayers.removeAll();
     const local = await createVerifiedLocalEarthLayer(Cesium);
     viewer.imageryLayers.add(local);
     usedLocalEarth = true;
-  } else {
-    // 保険の下敷き（到達できるときだけ。失敗 HTML を黒玉として載せない）
-    try {
-      if (await probeReachableImage(EAGLE_EYE_LOCAL_EARTH_TEXTURE)) {
-        const local = await createVerifiedLocalEarthLayer(Cesium);
-        viewer.imageryLayers.add(local);
-        viewer.imageryLayers.lowerToBottom(local);
-        usedLocalEarth = true;
-      }
-    } catch {
-      /* optional */
-    }
   }
+
+  // 軌道俯瞰の保険 — Imagery 成否に依存しない
+  ensureEarthEllipsoidEntity(viewer, Cesium);
+  setEarthEllipsoidEntityVisible(viewer, true);
+  const usedEarthEntity = true;
 
   const candidates = options.preferSatellite
     ? EAGLE_EYE_SATELLITE_CANDIDATES
@@ -158,12 +150,7 @@ async function ensureEarthImagery(
       continue;
     }
     try {
-      addUrlImageryLayer(
-        viewer,
-        Cesium,
-        candidate,
-        usedNaturalEarth || usedLocalEarth ? 0.92 : 1,
-      );
+      addUrlImageryLayer(viewer, Cesium, candidate, 0.88);
       usedOverlay = true;
       break;
     } catch (error) {
@@ -171,14 +158,14 @@ async function ensureEarthImagery(
     }
   }
 
-  if (options.withLabels && (usedNaturalEarth || usedLocalEarth || usedOverlay)) {
+  if (options.withLabels && (usedLocalEarth || usedOverlay)) {
     const sample = EAGLE_EYE_LABEL_CANDIDATE.url
       .replace("{z}", "2")
       .replace("{x}", "1")
       .replace("{y}", "1");
     if (await probeReachableImage(sample)) {
       try {
-        addUrlImageryLayer(viewer, Cesium, EAGLE_EYE_LABEL_CANDIDATE, 0.92);
+        addUrlImageryLayer(viewer, Cesium, EAGLE_EYE_LABEL_CANDIDATE, 0.9);
       } catch {
         /* labels optional */
       }
@@ -186,13 +173,19 @@ async function ensureEarthImagery(
   }
 
   const layerCount = viewer.imageryLayers.length as number;
-  if (layerCount < 1 || (!usedNaturalEarth && !usedLocalEarth && !usedOverlay)) {
+  if (!usedLocalEarth && !usedEarthEntity) {
     throw new Error(
-      "地球テクスチャを1枚も載せられませんでした（Natural Earth / ローカル / 外部タイル全滅）。",
+      `地球を表示できませんでした（${EAGLE_EYE_LOCAL_EARTH_TEXTURE} を確認してください）。`,
     );
   }
 
-  return { layerCount, usedNaturalEarth, usedLocalEarth, usedOverlay };
+  return {
+    layerCount,
+    usedNaturalEarth: false,
+    usedLocalEarth,
+    usedOverlay,
+    usedEarthEntity,
+  };
 }
 
 function describeEarthLayer(
@@ -200,6 +193,7 @@ function describeEarthLayer(
     usedNaturalEarth: boolean;
     usedLocalEarth: boolean;
     usedOverlay: boolean;
+    usedEarthEntity: boolean;
   },
   mode: "orbit" | "map",
 ): string {
@@ -498,9 +492,11 @@ export default function EagleEyeViewer({
           void ensureEarthImagery(viewer, Cesium, {
             withLabels: true,
             preferSatellite: true,
+            resetBase: true,
           })
             .then((imagery) => {
               if (!viewer || viewer.isDestroyed()) return;
+              setEarthEllipsoidEntityVisible(viewer, false);
               setHud((prev) => ({
                 ...prev,
                 earthLayer: describeEarthLayer(imagery, "map"),
@@ -588,9 +584,11 @@ export default function EagleEyeViewer({
 
     void ensureEarthImagery(viewer, Cesium, {
       withLabels: false,
-      preferSatellite: true,
+      preferSatellite: false,
+      resetBase: true,
     })
       .then((imagery) => {
+        setEarthEllipsoidEntityVisible(viewer, true);
         setHud((prev) => ({
           ...prev,
           earthLayer: describeEarthLayer(imagery, "orbit"),
@@ -763,19 +761,30 @@ export default function EagleEyeViewer({
           infoBox: false,
           selectionIndicator: true,
           baseLayer: base.layer,
+          // 黒背景＋星だけの「成功」に見えないよう、クリア色も海寄りに
+          contextOptions: {
+            webgl: {
+              alpha: false,
+              preserveDrawingBuffer: true,
+            },
+          },
         } as ConstructorParameters<typeof Cesium.Viewer>[1]);
 
-        await ensureEarthImagery(viewer, Cesium, {
+        // 検証済み base を removeAll しない。楕円体保険＋任意タイルのみ追加。
+        const imagery = await ensureEarthImagery(viewer, Cesium, {
           withLabels: false,
-          preferSatellite: true,
-        }).then((imagery) => {
-          const earthLayer = describeEarthLayer(imagery, "orbit");
-          setHud((prev) => ({ ...prev, earthLayer }));
+          preferSatellite: false,
+          resetBase: false,
         });
+        setHud((prev) => ({
+          ...prev,
+          earthLayer: describeEarthLayer(imagery, "orbit"),
+        }));
         viewer.scene.globe.show = true;
         viewer.scene.globe.enableLighting = false;
-        viewer.scene.globe.showGroundAtmosphere = true;
+        viewer.scene.globe.showGroundAtmosphere = false;
         if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
 
         // 初期視点: 地球全体が見える高度から日本付近
         viewer.camera.setView({
