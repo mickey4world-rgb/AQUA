@@ -199,12 +199,22 @@ export function assertTravelUploadPayloadSize(files: TravelClientUploadPayload[]
   }
 }
 
-export async function readApiErrorMessage(res: Response): Promise<string> {
+export async function readApiErrorMessage(
+  res: Response,
+  fallbackLabel = "リクエスト",
+): Promise<string> {
   const text = await res.text();
-  if (!text) return `アップロードに失敗しました（HTTP ${res.status}）`;
+  if (!text) {
+    if (res.status === 500 || res.status === 504 || res.status === 502) {
+      return `${fallbackLabel}がサーバー側で中断されました（HTTP ${res.status}）。時間のかかる処理がタイムアウトした可能性があります。もう一度お試しください。`;
+    }
+    return `${fallbackLabel}に失敗しました（HTTP ${res.status}）`;
+  }
   try {
-    const data = JSON.parse(text) as { error?: string };
-    if (data.error) return data.error;
+    const data = JSON.parse(text) as { error?: string; requestId?: string };
+    if (data.error) {
+      return data.requestId ? `${data.error}（id: ${data.requestId}）` : data.error;
+    }
   } catch {
     // HTML / plain
   }
@@ -212,7 +222,10 @@ export async function readApiErrorMessage(res: Response): Promise<string> {
     return "ファイルが大きすぎてサーバーが受け取れませんでした。小さいファイルかテキスト付きPDFで再試行してください。";
   }
   if (res.status === 401 || res.status === 302) {
-    return "ログインが必要です。再ログインしてからアップロードしてください。";
+    return "ログインが必要です。再ログインしてから操作してください。";
   }
-  return `アップロードに失敗しました（HTTP ${res.status}）`;
+  if (res.status === 500 || res.status === 504 || res.status === 502) {
+    return `${fallbackLabel}がサーバー側で失敗しました（HTTP ${res.status}）。再試行するか、資料を短くしてから判読してください。`;
+  }
+  return `${fallbackLabel}に失敗しました（HTTP ${res.status}）`;
 }
