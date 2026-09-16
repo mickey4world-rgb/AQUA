@@ -78,6 +78,15 @@ const modules: ModuleIndexEntry[] = [
   },
   {
     index: "07",
+    title: "Travel",
+    titleJa: "旅のしおり",
+    desc: "日程・コース地図、資料判読、旅中メモと写真",
+    href: "/travel",
+    tag: "Journey",
+    accent: "#5eead4",
+  },
+  {
+    index: "08",
     title: "Costs",
     titleJa: "コスト",
     desc: "トークン・API・Azure 実績コストの可視化",
@@ -96,11 +105,12 @@ const marqueeItems = [
   "Claude",
   "CesiumJS",
   "Three.js",
+  "MapLibre",
   "TypeScript",
 ];
 
 const stats = [
-  { label: "Modules", value: "07" },
+  { label: "Modules", value: "08" },
   { label: "Engines", value: "GPT / Gemini / Claude" },
   { label: "Region", value: "Japan East" },
   {
