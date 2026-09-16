@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "crypto";
 import { sanitizeText } from "@/lib/server/security";
+import { buildGeocodeCandidates } from "@/lib/travel-geocode-query";
 import type { TravelStop, TravelStopKind, TravelTransportMode } from "@/lib/types/travel";
 
 const TIME_LINE_RE =
@@ -53,7 +54,10 @@ export function heuristicGeocodeQuery(
   stop: TravelStop,
   destinationHint?: string,
 ): string {
-  return [destinationHint, stop.name, stop.address].filter(Boolean).join(" ");
+  return (
+    buildGeocodeCandidates(stop, destinationHint)[0] ||
+    [destinationHint, stop.name, stop.address].filter(Boolean).join(" ")
+  );
 }
 
 /**
