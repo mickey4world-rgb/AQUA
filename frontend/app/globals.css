@@ -45,6 +45,7 @@ body {
 .app-shell-docs { background: #06111c; }
 .app-shell-space { background: #060612; }
 .app-shell-works { background: #061820; }
+.app-shell-travel { background: #061a1f; }
 
 [data-theme="portal"] { --scene-1: 56 189 248; --scene-2: 34 211 238; --scene-3: 125 211 252; }
 [data-theme="global"] { --scene-1: 34 211 238; --scene-2: 99 102 241; --scene-3: 45 212 191; }
@@ -55,6 +56,7 @@ body {
 [data-theme="docs"] { --scene-1: 37 99 235; --scene-2: 59 130 246; --scene-3: 99 102 241; }
 [data-theme="space"] { --scene-1: 99 102 241; --scene-2: 168 85 247; --scene-3: 56 89 200; }
 [data-theme="works"] { --scene-1: 16 185 129; --scene-2: 45 212 191; --scene-3: 34 211 238; }
+[data-theme="travel"] { --scene-1: 45 212 191; --scene-2: 34 211 238; --scene-3: 125 211 252; }
 
 .bg-mesh-portal {
   background:
@@ -112,6 +114,12 @@ body {
     radial-gradient(ellipse at 10% 0%, rgba(16, 185, 129, 0.11) 0%, transparent 48%),
     radial-gradient(ellipse at 88% 26%, rgba(45, 212, 191, 0.09) 0%, transparent 52%),
     radial-gradient(ellipse at 15% 0%, #064e3b1c 0%, #04110f 60%);
+}
+.bg-mesh-travel {
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(45, 212, 191, 0.14) 0%, transparent 48%),
+    radial-gradient(ellipse at 86% 24%, rgba(34, 211, 238, 0.1) 0%, transparent 52%),
+    radial-gradient(ellipse at 40% 0%, #0f766e1a 0%, #041416 60%);
 }
 
 /* ══════════════════════════════════════════════

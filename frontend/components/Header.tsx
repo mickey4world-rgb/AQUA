@@ -12,6 +12,7 @@ const navItems = [
   { href: "/council", label: "AI合議", en: "Council" },
   { href: "/soluna", label: "Soluna", en: "Soluna" },
   { href: "/space", label: "宇宙", en: "Space" },
+  { href: "/travel", label: "旅行", en: "Travel" },
   { href: "/costs", label: "コスト", en: "Costs" },
   { href: "/settings", label: "設定", en: "Settings" },
 ];
@@ -26,7 +27,8 @@ export type HeaderVariant =
   | "soluna"
   | "docs"
   | "space"
-  | "works";
+  | "works"
+  | "travel";
 
 type ThemeStyle = {
   /** Route highlighted even when the pathname is deeper (e.g. /works/docs). */
@@ -80,6 +82,11 @@ const THEMES: Record<Exclude<HeaderVariant, "default">, ThemeStyle> = {
     anchor: "/works",
     active: "text-emerald-300",
     logo: "from-emerald-300 via-teal-200 to-amber-200",
+  },
+  travel: {
+    anchor: "/travel",
+    active: "text-teal-300",
+    logo: "from-teal-300 via-cyan-200 to-sky-300",
   },
 };
 
