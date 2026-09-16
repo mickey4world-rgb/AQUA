@@ -314,12 +314,75 @@ function decodeBase64Payload(raw: string): { mimeHint?: string; bytes: Uint8Arra
   return { b64, bytes: Buffer.from(b64, "base64") };
 }
 
+function materialFromExtractedText(input: {
+  name: string;
+  mimeType: string;
+  kind: TravelMaterialKind;
+  text: string;
+  method: TravelMaterialExtractMethod;
+  byteSize: number;
+}): TravelMaterial {
+  const text = sanitizeText(input.text, TRAVEL_MATERIAL_MAX_TOTAL_CHARS);
+  if (text.replace(/\s/g, "").length < 20) {
+    throw new Error(`${input.name}: 読み取れる本文が少なすぎます`);
+  }
+  const chunks = chunkText(text);
+  if (!chunks.length) {
+    throw new Error(`${input.name}: チャンク化できる本文がありません`);
+  }
+  return {
+    id: randomUUID(),
+    fileName: input.name,
+    mimeType: input.mimeType,
+    kind: input.kind,
+    byteSize: input.byteSize,
+    extractedChars: text.length,
+    chunkCount: chunks.length,
+    chunks,
+    excerpt: text.slice(0, 400),
+    extractMethod: input.method,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export async function extractTravelMaterialFile(input: {
   name: string;
   mimeType?: string;
-  base64: string;
+  base64?: string;
+  extractedText?: string;
+  extractMethodHint?: string;
 }): Promise<TravelMaterial> {
   const name = sanitizeText(input.name, 180) || "material";
+  const mimeType = (input.mimeType || "application/octet-stream").toLowerCase();
+  const kind = kindOf(name, mimeType);
+
+  const pre = sanitizeText(input.extractedText ?? "", TRAVEL_MATERIAL_MAX_TOTAL_CHARS);
+  if (pre.replace(/\s/g, "").length >= 20) {
+    const hint = input.extractMethodHint;
+    const method: TravelMaterialExtractMethod =
+      hint === "pdfjs-client" || hint === "text-client" || hint === "docx-client"
+        ? hint
+        : kind === "pdf"
+          ? "pdfjs-client"
+          : kind === "docx"
+            ? "docx-client"
+            : "text-client";
+    return materialFromExtractedText({
+      name,
+      mimeType: mimeType === "application/octet-stream" ? "text/plain" : mimeType,
+      kind: kind === "other" ? "text" : kind,
+      text: pre,
+      method,
+      byteSize: Buffer.byteLength(pre, "utf8"),
+    });
+  }
+
+  if (!input.base64?.trim()) {
+    throw new Error(
+      `${name}: 本文もファイルデータもありません。別形式で再アップロードしてください。`,
+    );
+  }
+
   const decoded = decodeBase64Payload(input.base64);
   if (decoded.bytes.byteLength < 16) {
     throw new Error(`${name}: ファイルが空です`);
@@ -330,10 +393,9 @@ export async function extractTravelMaterialFile(input: {
     );
   }
 
-  const mimeType =
-    (input.mimeType || decoded.mimeHint || "application/octet-stream").toLowerCase();
-  const kind = kindOf(name, mimeType);
-  if (kind === "other") {
+  const resolvedMime = (input.mimeType || decoded.mimeHint || "application/octet-stream").toLowerCase();
+  const resolvedKind = kindOf(name, resolvedMime);
+  if (resolvedKind === "other") {
     throw new Error(
       `${name}: 未対応形式です（PDF / DOCX / TXT・MD / JPG・PNG など）`,
     );
@@ -342,13 +404,13 @@ export async function extractTravelMaterialFile(input: {
   let text = "";
   let method: TravelMaterialExtractMethod = "text";
 
-  if (kind === "text") {
+  if (resolvedKind === "text") {
     text = Buffer.from(decoded.bytes).toString("utf8");
     method = "text";
-  } else if (kind === "docx") {
+  } else if (resolvedKind === "docx") {
     text = extractDocxText(decoded.bytes);
     method = "docx";
-  } else if (kind === "pdf") {
+  } else if (resolvedKind === "pdf") {
     try {
       text = await extractPdfText(decoded.bytes);
       method = "pdfjs";
@@ -367,19 +429,19 @@ export async function extractTravelMaterialFile(input: {
         method = ocr.method;
       } else if (text.replace(/\s/g, "").length < 20) {
         throw new Error(
-          `${name}: PDF から文字を抽出できませんでした（スキャンPDFは Gemini 設定が必要です）`,
+          `${name}: PDF から文字を抽出できませんでした（スキャンPDFは Gemini 設定が必要です）。JPG画像でのアップロードも試してください。`,
         );
       }
     }
-  } else if (kind === "image") {
+  } else if (resolvedKind === "image") {
     const ocr =
       (await ocrWithGemini({
-        mimeType: mimeType.startsWith("image/") ? mimeType : "image/jpeg",
+        mimeType: resolvedMime.startsWith("image/") ? resolvedMime : "image/jpeg",
         base64: decoded.b64,
         hint: "この画像は旅行しおりです。行程・観光ポイントを書き起こしてください。",
       })) ||
       (await ocrWithOpenAi({
-        mimeType: mimeType.startsWith("image/") ? mimeType : "image/jpeg",
+        mimeType: resolvedMime.startsWith("image/") ? resolvedMime : "image/jpeg",
         base64: decoded.b64,
       }).then((t) =>
         t ? { text: t, method: "openai-ocr" as const } : null,
@@ -393,27 +455,12 @@ export async function extractTravelMaterialFile(input: {
     method = ocr.method;
   }
 
-  text = sanitizeText(text, TRAVEL_MATERIAL_MAX_TOTAL_CHARS);
-  if (text.replace(/\s/g, "").length < 20) {
-    throw new Error(`${name}: 読み取れる本文が少なすぎます`);
-  }
-
-  const chunks = chunkText(text);
-  if (!chunks.length) {
-    throw new Error(`${name}: チャンク化できる本文がありません`);
-  }
-
-  return {
-    id: randomUUID(),
-    fileName: name,
-    mimeType,
-    kind,
+  return materialFromExtractedText({
+    name,
+    mimeType: resolvedMime,
+    kind: resolvedKind,
+    text,
+    method,
     byteSize: decoded.bytes.byteLength,
-    extractedChars: text.length,
-    chunkCount: chunks.length,
-    chunks,
-    excerpt: text.slice(0, 400),
-    extractMethod: method,
-    createdAt: new Date().toISOString(),
-  };
+  });
 }
