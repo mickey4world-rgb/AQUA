@@ -1,11 +1,14 @@
 /**
  * ブラウザから直接ジオコード（CORS 可）。
- * 行程文から地名を切り出し、ローカル辞書 → Photon → Open-Meteo。
+ * 住所ヒントで Photon 複数候補を選別し、誤爆（風連町 vs 風蓮湖）を避ける。
  */
 import type { TravelStop } from "@/lib/types/travel";
 import {
   buildGeocodeCandidates,
+  extractAddressHints,
+  pickBestPhotonFeature,
   resolveLocalTravelPlace,
+  type PhotonFeatureLike,
 } from "@/lib/travel-geocode-query";
 
 export type ClientGeocodeHit = {
@@ -14,17 +17,15 @@ export type ClientGeocodeHit = {
   displayName?: string;
 };
 
-async function photon(query: string): Promise<ClientGeocodeHit | null> {
-  const url = `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
+async function photon(
+  query: string,
+  addressHints: string[] = [],
+): Promise<ClientGeocodeHit | null> {
+  const url = `https://photon.komoot.io/api/?limit=5&q=${encodeURIComponent(query)}`;
   const res = await fetch(url);
   if (!res.ok) return null;
-  const data = (await res.json()) as {
-    features?: Array<{
-      geometry?: { coordinates?: number[] };
-      properties?: { name?: string; city?: string; state?: string; country?: string };
-    }>;
-  };
-  const feat = data.features?.[0];
+  const data = (await res.json()) as { features?: PhotonFeatureLike[] };
+  const feat = pickBestPhotonFeature(data.features, addressHints);
   const coords = feat?.geometry?.coordinates;
   if (!coords || coords.length < 2) return null;
   const lon = Number(coords[0]);
@@ -62,31 +63,51 @@ async function openMeteo(query: string): Promise<ClientGeocodeHit | null> {
   };
 }
 
-export async function geocodeQueryInBrowser(
-  query: string,
+async function resolveStopHit(
+  stop: TravelStop,
   destinationHint?: string,
 ): Promise<ClientGeocodeHit | null> {
-  const local = resolveLocalTravelPlace(
-    [destinationHint, query].filter(Boolean).join(" "),
-  );
+  const hints = extractAddressHints(stop.address);
+  const candidates = buildGeocodeCandidates(stop, destinationHint);
+  const blob = [stop.name, stop.address, stop.note, stop.sourceSnippet]
+    .filter(Boolean)
+    .join(" ");
+
+  if (stop.address) {
+    for (const q of candidates) {
+      try {
+        const hit = (await photon(q, hints)) || (await openMeteo(q));
+        if (hit) return hit;
+      } catch {
+        // next
+      }
+    }
+  }
+
+  const local = resolveLocalTravelPlace(blob);
   if (local) {
     return { lat: local.lat, lon: local.lon, displayName: local.label };
   }
 
-  const candidates = buildGeocodeCandidates({ name: query }, destinationHint);
-  if (query.trim() && !candidates.includes(query.trim())) {
-    candidates.unshift(query.trim().slice(0, 80));
-  }
-
   for (const q of candidates) {
     try {
-      const hit = (await photon(q)) || (await openMeteo(q));
+      const hit = (await photon(q, hints)) || (await openMeteo(q));
       if (hit) return hit;
     } catch {
-      // try next candidate
+      // next
     }
   }
   return null;
+}
+
+export async function geocodeQueryInBrowser(
+  query: string,
+  destinationHint?: string,
+): Promise<ClientGeocodeHit | null> {
+  return resolveStopHit(
+    { id: "tmp", dayIndex: 0, order: 0, name: query, kind: "other" },
+    destinationHint,
+  );
 }
 
 export function buildStopGeocodeQuery(
@@ -94,6 +115,23 @@ export function buildStopGeocodeQuery(
   destinationHint?: string,
 ): string {
   return buildGeocodeCandidates(stop, destinationHint)[0] || stop.name;
+}
+
+/**
+ * 1地点だけ座標を付け直す（既存ピンの修正用）。
+ */
+export async function geocodeOneStopInBrowser(
+  stop: TravelStop,
+  options?: { destinationHint?: string },
+): Promise<TravelStop | null> {
+  const hit = await resolveStopHit(stop, options?.destinationHint);
+  if (!hit) return null;
+  return {
+    ...stop,
+    lat: hit.lat,
+    lon: hit.lon,
+    address: stop.address || hit.displayName,
+  };
 }
 
 /**
@@ -116,39 +154,12 @@ export async function geocodeStopsInBrowser(
   for (let i = 0; i < targets.length; i += 1) {
     const stop = targets[i]!;
     options?.onProgress?.(i + 1, targets.length, stop.name);
-
-    const local = resolveLocalTravelPlace(
-      [stop.name, stop.address, stop.note, stop.sourceSnippet]
-        .filter(Boolean)
-        .join(" "),
-    );
-    let hit: ClientGeocodeHit | null = local
-      ? { lat: local.lat, lon: local.lon, displayName: local.label }
-      : null;
-
-    if (!hit) {
-      const candidates = buildGeocodeCandidates(stop, options?.destinationHint);
-      for (const q of candidates) {
-        try {
-          hit = (await photon(q)) || (await openMeteo(q));
-        } catch {
-          hit = null;
-        }
-        if (hit) break;
-      }
-    }
-
-    if (hit) {
-      const cur = byId.get(stop.id);
-      if (cur) {
-        byId.set(stop.id, {
-          ...cur,
-          lat: hit.lat,
-          lon: hit.lon,
-          address: cur.address || hit.displayName,
-        });
-        updated += 1;
-      }
+    const next = await geocodeOneStopInBrowser(stop, {
+      destinationHint: options?.destinationHint,
+    });
+    if (next) {
+      byId.set(stop.id, next);
+      updated += 1;
     }
     if (i < targets.length - 1) {
       await new Promise((r) => setTimeout(r, 120));
