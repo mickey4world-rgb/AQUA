@@ -15,7 +15,9 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 2. **Design-time optimism**: First ship used placeholders + “今夜／ボタンで後から補完” as the plan, without an SWA timeout budget or an oracle that the CTA actually produces the promised artifact. That is **designed-in degraded success**, not a later bug.
 3. **Copy ≠ invariant**: UI/button text promised “詳細化／再取得で解説” while API returned `ok: true` with the same placeholders. Rule examples covered news/warm but not **CTA promise vs delivery**.
 4. **Symptom metric**: “API 200 / rebuild saved / workflow green” while outlook still said 今夜の解説… — weak proxy, same class as warm-ok / liveNewsOk-false.
-5. **Visual weak oracle**: “Cesium loaded / satellites move / Canvas mounted” while Earth was a blank blue ball (external tiles failed async; `baseLayer: false` with no bundled base). Same class: substitute that changes meaning still looked like success.
+5. **Visual weak oracle**: “Cesium loaded / satellites move / Canvas mounted” while Earth was a blank blue/black ball (external tiles failed async; `baseLayer: false` with no bundled base). Same class: substitute that changes meaning still looked like success.
+5b. **Auth-walled “same-origin” texture**: Putting `earth-day.jpg` under `/space/*` (SWA `authenticated`) and calling it a bundled guarantee. Cesium/MapLibre probe or anonymous CORS fetch gets **302 HTML → login**, which paints a black void while HUD still says “Natural Earth”. **Static imagery must live under an anonymous path** (e.g. `/vendor/...`) and pass an **image content-type probe** before `used*=true`.
+5c. **Sync addImageryProvider ≠ tiles painted**: Marking Natural Earth success when the provider object is constructed, while UrlTemplate `maximumLevel:5` 404s real tiles (TMS only has levels 0–2). Oracle must **probe a real tile URL** (and prefer `TileMapServiceImageryProvider.fromUrl`).
 6. **Visual metaphor without cardinality**: “同じ組織はグループで分かるように” → every org bucket got a hull (including **N=1**). A box around one person is **not grouping**; it is decoration that changes meaning. Shape tweaks (ellipse → rounded rect) without re-asking “when does this affordance exist?” are the same escape.
 7. **Request paraphrased into implementation jargon**: User intent (“グルーピングして分かる”) was rewritten as an implementable proxy (“orgKey ごとに図形を描く”) **without verifying the paraphrase still means the same thing to a stranger**. Deploy + “done” while the paraphrase failed. Same class as copy≠invariant / weak oracle — **not limited to 相関図**.
 8. **Expression not entailed by existing data**: User requested a visible affordance (角丸グループ) **because they need something expressed from data they already have**. Agent shipped rules so fine-grained that **real registered people produced zero boxes**, then claimed done. Missing inference: **「依頼した＝今あるデータで必ずその表現が見えるべき」**. Code-path existence ≠ expression on the user’s screen.
@@ -138,6 +140,8 @@ Whenever shipping `/sample`, SHOWCASE demos, public previews, or any **auth-free
 - Stopping at “warm/ingest/rebuild succeeded” when the user-visible artifact is still placeholder or public read can 503
 - Stopping at “briefing ingested” when source was training-data / non-live
 - Stopping at “Cesium Viewer constructed / tracks animate” when the globe has no imagery and looks like a blank blue ball
+- Stopping at “地表: Natural Earth” when the texture URL 302s to `/login` or tile probe was never run
+- Treating assets under an authenticated SWA prefix (`/space/*`) as a same-origin imagery guarantee
 - Stopping at “org group boxes drawn” when singles each have their own box (N=1 hull ≠ グルーピング)
 - Stopping at “tsc / deploy green / 反映しました” when Request ↔ Result (stranger test) was not run
 - Stopping at “grouping logic exists” when the user’s map shows **zero** group boxes despite many same-org people
