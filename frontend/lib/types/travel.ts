@@ -1,4 +1,36 @@
-/** Travel（旅のしおり）型定義 */
+/** Travel 資料（電子ファイル）・RAG チャンク */
+
+export type TravelMaterialKind = "pdf" | "text" | "image" | "docx" | "other";
+
+export type TravelMaterialExtractMethod =
+  | "pdfjs"
+  | "text"
+  | "docx"
+  | "gemini-ocr"
+  | "gemini-pdf"
+  | "openai-ocr";
+
+export interface TravelMaterialChunk {
+  id: string;
+  index: number;
+  text: string;
+  /** 1-based page when known */
+  pageHint?: number;
+}
+
+export interface TravelMaterial {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  kind: TravelMaterialKind;
+  byteSize: number;
+  extractedChars: number;
+  chunkCount: number;
+  chunks: TravelMaterialChunk[];
+  excerpt: string;
+  extractMethod: TravelMaterialExtractMethod;
+  createdAt: string;
+}
 
 export type TravelStopKind =
   | "sight"
@@ -84,6 +116,8 @@ export interface TravelTrip {
   summary?: string;
   stops: TravelStop[];
   journal: TravelJournalEntry[];
+  /** アップロード資料（チャンク保管・RAG 用。原本バイナリは持たない） */
+  materials?: TravelMaterial[];
   sourceMaterialExcerpt?: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +131,7 @@ export interface TravelTripListItem {
   endDate: string;
   stopCount: number;
   journalCount: number;
+  materialCount?: number;
   updatedAt: string;
 }
 
@@ -131,4 +166,11 @@ export interface AddTravelStopRequest {
   geocodeQuery?: string;
   lat?: number;
   lon?: number;
+}
+
+export interface TravelMaterialUploadFile {
+  name: string;
+  mimeType?: string;
+  /** raw base64（data URL 可） */
+  base64: string;
 }
