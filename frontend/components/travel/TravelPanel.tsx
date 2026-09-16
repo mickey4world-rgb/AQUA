@@ -194,7 +194,7 @@ export default function TravelPanel() {
         },
       );
       if (!res.ok) {
-        throw new Error(await readApiErrorMessage(res));
+        throw new Error(await readApiErrorMessage(res, "アップロード"));
       }
       const data = (await res.json()) as {
         trip?: TravelTrip;
@@ -274,20 +274,53 @@ export default function TravelPanel() {
           }),
         },
       );
-      if (!res.ok) throw new Error(await readApiErrorMessage(res));
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "RAG判読"));
       const data = (await res.json()) as {
         trip?: TravelTrip;
         error?: string;
         provider?: string;
         parsedStopCount?: number;
+        needsGeocode?: boolean;
       };
       if (!data.trip) throw new Error(data.error || "判読結果を受け取れませんでした");
       setTrip(data.trip);
       setSelectedStopId(data.trip.stops[0]?.id ?? null);
       const via = data.provider ? `（${data.provider}）` : "";
       setUploadBusyLabel(
-        `判読完了: ${data.trip.stops.length} 地点を地図に反映${via}`,
+        `判読完了: ${data.trip.stops.length} 地点${via}。地図座標を取得中…`,
       );
+
+      try {
+        const geoRes = await fetch(
+          `/api/travel/trips/${encodeURIComponent(trip.id)}/geocode`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ maxGeocode: 8 }),
+          },
+        );
+        if (geoRes.ok) {
+          const geoData = (await geoRes.json()) as {
+            trip?: TravelTrip;
+            geocodeUpdated?: number;
+          };
+          if (geoData.trip) {
+            setTrip(geoData.trip);
+            setUploadBusyLabel(
+              `判読完了: ${geoData.trip.stops.length} 地点 · 座標 ${geoData.geocodeUpdated ?? 0} 件${via}`,
+            );
+          }
+        } else {
+          setUploadBusyLabel(
+            `判読完了: ${data.trip.stops.length} 地点${via}（座標は未取得。日程一覧は確認できます）`,
+          );
+        }
+      } catch {
+        setUploadBusyLabel(
+          `判読完了: ${data.trip.stops.length} 地点${via}（座標取得スキップ）`,
+        );
+      }
+
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : "資料の判読に失敗");
