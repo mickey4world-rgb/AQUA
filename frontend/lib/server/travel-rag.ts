@@ -3,14 +3,22 @@
  */
 import type { TravelMaterial, TravelTrip } from "@/lib/types/travel";
 
-const DEFAULT_MAX_CHARS = 11_000;
+const DEFAULT_MAX_CHARS = 8_000;
 
 function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 2);
+  try {
+    return text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+  } catch {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/gi, " ")
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+  }
 }
 
 function scoreChunk(

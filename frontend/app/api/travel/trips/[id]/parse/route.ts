@@ -8,9 +8,9 @@ import {
   replaceTravelStops,
   updateTravelTrip,
 } from "@/lib/server/travel-store";
-import { attachWeatherToStops } from "@/lib/server/travel-weather";
 
-export const maxDuration = 120;
+/** SWA マネージド API は実質 ~30s。ジオコード／天気は別 API に分離 */
+export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,18 +35,30 @@ export async function POST(request: Request, context: Ctx) {
     const materials = trip.materials ?? [];
 
     let ragBlock = "";
-    let ragMeta: { usedChunkCount: number; materialNames: string[] } | null = null;
+    let ragMeta: { usedChunkCount: number; materialNames: string[] } | null =
+      null;
     if (useMaterials && materials.length > 0) {
-      const retrieved = retrieveTravelMaterialContext({
-        materials,
-        trip,
-        extraQuery: pasted,
-      });
-      ragBlock = retrieved.text;
-      ragMeta = {
-        usedChunkCount: retrieved.usedChunkCount,
-        materialNames: retrieved.materialNames,
-      };
+      try {
+        const retrieved = retrieveTravelMaterialContext({
+          materials,
+          trip,
+          extraQuery: pasted,
+        });
+        ragBlock = retrieved.text;
+        ragMeta = {
+          usedChunkCount: retrieved.usedChunkCount,
+          materialNames: retrieved.materialNames,
+        };
+      } catch (err) {
+        console.error("[travel-parse] RAG retrieve failed", err);
+        return Response.json(
+          {
+            error:
+              "アップロード資料の読み出しに失敗しました。資料を削除して再アップロードするか、テキストを貼り付けてください。",
+          },
+          { status: 422 },
+        );
+      }
     }
 
     const text = [ragBlock, pasted ? `\n【追加メモ】\n${pasted}` : ""]
@@ -65,22 +77,19 @@ export async function POST(request: Request, context: Ctx) {
     }
 
     try {
+      // 座標取得はしない（SWA タイムアウトの主因）。クライアントが /geocode を続けて呼ぶ。
       const parsed = await parseTravelMaterial({
         text,
         destinationHint: trip.destination,
         startDate: trip.startDate,
         endDate: trip.endDate,
-      });
-
-      const weathered = await attachWeatherToStops(parsed.stops, {
-        tripStartDate: trip.startDate,
-        tripEndDate: trip.endDate,
+        maxGeocode: 0,
       });
 
       let next = await replaceTravelStops(
         auth.userId,
         id,
-        weathered.stops,
+        parsed.stops,
         text.slice(0, 1500),
       );
       if (parsed.tripTitle || parsed.summary) {
@@ -92,13 +101,19 @@ export async function POST(request: Request, context: Ctx) {
       return Response.json({
         trip: next,
         parsedStopCount: parsed.stops.length,
-        weatherUpdated: weathered.updated,
         provider: parsed.provider,
         rag: ragMeta,
+        needsGeocode: parsed.stops.some((s) => s.lat == null || s.lon == null),
       });
     } catch (err) {
+      console.error("[travel-parse] failed", err);
       return Response.json(
-        { error: err instanceof Error ? err.message : "解析に失敗しました" },
+        {
+          error:
+            err instanceof Error
+              ? err.message
+              : "解析に失敗しました。しばらくしてから再試行してください。",
+        },
         { status: 422 },
       );
     }
