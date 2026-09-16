@@ -85,6 +85,14 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/space/earth-day.jpg",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/vendor/eagle-eye/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/space/*",
       "allowedRoles": ["authenticated"]
     },

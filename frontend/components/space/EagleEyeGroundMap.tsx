@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { GROUND_CAMERAS, type GroundCamera } from "@/lib/eagle-eye-data";
+import { probeReachableImage } from "@/lib/eagle-eye-earth-imagery";
 
 type EagleEyeGroundMapProps = {
   selectedCameraId: string | null;
@@ -14,30 +15,36 @@ const MAPLIBRE_CSS =
 const MAPLIBRE_JS =
   "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js";
 
-/** キー不要のラスタ基図（Carto Voyager）。コスト増なしで地図が読めることを優先 */
-const STYLE_CARTO = {
-  version: 8 as const,
-  sources: {
-    carto: {
-      type: "raster" as const,
-      tiles: [
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "© CARTO · © OpenStreetMap",
-      maxzoom: 18,
+const CARTO_TILES = [
+  "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+  "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+  "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+];
+const OSM_TILES = ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"];
+
+function rasterStyle(tiles: string[], attribution: string) {
+  return {
+    version: 8 as const,
+    sources: {
+      basemap: {
+        type: "raster" as const,
+        tiles,
+        tileSize: 256,
+        attribution,
+        maxzoom: 18,
+      },
     },
-  },
-  layers: [{ id: "carto", type: "raster" as const, source: "carto" }],
-};
+    layers: [{ id: "basemap", type: "raster" as const, source: "basemap" }],
+  };
+}
 
 type MapLibreMap = {
   remove: () => void;
+  resize: () => void;
   flyTo: (opts: { center: [number, number]; zoom: number; duration?: number }) => void;
   addControl: (c: unknown) => void;
   on: (event: string, handler: (...args: unknown[]) => void) => void;
+  setStyle: (style: unknown) => void;
 };
 
 type MapLibreMarker = { remove: () => void };
@@ -113,9 +120,27 @@ function placeCameraMarkers(
   return markers;
 }
 
+async function pickWorkingStyle() {
+  const cartoSample = CARTO_TILES[0]!.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1");
+  if (await probeReachableImage(cartoSample)) {
+    return {
+      style: rasterStyle(CARTO_TILES, "© CARTO · © OpenStreetMap"),
+      label: "Carto Voyager",
+    };
+  }
+  const osmSample = OSM_TILES[0]!.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1");
+  if (await probeReachableImage(osmSample)) {
+    return {
+      style: rasterStyle(OSM_TILES, "© OpenStreetMap"),
+      label: "OpenStreetMap",
+    };
+  }
+  throw new Error("無料地図タイル（Carto / OSM）に到達できません");
+}
+
 /**
  * 地上カメラ用 2D 地図（MapLibre + 無料ラスタ）。
- * Cesium 地球 → 地点が地図として読める導線。Tellus / GEE / Sentinel は課金のため未使用。
+ * タイル probe → 失敗時 OSM。resize 必須（暗いままの空キャンバス防止）。
  */
 export default function EagleEyeGroundMap({
   selectedCameraId,
@@ -128,14 +153,20 @@ export default function EagleEyeGroundMap({
   const markersRef = useRef<MapLibreMarker[]>([]);
   const onSelectRef = useRef(onSelectCamera);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [basemapLabel, setBasemapLabel] = useState("準備中");
   onSelectRef.current = onSelectCamera;
 
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    let resizeObserver: ResizeObserver | null = null;
 
-    loadMapLibre()
-      .then((maplibregl) => {
+    void (async () => {
+      try {
+        const picked = await pickWorkingStyle();
+        if (cancelled || !containerRef.current) return;
+
+        const maplibregl = await loadMapLibre();
         if (cancelled || !containerRef.current) return;
         maplibreRef.current = maplibregl;
 
@@ -145,16 +176,27 @@ export default function EagleEyeGroundMap({
 
         const map = new maplibregl.Map({
           container: containerRef.current,
-          style: STYLE_CARTO,
+          style: picked.style,
           center: [selected.lon, selected.lat],
           zoom: 11,
           attributionControl: true,
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
         mapRef.current = map;
+        setBasemapLabel(picked.label);
+        setLoadError(null);
+
+        const refreshSize = () => {
+          try {
+            map.resize();
+          } catch {
+            /* ignore */
+          }
+        };
 
         map.on("load", () => {
           if (cancelled) return;
+          refreshSize();
           markersRef.current = placeCameraMarkers(
             maplibregl,
             map,
@@ -162,14 +204,29 @@ export default function EagleEyeGroundMap({
             (cam) => onSelectRef.current(cam),
           );
         });
-      })
-      .catch((error) => {
+
+        map.on("error", (...args: unknown[]) => {
+          console.warn("[EagleEyeGroundMap] map error", args[0]);
+        });
+
+        resizeObserver = new ResizeObserver(() => refreshSize());
+        resizeObserver.observe(containerRef.current);
+        // レイアウト確定後にもう一度
+        requestAnimationFrame(refreshSize);
+        setTimeout(refreshSize, 250);
+      } catch (error) {
         console.error("[EagleEyeGroundMap]", error);
-        if (!cancelled) setLoadError("2D地図を読み込めませんでした");
-      });
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "2D地図を読み込めませんでした",
+          );
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       mapRef.current?.remove();
@@ -184,6 +241,7 @@ export default function EagleEyeGroundMap({
     if (!map || !maplibregl || !selectedCameraId) return;
     const cam = GROUND_CAMERAS.find((c) => c.id === selectedCameraId);
     if (!cam) return;
+    map.resize();
     map.flyTo({ center: [cam.lon, cam.lat], zoom: 12.5, duration: 1100 });
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = placeCameraMarkers(
@@ -204,7 +262,7 @@ export default function EagleEyeGroundMap({
         <p className="mt-1.5 text-[10px] text-rose-300">{loadError}</p>
       ) : (
         <p className="mt-1.5 text-[10px] text-slate-500">
-          MapLibre · 無料地図（Carto / OSM）。ピンで地上カメラへ移動。
+          MapLibre · {basemapLabel}（無料タイル）。ピンで地上カメラへ移動。
         </p>
       )}
     </div>
