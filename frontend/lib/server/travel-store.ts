@@ -8,6 +8,7 @@ import { sanitizeText } from "@/lib/server/security";
 import type {
   CreateTravelTripRequest,
   TravelJournalEntry,
+  TravelMaterial,
   TravelStop,
   TravelTrip,
   TravelTripListItem,
@@ -18,6 +19,7 @@ const DOC_TYPE = "travelTrip";
 const MAX_JOURNAL_PHOTO_BYTES = 850_000;
 const MAX_JOURNAL_ENTRIES = 80;
 const MAX_STOPS = 80;
+const MAX_MATERIALS = 3;
 
 type StoredTrip = TravelTrip & { docType: typeof DOC_TYPE };
 
@@ -38,6 +40,7 @@ function toListItem(trip: TravelTrip): TravelTripListItem {
     endDate: trip.endDate,
     stopCount: trip.stops?.length ?? 0,
     journalCount: trip.journal?.length ?? 0,
+    materialCount: trip.materials?.length ?? 0,
     updatedAt: trip.updatedAt,
   };
 }
@@ -89,6 +92,7 @@ export async function createTravelTrip(
     summary: input.summary ? sanitizeText(input.summary, 800) : undefined,
     stops: [],
     journal: [],
+    materials: [],
     createdAt: now,
     updatedAt: now,
     docType: DOC_TYPE,
@@ -227,6 +231,65 @@ export async function replaceTravelStops(
     sourceMaterialExcerpt: sourceExcerpt
       ? sanitizeText(sourceExcerpt, 2000)
       : existing.sourceMaterialExcerpt,
+    updatedAt: new Date().toISOString(),
+    docType: DOC_TYPE,
+  };
+  await container().items.upsert(next);
+  return stripDoc(next);
+}
+
+function normalizeMaterial(mat: TravelMaterial): TravelMaterial {
+  return {
+    id: mat.id || randomUUID(),
+    fileName: sanitizeText(mat.fileName, 180) || "material",
+    mimeType: sanitizeText(mat.mimeType, 120) || "application/octet-stream",
+    kind: mat.kind,
+    byteSize: Math.max(0, Math.floor(mat.byteSize || 0)),
+    extractedChars: Math.max(0, Math.floor(mat.extractedChars || 0)),
+    chunkCount: mat.chunks?.length ?? 0,
+    chunks: (mat.chunks ?? []).slice(0, 40).map((c, i) => ({
+      id: c.id || randomUUID(),
+      index: Number.isFinite(c.index) ? c.index : i,
+      text: sanitizeText(c.text, 1200),
+      pageHint: typeof c.pageHint === "number" ? c.pageHint : undefined,
+    })),
+    excerpt: sanitizeText(mat.excerpt || "", 500),
+    extractMethod: mat.extractMethod,
+    createdAt: mat.createdAt || new Date().toISOString(),
+  };
+}
+
+export async function addTravelMaterials(
+  userId: string,
+  tripId: string,
+  materials: TravelMaterial[],
+): Promise<TravelTrip> {
+  const existing = await getTravelTrip(userId, tripId);
+  if (!existing) throw new Error("旅行が見つかりません");
+  const current = existing.materials ?? [];
+  if (current.length + materials.length > MAX_MATERIALS) {
+    throw new Error(`資料は最大 ${MAX_MATERIALS} 件までです（削除してから追加）`);
+  }
+  const next: StoredTrip = {
+    ...existing,
+    materials: [...current, ...materials.map(normalizeMaterial)],
+    updatedAt: new Date().toISOString(),
+    docType: DOC_TYPE,
+  };
+  await container().items.upsert(next);
+  return stripDoc(next);
+}
+
+export async function deleteTravelMaterial(
+  userId: string,
+  tripId: string,
+  materialId: string,
+): Promise<TravelTrip> {
+  const existing = await getTravelTrip(userId, tripId);
+  if (!existing) throw new Error("旅行が見つかりません");
+  const next: StoredTrip = {
+    ...existing,
+    materials: (existing.materials ?? []).filter((m) => m.id !== materialId),
     updatedAt: new Date().toISOString(),
     docType: DOC_TYPE,
   };
