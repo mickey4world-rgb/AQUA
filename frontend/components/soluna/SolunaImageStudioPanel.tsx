@@ -111,7 +111,7 @@ export default function SolunaImageStudioPanel() {
       id: "welcome",
       role: "system",
       content:
-        "Nano Banana 2 は Gemini を優先します。無料枠外のときは Pollinations へ自動切替します。大きい画像は見た目を保ったまま自動で軽量化してから保管します。",
+        "Nano Banana 2 は Gemini を優先します。無料枠外のときはキー不要の Pollinations（Flux 等）へ自動切替します。大きい画像は見た目を保ったまま自動で軽量化してから保管します。",
     },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);
