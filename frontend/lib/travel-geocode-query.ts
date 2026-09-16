@@ -1,6 +1,7 @@
 /**
  * 旅行行程テキストからジオコード用クエリ候補を作る。
  * 「専用バスにて小樽へ移動」のような文から地名だけを切り出す。
+ * 住所があるときは曖昧な地名より住所付き候補を優先する。
  */
 
 export type LocalTravelPlace = {
@@ -8,6 +9,18 @@ export type LocalTravelPlace = {
   lon: number;
   label: string;
   keys: string[];
+};
+
+export type PhotonFeatureLike = {
+  geometry?: { coordinates?: number[] };
+  properties?: {
+    name?: string;
+    city?: string;
+    state?: string;
+    county?: string;
+    country?: string;
+    osm_value?: string;
+  };
 };
 
 /** 主要観光地（特に北海道ツアー）— API 不通時の最後の砦 */
@@ -37,6 +50,15 @@ const LOCAL_PLACES: LocalTravelPlace[] = [
   { label: "知床五湖", lat: 44.122, lon: 145.085, keys: ["知床五湖"] },
   { label: "ウトロ", lat: 44.072, lon: 144.992, keys: ["ウトロ", "うつろ"] },
   { label: "知床", lat: 44.07, lon: 145.12, keys: ["知床", "shiretoko"] },
+  // 風連町（名寄側）と混同しやすい → 正字「風蓮湖」＋別海
+  {
+    label: "風蓮湖",
+    lat: 43.3101,
+    lon: 145.3399,
+    keys: ["風蓮湖", "風連湖", "ふれんこ", "furenko"],
+  },
+  { label: "別海町", lat: 43.3941, lon: 145.1171, keys: ["別海町", "別海"] },
+  { label: "野付半島", lat: 43.6, lon: 145.32, keys: ["野付半島"] },
   { label: "釧路", lat: 42.9849, lon: 144.382, keys: ["釧路", "kushiro"] },
   { label: "阿寒湖", lat: 43.436, lon: 144.094, keys: ["阿寒湖", "阿寒"] },
   { label: "摩周湖", lat: 43.588, lon: 144.525, keys: ["摩周湖"] },
@@ -60,6 +82,10 @@ const PLACE_SUFFIX_RE =
 
 const MOVE_TO_RE =
   /([一-龥ぁ-んァ-ヶー]{2,16})(?:へ|に)(?:移動|到着|向か|出発|向かう|向かいます)/g;
+
+/** 住所から市区町村・郡などのヒントを抜く */
+const ADDR_UNIT_RE =
+  /(?:北海道|東京都|(?:大阪|京都)府|(?:..?)県)?([一-龥ぁ-んァ-ヶー]{2,12}(?:郡))?([一-龥ぁ-んァ-ヶー]{2,12}(?:市|区|町|村))/g;
 
 const NON_PLACE_WORDS = new Set([
   "専用",
@@ -105,7 +131,6 @@ function normalizeHaystack(text: string): string {
 /** 行程文に含まれる既知地名を最長一致で拾う */
 export function resolveLocalTravelPlace(text: string): LocalTravelPlace | null {
   const src = text.normalize("NFKC");
-  // 「小樽へ移動」「定山渓温泉へ」など移動先を優先
   for (const m of src.matchAll(MOVE_TO_RE)) {
     const dest = matchLongestPlace(m[1] || "");
     if (dest) return dest;
@@ -158,8 +183,67 @@ function extractPlaceTokens(text: string): string[] {
   return tokens;
 }
 
+/** 住所文字列から Photon 照合用ヒント（別海・野付郡 など） */
+export function extractAddressHints(address: string | undefined): string[] {
+  if (!address) return [];
+  const src = address.normalize("NFKC");
+  const hints: string[] = [];
+  for (const m of src.matchAll(ADDR_UNIT_RE)) {
+    if (m[1]) pushUnique(hints, m[1].replace(/郡$/, ""));
+    if (m[1]) pushUnique(hints, m[1]);
+    if (m[2]) {
+      pushUnique(hints, m[2]);
+      pushUnique(hints, m[2].replace(/(?:市|区|町|村)$/, ""));
+    }
+  }
+  // 都道府県
+  const pref = /北海道|東京都|大阪府|京都府|.+?[県]/.exec(src);
+  if (pref) pushUnique(hints, pref[0]);
+  return hints;
+}
+
+function featureBlob(feat: PhotonFeatureLike): string {
+  const p = feat.properties;
+  return normalizeHaystack(
+    [p?.name, p?.city, p?.county, p?.state, p?.country, p?.osm_value]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+/** 住所ヒントに合う Photon 候補を優先して選ぶ */
+export function pickBestPhotonFeature(
+  features: PhotonFeatureLike[] | undefined,
+  addressHints: string[] = [],
+): PhotonFeatureLike | null {
+  if (!features?.length) return null;
+  if (!addressHints.length) return features[0] ?? null;
+
+  const hintNorm = addressHints
+    .map((h) => normalizeHaystack(h))
+    .filter((h) => h.length >= 2);
+
+  let best: { feat: PhotonFeatureLike; score: number } | null = null;
+  for (const feat of features) {
+    const blob = featureBlob(feat);
+    if (!blob) continue;
+    let score = 0;
+    for (const h of hintNorm) {
+      if (blob.includes(h)) score += h.length * 10;
+    }
+    // 湖・自然地形は観光地としてわずかに加点
+    if (/lagoon|lake|water|wetland|nature/.test(blob)) score += 3;
+    if (!best || score > best.score) best = { feat, score };
+  }
+
+  // ヒントに1つも当たらない先頭結果より、当たった結果を優先。
+  // ただしスコア0なら従来どおり先頭（候補が全部無関係な場合）。
+  if (best && best.score > 0) return best.feat;
+  return features[0] ?? null;
+}
+
 /**
- * Photon/Nominatim 向け候補。短い地名から試す。
+ * Photon/Nominatim 向け候補。住所があるときは住所付きを先に試す。
  */
 export function buildGeocodeCandidates(
   input: {
@@ -170,52 +254,75 @@ export function buildGeocodeCandidates(
   },
   destinationHint?: string,
 ): string[] {
-  const blob = [input.name, input.address, input.note, input.sourceSnippet]
+  const name = (input.name || "").trim();
+  const address = (input.address || "").trim();
+  const blob = [name, address, input.note, input.sourceSnippet]
     .filter(Boolean)
     .join(" ");
   const hint = (destinationHint || "").trim();
   const candidates: string[] = [];
+  const addrHints = extractAddressHints(address);
 
+  // 1) 住所付き（曖昧地名の誤爆を防ぐ）
+  if (name && address) {
+    pushUnique(candidates, `${name} ${address}`);
+    for (const h of addrHints) {
+      pushUnique(candidates, `${name} ${h}`);
+    }
+  }
+  if (address) {
+    pushUnique(candidates, address);
+    for (const h of addrHints) {
+      pushUnique(candidates, h);
+      if (hint) pushUnique(candidates, `${hint} ${h}`);
+    }
+  }
+
+  // 2) よくある表記ゆれ（風連湖 → 風蓮湖 @ 別海）
+  if (/風連湖/.test(blob) && /別海|野付|根室/.test(blob)) {
+    pushUnique(candidates, "風蓮湖");
+    pushUnique(candidates, "風蓮湖 別海");
+  }
+
+  // 3) ローカル辞書のラベル
   const local = resolveLocalTravelPlace(blob);
   if (local) {
     pushUnique(candidates, local.label);
+    for (const h of addrHints) {
+      pushUnique(candidates, `${local.label} ${h}`);
+    }
     if (hint && !local.label.includes(hint)) {
       pushUnique(candidates, `${hint} ${local.label}`);
     }
   }
 
+  // 4) 地名トークン
   const tokens = extractPlaceTokens(blob);
   for (const t of tokens) {
     pushUnique(candidates, t);
+    for (const h of addrHints.slice(0, 2)) {
+      pushUnique(candidates, `${t} ${h}`);
+    }
     if (hint) pushUnique(candidates, `${hint} ${t}`);
   }
 
-  const cleanedName = stripNoise(input.name || "");
+  // 5) クリーニングした名前（住所が無いとき用・最後の方）
+  const cleanedName = stripNoise(name);
   if (cleanedName && cleanedName.length <= 40 && !NON_PLACE_WORDS.has(cleanedName)) {
-    // 地名らしい残渣のみ（ひらがな・カタカナ・漢字が残っている）
     if (/[一-龥ぁ-んァ-ヶー]{2,}/.test(cleanedName)) {
-      pushUnique(candidates, cleanedName);
-      if (hint) pushUnique(candidates, `${hint} ${cleanedName}`);
-    }
-  } else if (cleanedName && cleanedName.length > 40) {
-    const short = cleanedName.slice(0, 24).trim();
-    if (/[一-龥ぁ-んァ-ヶー]{2,}/.test(short)) {
-      pushUnique(candidates, short);
-    }
-  }
-
-  if (input.address) {
-    const addr = stripNoise(input.address);
-    if (addr && /[一-龥ぁ-んァ-ヶーA-Za-z]{2,}/.test(addr)) {
-      pushUnique(candidates, addr);
-      if (hint) pushUnique(candidates, `${hint} ${addr}`);
+      if (!address) {
+        pushUnique(candidates, cleanedName);
+        if (hint) pushUnique(candidates, `${hint} ${cleanedName}`);
+      } else {
+        // 住所がある場合も末尾候補として残す
+        pushUnique(candidates, cleanedName);
+      }
     }
   }
 
-  // 行き先のみは最終手段（地名が一切取れないとき）
   if (candidates.length === 0 && hint && hint.length <= 20) {
     pushUnique(candidates, hint);
   }
 
-  return candidates.slice(0, 8);
+  return candidates.slice(0, 10);
 }
