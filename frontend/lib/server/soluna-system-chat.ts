@@ -1,4 +1,5 @@
 import {
+  getAzureOpenAiCheapDeployment,
   getAzureOpenAiClient,
   getAzureOpenAiDeployment,
   isAzureOpenAiConfigured,
@@ -50,6 +51,38 @@ import type {
 
 const SYSTEM_TIMEOUT_MS = 18_000;
 const SYSTEM_USER_ID = "__system__";
+
+/** nano / GPT-5 系は temperature 非対応・空 content になりやすい */
+function isReasoningLikeDeployment(deployment: string): boolean {
+  return /nano|aqua-cheap|gpt-5|gpt5|o1|o3|o4|reason/i.test(deployment);
+}
+
+function uniqueDeployments(list: Array<string | undefined | null>): string[] {
+  const out: string[] = [];
+  for (const item of list) {
+    const v = item?.trim();
+    if (!v) continue;
+    if (out.some((x) => x.toLowerCase() === v.toLowerCase())) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * 討伐チャット用デプロイ候補（高コスト優先にしない）。
+ * preferred → 安価 → 既定（gpt-4o 系でも可・空応答で止まらないこと優先）。
+ */
+function systemOpenAiDeploymentsToTry(preferred?: string): string[] {
+  return uniqueDeployments([
+    preferred,
+    getAzureOpenAiCheapDeployment(),
+    process.env.AZURE_OPENAI_DEPLOYMENT_FAST,
+    process.env.SOLUNA_OPENAI_DEPLOYMENT_FAST,
+    process.env.SOLUNA_OPENAI_DEPLOYMENT,
+    process.env.SOLUNA_LUNA_DEPLOYMENT,
+    getAzureOpenAiDeployment(),
+  ]);
+}
 
 const RPG_METAPHOR_RULE = `## RPG変換ルール（味付け・必須の翻訳付き）
 経済・政治の硬い用語はゲームのギミックで楽しく言い換えてよい。ただし過激なたとえだけで終わらせない。
@@ -133,18 +166,234 @@ ${RPG_METAPHOR_RULE}
 - たとえが激しくて意味不明になるくらいなら、たとえを減らしてニュース理解を優先する`;
 
 function resolveSystemModels(): { solModel: string; lunaModel: string } | null {
-  // Marketplace Claude は使わない。ソル／ルーナとも Azure OpenAI（ソルは失敗時 Gemini 可）
+  // Marketplace Claude は使わない。ソル／ルーナとも Azure OpenAI（失敗時 Gemini）
   if (!isAzureOpenAiConfigured()) return null;
   const lunaModel =
     process.env.SOLUNA_LUNA_DEPLOYMENT?.trim() ??
     process.env.SOLUNA_OPENAI_DEPLOYMENT_ADVANCED?.trim() ??
+    getAzureOpenAiCheapDeployment() ??
     getAzureOpenAiDeployment();
   const solModel =
     process.env.SOLUNA_SOL_DEPLOYMENT?.trim() ??
     process.env.SOLUNA_OPENAI_DEPLOYMENT?.trim() ??
+    getAzureOpenAiCheapDeployment() ??
     lunaModel;
   if (!solModel || !lunaModel) return null;
   return { solModel, lunaModel };
+}
+
+async function callOpenAiSystemOnce(
+  system: string,
+  userPrompt: string,
+  deployment: string,
+  feature: "soluna-system-sol" | "soluna-system-luna",
+  options?: { maxCompletionTokens?: number; omitReasoningEffort?: boolean },
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const client = getAzureOpenAiClient(deployment, "global");
+  const reasoning = isReasoningLikeDeployment(deployment);
+  const messages = reasoning
+    ? [{ role: "user" as const, content: `${system}\n\n${userPrompt}` }]
+    : [
+        { role: "system" as const, content: system },
+        { role: "user" as const, content: userPrompt },
+      ];
+
+  const maxTokens =
+    options?.maxCompletionTokens ?? (reasoning ? 3200 : 900);
+
+  try {
+    const requestBody: {
+      model: string;
+      max_completion_tokens: number;
+      messages: Array<{ role: "system" | "user"; content: string }>;
+      reasoning_effort?: "low";
+    } = {
+      model: deployment,
+      max_completion_tokens: maxTokens,
+      messages,
+    };
+    if (reasoning && !options?.omitReasoningEffort) {
+      requestBody.reasoning_effort = "low";
+    }
+
+    let completion;
+    try {
+      completion = await client.chat.completions.create(requestBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (
+        reasoning &&
+        /reasoning_effort|unknown|unsupported|invalid|temperature/i.test(message)
+      ) {
+        const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
+        completion = await client.chat.completions.create(fallbackBody);
+      } else {
+        throw error;
+      }
+    }
+
+    const choice = completion.choices[0];
+    const text = choice?.message?.content?.trim() ?? "";
+    if (!text) {
+      const finish = choice?.finish_reason ?? "unknown";
+      return {
+        ok: false,
+        reason: `${deployment}: 空の応答（finish=${finish}）`,
+      };
+    }
+
+    await recordTokenUsage({
+      userId: SYSTEM_USER_ID,
+      feature,
+      model: deployment,
+      promptTokens: completion.usage?.prompt_tokens ?? 0,
+      completionTokens: completion.usage?.completion_tokens ?? 0,
+    });
+
+    return { ok: true, text, model: completion.model ?? deployment };
+  } catch (error) {
+    return {
+      ok: false,
+      reason:
+        error instanceof Error
+          ? `${deployment}: ${error.message}`
+          : `${deployment}: OpenAI 呼び出しに失敗しました。`,
+    };
+  }
+}
+
+/**
+ * OpenAI 複数デプロイ連鎖。nano 空応答 → 次の安価／既定へ。
+ */
+async function callOpenAiSystem(
+  system: string,
+  userPrompt: string,
+  preferredDeployment: string,
+  feature: "soluna-system-sol" | "soluna-system-luna",
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  const reasons: string[] = [];
+  for (const deployment of systemOpenAiDeploymentsToTry(preferredDeployment)) {
+    let result = await callOpenAiSystemOnce(system, userPrompt, deployment, feature);
+    if (
+      !result.ok &&
+      /空の応答/.test(result.reason) &&
+      isReasoningLikeDeployment(deployment)
+    ) {
+      // reasoning がトークンを食い尽くすケース: effort 無し＋枠拡大で再試行
+      result = await callOpenAiSystemOnce(system, userPrompt, deployment, feature, {
+        maxCompletionTokens: 4500,
+        omitReasoningEffort: true,
+      });
+    }
+    if (result.ok) {
+      if (deployment !== preferredDeployment) {
+        console.warn(
+          `[soluna-system] OpenAI fallback ${preferredDeployment} → ${deployment} (${feature})`,
+        );
+      }
+      return result;
+    }
+    reasons.push(result.reason);
+  }
+  return {
+    ok: false,
+    reason: reasons.join(" → ") || "OpenAI から空の応答が返りました。",
+  };
+}
+
+async function callGeminiSystem(
+  system: string,
+  userPrompt: string,
+  feature: "soluna-system-sol" | "soluna-system-luna",
+): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
+  if (!isGeminiConfigured()) {
+    return { ok: false, reason: "Gemini が未設定です。" };
+  }
+  const result = await generateWithGemini(
+    {
+      system,
+      messages: [{ role: "user", content: userPrompt }],
+      maxOutputTokens: 700,
+      temperature: 0.78,
+    },
+    { timeoutMs: SYSTEM_TIMEOUT_MS },
+  );
+  if (!result.ok) return result;
+
+  await recordTokenUsage({
+    userId: SYSTEM_USER_ID,
+    feature,
+    model: result.model,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+  });
+
+  return { ok: true, text: result.text.trim(), model: result.model };
+}
+
+/** ソル／ルーナ共通: OpenAI 連鎖 → Gemini（無料） */
+async function callSystemWithFailover(
+  system: string,
+  userPrompt: string,
+  openaiDeployment: string,
+  feature: "soluna-system-sol" | "soluna-system-luna",
+): Promise<
+  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
+  | { ok: false; reason: string }
+> {
+  const openai = await callOpenAiSystem(system, userPrompt, openaiDeployment, feature);
+  if (openai.ok) {
+    return { ok: true, text: openai.text, model: openai.model, provider: "openai" };
+  }
+  console.warn(`[soluna-system] ${feature} OpenAI failed, trying Gemini:`, openai.reason);
+  const gemini = await callGeminiSystem(system, userPrompt, feature);
+  if (gemini.ok) {
+    return { ok: true, text: gemini.text, model: gemini.model, provider: "gemini" };
+  }
+  return {
+    ok: false,
+    reason: `応答に失敗（OpenAI: ${openai.reason} / Gemini: ${gemini.reason}）`,
+  };
+}
+
+async function callSolSystem(
+  system: string,
+  userPrompt: string,
+  openaiDeployment: string,
+): Promise<
+  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
+  | { ok: false; reason: string }
+> {
+  return callSystemWithFailover(
+    system,
+    userPrompt,
+    openaiDeployment,
+    "soluna-system-sol",
+  );
+}
+
+async function callLunaSystem(
+  system: string,
+  userPrompt: string,
+  openaiDeployment: string,
+): Promise<
+  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
+  | { ok: false; reason: string }
+> {
+  return callSystemWithFailover(
+    system,
+    userPrompt,
+    openaiDeployment,
+    "soluna-system-luna",
+  );
+}
+
+function solModelLabel(provider: "openai" | "gemini", model: string): string {
+  return provider === "gemini" ? `Gemini · ${model}` : `Azure OpenAI · ${model}`;
+}
+
+function lunaModelLabel(provider: "openai" | "gemini", model: string): string {
+  return provider === "gemini" ? `Gemini · ${model}` : `Azure OpenAI · ${model}`;
 }
 
 function formatSystemTranscript(messages: SolunaSystemMessage[]): string {
@@ -170,124 +419,6 @@ function buildLunaSystemPrompt(
   relationshipBlock: string,
 ): string {
   return `${LUNA_SYSTEM_PERSONA}\n\n${personalityBlock}\n\n${relationshipBlock}`;
-}
-
-async function callOpenAiSystem(
-  system: string,
-  userPrompt: string,
-  deployment: string,
-  feature: "soluna-system-sol" | "soluna-system-luna",
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  const client = getAzureOpenAiClient(deployment, "global");
-  const reasoning = /gpt-5|gpt5|o1|o3|o4|reason/i.test(deployment);
-  const messages = reasoning
-    ? [{ role: "user" as const, content: `${system}\n\n${userPrompt}` }]
-    : [
-        { role: "system" as const, content: system },
-        { role: "user" as const, content: userPrompt },
-      ];
-
-  try {
-    const requestBody = {
-      model: deployment,
-      max_completion_tokens: reasoning ? 2800 : 700,
-      messages,
-      ...(reasoning ? { reasoning_effort: "low" as const } : {}),
-    };
-
-    let completion;
-    try {
-      completion = await client.chat.completions.create(requestBody);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (reasoning && /reasoning_effort|unknown|unsupported|invalid/i.test(message)) {
-        const { reasoning_effort: _ignored, ...fallbackBody } = requestBody;
-        completion = await client.chat.completions.create(fallbackBody);
-      } else {
-        throw error;
-      }
-    }
-
-    const text = completion.choices[0]?.message?.content?.trim() ?? "";
-    if (!text) return { ok: false, reason: "OpenAI から空の応答が返りました。" };
-
-    await recordTokenUsage({
-      userId: SYSTEM_USER_ID,
-      feature,
-      model: deployment,
-      promptTokens: completion.usage?.prompt_tokens ?? 0,
-      completionTokens: completion.usage?.completion_tokens ?? 0,
-    });
-
-    return { ok: true, text, model: deployment };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: error instanceof Error ? error.message : "OpenAI 呼び出しに失敗しました。",
-    };
-  }
-}
-
-async function callGeminiSystem(
-  system: string,
-  userPrompt: string,
-): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
-  if (!isGeminiConfigured()) {
-    return { ok: false, reason: "Gemini が未設定です。" };
-  }
-  const result = await generateWithGemini(
-    {
-      system,
-      messages: [{ role: "user", content: userPrompt }],
-      maxOutputTokens: 700,
-      temperature: 0.78,
-    },
-    { timeoutMs: SYSTEM_TIMEOUT_MS },
-  );
-  if (!result.ok) return result;
-
-  await recordTokenUsage({
-    userId: SYSTEM_USER_ID,
-    feature: "soluna-system-sol",
-    model: result.model,
-    promptTokens: result.promptTokens,
-    completionTokens: result.completionTokens,
-  });
-
-  return { ok: true, text: result.text.trim(), model: result.model };
-}
-
-/** ソル: Azure OpenAI 優先、失敗時のみ Gemini（Claude / Marketplace は使わない） */
-async function callSolSystem(
-  system: string,
-  userPrompt: string,
-  openaiDeployment: string,
-): Promise<
-  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
-  | { ok: false; reason: string }
-> {
-  const openai = await callOpenAiSystem(
-    system,
-    userPrompt,
-    openaiDeployment,
-    "soluna-system-sol",
-  );
-  if (openai.ok) {
-    return { ok: true, text: openai.text, model: openai.model, provider: "openai" };
-  }
-  console.warn("[soluna-system] Sol OpenAI failed, trying Gemini:", openai.reason);
-  const gemini = await callGeminiSystem(system, userPrompt);
-  if (gemini.ok) {
-    return { ok: true, text: gemini.text, model: gemini.model, provider: "gemini" };
-  }
-  return {
-    ok: false,
-    reason: `ソル応答に失敗（OpenAI: ${openai.reason} / Gemini: ${gemini.reason}）`,
-  };
-}
-
-function solModelLabel(provider: "openai" | "gemini", model: string): string {
-  return provider === "gemini" ? `Gemini · ${model}` : `Azure OpenAI · ${model}`;
 }
 
 export function isSolunaSystemChatConfigured(): boolean {
@@ -452,18 +583,17 @@ ${formatSystemTranscript([...prior, ...created])}
 4) ギルド受付や朝の街の空気など、人間ぽい一言を短く入れてよい
 解説を完結させすぎないこと。`;
 
-  const lunaResult = await callOpenAiSystem(
+  const lunaResult = await callLunaSystem(
     buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
     lunaPrompt,
     models.lunaModel,
-    "soluna-system-luna",
   );
   if (!lunaResult.ok) return { ok: false, reason: lunaResult.reason };
 
   const lunaMessage = createSystemMessage("luna", lunaResult.text, {
-    provider: LUNA_SYSTEM_PROVIDER,
+    provider: lunaResult.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
     model: lunaResult.model,
-    modelLabel: `Azure OpenAI · ${lunaResult.model}`,
+    modelLabel: lunaModelLabel(lunaResult.provider, lunaResult.model),
     briefingId: briefing.id,
   });
   created.push(lunaMessage);
@@ -502,18 +632,18 @@ ${formatSystemTranscript([...prior, ...created])}
 
 【第4発言・締め】結論を1行で言い切り、ソルの弱さを責めず立て直し、次回につながる一言で深掘り欲を残せ。`;
 
-    const lunaClosing = await callOpenAiSystem(
+    const lunaClosing = await callLunaSystem(
       buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
       lunaClosingPrompt,
       models.lunaModel,
-      "soluna-system-luna",
     );
     if (lunaClosing.ok) {
       created.push(
         createSystemMessage("luna", lunaClosing.text, {
-          provider: LUNA_SYSTEM_PROVIDER,
+          provider:
+            lunaClosing.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
           model: lunaClosing.model,
-          modelLabel: `Azure OpenAI · ${lunaClosing.model}`,
+          modelLabel: lunaModelLabel(lunaClosing.provider, lunaClosing.model),
           briefingId: briefing.id,
         }),
       );
