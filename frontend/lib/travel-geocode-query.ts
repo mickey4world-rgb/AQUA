@@ -1,7 +1,15 @@
 /**
  * 旅行行程テキストからジオコード用クエリ候補を作る。
- * 行き先（北海道など）で領域拘束し、誤った都道府県・国外ヒットを捨てる。
+ * 行き先から領域を推論し、誤った都道府県・国外ヒットを捨てる。
  */
+
+import {
+  inferRegionFromDestinationText,
+  type GeoRegionBias,
+} from "@/lib/travel-geocode-regions";
+
+export type { GeoRegionBias } from "@/lib/travel-geocode-regions";
+export { HOKKAIDO_REGION, JAPAN_REGION } from "@/lib/travel-geocode-regions";
 
 export type LocalTravelPlace = {
   lat: number;
@@ -24,60 +32,7 @@ export type PhotonFeatureLike = {
   };
 };
 
-export type GeoRegionBias = {
-  id: string;
-  label: string;
-  /** Photon lat/lon bias */
-  lat: number;
-  lon: number;
-  /** [minLon, minLat, maxLon, maxLat] */
-  bbox: [number, number, number, number];
-  /** 都道府県名など（結果テキスト照合） */
-  stateTokens: string[];
-  /** 汚染住所とみなす他県キーワード */
-  rejectPrefTokens: string[];
-};
-
-/** 北海道本島＋周辺（根室〜松前） */
-export const HOKKAIDO_REGION: GeoRegionBias = {
-  id: "hokkaido",
-  label: "北海道",
-  lat: 43.5,
-  lon: 142.8,
-  bbox: [139.3, 41.3, 146.0, 45.6],
-  stateTokens: ["北海道", "hokkaido"],
-  rejectPrefTokens: [
-    "愛知",
-    "豊橋",
-    "東京",
-    "大阪",
-    "京都",
-    "神奈川",
-    "千葉",
-    "埼玉",
-    "岩手",
-    "青森",
-    "宮城",
-    "中国",
-    "china",
-    "韓国",
-    "korea",
-    "台湾",
-    "taiwan",
-  ],
-};
-
-export const JAPAN_REGION: GeoRegionBias = {
-  id: "japan",
-  label: "日本",
-  lat: 36.5,
-  lon: 138.0,
-  bbox: [122.9, 24.0, 146.0, 45.6],
-  stateTokens: ["日本", "japan"],
-  rejectPrefTokens: ["中国", "china", "韓国", "korea", "台湾", "taiwan", "usa", "アメリカ"],
-};
-
-/** 主要観光地（特に北海道ツアー）— API 不通・誤爆時の砦 */
+/** 主要観光地 — API 不通・誤爆時の砦（行き先領域内のものだけ採用） */
 const LOCAL_PLACES: LocalTravelPlace[] = [
   { label: "新千歳空港", lat: 42.7752, lon: 141.6925, keys: ["新千歳空港", "新千歳", "cts"] },
   { label: "札幌駅", lat: 43.0686, lon: 141.3508, keys: ["札幌駅"] },
@@ -189,16 +144,16 @@ export function inferRegionBias(
   destinationHint?: string,
   address?: string,
 ): GeoRegionBias | null {
-  const blob = normalizeHaystack([destinationHint, address].filter(Boolean).join(" "));
-  if (!blob) return null;
-  if (blob.includes("北海道") || blob.includes("hokkaido")) return HOKKAIDO_REGION;
-  if (
-    /日本|japan|本州|九州|四国|沖縄|tokyo|大阪|京都|tokyo/.test(blob) ||
-    /[都道府県]/.test(destinationHint || "")
-  ) {
-    return JAPAN_REGION;
-  }
-  return null;
+  const localFromDest = destinationHint
+    ? matchLongestPlace(destinationHint)
+    : null;
+  return inferRegionFromDestinationText(
+    destinationHint,
+    address,
+    localFromDest
+      ? { lat: localFromDest.lat, lon: localFromDest.lon, label: localFromDest.label }
+      : null,
+  );
 }
 
 export function isCoordInRegion(
@@ -223,11 +178,15 @@ export function sanitizeAddressForGeocode(
   if (region.rejectPrefTokens.some((t) => hay.includes(normalizeHaystack(t)))) {
     return undefined;
   }
-  // 北海道旅行なのに住所に北海道も行き先トークンも無い & 県名がある → 汚染の可能性
-  if (region.id === "hokkaido") {
-    const hasHokkaido = hay.includes("北海道") || hay.includes("hokkaido");
-    const hasOtherPref = /[東西南北]?[都道府県]|愛知|豊橋|岩手|大阪|東京/.test(address);
-    if (!hasHokkaido && hasOtherPref) return undefined;
+  // 行き先領域の stateTokens が住所にも行き先にも無いのに他県っぽい → 汚染
+  const hasRegionToken = region.stateTokens.some((t) =>
+    hay.includes(normalizeHaystack(t)),
+  );
+  const hasAnyPref = /北海道|東京都|大阪府|京都府|.+?[県]|愛知|豊橋|岩手/.test(
+    address,
+  );
+  if (!hasRegionToken && hasAnyPref && region.id !== "japan") {
+    return undefined;
   }
   return address.trim();
 }
@@ -375,12 +334,7 @@ export function pickBestPhotonFeature(
     if (!isCoordInRegion(xy.lat, xy.lon, region)) continue;
 
     const blob = featureBlob(feat);
-    // 国外コードを明示除外（行き先が日本系のとき）
-    if (region && region.id !== "japan") {
-      const cc = (feat.properties?.countrycode || "").toLowerCase();
-      if (cc && cc !== "jp") continue;
-    }
-    if (region?.id === "japan" || region?.id === "hokkaido") {
+    if (region?.japanOnly) {
       const cc = (feat.properties?.countrycode || "").toLowerCase();
       if (cc && cc !== "jp") continue;
       if (/china|中国|韓国|korea|taiwan|台湾/.test(blob)) continue;
@@ -459,7 +413,7 @@ export function buildGeocodeCandidates(
     }
   }
 
-  if (/風連湖/.test(blob) && (region?.id === "hokkaido" || /別海|野付|根室/.test(blob))) {
+  if (/風連湖/.test(blob) && (region?.id.includes("hokkaido") || /別海|野付|根室/.test(blob))) {
     pushUnique(candidates, "風蓮湖");
     pushUnique(candidates, "風蓮湖 別海");
   }
