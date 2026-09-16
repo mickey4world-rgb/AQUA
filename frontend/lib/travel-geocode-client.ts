@@ -1,13 +1,17 @@
 /**
- * ブラウザから直接ジオコード（CORS 可）。
- * 住所ヒントで Photon 複数候補を選別し、誤爆（風連町 vs 風蓮湖）を避ける。
+ * ブラウザから直接ジオコード。
+ * ローカル辞書優先 → 行き先領域で Photon を拘束（北海道なのに豊橋・中国へ飛ばない）。
  */
 import type { TravelStop } from "@/lib/types/travel";
 import {
   buildGeocodeCandidates,
   extractAddressHints,
+  inferRegionBias,
+  isCoordInRegion,
   pickBestPhotonFeature,
-  resolveLocalTravelPlace,
+  resolveLocalTravelPlaceForStop,
+  sanitizeAddressForGeocode,
+  type GeoRegionBias,
   type PhotonFeatureLike,
 } from "@/lib/travel-geocode-query";
 
@@ -19,18 +23,30 @@ export type ClientGeocodeHit = {
 
 async function photon(
   query: string,
-  addressHints: string[] = [],
+  options?: { addressHints?: string[]; region?: GeoRegionBias | null },
 ): Promise<ClientGeocodeHit | null> {
-  const url = `https://photon.komoot.io/api/?limit=5&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url);
+  const region = options?.region ?? null;
+  const params = new URLSearchParams({
+    limit: "8",
+    q: query,
+  });
+  if (region) {
+    params.set("lat", String(region.lat));
+    params.set("lon", String(region.lon));
+  }
+  const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`);
   if (!res.ok) return null;
   const data = (await res.json()) as { features?: PhotonFeatureLike[] };
-  const feat = pickBestPhotonFeature(data.features, addressHints);
+  const feat = pickBestPhotonFeature(data.features, {
+    addressHints: options?.addressHints,
+    region,
+  });
   const coords = feat?.geometry?.coordinates;
   if (!coords || coords.length < 2) return null;
   const lon = Number(coords[0]);
   const lat = Number(coords[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (!isCoordInRegion(lat, lon, region ?? null)) return null;
   const p = feat?.properties;
   return {
     lat,
@@ -39,10 +55,13 @@ async function photon(
   };
 }
 
-async function openMeteo(query: string): Promise<ClientGeocodeHit | null> {
+async function openMeteo(
+  query: string,
+  region?: GeoRegionBias | null,
+): Promise<ClientGeocodeHit | null> {
   const url =
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}` +
-    `&count=1&language=ja&format=json`;
+    `&count=5&language=ja&format=json`;
   const res = await fetch(url);
   if (!res.ok) return null;
   const data = (await res.json()) as {
@@ -52,46 +71,60 @@ async function openMeteo(query: string): Promise<ClientGeocodeHit | null> {
       name?: string;
       admin1?: string;
       country?: string;
+      country_code?: string;
     }>;
   };
-  const hit = data.results?.[0];
-  if (hit?.latitude == null || hit?.longitude == null) return null;
-  return {
-    lat: Number(hit.latitude),
-    lon: Number(hit.longitude),
-    displayName: [hit.name, hit.admin1, hit.country].filter(Boolean).join(", "),
-  };
+  const results = data.results ?? [];
+  for (const hit of results) {
+    if (hit.latitude == null || hit.longitude == null) continue;
+    const lat = Number(hit.latitude);
+    const lon = Number(hit.longitude);
+    if (!isCoordInRegion(lat, lon, region ?? null)) continue;
+    if (region && hit.country_code && hit.country_code.toUpperCase() !== "JP") {
+      continue;
+    }
+    return {
+      lat,
+      lon,
+      displayName: [hit.name, hit.admin1, hit.country].filter(Boolean).join(", "),
+    };
+  }
+  return null;
 }
 
 async function resolveStopHit(
   stop: TravelStop,
   destinationHint?: string,
 ): Promise<ClientGeocodeHit | null> {
-  const hints = extractAddressHints(stop.address);
-  const candidates = buildGeocodeCandidates(stop, destinationHint);
-  const blob = [stop.name, stop.address, stop.note, stop.sourceSnippet]
-    .filter(Boolean)
-    .join(" ");
+  const safeAddress = sanitizeAddressForGeocode(stop.address, destinationHint);
+  const region = inferRegionBias(destinationHint, safeAddress);
 
-  if (stop.address) {
-    for (const q of candidates) {
-      try {
-        const hit = (await photon(q, hints)) || (await openMeteo(q));
-        if (hit) return hit;
-      } catch {
-        // next
-      }
-    }
-  }
-
-  const local = resolveLocalTravelPlace(blob);
+  // 1) ローカル辞書を最優先（ニュー阿寒ホテル → 豊橋問題の本丸）
+  const local = resolveLocalTravelPlaceForStop(stop.name, {
+    destinationHint,
+    note: stop.note,
+    sourceSnippet: stop.sourceSnippet,
+  });
   if (local) {
     return { lat: local.lat, lon: local.lon, displayName: local.label };
   }
 
+  const candidates = buildGeocodeCandidates(
+    {
+      name: stop.name,
+      address: safeAddress,
+      note: stop.note,
+      sourceSnippet: stop.sourceSnippet,
+    },
+    destinationHint,
+  );
+  const hints = extractAddressHints(safeAddress);
+
   for (const q of candidates) {
     try {
-      const hit = (await photon(q, hints)) || (await openMeteo(q));
+      const hit =
+        (await photon(q, { addressHints: hints, region })) ||
+        (await openMeteo(q, region));
       if (hit) return hit;
     } catch {
       // next
@@ -118,7 +151,8 @@ export function buildStopGeocodeQuery(
 }
 
 /**
- * 1地点だけ座標を付け直す（既存ピンの修正用）。
+ * 1地点だけ座標を付け直す（既存の誤ピン修正用）。
+ * 汚染された住所（他県・国外）は無視して行き先で拘束する。
  */
 export async function geocodeOneStopInBrowser(
   stop: TravelStop,
@@ -126,11 +160,16 @@ export async function geocodeOneStopInBrowser(
 ): Promise<TravelStop | null> {
   const hit = await resolveStopHit(stop, options?.destinationHint);
   if (!hit) return null;
+  const safeAddress = sanitizeAddressForGeocode(
+    stop.address,
+    options?.destinationHint,
+  );
   return {
     ...stop,
     lat: hit.lat,
     lon: hit.lon,
-    address: stop.address || hit.displayName,
+    // 汚染住所は消して正しい表示名へ
+    address: safeAddress || hit.displayName || stop.address,
   };
 }
 
