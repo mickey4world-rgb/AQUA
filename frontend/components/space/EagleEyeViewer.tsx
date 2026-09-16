@@ -29,6 +29,18 @@ import {
   type SortRoi,
 } from "@/lib/eagle-eye-client";
 import { IMAGING_ROI } from "@/lib/eagle-eye-data";
+import {
+  EAGLE_EYE_LABEL_CANDIDATE,
+  EAGLE_EYE_LOCAL_EARTH_TEXTURE,
+  EAGLE_EYE_MAP_CANDIDATES,
+  EAGLE_EYE_SATELLITE_CANDIDATES,
+  createVerifiedLocalEarthLayer,
+  createVerifiedNaturalEarthLayer,
+  describeEagleEyeEarthLayer,
+  probeReachableImage,
+  resolveEagleEyeBaseLayer,
+  type EagleEyeImageryCandidate,
+} from "@/lib/eagle-eye-earth-imagery";
 
 type CesiumModule = {
   // CDN global; keep intentionally loose (no npm cesium package).
@@ -42,39 +54,8 @@ type CesiumEntity = any;
 
 const CESIUM_VERSION = "1.144.0";
 const CESIUM_BASE = `https://cdn.jsdelivr.net/npm/cesium@${CESIUM_VERSION}/Build/Cesium/`;
-/** 同一オリジンの全日テクスチャ（外部タイル全滅時も大陸を保証） */
-const LOCAL_EARTH_TEXTURE = "/space/earth-day.jpg";
-/** Esri 衛星画像（失敗時は OSM / Carto にフォールバック） */
-const ESRI_IMAGERY =
-  "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-const CARTO_VOYAGER =
-  "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
-const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ESRI_LABELS =
-  "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
-type ImageryKind = "satellite" | "map" | "labels" | "base";
-
-type ImageryCandidate = {
-  kind: ImageryKind;
-  url: string;
-  credit: string;
-  maximumLevel: number;
-};
-
-const SATELLITE_CANDIDATES: ImageryCandidate[] = [
-  { kind: "satellite", url: ESRI_IMAGERY, credit: "Esri World Imagery", maximumLevel: 19 },
-  { kind: "map", url: CARTO_VOYAGER, credit: "Carto Voyager", maximumLevel: 18 },
-  { kind: "map", url: OSM_TILES, credit: "© OpenStreetMap", maximumLevel: 18 },
-];
-
-const MAP_CANDIDATES: ImageryCandidate[] = [
-  { kind: "map", url: CARTO_VOYAGER, credit: "Carto Voyager", maximumLevel: 18 },
-  { kind: "map", url: OSM_TILES, credit: "© OpenStreetMap", maximumLevel: 18 },
-  { kind: "satellite", url: ESRI_IMAGERY, credit: "Esri World Imagery", maximumLevel: 19 },
-];
-
-function makeUrlImageryProvider(Cesium: CesiumModule, candidate: ImageryCandidate) {
+function makeUrlImageryProvider(Cesium: CesiumModule, candidate: EagleEyeImageryCandidate) {
   return new Cesium.UrlTemplateImageryProvider({
     url: candidate.url,
     maximumLevel: candidate.maximumLevel,
@@ -83,48 +64,15 @@ function makeUrlImageryProvider(Cesium: CesiumModule, candidate: ImageryCandidat
   });
 }
 
-/**
- * Cesium CDN 同梱 Natural Earth II（Geographic + reverseY JPG）。
- * TileMapService.fromUrl は tilemapresource / CORS で落ちやすいので URL テンプレ固定。
- */
-function createNaturalEarthProvider(Cesium: CesiumModule) {
-  const base = Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII");
-  return new Cesium.UrlTemplateImageryProvider({
-    url: `${base}/{z}/{x}/{reverseY}.jpg`,
-    tilingScheme: new Cesium.GeographicTilingScheme(),
-    maximumLevel: 5,
-    credit: "Natural Earth II",
-  });
-}
-
-/** 同一オリジンの全日 JPG — 外部依存ゼロの最終土台 */
-async function createLocalEarthLayer(Cesium: CesiumModule) {
-  if (Cesium.SingleTileImageryProvider?.fromUrl && Cesium.ImageryLayer?.fromProviderAsync) {
-    return Cesium.ImageryLayer.fromProviderAsync(
-      Cesium.SingleTileImageryProvider.fromUrl(LOCAL_EARTH_TEXTURE, {
-        credit: "NASA Blue Marble (local)",
-      }),
-    );
-  }
-  // 旧 API 互換
-  return new Cesium.ImageryLayer(
-    new Cesium.SingleTileImageryProvider({
-      url: LOCAL_EARTH_TEXTURE,
-      credit: "NASA Blue Marble (local)",
-    }),
-  );
-}
-
 function addUrlImageryLayer(
   viewer: CesiumViewer,
   Cesium: CesiumModule,
-  candidate: ImageryCandidate,
+  candidate: EagleEyeImageryCandidate,
   alpha = 1,
 ) {
   const provider = makeUrlImageryProvider(Cesium, candidate);
   const layer = viewer.imageryLayers.addImageryProvider(provider);
   layer.alpha = alpha;
-  // タイル取得失敗時はレイヤーを外し、呼び出し側で次候補へ
   if (typeof provider.errorEvent?.addEventListener === "function") {
     let failures = 0;
     provider.errorEvent.addEventListener(() => {
@@ -143,11 +91,10 @@ function addUrlImageryLayer(
 
 /**
  * 地球の見た目を確実にする（弱オラクル禁止）:
- * 1) Natural Earth（CDN 同梱・正しい URL テンプレ）
- * 2) 失敗時は同一オリジン earth-day.jpg
+ * 1) Natural Earth（公式 TMS・タイル probe 済み）
+ * 2) 失敗時は認証壁の外にある同一オリジン Blue Marble
  * 3) 衛星 or 道路地図を上乗せ（失敗しても土台は残る）
- * 4) 任意で地名ラベル
- * layerCount=0 は呼び出し側で失敗扱い必須。
+ * layerCount=0 / 到達不能テクスチャは throw。
  */
 async function ensureEarthImagery(
   viewer: CesiumViewer,
@@ -161,7 +108,7 @@ async function ensureEarthImagery(
 }> {
   viewer.imageryLayers.removeAll();
   viewer.scene.globe.show = true;
-  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a2f5c");
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1a4d80");
   viewer.scene.globe.enableLighting = false;
   viewer.scene.globe.showGroundAtmosphere = true;
   if (viewer.scene.skyAtmosphere) {
@@ -173,40 +120,50 @@ async function ensureEarthImagery(
   let usedOverlay = false;
 
   try {
-    const natural = viewer.imageryLayers.addImageryProvider(
-      createNaturalEarthProvider(Cesium),
-    );
-    natural.alpha = 1;
+    const natural = await createVerifiedNaturalEarthLayer(Cesium);
+    viewer.imageryLayers.add(natural);
     usedNaturalEarth = true;
   } catch (error) {
-    console.warn("[EagleEye] Natural Earth template failed", error);
+    console.warn("[EagleEye] Natural Earth failed", error);
   }
 
   if (!usedNaturalEarth) {
-    try {
-      const local = await createLocalEarthLayer(Cesium);
-      viewer.imageryLayers.add(local);
-      usedLocalEarth = true;
-    } catch (error) {
-      console.warn("[EagleEye] local earth texture failed", error);
-    }
+    const local = await createVerifiedLocalEarthLayer(Cesium);
+    viewer.imageryLayers.add(local);
+    usedLocalEarth = true;
   } else {
-    // Natural Earth が載っていても、万一タイルが全滅したとき用に下にローカルも仕込む
+    // 保険の下敷き（到達できるときだけ。失敗 HTML を黒玉として載せない）
     try {
-      const local = await createLocalEarthLayer(Cesium);
-      viewer.imageryLayers.add(local);
-      // Natural を上に保つため、local を最下位へ
-      viewer.imageryLayers.lowerToBottom(local);
-      usedLocalEarth = true;
+      if (await probeReachableImage(EAGLE_EYE_LOCAL_EARTH_TEXTURE)) {
+        const local = await createVerifiedLocalEarthLayer(Cesium);
+        viewer.imageryLayers.add(local);
+        viewer.imageryLayers.lowerToBottom(local);
+        usedLocalEarth = true;
+      }
     } catch {
-      /* optional underlay */
+      /* optional */
     }
   }
 
-  const candidates = options.preferSatellite ? SATELLITE_CANDIDATES : MAP_CANDIDATES;
+  const candidates = options.preferSatellite
+    ? EAGLE_EYE_SATELLITE_CANDIDATES
+    : EAGLE_EYE_MAP_CANDIDATES;
   for (const candidate of candidates) {
+    const sample = candidate.url
+      .replace("{z}", "2")
+      .replace("{x}", "1")
+      .replace("{y}", "1");
+    if (!(await probeReachableImage(sample))) {
+      console.warn("[EagleEye] overlay probe failed", candidate.credit);
+      continue;
+    }
     try {
-      addUrlImageryLayer(viewer, Cesium, candidate, usedNaturalEarth || usedLocalEarth ? 0.92 : 1);
+      addUrlImageryLayer(
+        viewer,
+        Cesium,
+        candidate,
+        usedNaturalEarth || usedLocalEarth ? 0.92 : 1,
+      );
       usedOverlay = true;
       break;
     } catch (error) {
@@ -215,25 +172,21 @@ async function ensureEarthImagery(
   }
 
   if (options.withLabels && (usedNaturalEarth || usedLocalEarth || usedOverlay)) {
-    try {
-      addUrlImageryLayer(
-        viewer,
-        Cesium,
-        {
-          kind: "labels",
-          url: ESRI_LABELS,
-          credit: "Esri Labels",
-          maximumLevel: 18,
-        },
-        0.92,
-      );
-    } catch {
-      /* labels optional */
+    const sample = EAGLE_EYE_LABEL_CANDIDATE.url
+      .replace("{z}", "2")
+      .replace("{x}", "1")
+      .replace("{y}", "1");
+    if (await probeReachableImage(sample)) {
+      try {
+        addUrlImageryLayer(viewer, Cesium, EAGLE_EYE_LABEL_CANDIDATE, 0.92);
+      } catch {
+        /* labels optional */
+      }
     }
   }
 
   const layerCount = viewer.imageryLayers.length as number;
-  if (layerCount < 1) {
+  if (layerCount < 1 || (!usedNaturalEarth && !usedLocalEarth && !usedOverlay)) {
     throw new Error(
       "地球テクスチャを1枚も載せられませんでした（Natural Earth / ローカル / 外部タイル全滅）。",
     );
@@ -242,20 +195,15 @@ async function ensureEarthImagery(
   return { layerCount, usedNaturalEarth, usedLocalEarth, usedOverlay };
 }
 
-function describeEarthLayer(imagery: {
-  usedNaturalEarth: boolean;
-  usedLocalEarth: boolean;
-  usedOverlay: boolean;
-}, mode: "orbit" | "map"): string {
-  const base = imagery.usedNaturalEarth
-    ? "Natural Earth"
-    : imagery.usedLocalEarth
-      ? "ローカル地球"
-      : "なし";
-  const overlay = imagery.usedOverlay ? " · タイル上乗せ" : "";
-  return mode === "map"
-    ? `地図 · ${base}${overlay}`
-    : `${base}${overlay}`;
+function describeEarthLayer(
+  imagery: {
+    usedNaturalEarth: boolean;
+    usedLocalEarth: boolean;
+    usedOverlay: boolean;
+  },
+  mode: "orbit" | "map",
+): string {
+  return describeEagleEyeEarthLayer(imagery, mode);
 }
 
 export type EagleEyeViewerState = {
@@ -791,7 +739,7 @@ export default function EagleEyeViewer({
         const start = new Date(now.getTime() - 45 * 60_000);
         const stop = new Date(now.getTime() + 45 * 60_000);
 
-        // Ion 無し: 同梱 Natural Earth + 外部タイルで地球を必ず描画
+        // Ion 無し: 検証済み baseLayer を必ず渡す（baseLayer:false の黒空洞を禁止）
         if ("Ion" in Cesium) {
           try {
             Cesium.Ion.defaultAccessToken = undefined;
@@ -799,6 +747,8 @@ export default function EagleEyeViewer({
             /* ignore */
           }
         }
+
+        const base = await resolveEagleEyeBaseLayer(Cesium);
 
         viewer = new Cesium.Viewer(containerRef.current, {
           animation: true,
@@ -812,7 +762,7 @@ export default function EagleEyeViewer({
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
           infoBox: false,
           selectionIndicator: true,
-          baseLayer: false,
+          baseLayer: base.layer,
         } as ConstructorParameters<typeof Cesium.Viewer>[1]);
 
         await ensureEarthImagery(viewer, Cesium, {
