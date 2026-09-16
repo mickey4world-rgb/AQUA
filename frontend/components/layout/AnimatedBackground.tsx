@@ -13,7 +13,8 @@ export type BackgroundTheme =
   | "soluna"
   | "docs"
   | "space"
-  | "works";
+  | "works"
+  | "travel";
 
 type AnimatedBackgroundProps = {
   theme: BackgroundTheme;
