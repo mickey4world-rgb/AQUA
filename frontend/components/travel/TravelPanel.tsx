@@ -160,7 +160,7 @@ export default function TravelPanel() {
     }
   }
 
-  async function handleUploadMaterials(fileList: FileList | null) {
+  async function handleUploadMaterials(selected: File[]) {
     if (!trip) {
       setError("先に旅行を作成または選択してからアップロードしてください。");
       return;
@@ -169,8 +169,8 @@ export default function TravelPanel() {
       setError("別の処理が終わるまでお待ちください。");
       return;
     }
-    if (!fileList?.length) {
-      setError("ファイルが選択されませんでした。");
+    if (!selected.length) {
+      setError("ファイルが選択されませんでした。もう一度選んでください。");
       return;
     }
     setBusy(true);
@@ -178,7 +178,7 @@ export default function TravelPanel() {
     setError(null);
     try {
       const files = [];
-      for (const file of Array.from(fileList).slice(0, 3)) {
+      for (const file of selected.slice(0, 3)) {
         files.push(
           await prepareTravelUploadFile(file, (msg) => setUploadBusyLabel(msg)),
         );
@@ -750,9 +750,12 @@ export default function TravelPanel() {
                     className="hidden"
                     disabled={busy}
                     onChange={(e) => {
-                      const list = e.target.files;
+                      // FileList は live。value を先に消すと length=0 になり「未選択」になる
+                      const selected = e.target.files
+                        ? Array.from(e.target.files)
+                        : [];
                       e.target.value = "";
-                      void handleUploadMaterials(list);
+                      void handleUploadMaterials(selected);
                     }}
                   />
                 </label>
