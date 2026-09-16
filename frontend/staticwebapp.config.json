@@ -97,6 +97,18 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/travel",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/travel/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/api/travel/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/soluna/cron/*",
       "allowedRoles": ["anonymous"]
     },
