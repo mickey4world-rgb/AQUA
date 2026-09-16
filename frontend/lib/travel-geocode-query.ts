@@ -1,7 +1,6 @@
 /**
  * 旅行行程テキストからジオコード用クエリ候補を作る。
- * 「専用バスにて小樽へ移動」のような文から地名だけを切り出す。
- * 住所があるときは曖昧な地名より住所付き候補を優先する。
+ * 行き先（北海道など）で領域拘束し、誤った都道府県・国外ヒットを捨てる。
  */
 
 export type LocalTravelPlace = {
@@ -19,13 +18,67 @@ export type PhotonFeatureLike = {
     state?: string;
     county?: string;
     country?: string;
+    countrycode?: string;
     osm_value?: string;
+    osm_key?: string;
   };
 };
 
-/** 主要観光地（特に北海道ツアー）— API 不通時の最後の砦 */
+export type GeoRegionBias = {
+  id: string;
+  label: string;
+  /** Photon lat/lon bias */
+  lat: number;
+  lon: number;
+  /** [minLon, minLat, maxLon, maxLat] */
+  bbox: [number, number, number, number];
+  /** 都道府県名など（結果テキスト照合） */
+  stateTokens: string[];
+  /** 汚染住所とみなす他県キーワード */
+  rejectPrefTokens: string[];
+};
+
+/** 北海道本島＋周辺（根室〜松前） */
+export const HOKKAIDO_REGION: GeoRegionBias = {
+  id: "hokkaido",
+  label: "北海道",
+  lat: 43.5,
+  lon: 142.8,
+  bbox: [139.3, 41.3, 146.0, 45.6],
+  stateTokens: ["北海道", "hokkaido"],
+  rejectPrefTokens: [
+    "愛知",
+    "豊橋",
+    "東京",
+    "大阪",
+    "京都",
+    "神奈川",
+    "千葉",
+    "埼玉",
+    "岩手",
+    "青森",
+    "宮城",
+    "中国",
+    "china",
+    "韓国",
+    "korea",
+    "台湾",
+    "taiwan",
+  ],
+};
+
+export const JAPAN_REGION: GeoRegionBias = {
+  id: "japan",
+  label: "日本",
+  lat: 36.5,
+  lon: 138.0,
+  bbox: [122.9, 24.0, 146.0, 45.6],
+  stateTokens: ["日本", "japan"],
+  rejectPrefTokens: ["中国", "china", "韓国", "korea", "台湾", "taiwan", "usa", "アメリカ"],
+};
+
+/** 主要観光地（特に北海道ツアー）— API 不通・誤爆時の砦 */
 const LOCAL_PLACES: LocalTravelPlace[] = [
-  // 北海道
   { label: "新千歳空港", lat: 42.7752, lon: 141.6925, keys: ["新千歳空港", "新千歳", "cts"] },
   { label: "札幌駅", lat: 43.0686, lon: 141.3508, keys: ["札幌駅"] },
   { label: "札幌時計台", lat: 43.0629, lon: 141.3534, keys: ["時計台", "札幌時計台"] },
@@ -50,7 +103,6 @@ const LOCAL_PLACES: LocalTravelPlace[] = [
   { label: "知床五湖", lat: 44.122, lon: 145.085, keys: ["知床五湖"] },
   { label: "ウトロ", lat: 44.072, lon: 144.992, keys: ["ウトロ", "うつろ"] },
   { label: "知床", lat: 44.07, lon: 145.12, keys: ["知床", "shiretoko"] },
-  // 風連町（名寄側）と混同しやすい → 正字「風蓮湖」＋別海
   {
     label: "風蓮湖",
     lat: 43.3101,
@@ -60,7 +112,14 @@ const LOCAL_PLACES: LocalTravelPlace[] = [
   { label: "別海町", lat: 43.3941, lon: 145.1171, keys: ["別海町", "別海"] },
   { label: "野付半島", lat: 43.6, lon: 145.32, keys: ["野付半島"] },
   { label: "釧路", lat: 42.9849, lon: 144.382, keys: ["釧路", "kushiro"] },
-  { label: "阿寒湖", lat: 43.436, lon: 144.094, keys: ["阿寒湖", "阿寒"] },
+  // ホテル名が豊橋の同名施設に誤爆するため先に辞書
+  {
+    label: "ニュー阿寒ホテル",
+    lat: 43.4245,
+    lon: 144.0945,
+    keys: ["ニュー阿寒ホテル", "new akan", "ｎｅｗ阿寒"],
+  },
+  { label: "阿寒湖", lat: 43.436, lon: 144.094, keys: ["阿寒湖", "阿寒温泉", "阿寒"] },
   { label: "摩周湖", lat: 43.588, lon: 144.525, keys: ["摩周湖"] },
   { label: "屈斜路湖", lat: 43.57, lon: 144.34, keys: ["屈斜路", "屈斜路湖"] },
   { label: "網走", lat: 44.0206, lon: 144.2734, keys: ["網走"] },
@@ -69,7 +128,6 @@ const LOCAL_PLACES: LocalTravelPlace[] = [
   { label: "苫小牧", lat: 42.636, lon: 141.603, keys: ["苫小牧"] },
   { label: "室蘭", lat: 42.3152, lon: 140.9738, keys: ["室蘭"] },
   { label: "千歳", lat: 42.821, lon: 141.651, keys: ["千歳"] },
-  // 全国のよく出るハブ
   { label: "東京", lat: 35.6812, lon: 139.7671, keys: ["東京", "tokyo"] },
   { label: "羽田空港", lat: 35.5494, lon: 139.7798, keys: ["羽田空港", "羽田"] },
   { label: "成田空港", lat: 35.772, lon: 140.3929, keys: ["成田空港", "成田"] },
@@ -78,12 +136,11 @@ const LOCAL_PLACES: LocalTravelPlace[] = [
 ];
 
 const PLACE_SUFFIX_RE =
-  /[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,24}(?:駅|空港|温泉|神社|寺院|寺|城|公園|湖|岳|山|橋|港|市場|博物館|美術館|塔|台|通り|通|運河|峠|峡|浜|海岸|展望台|牧場|動物園|水族館)/g;
+  /[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,24}(?:駅|空港|温泉|神社|寺院|寺|城|公園|湖|岳|山|橋|港|市場|博物館|美術館|塔|台|通り|通|運河|峠|峡|浜|海岸|展望台|牧場|動物園|水族館|ホテル)/g;
 
 const MOVE_TO_RE =
   /([一-龥ぁ-んァ-ヶー]{2,16})(?:へ|に)(?:移動|到着|向か|出発|向かう|向かいます)/g;
 
-/** 住所から市区町村・郡などのヒントを抜く */
 const ADDR_UNIT_RE =
   /(?:北海道|東京都|(?:大阪|京都)府|(?:..?)県)?([一-龥ぁ-んァ-ヶー]{2,12}(?:郡))?([一-龥ぁ-んァ-ヶー]{2,12}(?:市|区|町|村))/g;
 
@@ -128,6 +185,53 @@ function normalizeHaystack(text: string): string {
   return text.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
 }
 
+export function inferRegionBias(
+  destinationHint?: string,
+  address?: string,
+): GeoRegionBias | null {
+  const blob = normalizeHaystack([destinationHint, address].filter(Boolean).join(" "));
+  if (!blob) return null;
+  if (blob.includes("北海道") || blob.includes("hokkaido")) return HOKKAIDO_REGION;
+  if (
+    /日本|japan|本州|九州|四国|沖縄|tokyo|大阪|京都|tokyo/.test(blob) ||
+    /[都道府県]/.test(destinationHint || "")
+  ) {
+    return JAPAN_REGION;
+  }
+  return null;
+}
+
+export function isCoordInRegion(
+  lat: number,
+  lon: number,
+  region: GeoRegionBias | null,
+): boolean {
+  if (!region) return true;
+  const [minLon, minLat, maxLon, maxLat] = region.bbox;
+  return lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat;
+}
+
+/** 誤ピン由来の住所（他県・国外）は行き先と矛盾するので捨てる */
+export function sanitizeAddressForGeocode(
+  address: string | undefined,
+  destinationHint?: string,
+): string | undefined {
+  if (!address?.trim()) return undefined;
+  const region = inferRegionBias(destinationHint, undefined);
+  if (!region) return address.trim();
+  const hay = normalizeHaystack(address);
+  if (region.rejectPrefTokens.some((t) => hay.includes(normalizeHaystack(t)))) {
+    return undefined;
+  }
+  // 北海道旅行なのに住所に北海道も行き先トークンも無い & 県名がある → 汚染の可能性
+  if (region.id === "hokkaido") {
+    const hasHokkaido = hay.includes("北海道") || hay.includes("hokkaido");
+    const hasOtherPref = /[東西南北]?[都道府県]|愛知|豊橋|岩手|大阪|東京/.test(address);
+    if (!hasHokkaido && hasOtherPref) return undefined;
+  }
+  return address.trim();
+}
+
 /** 行程文に含まれる既知地名を最長一致で拾う */
 export function resolveLocalTravelPlace(text: string): LocalTravelPlace | null {
   const src = text.normalize("NFKC");
@@ -152,6 +256,22 @@ function matchLongestPlace(text: string): LocalTravelPlace | null {
     }
   }
   return best?.place ?? null;
+}
+
+/**
+ * 名前側だけでローカル解決（汚染住所を混ぜない）。
+ * 行き先領域がある場合、辞書座標がその領域内のものだけ採用。
+ */
+export function resolveLocalTravelPlaceForStop(
+  name: string,
+  options?: { destinationHint?: string; note?: string; sourceSnippet?: string },
+): LocalTravelPlace | null {
+  const blob = [name, options?.note, options?.sourceSnippet].filter(Boolean).join(" ");
+  const hit = resolveLocalTravelPlace(blob);
+  if (!hit) return null;
+  const region = inferRegionBias(options?.destinationHint);
+  if (region && !isCoordInRegion(hit.lat, hit.lon, region)) return null;
+  return hit;
 }
 
 function pushUnique(out: string[], value: string | undefined) {
@@ -183,7 +303,6 @@ function extractPlaceTokens(text: string): string[] {
   return tokens;
 }
 
-/** 住所文字列から Photon 照合用ヒント（別海・野付郡 など） */
 export function extractAddressHints(address: string | undefined): string[] {
   if (!address) return [];
   const src = address.normalize("NFKC");
@@ -196,7 +315,6 @@ export function extractAddressHints(address: string | undefined): string[] {
       pushUnique(hints, m[2].replace(/(?:市|区|町|村)$/, ""));
     }
   }
-  // 都道府県
   const pref = /北海道|東京都|大阪府|京都府|.+?[県]/.exec(src);
   if (pref) pushUnique(hints, pref[0]);
   return hints;
@@ -205,45 +323,94 @@ export function extractAddressHints(address: string | undefined): string[] {
 function featureBlob(feat: PhotonFeatureLike): string {
   const p = feat.properties;
   return normalizeHaystack(
-    [p?.name, p?.city, p?.county, p?.state, p?.country, p?.osm_value]
+    [
+      p?.name,
+      p?.city,
+      p?.county,
+      p?.state,
+      p?.country,
+      p?.countrycode,
+      p?.osm_value,
+      p?.osm_key,
+    ]
       .filter(Boolean)
       .join(" "),
   );
 }
 
-/** 住所ヒントに合う Photon 候補を優先して選ぶ */
+function featureCoords(
+  feat: PhotonFeatureLike,
+): { lat: number; lon: number } | null {
+  const coords = feat.geometry?.coordinates;
+  if (!coords || coords.length < 2) return null;
+  const lon = Number(coords[0]);
+  const lat = Number(coords[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+/**
+ * Photon 候補を行き先領域・住所ヒントで選別。
+ * 領域外は捨てる（先頭結果の誤爆を防ぐ）。
+ */
 export function pickBestPhotonFeature(
   features: PhotonFeatureLike[] | undefined,
-  addressHints: string[] = [],
+  options?: {
+    addressHints?: string[];
+    region?: GeoRegionBias | null;
+  },
 ): PhotonFeatureLike | null {
   if (!features?.length) return null;
-  if (!addressHints.length) return features[0] ?? null;
+  const addressHints = options?.addressHints ?? [];
+  const region = options?.region ?? null;
 
   const hintNorm = addressHints
     .map((h) => normalizeHaystack(h))
     .filter((h) => h.length >= 2);
 
-  let best: { feat: PhotonFeatureLike; score: number } | null = null;
+  const scored: Array<{ feat: PhotonFeatureLike; score: number }> = [];
   for (const feat of features) {
+    const xy = featureCoords(feat);
+    if (!xy) continue;
+    if (!isCoordInRegion(xy.lat, xy.lon, region)) continue;
+
     const blob = featureBlob(feat);
-    if (!blob) continue;
-    let score = 0;
+    // 国外コードを明示除外（行き先が日本系のとき）
+    if (region && region.id !== "japan") {
+      const cc = (feat.properties?.countrycode || "").toLowerCase();
+      if (cc && cc !== "jp") continue;
+    }
+    if (region?.id === "japan" || region?.id === "hokkaido") {
+      const cc = (feat.properties?.countrycode || "").toLowerCase();
+      if (cc && cc !== "jp") continue;
+      if (/china|中国|韓国|korea|taiwan|台湾/.test(blob)) continue;
+    }
+
+    let score = 1;
     for (const h of hintNorm) {
       if (blob.includes(h)) score += h.length * 10;
     }
-    // 湖・自然地形は観光地としてわずかに加点
-    if (/lagoon|lake|water|wetland|nature/.test(blob)) score += 3;
-    if (!best || score > best.score) best = { feat, score };
+    if (region) {
+      for (const t of region.stateTokens) {
+        if (blob.includes(normalizeHaystack(t))) score += 20;
+      }
+    }
+    if (/lagoon|lake|water|wetland|national_park|hotel|attraction/.test(blob)) {
+      score += 3;
+    }
+    // レストラン単独ヒットは観光地より弱い
+    if (/restaurant|cafe|fast_food/.test(blob)) score -= 5;
+    scored.push({ feat, score });
   }
 
-  // ヒントに1つも当たらない先頭結果より、当たった結果を優先。
-  // ただしスコア0なら従来どおり先頭（候補が全部無関係な場合）。
-  if (best && best.score > 0) return best.feat;
-  return features[0] ?? null;
+  if (!scored.length) return null;
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]!.feat;
 }
 
 /**
- * Photon/Nominatim 向け候補。住所があるときは住所付きを先に試す。
+ * Photon/Nominatim 向け候補。
+ * 行き先付きの短い地名を優先し、汚染住所は使わない前提。
  */
 export function buildGeocodeCandidates(
   input: {
@@ -255,15 +422,29 @@ export function buildGeocodeCandidates(
   destinationHint?: string,
 ): string[] {
   const name = (input.name || "").trim();
-  const address = (input.address || "").trim();
+  const address = sanitizeAddressForGeocode(input.address, destinationHint);
   const blob = [name, address, input.note, input.sourceSnippet]
     .filter(Boolean)
     .join(" ");
   const hint = (destinationHint || "").trim();
+  const region = inferRegionBias(hint, address);
+  const regionLabel = region?.label;
   const candidates: string[] = [];
   const addrHints = extractAddressHints(address);
 
-  // 1) 住所付き（曖昧地名の誤爆を防ぐ）
+  // 0) ローカル辞書ラベル＋行き先
+  const local = resolveLocalTravelPlace(name);
+  if (local) {
+    pushUnique(candidates, local.label);
+    if (regionLabel) pushUnique(candidates, `${regionLabel} ${local.label}`);
+  }
+
+  // 1) 行き先＋名前（北海道 知床 など）
+  if (name && regionLabel) {
+    pushUnique(candidates, `${regionLabel} ${stripNoise(name) || name}`);
+  }
+
+  // 2) 住所付き（汚染除去後のみ）
   if (name && address) {
     pushUnique(candidates, `${name} ${address}`);
     for (const h of addrHints) {
@@ -274,49 +455,29 @@ export function buildGeocodeCandidates(
     pushUnique(candidates, address);
     for (const h of addrHints) {
       pushUnique(candidates, h);
-      if (hint) pushUnique(candidates, `${hint} ${h}`);
+      if (regionLabel) pushUnique(candidates, `${regionLabel} ${h}`);
     }
   }
 
-  // 2) よくある表記ゆれ（風連湖 → 風蓮湖 @ 別海）
-  if (/風連湖/.test(blob) && /別海|野付|根室/.test(blob)) {
+  if (/風連湖/.test(blob) && (region?.id === "hokkaido" || /別海|野付|根室/.test(blob))) {
     pushUnique(candidates, "風蓮湖");
     pushUnique(candidates, "風蓮湖 別海");
   }
 
-  // 3) ローカル辞書のラベル
-  const local = resolveLocalTravelPlace(blob);
-  if (local) {
-    pushUnique(candidates, local.label);
-    for (const h of addrHints) {
-      pushUnique(candidates, `${local.label} ${h}`);
-    }
-    if (hint && !local.label.includes(hint)) {
-      pushUnique(candidates, `${hint} ${local.label}`);
-    }
-  }
-
-  // 4) 地名トークン
   const tokens = extractPlaceTokens(blob);
   for (const t of tokens) {
     pushUnique(candidates, t);
+    if (regionLabel) pushUnique(candidates, `${regionLabel} ${t}`);
     for (const h of addrHints.slice(0, 2)) {
       pushUnique(candidates, `${t} ${h}`);
     }
-    if (hint) pushUnique(candidates, `${hint} ${t}`);
   }
 
-  // 5) クリーニングした名前（住所が無いとき用・最後の方）
   const cleanedName = stripNoise(name);
   if (cleanedName && cleanedName.length <= 40 && !NON_PLACE_WORDS.has(cleanedName)) {
     if (/[一-龥ぁ-んァ-ヶー]{2,}/.test(cleanedName)) {
-      if (!address) {
-        pushUnique(candidates, cleanedName);
-        if (hint) pushUnique(candidates, `${hint} ${cleanedName}`);
-      } else {
-        // 住所がある場合も末尾候補として残す
-        pushUnique(candidates, cleanedName);
-      }
+      pushUnique(candidates, cleanedName);
+      if (regionLabel) pushUnique(candidates, `${regionLabel} ${cleanedName}`);
     }
   }
 
