@@ -266,7 +266,6 @@ async function ocrWithOpenAi(input: {
     const completion = await client.chat.completions.create({
       model: deployment,
       max_completion_tokens: 4000,
-      temperature: 0.1,
       response_format: { type: "json_object" },
       messages: [
         {
