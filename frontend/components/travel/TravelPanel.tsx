@@ -494,7 +494,9 @@ export default function TravelPanel() {
     if (!trip || busy) return;
     const region = inferRegionBias(trip.destination);
     if (!region) {
-      setError("行き先が分からないため領域チェックができません。行き先に「北海道」などを入れてください。");
+      setError(
+        "行き先が分からないため領域チェックができません。行き先に「北海道」「京都」など地名を入れてください。",
+      );
       return;
     }
     const targets = trip.stops.filter(
