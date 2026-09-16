@@ -27,8 +27,21 @@ export const SOLUNA_IMAGE_MAX_BYTES = 900_000;
 const MAX_IMAGES = 24;
 const MAX_BYTES = SOLUNA_IMAGE_MAX_BYTES;
 const DOC_TYPE = "solunaImage";
-/** Pollinations: Nano Banana がキー必須のとき落とす無料寄りモデル */
-const POLLINATIONS_FREE_FALLBACKS: SolunaImageModelId[] = ["flux", "turbo", "sana"];
+/**
+ * キー無しで実測 200 になった Pollinations legacy モデル。
+ * gen.pollinations.ai はキー必須（401）— キー無し経路では使わない。
+ */
+const POLLINATIONS_KEYLESS_MODELS: SolunaImageModelId[] = ["flux", "turbo", "zimage"];
+/** API キーありのとき追加で試すモデル */
+const POLLINATIONS_KEYED_FALLBACKS: SolunaImageModelId[] = [
+  "flux",
+  "turbo",
+  "zimage",
+  "sana",
+  "klein",
+];
+const POLLINATIONS_LEGACY_BASE = "https://image.pollinations.ai/prompt";
+const POLLINATIONS_GEN_BASE = "https://gen.pollinations.ai/image";
 
 export const SOLUNA_BASE_IMAGE_PATH = "/soluna/characters-base.jpg";
 
@@ -37,48 +50,48 @@ export const SOLUNA_IMAGE_MODELS: SolunaImageModelOption[] = [
   {
     id: "nanobanana-2",
     label: "Nano Banana 2",
-    description: "ベース立ち絵と同じモデル（推奨）",
+    description: "Gemini 優先（無料枠外時は Flux へ自動切替）",
     styleFriendly: true,
     supportsReference: true,
   },
   {
     id: "nanobanana-2-lite",
     label: "Nano Banana 2 Lite",
-    description: "同系統・やや軽量",
+    description: "Gemini Lite 優先（失敗時は Flux）",
     styleFriendly: true,
     supportsReference: true,
   },
   {
     id: "flux",
     label: "Flux",
-    description: "高品質（画風は寄りにくい）",
+    description: "無料経路の本命（キー不要）",
   },
   {
     id: "gptimage",
     label: "GPT Image",
-    description: "イラスト寄り・参照対応",
+    description: "イラスト寄り・参照対応（要 API キー）",
     styleFriendly: true,
     supportsReference: true,
   },
   {
     id: "turbo",
     label: "Turbo",
-    description: "高速・軽め",
+    description: "高速・キー不要",
   },
   {
     id: "sana",
     label: "Sana",
-    description: "軽量・安定",
+    description: "要 Pollinations API キー",
   },
   {
     id: "zimage",
     label: "Z-Image",
-    description: "速い 6B 系",
+    description: "速い・キー不要",
   },
   {
     id: "klein",
     label: "Klein",
-    description: "高速・参照対応",
+    description: "高速・参照対応（要 API キー）",
     supportsReference: true,
   },
 ];
@@ -443,9 +456,20 @@ async function enhancePromptWithGemini(
   }
 }
 
+function pollinationsApiKey(): string | null {
+  return process.env.POLLINATIONS_API_KEY?.trim() || null;
+}
+
+/** キー無しでは legacy 実測モデルのみ。Nano Banana 等は flux へ落とす */
 function pollinationsModelChain(preferred: SolunaImageModelId): SolunaImageModelId[] {
-  const chain = [preferred, ...POLLINATIONS_FREE_FALLBACKS];
-  return [...new Set(chain)];
+  const keyed = Boolean(pollinationsApiKey());
+  if (keyed) {
+    return [...new Set([preferred, ...POLLINATIONS_KEYED_FALLBACKS])];
+  }
+  const keylessPreferred = POLLINATIONS_KEYLESS_MODELS.includes(preferred)
+    ? preferred
+    : null;
+  return [...new Set([...(keylessPreferred ? [keylessPreferred] : []), ...POLLINATIONS_KEYLESS_MODELS])];
 }
 
 async function generateWithPollinationsOnce(
@@ -453,30 +477,32 @@ async function generateWithPollinationsOnce(
   model: SolunaImageModelId,
   options?: { referenceImageUrl?: string | null },
 ): Promise<{ dataUrl: string; mimeType: string }> {
+  const key = pollinationsApiKey();
   const params = new URLSearchParams({
     width: "1024",
     height: "1024",
-    nologo: "true",
     model,
     enhance: "false",
     seed: String(Date.now() % 1_000_000),
   });
-  if (model === "nanobanana-2" || model === "nanobanana-2-lite") {
+  // legacy は nologo がアカウント前提になりうるため、キー無しでは付けない
+  if (key) {
+    params.set("nologo", "true");
+    params.set("key", key);
+  }
+  if (key && (model === "nanobanana-2" || model === "nanobanana-2-lite")) {
     params.set("resolution", "1k");
   }
-  if (options?.referenceImageUrl) {
+  if (options?.referenceImageUrl && key) {
     params.set("image", options.referenceImageUrl);
   }
 
-  const pollinationsKey = process.env.POLLINATIONS_API_KEY?.trim();
-  if (pollinationsKey) {
-    params.set("key", pollinationsKey);
-  }
-
-  const url = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?${params}`;
+  // オラクル済み: キー無しは image.pollinations.ai（200）、gen は 401
+  const base = key ? POLLINATIONS_GEN_BASE : POLLINATIONS_LEGACY_BASE;
+  const url = `${base}/${encodeURIComponent(prompt)}?${params}`;
   const headers: Record<string, string> = { Accept: "image/*" };
-  if (pollinationsKey) {
-    headers.Authorization = `Bearer ${pollinationsKey}`;
+  if (key) {
+    headers.Authorization = `Bearer ${key}`;
   }
 
   const controller = new AbortController();
@@ -490,9 +516,9 @@ async function generateWithPollinationsOnce(
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
         throw new Error(
-          pollinationsKey
+          key
             ? `Pollinations API 認証エラー（HTTP ${res.status}）。API キーを確認してください。`
-            : `Pollinations の ${model} は API キーが必要です。`,
+            : `Pollinations の ${model} はキー無し経路で拒否されました（次モデルへ）。`,
         );
       }
       throw new Error(`無料画像API HTTP ${res.status}（model=${model}）`);
@@ -518,11 +544,11 @@ async function generateWithPollinations(
   options?: { referenceImageUrl?: string | null },
 ): Promise<{ dataUrl: string; mimeType: string; usedModel: SolunaImageModelId }> {
   let lastError: Error | null = null;
+  const key = pollinationsApiKey();
   for (const candidate of pollinationsModelChain(model)) {
     try {
-      // 参照画像はサポートするモデルだけ渡す（flux 等で無視／失敗しうる）
       const ref =
-        modelSupportsReference(candidate) && options?.referenceImageUrl
+        key && modelSupportsReference(candidate) && options?.referenceImageUrl
           ? options.referenceImageUrl
           : null;
       const generated = await generateWithPollinationsOnce(prompt, candidate, {
@@ -531,11 +557,17 @@ async function generateWithPollinations(
       return { ...generated, usedModel: candidate };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      // キー必須・未対応は次モデルへ
       continue;
     }
   }
-  throw lastError ?? new Error("無料画像APIでの生成に失敗しました");
+  throw (
+    lastError ??
+    new Error(
+      key
+        ? "Pollinations での生成に失敗しました。"
+        : "無料画像API（image.pollinations.ai の flux/turbo/zimage）での生成に失敗しました。しばらく待って再試行してください。",
+    )
+  );
 }
 
 /**
@@ -632,12 +664,17 @@ export async function generateSolunaImage(
 
 export function imageStudioMeta() {
   const geminiDirect = isGeminiConfigured();
+  const pollinationsKey = Boolean(pollinationsApiKey());
   return {
     baseImageUrl: SOLUNA_BASE_IMAGE_PATH,
     generateConfigured: true,
     generateProvider: geminiDirect
-      ? "Gemini（有料枠）優先 → 無料枠外時は Pollinations へ自動切替"
-      : "Pollinations（無料経路）+ 場面翻訳",
+      ? pollinationsKey
+        ? "Gemini 優先 → Pollinations（キーあり）"
+        : "Gemini 優先 → image.pollinations.ai（flux/turbo/zimage・キー不要）"
+      : pollinationsKey
+        ? "Pollinations（キーあり）"
+        : "image.pollinations.ai（flux/turbo/zimage・キー不要）",
     maxImages: MAX_IMAGES,
     models: SOLUNA_IMAGE_MODELS,
     defaultModel: DEFAULT_SOLUNA_IMAGE_MODEL,
