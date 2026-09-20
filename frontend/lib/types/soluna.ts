@@ -329,6 +329,30 @@ export interface SolunaMonthlyAssetSummary {
   goalReachedAt?: string;      // 達成日時
 }
 
+/**
+ * 日次の総資産スナップショット（コスト画面の折れ線用）。
+ * Asset Trade ティックごとに同日分を更新／新規追加する。
+ */
+export interface SolunaEquitySnapshot {
+  /** JST YYYY-MM-DD */
+  date: string;
+  /** 最終更新時刻 ISO */
+  at: string;
+  totalYen: number;
+  cashYen: number;
+  /** totalYen - principalYen */
+  pnlYen: number;
+  monthlyTargetYen: number;
+  /** 月初総資産 + 月次利益目標（その月の目標総資産ライン） */
+  monthGoalTotalYen: number;
+  /** 当日の買付合計（円） */
+  buyYen?: number;
+  /** 当日の売却合計（円） */
+  sellYen?: number;
+  /** 当日の約定件数 */
+  tradeCount?: number;
+}
+
 export type SolunaBattleMode = "attack" | "defense";
 
 export interface SolunaAssetLedger {
@@ -384,6 +408,11 @@ export interface SolunaAssetLedger {
   tradeLessons?: SolunaTradeLesson[];
   /** 月次サマリー履歴 */
   monthlySummaries: SolunaMonthlyAssetSummary[];
+  /**
+   * 日次総資産スナップショット（投資開始〜現在の折れ線）。
+   * 最大約 200 日分を保持。無い場合はレポート側で元本・月次・取引から補完する。
+   */
+  equitySnapshots?: SolunaEquitySnapshot[];
   medalUnits: number;
   status: SolunaJobStatus;
   solComment: string;

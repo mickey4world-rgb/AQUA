@@ -492,6 +492,52 @@ export interface SolunaOpsAnalyticsReport {
       realizedPnlYen: number;
       goalReached: boolean;
     }>;
+    /** 元本からの総資産推移（日次／週次・売買マーカー付き） */
+    equityPerformance: {
+      principalYen: number;
+      startDate: string;
+      currentTotalYen: number;
+      currentCashYen: number;
+      pnlYen: number;
+      pnlPct: number;
+      monthlyTargetYen: number;
+      monthGoalTotalYen: number;
+      monthlyRealizedPnlYen: number;
+      points: Array<{
+        date: string;
+        label: string;
+        totalYen: number;
+        cashYen: number;
+        pnlYen: number;
+        monthGoalTotalYen: number;
+        buyYen: number;
+        sellYen: number;
+        tradeCount: number;
+        source: string;
+      }>;
+      weeklyPoints: Array<{
+        date: string;
+        label: string;
+        totalYen: number;
+        cashYen: number;
+        pnlYen: number;
+        monthGoalTotalYen: number;
+        buyYen: number;
+        sellYen: number;
+        tradeCount: number;
+        source: string;
+      }>;
+      markers: Array<{
+        id: string;
+        date: string;
+        at: string;
+        side: "BUY" | "SELL";
+        product: string;
+        sizeJpy: number;
+        realizedPnlJpy?: number;
+        totalYen: number;
+      }>;
+    };
     solComment: string;
     lunaComment: string;
   } | null;
