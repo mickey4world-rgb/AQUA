@@ -27,9 +27,35 @@ jobs:
       || github.event_name == 'schedule' && github.event.schedule != '0 22 * * *'
     runs-on: ubuntu-latest
     steps:
+      - name: Skip if today's digest already complete
+        id: gate
+        if: github.event_name == 'schedule'
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status.json -w "%{http_code}" \
+            -X POST "${BASE%/}/api/works/news-search/cron" \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"step":"status"}' || true)
+          echo "status HTTP ${HTTP_CODE}"
+          cat /tmp/works-news-status.json 2>/dev/null || true
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' else 'false')" 2>/dev/null || echo "false")
+          echo "enrichmentOk=${OK}"
+          if [ "${OK}" = "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "当日分は完了済み — checkout/npm/再enrich をスキップ"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
 
       - name: Setup Node.js
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -37,10 +63,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps (RSS parse)
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         working-directory: frontend
         run: npm ci --ignore-scripts
 
       - name: Build news search digest (RSS → ingest → enrich with retries)
+        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}

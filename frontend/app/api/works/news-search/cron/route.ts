@@ -84,6 +84,38 @@ export async function POST(request: Request) {
   }
 
   if (ingest) {
+    const { getLatestWorksNewsDigest } = await import(
+      "@/lib/server/works-news-search-store"
+    );
+    const latest = await getLatestWorksNewsDigest();
+    // force なしで完了済み当日 digest を pending に戻すと、毎スケジュールで
+    // 4カテゴリ×OpenAI 再課金になる（degraded success の逆：成功を壊す）。
+    if (
+      !force &&
+      latest?.id === ingest.id &&
+      computeEnrichmentStatus(latest) === "complete"
+    ) {
+      const meta = withEnrichmentMeta(latest);
+      return Response.json({
+        ok: true,
+        step: "ingest",
+        skipped: true,
+        reason: "already-complete",
+        digestId: meta.id,
+        source: meta.source,
+        enrichmentStatus: meta.enrichmentStatus,
+        needsEnrichment: false,
+        enrichmentOk: true,
+        summary: meta.summary,
+        counts: {
+          ai: meta.categories.ai.length,
+          systems: meta.categories.systems.length,
+          economy: meta.categories.economy.length,
+          government: meta.categories.government.length,
+        },
+      });
+    }
+
     const digest = withEnrichmentMeta({
       ...ingest,
       source: "rss",

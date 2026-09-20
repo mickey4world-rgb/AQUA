@@ -2,6 +2,10 @@
  * 資産運用エンジンと条件カタログが共有する定数（クライアント可）
  */
 export const ASSET_PRINCIPAL_YEN = 100_000;
+/** 投資開始月（JST）。折れ線の起点・補完に使う */
+export const ASSET_START_MONTH = "2026-08";
+/** 日次スナップショットの保持上限（約 6〜7 か月） */
+export const MAX_EQUITY_SNAPSHOTS = 200;
 export const MIN_MONTHLY_TARGET_YEN = 2_000;
 export const MAX_TRADE_YEN = 10_000;
 export const HARD_TAKE_PROFIT_RATE = 0.055;
