@@ -12,6 +12,8 @@ import type {
 
 type Props = {
   report: SolunaOpsAnalyticsReport;
+  /** 資産運用ページ / Note・BOINC ページ */
+  view: "assets" | "note-boinc";
 };
 
 function levelJa(level: string): string {
@@ -664,14 +666,22 @@ function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthS
   );
 }
 
-function TradeLessonsPanel({ lessons }: { lessons: SolunaOpsTradeLessonRow[] }) {
+function TradeLessonsPanel({
+  lessons,
+  hideTitle,
+}: {
+  lessons: SolunaOpsTradeLessonRow[];
+  hideTitle?: boolean;
+}) {
   if (lessons.length === 0) {
     return (
-      <div className="mt-5">
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-          監査AI（直近）
-        </p>
-        <p className="mt-2 text-sm text-slate-500">
+      <div className={hideTitle ? "mt-3" : "mt-5"}>
+        {!hideTitle && (
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+            監査AI（直近）
+          </p>
+        )}
+        <p className={`${hideTitle ? "" : "mt-2 "}text-sm text-slate-500`}>
           売買が実行されると、別モデルの監査結果がここに蓄積されます。
         </p>
       </div>
@@ -682,11 +692,13 @@ function TradeLessonsPanel({ lessons }: { lessons: SolunaOpsTradeLessonRow[] }) 
     v === "good" ? "良い判断" : v === "bad" ? "要反省" : "複合";
 
   return (
-    <div className="mt-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-        監査AI（直近）
-      </p>
-      <p className="mt-1 text-[11px] text-slate-500">
+    <div className={hideTitle ? "mt-3" : "mt-5"}>
+      {!hideTitle && (
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+          監査AI（直近）
+        </p>
+      )}
+      <p className={`${hideTitle ? "" : "mt-1 "}text-[11px] text-slate-500`}>
         良い判断は賞賛を、反省は同因が月内で複数回出たときだけ次回の売買に反映します。
       </p>
       <ul className="mt-3 space-y-2">
@@ -722,23 +734,28 @@ function TradeLessonsPanel({ lessons }: { lessons: SolunaOpsTradeLessonRow[] }) 
   );
 }
 
-export default function SolunaOpsAnalyticsPanels({ report }: Props) {
+export default function SolunaOpsAnalyticsPanels({ report, view }: Props) {
+  if (view === "assets") {
+    return <AssetsOpsPanels report={report} />;
+  }
+  return <NoteBoincOpsPanels report={report} />;
+}
+
+function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
   const assets = report.assets;
-  const note = report.note;
-  const boinc = report.boinc;
-  const settlement = report.settlement;
+  const equity = assets?.equityPerformance;
 
   return (
     <div className="space-y-6">
       <div className={`${costsPanelClass} p-5`}>
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300/80">
-          Soluna Ops
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300/80">
+          Asset Management
         </p>
         <h2 className="mt-2 text-xl font-bold text-white">
-          {report.monthLabel} · Note・資産運用・社会貢献
+          {report.monthLabel} · 資産運用
         </h2>
         <p className="mt-2 text-sm text-slate-400">
-          有料 Note の投稿状況、魔力タンクの運用、BOINC 解析パワー（拠点都市）の実績です。
+          2026年8月の元本からの損益、ポートフォリオ、売買状況をまとめて確認できます。
           {report.updatedAt && (
             <span className="ml-2 text-slate-500">
               最終更新 {formatJst(report.updatedAt)}
@@ -750,7 +767,405 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
           <span className={report.bitFlyerConfigured ? "text-emerald-300" : "text-amber-300"}>
             {report.bitFlyerConfigured ? "接続設定あり" : "未設定"}
           </span>
-          {" · "}
+        </p>
+      </div>
+
+      <section className={`${costsPanelClass} p-5`}>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">1 · Overview</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">全体の損益・目標</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              元本からの利益／マイナスと、今月の目標進捗です。
+            </p>
+          </div>
+          {assets && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-200">
+                {assets.battleMode === "attack" ? "攻撃バフ" : "防御モード"}
+              </span>
+              {assets.sleepMode && (
+                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-emerald-200">
+                  おやすみモード
+                </span>
+              )}
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-300">
+                status: {assets.status}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {!assets ? (
+          <p className="mt-4 text-sm text-slate-400">
+            まだ資産台帳がありません。API キー設定後、Asset Trade を実行すると表示されます。
+          </p>
+        ) : (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
+                label="現在の総資産"
+                value={formatCurrency(assets.totalYen)}
+                hint={`前日比 ${signedYen(assets.dayChangeYen)}`}
+              />
+              <Stat
+                label="元本からの損益"
+                value={equity ? signedYen(equity.pnlYen) : "—"}
+                hint={
+                  equity
+                    ? `元本 ${formatCurrency(equity.principalYen)} · ${equity.pnlPct >= 0 ? "+" : ""}${equity.pnlPct}%`
+                    : `元本 ${formatCurrency(assets.principalYen)}`
+                }
+              />
+              <Stat
+                label="現金"
+                value={formatCurrency(assets.cashYen)}
+                hint={`配分 ${formatPercent(assets.cashAllocationPct)}`}
+              />
+              <Stat
+                label="月次目標進捗"
+                value={formatPercent(assets.targetProgressPct)}
+                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}`}
+              />
+            </div>
+
+            {equity && <EquityPerformanceChart perf={equity} />}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Stat label="今月の買付" value={formatCurrency(assets.monthBuyYen)} />
+              <Stat label="今月の売却" value={formatCurrency(assets.monthSellYen)} />
+              <Stat
+                label="今月の実現損益"
+                value={signedYen(assets.monthRealizedPnlYen)}
+                hint={`${assets.monthTradeCount} 件の取引`}
+              />
+            </div>
+
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full ${assets.sleepMode ? "bg-emerald-400" : "bg-amber-400"}`}
+                style={{ width: `${Math.min(100, assets.targetProgressPct)}%` }}
+              />
+            </div>
+
+            {assets.monthlySummaries.length > 0 && (
+              <div className="mt-5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                  月次サマリー
+                </p>
+                <ul className="mt-2 space-y-1.5 text-[12px] text-slate-300">
+                  {[...assets.monthlySummaries].reverse().map((m) => (
+                    <li
+                      key={m.month}
+                      className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-white/5 bg-black/10 px-3 py-2"
+                    >
+                      <span>{m.month}</span>
+                      <span>
+                        実現 {formatCurrency(m.realizedPnlYen)} / 目標{" "}
+                        {formatCurrency(m.targetProfitYen)}
+                        {m.goalReached ? " · 達成" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(assets.solComment || assets.lunaComment) && (
+              <div className="mt-4 space-y-1 text-[13px]">
+                {assets.solComment && (
+                  <p className="text-amber-50/90">⚔️ {assets.solComment}</p>
+                )}
+                {assets.lunaComment && (
+                  <p className="text-indigo-100/90">📖 {assets.lunaComment}</p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {assets && (
+        <>
+          <section className={`${costsPanelClass} p-5`}>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">2 · Portfolio</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">ポートフォリオ</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              現金と暗号資産の配分（現金28%下限 · 単一42% · 暗号合計72%）
+            </p>
+            <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="bg-amber-400/80"
+                style={{ width: `${Math.max(0, assets.cashAllocationPct)}%` }}
+                title={`現金 ${assets.cashAllocationPct}%`}
+              />
+              <div
+                className="bg-sky-400/80"
+                style={{ width: `${Math.max(0, assets.btcAllocationPct)}%` }}
+                title={`BTC ${assets.btcAllocationPct}%`}
+              />
+              <div
+                className="bg-violet-400/80"
+                style={{ width: `${Math.max(0, assets.ethAllocationPct)}%` }}
+                title={`ETH ${assets.ethAllocationPct}%`}
+              />
+              <div
+                className="bg-cyan-300/80"
+                style={{ width: `${Math.max(0, assets.xrpAllocationPct)}%` }}
+                title={`XRP ${assets.xrpAllocationPct}%`}
+              />
+              <div
+                className="bg-emerald-300/80"
+                style={{ width: `${Math.max(0, assets.xlmAllocationPct)}%` }}
+                title={`XLM ${assets.xlmAllocationPct}%`}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              <span className="text-amber-200">現金 {formatPercent(assets.cashAllocationPct)}</span>
+              {" · "}
+              <span className="text-sky-200">BTC {formatPercent(assets.btcAllocationPct)}</span>
+              {" · "}
+              <span className="text-violet-200">ETH {formatPercent(assets.ethAllocationPct)}</span>
+              {" · "}
+              <span className="text-cyan-200">XRP {formatPercent(assets.xrpAllocationPct)}</span>
+              {" · "}
+              <span className="text-emerald-200">XLM {formatPercent(assets.xlmAllocationPct)}</span>
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
+                label="現金（守護巨兵）"
+                value={formatCurrency(assets.cashYen)}
+                hint={`Lv.${assets.golemLevel.toFixed(1)}`}
+              />
+              <Stat
+                label="BTC（蒼竜）"
+                value={formatHeld("BTC", assets.btcHeld)}
+                hint={`${formatCurrency(assets.btcValueYen)} · Lv.${assets.dragonLevel.toFixed(1)}`}
+              />
+              <Stat
+                label="ETH（不死鳥）"
+                value={formatHeld("ETH", assets.ethHeld)}
+                hint={`${formatCurrency(assets.ethValueYen)} · Lv.${assets.phoenixLevel.toFixed(1)}`}
+              />
+              <Stat
+                label="XRP / XLM"
+                value={`${formatHeld("XRP", assets.xrpHeld)}`}
+                hint={`${formatHeld("XLM", assets.xlmHeld)} · 海竜 Lv.${assets.seaDragonLevel.toFixed(1)} / 銀帆船 Lv.${assets.silverShipLevel.toFixed(1)}`}
+              />
+            </div>
+            {(assets.btcPriceYen > 0 ||
+              assets.ethPriceYen > 0 ||
+              assets.xrpPriceYen > 0 ||
+              assets.xlmPriceYen > 0) && (
+              <div className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
+                参考価格 · BTC {formatCurrency(assets.btcPriceYen)} · ETH{" "}
+                {formatCurrency(assets.ethPriceYen)} · XRP{" "}
+                {formatUnitPrice("XRP_JPY", assets.xrpPriceYen)} · XLM{" "}
+                {formatUnitPrice("XLM_JPY", assets.xlmPriceYen)}
+              </div>
+            )}
+          </section>
+
+          <section className={`${costsPanelClass} p-5`}>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">3 · Products</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">銘柄別</h3>
+            <p className="mt-1 text-[11px] text-slate-500">保有・今月の売買・利確目安</p>
+            {assets.byProduct?.length > 0 ? (
+              <>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-left text-[12px]">
+                    <thead className="text-slate-500">
+                      <tr className="border-b border-white/10">
+                        <th className="px-2 py-2 font-medium">銘柄</th>
+                        <th className="px-2 py-2 font-medium">保有</th>
+                        <th className="px-2 py-2 font-medium">評価額</th>
+                        <th className="px-2 py-2 font-medium">配分</th>
+                        <th className="px-2 py-2 font-medium">買付</th>
+                        <th className="px-2 py-2 font-medium">売却</th>
+                        <th className="px-2 py-2 font-medium">実現損益</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assets.byProduct.map((p) => (
+                        <tr key={p.product} className="border-b border-white/5 text-slate-200">
+                          <td className="px-2 py-2 font-medium text-white">{p.label}</td>
+                          <td className="px-2 py-2">{formatHeld(p.product, p.held)}</td>
+                          <td className="px-2 py-2">{formatCurrency(p.valueYen)}</td>
+                          <td className="px-2 py-2">{formatPercent(p.allocationPct)}</td>
+                          <td className="px-2 py-2 text-sky-300">
+                            {formatCurrency(p.buyYen)}
+                            <span className="ml-1 text-[10px] text-slate-500">{p.buyCount}回</span>
+                          </td>
+                          <td className="px-2 py-2 text-rose-300">
+                            {formatCurrency(p.sellYen)}
+                            <span className="ml-1 text-[10px] text-slate-500">{p.sellCount}回</span>
+                          </td>
+                          <td
+                            className={`px-2 py-2 ${
+                              p.realizedPnlYen >= 0 ? "text-emerald-300" : "text-rose-300"
+                            }`}
+                          >
+                            {signedYen(p.realizedPnlYen)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <ProductProjectionChart products={assets.byProduct} />
+              </>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">銘柄データはまだありません。</p>
+            )}
+          </section>
+
+          <section className={`${costsPanelClass} p-5`}>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">4 · Recent</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">前日 / 今日</h3>
+            <p className="mt-1 text-[11px] text-slate-500">JST の約定サマリーと時間帯</p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <DayCard title="前日" day={assets.yesterday} accent="amber" />
+              <DayCard title="今日" day={assets.today} accent="cyan" />
+            </div>
+            <div className="mt-3 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
+              評価額の前日比（台帳）:{" "}
+              <span className={assets.dayChangeYen >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                {signedYen(assets.dayChangeYen)}
+              </span>
+              {" · "}前回総魔力 {formatCurrency(assets.previousTotalYen)} → 現在{" "}
+              {formatCurrency(assets.totalYen)}
+            </div>
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <HourlyChart title="今日の時間帯" buckets={assets.todayHourly} />
+              <HourlyChart
+                title="前日の時間帯（約定ありのみ）"
+                buckets={assets.yesterdayHourly}
+                compactEmpty
+              />
+            </div>
+          </section>
+
+          <section className={`${costsPanelClass} p-5`}>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">5 · Trades</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">今月の取引明細</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              理由の <span className="text-amber-200/90">#番号</span> は「売買条件」と対応します。
+            </p>
+            {assets.trades.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">今月の約定はまだありません（見送り含む）。</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-left text-[12px]">
+                  <thead className="text-slate-500">
+                    <tr className="border-b border-white/10">
+                      <th className="px-2 py-2 font-medium">日時</th>
+                      <th className="px-2 py-2 font-medium">銘柄</th>
+                      <th className="px-2 py-2 font-medium">売買</th>
+                      <th className="px-2 py-2 font-medium">金額</th>
+                      <th className="px-2 py-2 font-medium">単価</th>
+                      <th className="px-2 py-2 font-medium">理由（条件）</th>
+                      <th className="px-2 py-2 font-medium">実現損益</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assets.trades.map((t) => (
+                      <tr key={t.id} className="border-b border-white/5 text-slate-200">
+                        <td className="px-2 py-2 whitespace-nowrap">{formatJst(t.createdAt)}</td>
+                        <td className="px-2 py-2">{t.product?.replace("_JPY", "") ?? "BTC"}</td>
+                        <td
+                          className={`px-2 py-2 font-semibold ${
+                            t.side === "BUY" ? "text-sky-300" : "text-rose-300"
+                          }`}
+                        >
+                          {t.side === "BUY" ? "買" : "売"}
+                        </td>
+                        <td className="px-2 py-2">{formatCurrency(t.sizeJpy)}</td>
+                        <td className="px-2 py-2">{formatUnitPrice(t.product, t.priceBtc)}</td>
+                        <td className="px-2 py-2">
+                          <span className="text-amber-100/95">
+                            {reasonJa(t.reason, t.reasonLabel)}
+                          </span>
+                          {t.reasonDetail && (
+                            <p className="mt-0.5 max-w-md text-[10px] leading-snug text-slate-500">
+                              {t.reasonDetail}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-2 py-2">
+                          {t.realizedPnlJpy === undefined
+                            ? "—"
+                            : `${t.realizedPnlJpy >= 0 ? "+" : ""}${formatCurrency(t.realizedPnlJpy)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className={`${costsPanelClass} p-5`}>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">6 · Audit</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">監査 AI</h3>
+            <TradeLessonsPanel lessons={assets.tradeLessons ?? []} hideTitle />
+          </section>
+
+          {(assets.tradeRules?.length ?? 0) > 0 && (
+            <section className={`${costsPanelClass} p-5`}>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">7 · Rules</p>
+              <h3 className="mt-1 text-lg font-semibold text-white">売買条件</h3>
+              <p className="mt-1 text-[11px] text-slate-500">
+                取引明細の理由に付く番号と対応。複数条件は{" "}
+                <span className="text-amber-200/90">#8+#2</span> のように連結します。
+              </p>
+              <ol className="mt-4 space-y-2">
+                {(assets.tradeRules ?? []).map((rule) => (
+                  <li
+                    key={rule.id}
+                    className="rounded-lg border border-white/8 bg-black/15 px-3 py-2 text-[12px] text-slate-300"
+                  >
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-semibold text-amber-200">#{rule.id}</span>
+                      <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
+                        {rule.categoryLabel}
+                      </span>
+                      <span className="font-medium text-white">{rule.title}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{rule.summary}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function NoteBoincOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
+  const note = report.note;
+  const boinc = report.boinc;
+  const settlement = report.settlement;
+
+  return (
+    <div className="space-y-6">
+      <div className={`${costsPanelClass} p-5`}>
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300/80">
+          Soluna Ops
+        </p>
+        <h2 className="mt-2 text-xl font-bold text-white">
+          {report.monthLabel} · Note・BOINC
+        </h2>
+        <p className="mt-2 text-sm text-slate-400">
+          有料 Note の投稿状況と、BOINC 解析パワー（拠点都市）の実績です。
+          {report.updatedAt && (
+            <span className="ml-2 text-slate-500">
+              最終更新 {formatJst(report.updatedAt)}
+            </span>
+          )}
+        </p>
+        <p className="mt-3 text-[12px] text-slate-400">
           Note:{" "}
           <span className={note?.configured ? "text-emerald-300" : "text-amber-300"}>
             {note?.configured ? "Cookie 設定あり" : "未設定"}
@@ -758,7 +1173,6 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
         </p>
       </div>
 
-      {/* ── Note ── */}
       {note && (
         <section className={`${costsPanelClass} p-5`}>
           <div>
@@ -846,7 +1260,12 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                         </td>
                         <td className="py-1.5 pr-3 max-w-[220px] truncate">
                           {a.noteUrl ? (
-                            <a href={a.noteUrl} target="_blank" rel="noreferrer" className="text-fuchsia-200 underline">
+                            <a
+                              href={a.noteUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-fuchsia-200 underline"
+                            >
                               {a.title}
                             </a>
                           ) : (
@@ -886,7 +1305,12 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
                   >
                     <span className="truncate">
                       {a.noteUrl ? (
-                        <a href={a.noteUrl} target="_blank" rel="noreferrer" className="text-fuchsia-200 underline">
+                        <a
+                          href={a.noteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-fuchsia-200 underline"
+                        >
                           {a.title}
                         </a>
                       ) : (
@@ -905,381 +1329,6 @@ export default function SolunaOpsAnalyticsPanels({ report }: Props) {
         </section>
       )}
 
-      {/* ── 資産運用 ── */}
-      <section className={`${costsPanelClass} p-5`}>
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">Assets</p>
-            <h3 className="mt-1 text-lg font-semibold text-white">資産運用分析</h3>
-            {report.updatedAt ? (
-              <p className="mt-1 text-[11px] text-slate-500">
-                スナップショット更新:{" "}
-                {new Date(report.updatedAt).toLocaleString("ja-JP", {
-                  timeZone: "Asia/Tokyo",
-                })}
-                （BTC/ETH/XRP/XLM · 裏稼働バッチ）
-              </p>
-            ) : (
-              <p className="mt-1 text-[11px] text-slate-500">BTC / ETH / XRP / XLM</p>
-            )}
-          </div>
-          {assets && (
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-200">
-                {assets.battleMode === "attack" ? "攻撃バフ" : "防御モード"}
-              </span>
-              {assets.sleepMode && (
-                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-emerald-200">
-                  おやすみモード
-                </span>
-              )}
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-300">
-                status: {assets.status}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {!assets ? (
-          <p className="mt-4 text-sm text-slate-400">
-            まだ資産台帳がありません。API キー設定後、Asset Trade を実行すると表示されます。
-          </p>
-        ) : (
-          <>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat
-                label="総魔力"
-                value={formatCurrency(assets.totalYen)}
-                hint={`前日比 ${assets.dayChangeYen >= 0 ? "+" : ""}${formatCurrency(assets.dayChangeYen)}`}
-              />
-              <Stat
-                label="現金（守護巨兵）"
-                value={formatCurrency(assets.cashYen)}
-                hint={`Lv.${assets.golemLevel.toFixed(1)} · ${formatPercent(assets.cashAllocationPct)}`}
-              />
-              <Stat
-                label="月次目標進捗"
-                value={formatPercent(assets.targetProgressPct)}
-                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}（下限2,000）`}
-              />
-              <Stat
-                label="分散ルール"
-                value="同時買い可"
-                hint="条件達成銘柄は競合せず同時購入 · 現金28% / 単一42% / 暗号72%"
-              />
-            </div>
-
-            {assets.equityPerformance && (
-              <EquityPerformanceChart perf={assets.equityPerformance} />
-            )}
-
-            <div className="mt-4">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                ポートフォリオ配分
-              </p>
-              <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="bg-amber-400/80"
-                  style={{ width: `${Math.max(0, assets.cashAllocationPct)}%` }}
-                  title={`現金 ${assets.cashAllocationPct}%`}
-                />
-                <div
-                  className="bg-sky-400/80"
-                  style={{ width: `${Math.max(0, assets.btcAllocationPct)}%` }}
-                  title={`BTC ${assets.btcAllocationPct}%`}
-                />
-                <div
-                  className="bg-violet-400/80"
-                  style={{ width: `${Math.max(0, assets.ethAllocationPct)}%` }}
-                  title={`ETH ${assets.ethAllocationPct}%`}
-                />
-                <div
-                  className="bg-cyan-300/80"
-                  style={{ width: `${Math.max(0, assets.xrpAllocationPct)}%` }}
-                  title={`XRP ${assets.xrpAllocationPct}%`}
-                />
-                <div
-                  className="bg-emerald-300/80"
-                  style={{ width: `${Math.max(0, assets.xlmAllocationPct)}%` }}
-                  title={`XLM ${assets.xlmAllocationPct}%`}
-                />
-              </div>
-              <p className="mt-2 text-[11px] text-slate-400">
-                <span className="text-amber-200">現金 {formatPercent(assets.cashAllocationPct)}</span>
-                {" · "}
-                <span className="text-sky-200">BTC {formatPercent(assets.btcAllocationPct)}</span>
-                {" · "}
-                <span className="text-violet-200">ETH {formatPercent(assets.ethAllocationPct)}</span>
-                {" · "}
-                <span className="text-cyan-200">XRP {formatPercent(assets.xrpAllocationPct)}</span>
-                {" · "}
-                <span className="text-emerald-200">XLM {formatPercent(assets.xlmAllocationPct)}</span>
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat
-                label="BTC（蒼竜）"
-                value={formatHeld("BTC", assets.btcHeld)}
-                hint={`${formatCurrency(assets.btcValueYen)} · Lv.${assets.dragonLevel.toFixed(1)} · ${formatCurrency(assets.btcPriceYen)}`}
-              />
-              <Stat
-                label="ETH（不死鳥）"
-                value={formatHeld("ETH", assets.ethHeld)}
-                hint={`${formatCurrency(assets.ethValueYen)} · Lv.${assets.phoenixLevel.toFixed(1)} · ${formatCurrency(assets.ethPriceYen)}`}
-              />
-              <Stat
-                label="XRP（海竜）"
-                value={formatHeld("XRP", assets.xrpHeld)}
-                hint={`${formatCurrency(assets.xrpValueYen)} · Lv.${assets.seaDragonLevel.toFixed(1)} · ${formatUnitPrice("XRP_JPY", assets.xrpPriceYen)}`}
-              />
-              <Stat
-                label="XLM（銀帆船）"
-                value={formatHeld("XLM", assets.xlmHeld)}
-                hint={`${formatCurrency(assets.xlmValueYen)} · Lv.${assets.silverShipLevel.toFixed(1)} · ${formatUnitPrice("XLM_JPY", assets.xlmPriceYen)}`}
-              />
-            </div>
-
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${assets.sleepMode ? "bg-emerald-400" : "bg-amber-400"}`}
-                style={{ width: `${Math.min(100, assets.targetProgressPct)}%` }}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Stat label="今月の買付" value={formatCurrency(assets.monthBuyYen)} />
-              <Stat label="今月の売却" value={formatCurrency(assets.monthSellYen)} />
-              <Stat
-                label="今月の実現損益"
-                value={`${assets.monthRealizedPnlYen >= 0 ? "+" : ""}${formatCurrency(assets.monthRealizedPnlYen)}`}
-                hint={`${assets.monthTradeCount} 件の取引`}
-              />
-            </div>
-
-            {assets.byProduct?.length > 0 && (
-              <div className="mt-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                  銘柄別（保有・今月の売買）
-                </p>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="min-w-full text-left text-[12px]">
-                    <thead className="text-slate-500">
-                      <tr className="border-b border-white/10">
-                        <th className="px-2 py-2 font-medium">銘柄</th>
-                        <th className="px-2 py-2 font-medium">保有</th>
-                        <th className="px-2 py-2 font-medium">評価額</th>
-                        <th className="px-2 py-2 font-medium">配分</th>
-                        <th className="px-2 py-2 font-medium">買付</th>
-                        <th className="px-2 py-2 font-medium">売却</th>
-                        <th className="px-2 py-2 font-medium">実現損益</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assets.byProduct.map((p) => (
-                        <tr key={p.product} className="border-b border-white/5 text-slate-200">
-                          <td className="px-2 py-2 font-medium text-white">{p.label}</td>
-                          <td className="px-2 py-2">{formatHeld(p.product, p.held)}</td>
-                          <td className="px-2 py-2">{formatCurrency(p.valueYen)}</td>
-                          <td className="px-2 py-2">{formatPercent(p.allocationPct)}</td>
-                          <td className="px-2 py-2 text-sky-300">
-                            {formatCurrency(p.buyYen)}
-                            <span className="ml-1 text-[10px] text-slate-500">{p.buyCount}回</span>
-                          </td>
-                          <td className="px-2 py-2 text-rose-300">
-                            {formatCurrency(p.sellYen)}
-                            <span className="ml-1 text-[10px] text-slate-500">{p.sellCount}回</span>
-                          </td>
-                          <td
-                            className={`px-2 py-2 ${
-                              p.realizedPnlYen >= 0 ? "text-emerald-300" : "text-rose-300"
-                            }`}
-                          >
-                            {signedYen(p.realizedPnlYen)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <ProductProjectionChart products={assets.byProduct} />
-                <TradeLessonsPanel lessons={assets.tradeLessons ?? []} />
-              </div>
-            )}
-
-            <div className="mt-6 space-y-3">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                前日 / 今日（JST）
-              </p>
-              <div className="grid gap-3 lg:grid-cols-2">
-                <DayCard title="前日" day={assets.yesterday} accent="amber" />
-                <DayCard title="今日" day={assets.today} accent="cyan" />
-              </div>
-              <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
-                評価額の前日比（台帳）:{" "}
-                <span
-                  className={
-                    assets.dayChangeYen >= 0 ? "text-emerald-300" : "text-rose-300"
-                  }
-                >
-                  {signedYen(assets.dayChangeYen)}
-                </span>
-                {" · "}前回総魔力 {formatCurrency(assets.previousTotalYen)} → 現在{" "}
-                {formatCurrency(assets.totalYen)}
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <HourlyChart title="今日の時間帯" buckets={assets.todayHourly} />
-              <HourlyChart
-                title="前日の時間帯（約定ありのみ）"
-                buckets={assets.yesterdayHourly}
-                compactEmpty
-              />
-            </div>
-
-            {(assets.btcPriceYen > 0 ||
-              assets.ethPriceYen > 0 ||
-              assets.xrpPriceYen > 0 ||
-              assets.xlmPriceYen > 0) && (
-              <div className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-[12px] text-slate-300">
-                BTC {formatCurrency(assets.btcPriceYen)} · ETH {formatCurrency(assets.ethPriceYen)} ·
-                XRP {formatUnitPrice("XRP_JPY", assets.xrpPriceYen)} · XLM{" "}
-                {formatUnitPrice("XLM_JPY", assets.xlmPriceYen)}
-                {" · "}元本 {formatCurrency(assets.principalYen)}
-              </div>
-            )}
-
-            {(assets.solComment || assets.lunaComment) && (
-              <div className="mt-4 space-y-1 text-[13px]">
-                {assets.solComment && (
-                  <p className="text-amber-50/90">⚔️ {assets.solComment}</p>
-                )}
-                {assets.lunaComment && (
-                  <p className="text-indigo-100/90">📖 {assets.lunaComment}</p>
-                )}
-              </div>
-            )}
-
-            <div className="mt-5">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                今月の取引明細
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                理由の <span className="text-amber-200/90">#番号</span>{" "}
-                は下の「売買条件」と対応します（複数条件のときは + で連結）。
-              </p>
-              {assets.trades.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500">今月の約定はまだありません（見送り含む）。</p>
-              ) : (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="min-w-full text-left text-[12px]">
-                    <thead className="text-slate-500">
-                      <tr className="border-b border-white/10">
-                        <th className="px-2 py-2 font-medium">日時</th>
-                        <th className="px-2 py-2 font-medium">銘柄</th>
-                        <th className="px-2 py-2 font-medium">売買</th>
-                        <th className="px-2 py-2 font-medium">金額</th>
-                        <th className="px-2 py-2 font-medium">単価</th>
-                        <th className="px-2 py-2 font-medium">理由（条件）</th>
-                        <th className="px-2 py-2 font-medium">実現損益</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assets.trades.map((t) => (
-                        <tr key={t.id} className="border-b border-white/5 text-slate-200">
-                          <td className="px-2 py-2 whitespace-nowrap">{formatJst(t.createdAt)}</td>
-                          <td className="px-2 py-2">{t.product?.replace("_JPY", "") ?? "BTC"}</td>
-                          <td
-                            className={`px-2 py-2 font-semibold ${
-                              t.side === "BUY" ? "text-sky-300" : "text-rose-300"
-                            }`}
-                          >
-                            {t.side === "BUY" ? "買" : "売"}
-                          </td>
-                          <td className="px-2 py-2">{formatCurrency(t.sizeJpy)}</td>
-                          <td className="px-2 py-2">{formatUnitPrice(t.product, t.priceBtc)}</td>
-                          <td className="px-2 py-2">
-                            <span className="text-amber-100/95">
-                              {reasonJa(t.reason, t.reasonLabel)}
-                            </span>
-                            {t.reasonDetail && (
-                              <p className="mt-0.5 max-w-md text-[10px] leading-snug text-slate-500">
-                                {t.reasonDetail}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-2 py-2">
-                            {t.realizedPnlJpy === undefined
-                              ? "—"
-                              : `${t.realizedPnlJpy >= 0 ? "+" : ""}${formatCurrency(t.realizedPnlJpy)}`}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {assets.monthlySummaries.length > 0 && (
-              <div className="mt-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                  月次サマリー
-                </p>
-                <ul className="mt-2 space-y-1.5 text-[12px] text-slate-300">
-                  {[...assets.monthlySummaries].reverse().map((m) => (
-                    <li
-                      key={m.month}
-                      className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-white/5 bg-black/10 px-3 py-2"
-                    >
-                      <span>{m.month}</span>
-                      <span>
-                        実現 {formatCurrency(m.realizedPnlYen)} / 目標{" "}
-                        {formatCurrency(m.targetProfitYen)}
-                        {m.goalReached ? " · 達成" : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {(assets.tradeRules?.length ?? 0) > 0 && (
-              <div className="mt-6 border-t border-white/10 pt-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                  売買条件（番号一覧）
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  取引明細・時間帯明細の理由に付く番号と対応しています。複数条件が同時に効いた場合は{" "}
-                  <span className="text-amber-200/90">#8+#2</span> のように連結します。
-                </p>
-                <ol className="mt-3 space-y-2">
-                  {(assets.tradeRules ?? []).map((rule) => (
-                    <li
-                      key={rule.id}
-                      className="rounded-lg border border-white/8 bg-black/15 px-3 py-2 text-[12px] text-slate-300"
-                    >
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <span className="font-semibold text-amber-200">#{rule.id}</span>
-                        <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
-                          {rule.categoryLabel}
-                        </span>
-                        <span className="font-medium text-white">{rule.title}</span>
-                      </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                        {rule.summary}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </>
-        )}
-      </section>
-
-      {/* ── BOINC ── */}
       <section className={`${costsPanelClass} p-5`}>
         <div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">BOINC</p>
