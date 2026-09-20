@@ -37,6 +37,7 @@ import {
   fetchHorizonMomentums,
   type HorizonMomentum,
 } from "@/lib/server/soluna-asset-horizons";
+import { appendEquitySnapshot } from "@/lib/soluna-equity-performance";
 import {
   ASSET_PRINCIPAL_YEN,
   BUY_COOLDOWN_MS,
@@ -434,6 +435,7 @@ function buildInitialLedger(medalUnits: number): SolunaAssetLedger {
     battleMode: "defense",
     trades: [],
     monthlySummaries: [],
+    equitySnapshots: [],
     medalUnits,
     status: "waiting-spec",
     solComment: "聖なる魔力タンクへの充填を待っている。届き次第、蒼竜・不死鳥・海竜・銀帆船を召喚する！",
@@ -1216,6 +1218,9 @@ export async function runDailyAssetTrade(input: {
     lunaComment,
     updatedAt: new Date().toISOString(),
   };
+
+  // 日次総資産スナップショット（コスト画面の折れ線・売買可視化）
+  updatedLedger = appendEquitySnapshot(updatedLedger, executedTrades);
 
   // 別モデル監査: BUY/SELL の判断を評価し、反省を蓄積（失敗しても約定は成功のまま）
   try {

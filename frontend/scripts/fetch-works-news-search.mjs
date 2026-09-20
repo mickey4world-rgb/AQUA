@@ -484,6 +484,36 @@ async function main() {
     return;
   }
 
+  // 完了済みの当日分を毎時枠で再 ingest→再 enrich すると OpenAI 課金が爆発する。
+  // --force のときだけ上書き再生成を許可する。
+  if (!force) {
+    try {
+      const status = await fetchStatus();
+      if (status.enrichmentOk === true && status.enrichmentStatus === "complete") {
+        console.log(
+          "[works-news] already complete — skip ingest/enrich",
+          status.digestId,
+        );
+        return;
+      }
+      if (status.enrichmentStatus === "partial" || status.needsEnrichment === true) {
+        console.log(
+          "[works-news] incomplete digest — enrich-only (preserve existing AI fields)",
+          status.digestId,
+          status.enrichmentStatus,
+        );
+        await enrichAllCategories();
+        console.log("[works-news] enrich-only recovery ok");
+        return;
+      }
+    } catch (error) {
+      console.warn(
+        "[works-news] status check failed, continuing full pipeline:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
   const { seeds, errors, usedFallback } = await collectSeeds();
   console.log(`[works-news] seeds=${seeds.length} errors=${errors.length}`);
   const digest = buildDigest(seeds, {

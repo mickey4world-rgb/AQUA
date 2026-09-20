@@ -66,7 +66,7 @@ const relayUrl = process.env.GEMINI_RELAY_URL?.trim();
 const relayKey = process.env.GEMINI_RELAY_KEY?.trim();
 const cronSecret = process.env.SOLUNA_CRON_SECRET?.trim();
 const baseUrl = (process.env.PRODUCTION_URL || "https://www.aquacore.net").replace(/\/$/, "");
-const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
 
 if (!cronSecret) {
   console.error("SOLUNA_CRON_SECRET が必要です。");
