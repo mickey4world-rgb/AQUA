@@ -21,6 +21,7 @@ import {
   HARD_TAKE_PROFIT_RATE,
   SOFT_TAKE_PROFIT_RATE,
 } from "@/lib/soluna-asset-trade-constants";
+import { buildEquityPerformance } from "@/lib/soluna-equity-performance";
 import {
   SOLUNA_TRADE_RULES,
   categoryLabelJa,
@@ -427,6 +428,17 @@ export async function buildSolunaOpsAnalyticsReport(
             realizedPnlYen: m.realizedPnlYen,
             goalReached: m.goalReached,
           })),
+          equityPerformance: buildEquityPerformance({
+            principalYen: assets.principalYen ?? 100_000,
+            totalYen,
+            cashYen,
+            monthlyTargetYen: assets.monthlyTargetYen ?? 0,
+            lastMonthTotalYen: assets.lastMonthTotalYen,
+            monthlyRealizedPnlYen: monthlyPnl,
+            monthlySummaries: assets.monthlySummaries ?? [],
+            equitySnapshots: assets.equitySnapshots ?? [],
+            trades: allTrades,
+          }),
           solComment: assets.solComment ?? "",
           lunaComment: assets.lunaComment ?? "",
         }

@@ -29,19 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend deps (scripts only)
-        working-directory: frontend
-        run: npm ci --ignore-scripts
-
       - name: Check daily briefing status
         id: status
         env:
@@ -74,6 +61,23 @@ jobs:
           fi
           echo "force=${FORCE_INPUT}" >> "$GITHUB_OUTPUT"
 
+      # 完了スキップ時は checkout / npm ci 不要（1日11枠の無駄を削減）
+      - uses: actions/checkout@v4
+        if: steps.status.outputs.run_pipeline == 'true' || steps.status.outputs.boinc_needs_run == 'true'
+
+      - name: Setup Node.js
+        if: steps.status.outputs.run_pipeline == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps (scripts only)
+        if: steps.status.outputs.run_pipeline == 'true'
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
       - name: Fetch news briefing (Gemini grounding → RSS; no ungrounded LLM)
         if: steps.status.outputs.run_pipeline == 'true'
         id: fetch_news
@@ -81,7 +85,7 @@ jobs:
         env:
           GEMINI_RELAY_URL: ${{ secrets.GEMINI_RELAY_URL }}
           GEMINI_RELAY_KEY: ${{ secrets.GEMINI_RELAY_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-3.6-flash
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: node frontend/scripts/fetch-soluna-news.mjs
@@ -132,12 +136,16 @@ jobs:
           cat /tmp/soluna-chat.json
           echo ""
           echo "chat HTTP ${HTTP_CODE}"
+          echo "http_code=${HTTP_CODE}" >> "$GITHUB_OUTPUT"
           if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
             echo "::warning::chat HTTP ${HTTP_CODE}（SWA 45秒制限でタイムアウトした場合、サーバー側は継続処理中のことがあります）"
+            echo "needs_wait=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_wait=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Wait for chat if gateway timed out
-        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
+        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success' && steps.chat.outputs.needs_wait == 'true'
         run: sleep 90
 
       - name: Verify briefing complete
