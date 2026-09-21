@@ -6,7 +6,7 @@
  *   2. 利確は短期でも可。損切りは原則しない／長期保有（〜1年）で回復を待つ
  *      ・現金 50 万円以下では損切り禁止（含み損は持ち越し）
  *      ・1年未満は損切りしない。1年超かつ深い含み損（-15%〜-25%）のみ例外
- *   3. 月次目標は月初残高×2%。元本10万未満は一律2,000円（それ未満の目標は無し）
+ *   3. 月次目標は月初残高×2%。下限は常に 2,000 円（それ未満の目標は無し）
  *      おやすみモードは実現損益が月初残高×10%を超えたら新規購入停止
  *   4. 裏稼働: 板・約定に加え、6か月〜昨日の多期間値動きで当日方向を見極めて売買
  *   5. 対象 Spot: BTC_JPY / ETH_JPY / XRP_JPY / XLM_JPY
@@ -61,14 +61,21 @@ import {
   STRONG_BULLISH_SCORE,
   TRADEABLE_PRODUCTS,
   type TradeableProduct,
+  clampMonthlyTargetYen,
+  computeMonthlyTargetYenFromOpening,
 } from "@/lib/soluna-asset-trade-constants";
 
 export {
   ASSET_PRINCIPAL_YEN,
   MIN_MONTHLY_TARGET_YEN,
   TRADEABLE_PRODUCTS,
+  clampMonthlyTargetYen,
   type TradeableProduct,
 };
+
+export function computeMonthlyTargetYen(openingBalanceYen: number): number {
+  return computeMonthlyTargetYenFromOpening(openingBalanceYen);
+}
 
 // ── 定数（エンジン内エイリアス・後方互換 export）──────────────────────────────
 
@@ -121,14 +128,6 @@ const PRODUCT_META: Record<
     rpgName: "星屑の銀帆船",
   },
 };
-
-export function computeMonthlyTargetYen(openingBalanceYen: number): number {
-  const opening = Math.max(0, openingBalanceYen);
-  if (opening < ASSET_PRINCIPAL_YEN) {
-    return MIN_MONTHLY_TARGET_YEN;
-  }
-  return Math.max(MIN_MONTHLY_TARGET_YEN, Math.round(opening * MONTHLY_TARGET_RATE));
-}
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -476,7 +475,10 @@ function rolloverMonthIfNeeded(ledger: SolunaAssetLedger): SolunaAssetLedger {
     monthlyTargetYen: targetYen,
     monthlyRealizedPnlYen: 0,
     sleepMode: false,
-    monthlySummaries: newSummaries.slice(-13),
+    monthlySummaries: newSummaries.slice(-13).map((m) => ({
+      ...m,
+      targetProfitYen: clampMonthlyTargetYen(m.targetProfitYen),
+    })),
   };
 }
 

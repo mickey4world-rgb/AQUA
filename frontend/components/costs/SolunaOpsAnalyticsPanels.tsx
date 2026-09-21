@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { costsPanelClass, formatCurrency, formatPercent } from "@/lib/analytics-utils";
+import { buildEquityPerformance } from "@/lib/soluna-equity-performance";
+import { clampMonthlyTargetYen } from "@/lib/soluna-asset-trade-constants";
 import type {
   SolunaOpsAnalyticsReport,
   SolunaOpsDaySummary,
@@ -743,7 +745,40 @@ export default function SolunaOpsAnalyticsPanels({ report, view }: Props) {
 
 function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
   const assets = report.assets;
-  const equity = assets?.equityPerformance;
+
+  const equity = useMemo(() => {
+    if (!assets) return null;
+    if (assets.equityPerformance?.points?.length) {
+      return {
+        ...assets.equityPerformance,
+        monthlyTargetYen: clampMonthlyTargetYen(assets.equityPerformance.monthlyTargetYen),
+      };
+    }
+    // 旧キャッシュ／欠損時も画面で必ず折れ線を組み立てる（沈黙の空表示を禁止）
+    return buildEquityPerformance({
+      principalYen: assets.principalYen,
+      totalYen: assets.totalYen,
+      cashYen: assets.cashYen,
+      monthlyTargetYen: clampMonthlyTargetYen(assets.monthlyTargetYen),
+      lastMonthTotalYen: assets.previousTotalYen,
+      monthlyRealizedPnlYen: assets.monthlyRealizedPnlYen,
+      monthlySummaries: (assets.monthlySummaries ?? []).map((m) => ({
+        ...m,
+        targetProfitYen: clampMonthlyTargetYen(m.targetProfitYen),
+      })),
+      trades: (assets.trades ?? []).map((t) => ({
+        id: t.id,
+        createdAt: t.createdAt,
+        side: t.side,
+        product: (t.product as "BTC_JPY" | "ETH_JPY" | "XRP_JPY" | "XLM_JPY" | "ZPG_JPY") ?? "BTC_JPY",
+        sizeJpy: t.sizeJpy,
+        priceBtc: t.priceBtc,
+        realizedPnlJpy: t.realizedPnlJpy,
+        reason: t.reason,
+        briefingId: t.briefingId,
+      })),
+    });
+  }, [assets]);
 
   return (
     <div className="space-y-6">
@@ -825,11 +860,18 @@ function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
               <Stat
                 label="月次目標進捗"
                 value={formatPercent(assets.targetProgressPct)}
-                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(assets.monthlyTargetYen)}`}
+                hint={`${formatCurrency(assets.monthlyRealizedPnlYen)} / 目標 ${formatCurrency(clampMonthlyTargetYen(assets.monthlyTargetYen))}`}
               />
             </div>
 
-            {equity && <EquityPerformanceChart perf={equity} />}
+            {equity ? (
+              <EquityPerformanceChart perf={equity} />
+            ) : (
+              <p className="mt-4 text-sm text-rose-200">
+                投資推移グラフを組み立てられませんでした。再読み込みするか、Asset Trade
+                実行後に再度開いてください。
+              </p>
+            )}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Stat label="今月の買付" value={formatCurrency(assets.monthBuyYen)} />
@@ -862,7 +904,7 @@ function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
                       <span>{m.month}</span>
                       <span>
                         実現 {formatCurrency(m.realizedPnlYen)} / 目標{" "}
-                        {formatCurrency(m.targetProfitYen)}
+                        {formatCurrency(clampMonthlyTargetYen(m.targetProfitYen))}
                         {m.goalReached ? " · 達成" : ""}
                       </span>
                     </li>

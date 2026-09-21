@@ -2,6 +2,7 @@
  * Soluna 資産運用・BOINC の運用分析レポート（コストダッシュボード用）
  */
 import { isBitFlyerEnabled } from "@/lib/server/soluna-asset-trade";
+import { clampMonthlyTargetYen } from "@/lib/soluna-asset-trade-constants";
 import { buildSolunaNoteOpsReport } from "@/lib/server/soluna-note-stats";
 import {
   getSystemAssets,
@@ -321,7 +322,10 @@ export async function buildSolunaOpsAnalyticsReport(
   );
   const totalYen = markedTotalYen > 0 ? markedTotalYen : (assets?.totalYen ?? 0);
   const previousTotalYen = assets?.previousTotalYen ?? totalYen;
-  const monthlyTarget = Math.max(1, assets?.monthlyTargetYen ?? 1);
+  const monthlyTarget = Math.max(
+    1,
+    clampMonthlyTargetYen(assets?.monthlyTargetYen ?? 0),
+  );
   const monthlyPnl = assets?.monthlyRealizedPnlYen ?? 0;
   const pct = (part: number) => (totalYen > 0 ? Math.round((part / totalYen) * 1000) / 10 : 0);
 
@@ -389,7 +393,7 @@ export async function buildSolunaOpsAnalyticsReport(
           xlmAllocationPct: pct(xlmValueYen),
           previousTotalYen,
           dayChangeYen: Math.round(totalYen - previousTotalYen),
-          monthlyTargetYen: assets.monthlyTargetYen ?? 0,
+          monthlyTargetYen: clampMonthlyTargetYen(assets.monthlyTargetYen ?? 0),
           monthlyRealizedPnlYen: monthlyPnl,
           targetProgressPct: Math.min(100, Math.round((monthlyPnl / monthlyTarget) * 100)),
           golemLevel: cashYen / 10_000,
@@ -424,7 +428,7 @@ export async function buildSolunaOpsAnalyticsReport(
           monthlySummaries: (assets.monthlySummaries ?? []).slice(-12).map((m) => ({
             month: m.month,
             openingBalanceYen: m.openingBalanceYen,
-            targetProfitYen: m.targetProfitYen,
+            targetProfitYen: clampMonthlyTargetYen(m.targetProfitYen),
             realizedPnlYen: m.realizedPnlYen,
             goalReached: m.goalReached,
           })),
@@ -432,10 +436,13 @@ export async function buildSolunaOpsAnalyticsReport(
             principalYen: assets.principalYen ?? 100_000,
             totalYen,
             cashYen,
-            monthlyTargetYen: assets.monthlyTargetYen ?? 0,
+            monthlyTargetYen: clampMonthlyTargetYen(assets.monthlyTargetYen ?? 0),
             lastMonthTotalYen: assets.lastMonthTotalYen,
             monthlyRealizedPnlYen: monthlyPnl,
-            monthlySummaries: assets.monthlySummaries ?? [],
+            monthlySummaries: (assets.monthlySummaries ?? []).map((m) => ({
+              ...m,
+              targetProfitYen: clampMonthlyTargetYen(m.targetProfitYen),
+            })),
             equitySnapshots: assets.equitySnapshots ?? [],
             trades: allTrades,
           }),
@@ -502,7 +509,10 @@ export async function getSolunaOpsAnalyticsReport(
   );
 
   const cached = await readSolunaOpsCache(month, true);
-  if (cached) return cached;
+  // 折れ線必須。旧キャッシュに equityPerformance が無い場合は再構築する
+  if (cached?.assets?.equityPerformance?.points?.length) {
+    return cached;
+  }
 
   const report = await buildSolunaOpsAnalyticsReport(month, {
     refreshLivePrices: false,
