@@ -492,7 +492,7 @@ export interface SolunaOpsAnalyticsReport {
       realizedPnlYen: number;
       goalReached: boolean;
     }>;
-    /** 元本からの総資産推移（日次／週次・売買マーカー付き） */
+    /** 元本 + 累積実現損益の推移（保有時価は含めない） */
     equityPerformance: {
       principalYen: number;
       startDate: string;

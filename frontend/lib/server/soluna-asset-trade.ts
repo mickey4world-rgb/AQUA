@@ -1290,7 +1290,7 @@ export async function runDailyAssetTrade(input: {
         reasonDetail: leg.reason,
         briefingId: input.briefingId,
       };
-      newTrades = [...newTrades.slice(-29), trade];
+      newTrades = [...newTrades.slice(-119), trade];
       executedTrades.push(trade);
       // 実残高を都度取り、次の銘柄の枠計算は取引所側に寄せる
       updatedBalance = await getBitFlyerBalance();
@@ -1337,7 +1337,7 @@ export async function runDailyAssetTrade(input: {
           reasonDetail: decision.reason,
           briefingId: input.briefingId,
         };
-        newTrades = [...newTrades.slice(-29), trade];
+        newTrades = [...newTrades.slice(-119), trade];
         executedTrades.push(trade);
         updatedBalance = await getBitFlyerBalance();
       }

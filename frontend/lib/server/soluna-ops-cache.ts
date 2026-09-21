@@ -27,8 +27,8 @@ const memoryCache = new Map<
 >();
 
 function docId(month: string): string {
-  // v2: equityPerformance を含む（v1 キャッシュは折れ線無しで再構築が必要）
-  return `soluna-ops:v2:${month}`;
+  // v3: 実現損益ベースの equityPerformance（v2 時価折れ線は再構築）
+  return `soluna-ops:v3:${month}`;
 }
 
 export function readMemorySolunaOpsCache(
