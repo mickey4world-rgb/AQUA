@@ -93,10 +93,9 @@ function addUrlImageryLayer(
 
 /**
  * 地球の見た目を確実にする（弱オラクル禁止）:
- * - 軌道・地図とも globe.show=true（隠すと大気の青枠だけ残る）
- * - 本体: SingleTile Blue Marble（絶対 URL + デコード成功）
- * - 保険: Primitive Image（Entity ImageMaterial は塗れないので使わない）
- * - HUD 成功は「レイヤー or Primitive が載った」後のみ。preload だけでは不可
+ * - 軌道: globe.show=true + SingleTile + Primitive 保険
+ * - 地図(2D): WebMercator タイルのみ（Geographic SingleTile は 2D で黒画面の主因）
+ * - HUD 成功は実際に載った経路のみ。preload / layer 追加だけでは不可
  */
 async function ensureEarthImagery(
   viewer: CesiumViewer,
@@ -104,9 +103,9 @@ async function ensureEarthImagery(
   options: {
     withLabels: boolean;
     preferSatellite: boolean;
-    /** true のときだけ removeAll→ローカル再載（モード切替用） */
+    /** true のときだけ removeAll→再載（モード切替用） */
     resetBase?: boolean;
-    /** orbit: globe+Primitive / map: globe+タイル */
+    /** orbit: globe+Primitive / map: WebMercator タイル */
     mode: "orbit" | "map";
   },
 ): Promise<{
@@ -116,13 +115,11 @@ async function ensureEarthImagery(
   usedOverlay: boolean;
   usedEarthEntity: boolean;
 }> {
-  // 絶対に globe を消さない（青枠だけの再発源）
   viewer.scene.globe.show = true;
   viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1b6ca8");
   viewer.scene.globe.enableLighting = false;
-  viewer.scene.globe.showGroundAtmosphere = true;
   if (viewer.scene.skyAtmosphere) {
-    viewer.scene.skyAtmosphere.show = true;
+    viewer.scene.skyAtmosphere.show = options.mode === "orbit";
   }
 
   let usedLocalEarth = false;
@@ -132,21 +129,23 @@ async function ensureEarthImagery(
   // 旧 Entity 残骸を除去
   setEarthEllipsoidEntityVisible(viewer, false);
 
-  if (options.resetBase || viewer.imageryLayers.length < 1) {
-    viewer.imageryLayers.removeAll();
-    const local = await createVerifiedLocalEarthLayer(Cesium);
-    viewer.imageryLayers.add(local);
-    usedLocalEarth = true;
-  } else {
-    usedLocalEarth = viewer.imageryLayers.length > 0;
-  }
-
   if (options.mode === "orbit") {
-    // Primitive 保険（globe の上）。失敗しても globe SingleTile があれば続行
+    viewer.scene.globe.showGroundAtmosphere = true;
+    if (options.resetBase || viewer.imageryLayers.length < 1) {
+      viewer.imageryLayers.removeAll();
+      const local = await createVerifiedLocalEarthLayer(Cesium);
+      viewer.imageryLayers.add(local);
+      usedLocalEarth = true;
+    } else {
+      usedLocalEarth = viewer.imageryLayers.length > 0;
+    }
     usedEarthEntity = await ensureEarthTexturedPrimitive(viewer, Cesium);
     setEarthTexturedPrimitiveVisible(viewer, usedEarthEntity);
   } else {
+    // 上空写真 / 2D: Geographic SingleTile はメルカトルで塗れず黒画面になる → 載せない
+    viewer.scene.globe.showGroundAtmosphere = false;
     setEarthTexturedPrimitiveVisible(viewer, false);
+    viewer.imageryLayers.removeAll();
 
     const candidates = options.preferSatellite
       ? EAGLE_EYE_SATELLITE_CANDIDATES
@@ -157,35 +156,42 @@ async function ensureEarthImagery(
         .replace("{x}", "1")
         .replace("{y}", "1");
       if (!(await probeReachableImage(sample))) {
-        console.warn("[EagleEye] overlay probe failed", candidate.credit);
+        console.warn("[EagleEye] mercator tile probe failed", candidate.credit);
         continue;
       }
       try {
-        addUrlImageryLayer(viewer, Cesium, candidate, 0.88);
+        // 2D の本体なので不透明
+        addUrlImageryLayer(viewer, Cesium, candidate, 1);
         usedOverlay = true;
         break;
       } catch (error) {
-        console.warn("[EagleEye] imagery candidate failed", candidate.credit, error);
+        console.warn("[EagleEye] mercator tile failed", candidate.credit, error);
       }
     }
 
-    if (options.withLabels && (usedLocalEarth || usedOverlay)) {
+    if (options.withLabels && usedOverlay) {
       const sample = EAGLE_EYE_LABEL_CANDIDATE.url
         .replace("{z}", "2")
         .replace("{x}", "1")
         .replace("{y}", "1");
       if (await probeReachableImage(sample)) {
         try {
-          addUrlImageryLayer(viewer, Cesium, EAGLE_EYE_LABEL_CANDIDATE, 0.9);
+          addUrlImageryLayer(viewer, Cesium, EAGLE_EYE_LABEL_CANDIDATE, 1);
         } catch {
           /* labels optional */
         }
       }
     }
+
+    if (!usedOverlay) {
+      throw new Error(
+        "メルカトル地図タイル（Carto / OSM / Esri）に到達できません。ネットワークまたは CSP を確認してください。",
+      );
+    }
   }
 
   const layerCount = viewer.imageryLayers.length as number;
-  if (!usedLocalEarth && !usedEarthEntity && !usedOverlay) {
+  if (options.mode === "orbit" && !usedLocalEarth && !usedEarthEntity) {
     throw new Error(
       `地球を表示できませんでした（${EAGLE_EYE_LOCAL_EARTH_TEXTURE} を確認してください）。`,
     );
@@ -500,7 +506,7 @@ export default function EagleEyeViewer({
         easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
         complete: () => {
           if (!viewer || viewer.isDestroyed()) return;
-          // ② 2D 地図へモーフ + 地名レイヤー（地球テクスチャ必須）
+          // ② WebMercator タイルを載せてから 2D へ（Geographic SingleTile は使わない）
           void ensureEarthImagery(viewer, Cesium, {
             withLabels: true,
             preferSatellite: true,
@@ -509,11 +515,84 @@ export default function EagleEyeViewer({
           })
             .then((imagery) => {
               if (!viewer || viewer.isDestroyed()) return;
+              if (!imagery.usedOverlay) {
+                throw new Error("メルカトル地図タイルを表示できませんでした。");
+              }
               setHud((prev) => ({
                 ...prev,
                 earthLayer: describeEarthLayer(imagery, "map"),
               }));
-              viewer.scene.morphTo2D(1.6);
+
+              let mapViewDone = false;
+              const finishMapView = () => {
+                if (mapViewDone || !viewer || viewer.isDestroyed()) return;
+                mapViewDone = true;
+                viewer.scene.globe.show = true;
+                if (footprintRef.current) {
+                  try {
+                    viewer.entities.remove(footprintRef.current);
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                footprintRef.current = viewer.entities.add({
+                  id: `${sat.id}-footprint`,
+                  name: fp.label,
+                  rectangle: {
+                    coordinates: Cesium.Rectangle.fromDegrees(
+                      fp.west,
+                      fp.south,
+                      fp.east,
+                      fp.north,
+                    ),
+                    material:
+                      Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(
+                        0.12,
+                      ),
+                    height: 0,
+                    outline: true,
+                    outlineColor:
+                      Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.9),
+                    outlineWidth: 2,
+                  },
+                });
+                showMapCameras(true);
+                viewer.camera.flyTo({
+                  destination: Cesium.Rectangle.fromDegrees(
+                    zoomBounds.west,
+                    zoomBounds.south,
+                    zoomBounds.east,
+                    zoomBounds.north,
+                  ),
+                  duration: 1.8,
+                  easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+                });
+                viewer.scene.requestRender?.();
+              };
+
+              // morph 完了後にカメラ移動（途中 flyTo すると黒画面のまま固まる）
+              const onMorphComplete = () => {
+                try {
+                  viewer.scene.morphComplete.removeEventListener(onMorphComplete);
+                } catch {
+                  /* ignore */
+                }
+                finishMapView();
+              };
+              viewer.scene.morphComplete.addEventListener(onMorphComplete);
+              viewer.scene.morphTo2D(1.2);
+              // morphComplete が来ない環境向けフォールバック
+              window.setTimeout(() => {
+                if (!viewer || viewer.isDestroyed()) return;
+                if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+                  try {
+                    viewer.scene.morphComplete.removeEventListener(onMorphComplete);
+                  } catch {
+                    /* ignore */
+                  }
+                  finishMapView();
+                }
+              }, 1600);
             })
             .catch((error) => {
               console.error("[EagleEye] map imagery failed", error);
@@ -523,46 +602,6 @@ export default function EagleEyeViewer({
                   : "地図テクスチャの読み込みに失敗しました",
               );
             });
-
-          setTimeout(() => {
-            if (!viewer || viewer.isDestroyed()) return;
-
-            footprintRef.current = viewer.entities.add({
-              id: `${sat.id}-footprint`,
-              name: fp.label,
-              rectangle: {
-                coordinates: Cesium.Rectangle.fromDegrees(
-                  fp.west,
-                  fp.south,
-                  fp.east,
-                  fp.north,
-                ),
-                material:
-                  Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(
-                    0.12,
-                  ),
-                height: 0,
-                outline: true,
-                outlineColor:
-                  Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.9),
-                outlineWidth: 2,
-              },
-            });
-
-            showMapCameras(true);
-
-            // ③ 地上スキャンエリアへ降下
-            viewer.camera.flyTo({
-              destination: Cesium.Rectangle.fromDegrees(
-                zoomBounds.west,
-                zoomBounds.south,
-                zoomBounds.east,
-                zoomBounds.north,
-              ),
-              duration: 2.4,
-              easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
-            });
-          }, 700);
         },
       });
 
