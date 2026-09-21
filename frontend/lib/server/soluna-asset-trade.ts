@@ -99,10 +99,11 @@ const PRODUCT_META: Record<
     rpgName: string;
   }
 > = {
+  // Lightning Spot 最小ロット（bitFlyer FAQ / Market Information 準拠）
   BTC_JPY: {
     currency: "BTC",
-    minSize: 0.0001,
-    decimals: 4,
+    minSize: 0.001,
+    decimals: 3,
     label: "BTC",
     rpgName: "雷轟の蒼竜",
   },
@@ -115,15 +116,15 @@ const PRODUCT_META: Record<
   },
   XRP_JPY: {
     currency: "XRP",
-    minSize: 1,
-    decimals: 0,
+    minSize: 0.1,
+    decimals: 1,
     label: "XRP",
     rpgName: "銀濤の海竜",
   },
   XLM_JPY: {
     currency: "XLM",
-    minSize: 1,
-    decimals: 0,
+    minSize: 0.1,
+    decimals: 1,
     label: "XLM",
     rpgName: "星屑の銀帆船",
   },
@@ -366,24 +367,132 @@ function roundSize(size: number, decimals: number): number {
   return Math.floor(size * factor) / factor;
 }
 
-async function sendOrder(
+/** 取引所最小ロットを満たす円建て下限 */
+export function minOrderNotionalYen(product: TradeableProduct, priceYen: number): number {
+  const meta = PRODUCT_META[product];
+  const price = Math.max(1, priceYen);
+  return Math.ceil(meta.minSize * price);
+}
+
+/**
+ * 円金額 → 取引所 size。
+ * 最小ロット未満は null（切り上げ発注は金額超過になるため禁止）。
+ */
+export function sizeFromYenAmount(
+  product: TradeableProduct,
+  sizeJpy: number,
+  priceYen: number,
+): number | null {
+  const meta = PRODUCT_META[product];
+  const raw = sizeJpy / Math.max(1, priceYen);
+  const size = roundSize(raw, meta.decimals);
+  if (size < meta.minSize) return null;
+  return size;
+}
+
+/** 保有数量 → 売却 size（切り捨て。ダストは null） */
+export function sizeFromHeld(product: TradeableProduct, held: number): number | null {
+  const meta = PRODUCT_META[product];
+  const size = roundSize(held, meta.decimals);
+  if (size < meta.minSize) return null;
+  return size;
+}
+
+/**
+ * 買い金額を決定。取引所最小ロットを満たせない場合は null。
+ * ソフト上限 MAX_TRADE_YEN を最小ロットが超える銘柄は、最小ロットまで例外許可（×2 まで）。
+ */
+export function resolveBuyAmountJpy(input: {
+  product: TradeableProduct;
+  priceYen: number;
+  roomYen: number;
+  remainingDailyYen: number;
+  conviction: number;
+}): number | null {
+  const { product, priceYen, roomYen, remainingDailyYen, conviction } = input;
+  const minNotional = minOrderNotionalYen(product, priceYen);
+  const softCap = Math.max(1_000, Math.round(MAX_TRADE_YEN * Math.min(1, Math.max(0.2, conviction))));
+  // 取引所ロットがソフト上限を超える場合のみ、最小ロットを許可（暴走防止で 2×MAX まで）
+  const allowedMax = Math.max(softCap, Math.min(minNotional, MAX_TRADE_YEN * 2));
+  const budget = Math.min(roomYen, remainingDailyYen, allowedMax);
+  if (budget < minNotional) return null;
+  // 通常は確信度ベース、ただし常に最小ロット以上
+  return Math.max(minNotional, Math.min(budget, softCap >= minNotional ? softCap : minNotional));
+}
+
+class OrderSkippedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OrderSkippedError";
+  }
+}
+
+/** 発注拒否のうち、tick 全体を落とさず当該レッグだけ見送るもの */
+function isRecoverableOrderError(message: string): boolean {
+  return (
+    /minimum order size|min(?:imum)? (?:order )?size|-110/i.test(message) ||
+    /insufficient|not enough|残高不足|資金不足|-208|-200/i.test(message) ||
+    /order size is too|too small|size must be/i.test(message) ||
+    /Market (?:is )?closed|trading (?:is )?halted|temporarily unavailable/i.test(message) ||
+    /asset API (?:429|502|503|504)\b/i.test(message)
+  );
+}
+
+async function sendMarketOrder(
   product: TradeableProduct,
   side: "BUY" | "SELL",
+  size: number,
+): Promise<string> {
+  const meta = PRODUCT_META[product];
+  const rounded = roundSize(size, meta.decimals);
+  if (rounded < meta.minSize) {
+    throw new OrderSkippedError(
+      `${product}: 注文数量 ${rounded} が最小ロット ${meta.minSize} 未満`,
+    );
+  }
+  try {
+    const order = await bitFlyerFetch<BfOrderResponse>("POST", "/v1/me/sendchildorder", {
+      product_code: product,
+      child_order_type: "MARKET",
+      side,
+      size: rounded,
+      minute_to_expire: 10,
+      time_in_force: "GTC",
+    });
+    return order.child_order_acceptance_id;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isRecoverableOrderError(message)) {
+      throw new OrderSkippedError(`${product}: ${message}`);
+    }
+    throw error;
+  }
+}
+
+async function sendBuyOrder(
+  product: TradeableProduct,
   sizeJpy: number,
   priceYen: number,
 ): Promise<string> {
   const meta = PRODUCT_META[product];
-  const raw = sizeJpy / Math.max(1, priceYen);
-  const size = Math.max(meta.minSize, roundSize(raw, meta.decimals));
-  const order = await bitFlyerFetch<BfOrderResponse>("POST", "/v1/me/sendchildorder", {
-    product_code: product,
-    child_order_type: "MARKET",
-    side,
-    size,
-    minute_to_expire: 10,
-    time_in_force: "GTC",
-  });
-  return order.child_order_acceptance_id;
+  const size = sizeFromYenAmount(product, sizeJpy, priceYen);
+  if (size == null) {
+    throw new OrderSkippedError(
+      `${product}: 注文数量が最小ロット ${meta.minSize} 未満（約 ${sizeJpy}円 / ${priceYen}円）`,
+    );
+  }
+  return sendMarketOrder(product, "BUY", size);
+}
+
+async function sendSellOrder(product: TradeableProduct, held: number): Promise<string> {
+  const meta = PRODUCT_META[product];
+  const size = sizeFromHeld(product, held);
+  if (size == null) {
+    throw new OrderSkippedError(
+      `${product}: 保有 ${held} が最小ロット ${meta.minSize} 未満（ダスト）`,
+    );
+  }
+  return sendMarketOrder(product, "SELL", size);
 }
 
 // ── 台帳ヘルパ ────────────────────────────────────────────────────────────────
@@ -612,7 +721,9 @@ function maxBuyRoomYen(
   const cryptoNow = cryptoValueYen(ledger, prices);
   const roomCrypto = Math.max(0, Math.round(total * MAX_CRYPTO_RATIO) - cryptoNow);
   const spendableCash = Math.max(0, Math.round(ledger.cashYen - cashFloorYen(total)));
-  return Math.max(0, Math.min(roomSingle, roomCrypto, spendableCash, MAX_TRADE_YEN));
+  // ソフト上限 MAX_TRADE_YEN は resolveBuyAmountJpy 側で適用する。
+  // ここで切ると BTC 最小ロット（〜1.6万円）が常に room 不足になり買い不能になる。
+  return Math.max(0, Math.min(roomSingle, roomCrypto, spendableCash));
 }
 
 function lastBuyAgeMs(ledger: SolunaAssetLedger, product: TradeableProduct): number | null {
@@ -919,7 +1030,8 @@ function decideTrade(
     };
   }
 
-  // 条件を満たした銘柄は競合させず、枠の許す限り同時に買う（スコア順に予算消化）
+  // 条件を満たした銘柄は競合させず、枠の許す限り同時に買う。
+  // 最小ロットに届く銘柄を先に消化し、BTC 高スコアで日次枠を食い潰して全見送りになるのを防ぐ。
   let working: SolunaAssetLedger = {
     ...ledger,
     btcPriceYen: prices.BTC_JPY,
@@ -931,7 +1043,34 @@ function decideTrade(
   const buys: BuyLeg[] = [];
   const ruleIds = [1, 2, 6, 7, 8, 19];
 
-  for (const pulse of qualified) {
+  const ranked = [...qualified].sort((a, b) => {
+    const roomA = maxBuyRoomYen(working, a.product, prices);
+    const roomB = maxBuyRoomYen(working, b.product, prices);
+    const affordA =
+      resolveBuyAmountJpy({
+        product: a.product,
+        priceYen: a.ltp,
+        roomYen: roomA,
+        remainingDailyYen: remainingDaily,
+        conviction: 1,
+      }) != null
+        ? 1
+        : 0;
+    const affordB =
+      resolveBuyAmountJpy({
+        product: b.product,
+        priceYen: b.ltp,
+        roomYen: roomB,
+        remainingDailyYen: remainingDaily,
+        conviction: 1,
+      }) != null
+        ? 1
+        : 0;
+    if (affordA !== affordB) return affordB - affordA;
+    return b.score - a.score;
+  });
+
+  for (const pulse of ranked) {
     if (remainingDaily < 1000) break;
     const room = maxBuyRoomYen(working, pulse.product, prices);
     if (room < 1000) continue;
@@ -939,11 +1078,20 @@ function decideTrade(
       pulse.score >= STRONG_BULLISH_SCORE
         ? 1
         : 0.45 + ((pulse.score - buyThreshold) / 80) * 0.55;
-    const amountJpy = Math.max(
-      1000,
-      Math.min(room, remainingDaily, Math.round(MAX_TRADE_YEN * conviction)),
-    );
-    if (amountJpy < 1000) continue;
+    const amountJpy = resolveBuyAmountJpy({
+      product: pulse.product,
+      priceYen: pulse.ltp,
+      roomYen: room,
+      remainingDailyYen: remainingDaily,
+      conviction,
+    });
+    if (amountJpy == null) {
+      const minYen = minOrderNotionalYen(pulse.product, pulse.ltp);
+      console.log(
+        `[asset-trade] skip buy ${pulse.product}: 最小ロット約 ${minYen.toLocaleString()}円に届かない（room=${room} daily=${remainingDaily}）`,
+      );
+      continue;
+    }
     const meta = PRODUCT_META[pulse.product];
     buys.push({
       product: pulse.product,
@@ -1104,7 +1252,18 @@ export async function runDailyAssetTrade(input: {
 
   if (decision.action === "BUY") {
     for (const [index, leg] of decision.buys.entries()) {
-      await sendOrder(leg.product, "BUY", leg.amountJpy, leg.pulse.ltp);
+      try {
+        await sendBuyOrder(leg.product, leg.amountJpy, leg.pulse.ltp);
+      } catch (error) {
+        if (error instanceof OrderSkippedError || isRecoverableOrderError(String(error))) {
+          console.warn(
+            `[asset-trade] buy skipped ${leg.product}:`,
+            error instanceof Error ? error.message : error,
+          );
+          continue;
+        }
+        throw error;
+      }
       const trade: SolunaTradeRecord = {
         id: `trade-${Date.now()}-${index}`,
         createdAt: new Date().toISOString(),
@@ -1125,32 +1284,49 @@ export async function runDailyAssetTrade(input: {
   } else if (decision.action === "SELL") {
     const held = heldAmount(ledger, decision.product);
     const meta = PRODUCT_META[decision.product];
-    if (held >= meta.minSize) {
-      const sellValueJpy = Math.round(held * decision.pulse.ltp);
+    const sellSize = sizeFromHeld(decision.product, held);
+    if (sellSize != null && sellSize >= meta.minSize) {
+      const sellValueJpy = Math.round(sellSize * decision.pulse.ltp);
       const avgBuyPrice =
         averageBuyPrice({ ...ledger, trades: newTrades }, decision.product) ??
         decision.pulse.ltp;
-      const costJpy = Math.round(held * avgBuyPrice);
+      const costJpy = Math.round(sellSize * avgBuyPrice);
       const pnl = sellValueJpy - costJpy;
-      monthlyPnl += pnl;
 
-      await sendOrder(decision.product, "SELL", sellValueJpy, decision.pulse.ltp);
-      const trade: SolunaTradeRecord = {
-        id: `trade-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        side: "SELL",
-        product: decision.product,
-        sizeJpy: sellValueJpy,
-        priceBtc: decision.pulse.ltp,
-        realizedPnlJpy: pnl,
-        reason: decision.tradeReason,
-        ruleIds: decision.ruleIds,
-        reasonDetail: decision.reason,
-        briefingId: input.briefingId,
-      };
-      newTrades = [...newTrades.slice(-29), trade];
-      executedTrades.push(trade);
-      updatedBalance = await getBitFlyerBalance();
+      let sold = false;
+      try {
+        await sendSellOrder(decision.product, held);
+        sold = true;
+      } catch (error) {
+        if (error instanceof OrderSkippedError || isRecoverableOrderError(String(error))) {
+          console.warn(
+            `[asset-trade] sell skipped ${decision.product}:`,
+            error instanceof Error ? error.message : error,
+          );
+        } else {
+          throw error;
+        }
+      }
+
+      if (sold) {
+        monthlyPnl += pnl;
+        const trade: SolunaTradeRecord = {
+          id: `trade-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          side: "SELL",
+          product: decision.product,
+          sizeJpy: sellValueJpy,
+          priceBtc: decision.pulse.ltp,
+          realizedPnlJpy: pnl,
+          reason: decision.tradeReason,
+          ruleIds: decision.ruleIds,
+          reasonDetail: decision.reason,
+          briefingId: input.briefingId,
+        };
+        newTrades = [...newTrades.slice(-29), trade];
+        executedTrades.push(trade);
+        updatedBalance = await getBitFlyerBalance();
+      }
     }
   }
 
@@ -1163,26 +1339,25 @@ export async function runDailyAssetTrade(input: {
       updatedBalance.xlmHeld * xlmPrice,
   );
 
-  const buyTotal =
-    decision.action === "BUY"
-      ? decision.buys.reduce((sum, leg) => sum + leg.amountJpy, 0)
-      : 0;
-  const buyLabels =
-    decision.action === "BUY"
-      ? decision.buys.map((leg) => PRODUCT_META[leg.product].label).join("/")
-      : "";
+  const executedBuys = executedTrades.filter((t) => t.side === "BUY");
+  const buyTotal = executedBuys.reduce((sum, t) => sum + t.sizeJpy, 0);
+  const buyLabels = executedBuys.map((t) => PRODUCT_META[t.product].label).join("/");
   const isTp = decision.action === "SELL" && decision.tradeReason === "take-profit";
   const sellLabel =
     decision.action === "SELL" ? PRODUCT_META[decision.product].rpgName : "";
+  const sellExecuted = executedTrades.some((t) => t.side === "SELL");
 
   let solComment = "";
   let lunaComment = "";
-  if (decision.action === "BUY") {
-    solComment = `分散召喚！ ${buyLabels} に合計 ${buyTotal.toLocaleString()} MP（${decision.buys.length}銘柄同時）。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`;
+  if (decision.action === "BUY" && executedBuys.length > 0) {
+    solComment = `分散召喚！ ${buyLabels} に合計 ${buyTotal.toLocaleString()} MP（${executedBuys.length}銘柄同時）。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% は死守するぜ！`;
     lunaComment = `条件を満たした銘柄は競わせず同時に入れた（#19）。単一 ${(MAX_SINGLE_ASSET_RATIO * 100).toFixed(0)}%・暗号合計 ${(MAX_CRYPTO_RATIO * 100).toFixed(0)}% 内。残魔力 ${Math.round(updatedBalance.cashYen).toLocaleString()} MP。${sleepMode ? "月次10%超え！おやすみモードへ。" : ""}`;
-  } else if (decision.action === "SELL") {
+  } else if (decision.action === "SELL" && sellExecuted) {
     solComment = `${isTp ? "利確ドロップ成功" : "例外的な長期損切り"}（${sellLabel}）！累計 ${Math.round(monthlyPnl).toLocaleString()} ゴールド。`;
     lunaComment = `${isTp ? "利益を確定" : "1年超の深い含み損のみ例外処理"}。次の召喚枠は条件達成銘柄を同時に検討するわ。`;
+  } else if (decision.action === "BUY" || decision.action === "SELL") {
+    solComment = `見送り。取引所最小ロットに届かず発注せず。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`;
+    lunaComment = `予定は ${decision.action} だったが最小数量未満のためスキップ。${decision.reason}`;
   } else {
     solComment = `見送り。含み損は長期保有で待つ。現金 ${(MIN_CASH_RATIO * 100).toFixed(0)}% を温存！`;
     lunaComment = sleepMode
