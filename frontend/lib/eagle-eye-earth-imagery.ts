@@ -1,21 +1,20 @@
 /**
  * Eagle Eye — 地球／地図イメージの「見える」保証。
  *
- * 再発クラス（2026-09 実害・再発）:
- * - HUD「ローカル地球・楕円体保険」でも画面は星空の黒空洞
- * - 楕円体 Entity を Imagery の上に常時載せ、ImageMaterial が黒のままなら
- *   青玉／Blue Marble を覆い隠して「成功」に見える（weak oracle）
- * - 相対 URL が Cesium Resource / CESIUM_BASE_URL 解釈で 404 になり黒マテリアル
+ * 再発クラス（2026-09 三度目）:
+ * - Entity + ImageMaterialProperty は楕円体に塗れず、globe を hide した結果
+ *   大気の青い輪郭だけが残り HUD「テクスチャ地球」成功（preload ≠ 塗布）
  *
  * 不変条件: 軌道俯瞰の初回ペイントで大陸が素人に分かる。
  * 手段:
- * - テクスチャは常に origin 絶対 URL + HTMLImageElement 先読み成功が必須
- * - 軌道: 検証済み Entity 楕円体を本体（globe は保険の海色のみ、または非表示）
- * - 地図: globe + タイル、楕円体は隠す
+ * - 本体: globe.show=true + 検証済み SingleTileImageryProvider（絶対 URL）
+ * - 保険: Primitive + Material.fromType('Image')（Entity ImageMaterial は使わない）
+ * - 地図: globe + タイル、Primitive 保険は隠す
  */
 
 export const EAGLE_EYE_LOCAL_EARTH_TEXTURE = "/vendor/eagle-eye/earth-day.jpg";
 export const EAGLE_EYE_EARTH_ENTITY_ID = "eagle-eye-earth-ball";
+export const EAGLE_EYE_EARTH_PRIMITIVE_ID = "eagle-eye-earth-primitive";
 
 export type EagleEyeImageryKind = "satellite" | "map" | "labels" | "base";
 
@@ -98,9 +97,7 @@ export async function probeReachableImage(url: string): Promise<boolean> {
   }
 }
 
-/**
- * HTMLImageElement で実デコードまで確認（fetch OK ≠ WebGL テクスチャ成功の逃げ道を塞ぐ）
- */
+/** HTMLImageElement で実デコードまで確認 */
 export function preloadImageElement(url: string): Promise<HTMLImageElement> {
   const absolute = absoluteSameOriginUrl(url);
   return new Promise((resolve, reject) => {
@@ -136,13 +133,11 @@ export function describeEagleEyeEarthLayer(
     const overlay = imagery.usedOverlay && imagery.usedLocalEarth ? " · タイル上乗せ" : "";
     return `地図 · ${base}${overlay}`;
   }
-  // 軌道: 楕円体が本体。Imagery のみ成功表示は禁止クラス。
-  if (imagery.usedEarthEntity) {
-    const extra = imagery.usedLocalEarth ? " · グローブ併用" : "";
-    const overlay = imagery.usedOverlay ? " · タイル上乗せ" : "";
-    return `テクスチャ地球${extra}${overlay}`;
+  if (imagery.usedLocalEarth && imagery.usedEarthEntity) {
+    return "ローカル地球 · Primitive保険";
   }
-  if (imagery.usedLocalEarth) return "ローカル地球（グローブ）";
+  if (imagery.usedLocalEarth) return "ローカル地球";
+  if (imagery.usedEarthEntity) return "Primitive地球";
   return "なし";
 }
 
@@ -162,7 +157,7 @@ async function awaitLayerReady(layer: { readyPromise?: Promise<unknown> } | null
   }
 }
 
-/** 同一オリジン Blue Marble — ImageryLayer（地図モード土台） */
+/** 同一オリジン Blue Marble — globe の SingleTile（軌道・地図の本体） */
 export async function createVerifiedLocalEarthLayer(Cesium: CesiumLike) {
   const url = absoluteSameOriginUrl(EAGLE_EYE_LOCAL_EARTH_TEXTURE);
   const ok = await probeReachableImage(url);
@@ -171,11 +166,11 @@ export async function createVerifiedLocalEarthLayer(Cesium: CesiumLike) {
       `ローカル地球テクスチャに到達できません（${url}）。匿名配信か確認してください。`,
     );
   }
-  // WebGL に載る前にデコード成功を要求
-  await preloadImageElement(url);
+  const img = await preloadImageElement(url);
 
   let layer;
   if (Cesium.SingleTileImageryProvider?.fromUrl && Cesium.ImageryLayer?.fromProviderAsync) {
+    // fromUrl は画像を読み寸法を決める（tileWidth は constructor 専用）
     layer = await Cesium.ImageryLayer.fromProviderAsync(
       Cesium.SingleTileImageryProvider.fromUrl(url, {
         credit: "NASA Blue Marble (local)",
@@ -186,6 +181,8 @@ export async function createVerifiedLocalEarthLayer(Cesium: CesiumLike) {
       new Cesium.SingleTileImageryProvider({
         url,
         credit: "NASA Blue Marble (local)",
+        tileWidth: img.naturalWidth,
+        tileHeight: img.naturalHeight,
       }),
     );
   }
@@ -193,64 +190,111 @@ export async function createVerifiedLocalEarthLayer(Cesium: CesiumLike) {
   return layer;
 }
 
+type ViewerWithPrimitives = {
+  scene: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    primitives: { add: (p: any) => any; remove: (p: any) => boolean; length?: number; get?: (i: number) => any };
+  };
+  // stash for remove
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _eagleEyeEarthPrimitive?: any;
+};
+
 /**
- * 軌道俯瞰の本体: 先読み済みテクスチャの楕円体 Entity。
- * 衛星 billboard と同じ entities 経路。黒マテリアルで globe を覆うことは禁止。
+ * 保険: Primitive + Material Image（Entity ImageMaterialProperty は塗れないので禁止）。
+ * globe の上にわずかに大きい球として載せ、Imagery が黒でも大陸が見える。
  */
-export async function ensureEarthEllipsoidEntity(
-  viewer: {
-    entities: {
-      getById: (id: string) => { show?: boolean } | undefined;
-      removeById?: (id: string) => boolean;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      add: (opts: Record<string, unknown>) => any;
-    };
-  },
+export async function ensureEarthTexturedPrimitive(
+  viewer: ViewerWithPrimitives,
   Cesium: CesiumLike,
 ): Promise<boolean> {
   const url = absoluteSameOriginUrl(EAGLE_EYE_LOCAL_EARTH_TEXTURE);
-  let img: HTMLImageElement;
   try {
-    img = await preloadImageElement(url);
+    await preloadImageElement(url);
   } catch (error) {
-    console.error("[EagleEye] earth entity texture preload failed", error);
+    console.error("[EagleEye] earth primitive texture preload failed", error);
     return false;
   }
 
-  const existing = viewer.entities.getById(EAGLE_EYE_EARTH_ENTITY_ID);
-  if (existing) {
-    viewer.entities.removeById?.(EAGLE_EYE_EARTH_ENTITY_ID);
+  if (viewer._eagleEyeEarthPrimitive) {
+    try {
+      viewer.scene.primitives.remove(viewer._eagleEyeEarthPrimitive);
+    } catch {
+      /* ignore */
+    }
+    viewer._eagleEyeEarthPrimitive = undefined;
   }
 
-  // グローブよりわずかに大きくし、depth で隠れないようにする
-  const rMax = Cesium.Ellipsoid.WGS84.maximumRadius * 1.0015;
-  const rMin = Cesium.Ellipsoid.WGS84.minimumRadius * 1.0015;
-  viewer.entities.add({
-    id: EAGLE_EYE_EARTH_ENTITY_ID,
-    position: Cesium.Cartesian3.ZERO,
-    ellipsoid: {
-      radii: new Cesium.Cartesian3(rMax, rMax, rMin),
-      material: new Cesium.ImageMaterialProperty({
-        image: img,
-        transparent: false,
+  const rMax = Cesium.Ellipsoid.WGS84.maximumRadius * 1.0008;
+  const rMin = Cesium.Ellipsoid.WGS84.minimumRadius * 1.0008;
+  const vertexFormat =
+    Cesium.MaterialAppearance?.MaterialSupport?.TEXTURED?.vertexFormat ??
+    Cesium.VertexFormat?.POSITION_AND_ST;
+
+  try {
+    const primitive = new Cesium.Primitive({
+      geometryInstances: new Cesium.GeometryInstance({
+        id: EAGLE_EYE_EARTH_PRIMITIVE_ID,
+        geometry: new Cesium.EllipsoidGeometry({
+          radii: new Cesium.Cartesian3(rMax, rMax, rMin),
+          vertexFormat,
+          stackPartitions: 64,
+          slicePartitions: 64,
+        }),
       }),
-      subdivisions: 128,
-    },
-  });
-  return true;
+      appearance: new Cesium.MaterialAppearance({
+        material: Cesium.Material.fromType("Image", {
+          image: url,
+          repeat: new Cesium.Cartesian2(1.0, 1.0),
+        }),
+        faceForward: true,
+        flat: false,
+        translucent: false,
+      }),
+      asynchronous: false,
+      allowPicking: false,
+    });
+    viewer.scene.primitives.add(primitive);
+    viewer._eagleEyeEarthPrimitive = primitive;
+    return true;
+  } catch (error) {
+    console.error("[EagleEye] earth primitive failed", error);
+    return false;
+  }
+}
+
+export function setEarthTexturedPrimitiveVisible(
+  viewer: ViewerWithPrimitives,
+  visible: boolean,
+) {
+  const p = viewer._eagleEyeEarthPrimitive;
+  if (p) p.show = visible;
+}
+
+/** @deprecated Entity ImageMaterial は塗れない。互換のため no-op で false。 */
+export async function ensureEarthEllipsoidEntity(
+  _viewer: unknown,
+  _Cesium: CesiumLike,
+): Promise<boolean> {
+  return false;
 }
 
 export function setEarthEllipsoidEntityVisible(
-  viewer: { entities: { getById: (id: string) => { show?: boolean } | undefined } },
+  viewer: ViewerWithPrimitives & {
+    entities?: { getById: (id: string) => { show?: boolean } | undefined; removeById?: (id: string) => boolean };
+  },
   visible: boolean,
 ) {
-  const entity = viewer.entities.getById(EAGLE_EYE_EARTH_ENTITY_ID);
-  if (entity) entity.show = visible;
+  // 旧 Entity が残っていれば除去（黒／透明で覆わない）
+  const ent = viewer.entities?.getById?.(EAGLE_EYE_EARTH_ENTITY_ID);
+  if (ent && viewer.entities?.removeById) {
+    viewer.entities.removeById(EAGLE_EYE_EARTH_ENTITY_ID);
+  }
+  setEarthTexturedPrimitiveVisible(viewer, visible);
 }
 
 /**
- * Viewer 生成前: ローカル Blue Marble を baseLayer 候補にする。
- * 軌道では Entity が本体なので、失敗しても Viewer 生成は続行可。
+ * Viewer 生成前: ローカル Blue Marble を baseLayer にする。
  */
 export async function resolveEagleEyeBaseLayer(Cesium: CesiumLike): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
