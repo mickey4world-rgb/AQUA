@@ -4,6 +4,7 @@
  * 再発クラス（2026-09 三度目）:
  * - Entity + ImageMaterialProperty は楕円体に塗れず、globe を hide した結果
  *   大気の青い輪郭だけが残り HUD「テクスチャ地球」成功（preload ≠ 塗布）
+ * - Carto Voyager は image/* 200 でも「API KEY REQUIRED」透かし（reachable ≠ usable）
  *
  * 不変条件: 軌道俯瞰の初回ペイントで大陸が素人に分かる。
  * 手段:
@@ -11,6 +12,8 @@
  * - 保険: Primitive + Material.fromType('Image')（Entity ImageMaterial は使わない）
  * - 地図: globe + タイル、Primitive 保険は隠す
  */
+
+import { isUnauthenticatedCartoBasemapUrl } from "@/lib/maplibre-free-basemap";
 
 export const EAGLE_EYE_LOCAL_EARTH_TEXTURE = "/vendor/eagle-eye/earth-day.jpg";
 export const EAGLE_EYE_EARTH_ENTITY_ID = "eagle-eye-earth-ball";
@@ -28,14 +31,20 @@ export type EagleEyeImageryCandidate = {
 export const EAGLE_EYE_MAP_CANDIDATES: EagleEyeImageryCandidate[] = [
   {
     kind: "map",
-    url: "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-    credit: "Carto Voyager",
+    url: "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+    credit: "OpenStreetMap DE",
     maximumLevel: 18,
   },
   {
     kind: "map",
-    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    credit: "© OpenStreetMap",
+    url: "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    credit: "OpenStreetMap FR HOT",
+    maximumLevel: 18,
+  },
+  {
+    kind: "map",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+    credit: "Esri World Street Map",
     maximumLevel: 18,
   },
 ];
@@ -71,10 +80,16 @@ export function absoluteSameOriginUrl(pathOrUrl: string): string {
   return new URL(pathOrUrl, window.location.origin).toString();
 }
 
-/** 画像として読める URL か（HTML ログインページへの 302 を拒否） */
+/**
+ * 画像として読める URL か。
+ * - HTML ログイン 302 を拒否
+ * - キー無し Carto（透かし PNG・image/* 200）を拒否 — reachable ≠ usable
+ */
 export async function probeReachableImage(url: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  if (isUnauthenticatedCartoBasemapUrl(url)) return false;
   const absolute = absoluteSameOriginUrl(url);
+  if (isUnauthenticatedCartoBasemapUrl(absolute)) return false;
   const sameOrigin = absolute.startsWith(window.location.origin);
   try {
     const res = await fetch(absolute, {
@@ -86,9 +101,14 @@ export async function probeReachableImage(url: string): Promise<boolean> {
     if (!res.ok) return false;
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     if (ct.includes("text/html") || ct.includes("application/json")) return false;
-    if (ct.startsWith("image/")) return true;
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.length < 4) return false;
+    if (buf.length < 64) return false;
+    // 透かし PNG に埋め込まれた文言を拒否（Carto「API KEY REQUIRED」）
+    const asLatin1 = Array.from(buf, (b) => String.fromCharCode(b)).join("");
+    if (/API\s*KEY\s*REQUIRED/i.test(asLatin1) || /carto\.com\/basemaps\/apikey/i.test(asLatin1)) {
+      return false;
+    }
+    if (ct.startsWith("image/")) return true;
     const jpeg = buf[0] === 0xff && buf[1] === 0xd8;
     const png = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
     return jpeg || png;
