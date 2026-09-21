@@ -46,16 +46,30 @@ import {
 }
 
 {
-  const map = describeEagleEyeEarthLayer(
-    {
-      usedNaturalEarth: false,
-      usedLocalEarth: true,
-      usedOverlay: true,
-      usedEarthEntity: false,
-    },
-    "map",
+  assert.equal(
+    describeEagleEyeEarthLayer(
+      {
+        usedNaturalEarth: false,
+        usedLocalEarth: false,
+        usedOverlay: true,
+        usedEarthEntity: false,
+      },
+      "map",
+    ),
+    "地図 · メルカトルタイル",
   );
-  assert.equal(map, "地図 · ローカル地球 · タイル上乗せ");
+  assert.equal(
+    describeEagleEyeEarthLayer(
+      {
+        usedNaturalEarth: false,
+        usedLocalEarth: true,
+        usedOverlay: true,
+        usedEarthEntity: false,
+      },
+      "map",
+    ),
+    "地図 · ローカル地球 · タイル上乗せ",
+  );
 }
 
 console.log("eagle-eye-earth-imagery.test.ts: ok");

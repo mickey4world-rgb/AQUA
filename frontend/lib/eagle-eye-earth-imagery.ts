@@ -125,13 +125,12 @@ export function describeEagleEyeEarthLayer(
   mode: "orbit" | "map",
 ): string {
   if (mode === "map") {
-    const base = imagery.usedLocalEarth
-      ? "ローカル地球"
-      : imagery.usedOverlay
-        ? "外部タイル"
-        : "なし";
-    const overlay = imagery.usedOverlay && imagery.usedLocalEarth ? " · タイル上乗せ" : "";
-    return `地図 · ${base}${overlay}`;
+    if (imagery.usedOverlay) {
+      return imagery.usedLocalEarth
+        ? "地図 · ローカル地球 · タイル上乗せ"
+        : "地図 · メルカトルタイル";
+    }
+    return imagery.usedLocalEarth ? "地図 · ローカル地球" : "地図 · なし";
   }
   if (imagery.usedLocalEarth && imagery.usedEarthEntity) {
     return "ローカル地球 · Primitive保険";
