@@ -367,6 +367,20 @@ function roundSize(size: number, decimals: number): number {
   return Math.floor(size * factor) / factor;
 }
 
+function isTradeableProduct(product: string | undefined): product is TradeableProduct {
+  return (
+    product === "BTC_JPY" ||
+    product === "ETH_JPY" ||
+    product === "XRP_JPY" ||
+    product === "XLM_JPY"
+  );
+}
+
+function tradeableProductLabel(product: string | undefined): string {
+  if (!isTradeableProduct(product)) return product ?? "?";
+  return PRODUCT_META[product].label;
+}
+
 /** 取引所最小ロットを満たす円建て下限 */
 export function minOrderNotionalYen(product: TradeableProduct, priceYen: number): number {
   const meta = PRODUCT_META[product];
@@ -1341,7 +1355,7 @@ export async function runDailyAssetTrade(input: {
 
   const executedBuys = executedTrades.filter((t) => t.side === "BUY");
   const buyTotal = executedBuys.reduce((sum, t) => sum + t.sizeJpy, 0);
-  const buyLabels = executedBuys.map((t) => PRODUCT_META[t.product].label).join("/");
+  const buyLabels = executedBuys.map((t) => tradeableProductLabel(t.product)).join("/");
   const isTp = decision.action === "SELL" && decision.tradeReason === "take-profit";
   const sellLabel =
     decision.action === "SELL" ? PRODUCT_META[decision.product].rpgName : "";
