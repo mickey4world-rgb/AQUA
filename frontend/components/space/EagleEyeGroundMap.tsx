@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GROUND_CAMERAS, type GroundCamera } from "@/lib/eagle-eye-data";
 import { probeReachableImage } from "@/lib/eagle-eye-earth-imagery";
+import { pickWorkingFreeBasemap } from "@/lib/maplibre-free-basemap";
 
 type EagleEyeGroundMapProps = {
   selectedCameraId: string | null;
@@ -15,28 +16,6 @@ const MAPLIBRE_CSS =
 const MAPLIBRE_JS =
   "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js";
 
-const CARTO_TILES = [
-  "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-  "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-  "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-];
-const OSM_TILES = ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"];
-
-function rasterStyle(tiles: string[], attribution: string) {
-  return {
-    version: 8 as const,
-    sources: {
-      basemap: {
-        type: "raster" as const,
-        tiles,
-        tileSize: 256,
-        attribution,
-        maxzoom: 18,
-      },
-    },
-    layers: [{ id: "basemap", type: "raster" as const, source: "basemap" }],
-  };
-}
 
 type MapLibreMap = {
   remove: () => void;
@@ -120,27 +99,10 @@ function placeCameraMarkers(
   return markers;
 }
 
-async function pickWorkingStyle() {
-  const cartoSample = CARTO_TILES[0]!.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1");
-  if (await probeReachableImage(cartoSample)) {
-    return {
-      style: rasterStyle(CARTO_TILES, "© CARTO · © OpenStreetMap"),
-      label: "Carto Voyager",
-    };
-  }
-  const osmSample = OSM_TILES[0]!.replace("{z}", "2").replace("{x}", "1").replace("{y}", "1");
-  if (await probeReachableImage(osmSample)) {
-    return {
-      style: rasterStyle(OSM_TILES, "© OpenStreetMap"),
-      label: "OpenStreetMap",
-    };
-  }
-  throw new Error("無料地図タイル（Carto / OSM）に到達できません");
-}
-
 /**
  * 地上カメラ用 2D 地図（MapLibre + 無料ラスタ）。
- * タイル probe → 失敗時 OSM。resize 必須（暗いままの空キャンバス防止）。
+ * タイル probe → OSM DE / Esri 等。resize 必須（暗いままの空キャンバス防止）。
+ * Carto 透かし（API KEY REQUIRED）は成功扱いにしない。
  */
 export default function EagleEyeGroundMap({
   selectedCameraId,
@@ -163,7 +125,7 @@ export default function EagleEyeGroundMap({
 
     void (async () => {
       try {
-        const picked = await pickWorkingStyle();
+        const picked = await pickWorkingFreeBasemap(probeReachableImage);
         if (cancelled || !containerRef.current) return;
 
         const maplibregl = await loadMapLibre();
