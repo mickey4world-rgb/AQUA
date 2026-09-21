@@ -14,23 +14,35 @@ import {
     absoluteSameOriginUrl("https://example.com/a.jpg"),
     "https://example.com/a.jpg",
   );
-  // jsdom 無しの Node では window が無い → 相対はそのまま（ブラウザで origin 解決）
   assert.equal(absoluteSameOriginUrl(EAGLE_EYE_LOCAL_EARTH_TEXTURE), EAGLE_EYE_LOCAL_EARTH_TEXTURE);
 }
 
 {
-  // 軌道: 楕円体成功のみ — 「ローカル地球・楕円体保険」の弱オラクル文言を出さない
-  const orbit = describeEagleEyeEarthLayer(
-    {
-      usedNaturalEarth: false,
-      usedLocalEarth: false,
-      usedOverlay: false,
-      usedEarthEntity: true,
-    },
-    "orbit",
+  // 軌道: globe SingleTile 本体 — 「テクスチャ地球」だけで Entity 成功を偽装しない
+  assert.equal(
+    describeEagleEyeEarthLayer(
+      {
+        usedNaturalEarth: false,
+        usedLocalEarth: true,
+        usedOverlay: false,
+        usedEarthEntity: false,
+      },
+      "orbit",
+    ),
+    "ローカル地球",
   );
-  assert.equal(orbit, "テクスチャ地球");
-  assert.ok(!orbit.includes("保険"), "保険という言葉で黒玉成功を偽装しない");
+  assert.equal(
+    describeEagleEyeEarthLayer(
+      {
+        usedNaturalEarth: false,
+        usedLocalEarth: true,
+        usedOverlay: false,
+        usedEarthEntity: true,
+      },
+      "orbit",
+    ),
+    "ローカル地球 · Primitive保険",
+  );
 }
 
 {
