@@ -17,6 +17,18 @@ export const MIN_HOLD_BEFORE_SOFT_STOP_MS = 30 * 24 * 60 * 60 * 1000;
 export const LONG_TERM_RECOVERY_HORIZON_MS = 365 * 24 * 60 * 60 * 1000;
 export const MONTHLY_TARGET_RATE = 0.02;
 export const SLEEP_MODE_RATE = 0.1;
+
+/** 月次利益目標の下限（常に 2,000 円以上） */
+export function clampMonthlyTargetYen(targetYen: number | undefined | null): number {
+  const n = typeof targetYen === "number" && Number.isFinite(targetYen) ? targetYen : 0;
+  return Math.max(MIN_MONTHLY_TARGET_YEN, Math.round(n));
+}
+
+/** 月初残高から月次利益目標を算出（×2%、下限 2,000 円） */
+export function computeMonthlyTargetYenFromOpening(openingBalanceYen: number): number {
+  const opening = Math.max(0, openingBalanceYen);
+  return Math.max(MIN_MONTHLY_TARGET_YEN, Math.round(opening * MONTHLY_TARGET_RATE));
+}
 export const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 export const MAX_DAILY_BUY_YEN = 20_000;
 export const MAX_SPREAD_BPS = 12;
