@@ -7,7 +7,12 @@ import {
   absoluteSameOriginUrl,
   describeEagleEyeEarthLayer,
   EAGLE_EYE_LOCAL_EARTH_TEXTURE,
+  EAGLE_EYE_MAP_CANDIDATES,
 } from "./eagle-eye-earth-imagery";
+import {
+  FREE_BASEMAP_CANDIDATES,
+  isUnauthenticatedCartoBasemapUrl,
+} from "./maplibre-free-basemap";
 
 {
   assert.equal(
@@ -70,6 +75,39 @@ import {
     ),
     "地図 · ローカル地球 · タイル上乗せ",
   );
+}
+
+{
+  // キー無し Carto は常に拒否（透かし PNG = 地図が見える、ではない）
+  assert.equal(
+    isUnauthenticatedCartoBasemapUrl(
+      "https://a.basemaps.cartocdn.com/rastertiles/voyager/2/1/1.png",
+    ),
+    true,
+  );
+  assert.equal(
+    isUnauthenticatedCartoBasemapUrl(
+      "https://basemaps.cartocdn.com/rastertiles/voyager/2/1/1.png?api_key=demo",
+    ),
+    false,
+  );
+  assert.equal(
+    isUnauthenticatedCartoBasemapUrl("https://tile.openstreetmap.de/2/1/1.png"),
+    false,
+  );
+}
+
+{
+  // 候補にキー無し Carto を入れない
+  for (const c of EAGLE_EYE_MAP_CANDIDATES) {
+    assert.equal(isUnauthenticatedCartoBasemapUrl(c.url), false, c.credit);
+    assert.ok(!c.url.includes("cartocdn.com"), c.credit);
+  }
+  for (const c of FREE_BASEMAP_CANDIDATES) {
+    assert.ok(!c.tiles.some((t) => t.includes("cartocdn.com")), c.id);
+    assert.ok(!c.sampleUrl.includes("{"), `sample must be concrete: ${c.id}`);
+  }
+  assert.ok(FREE_BASEMAP_CANDIDATES.length >= 2);
 }
 
 console.log("eagle-eye-earth-imagery.test.ts: ok");

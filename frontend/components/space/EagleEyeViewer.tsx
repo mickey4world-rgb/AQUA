@@ -188,7 +188,7 @@ async function ensureEarthImagery(
 
     if (!usedOverlay) {
       throw new Error(
-        "メルカトル地図タイル（Carto / OSM / Esri）に到達できません。ネットワークまたは CSP を確認してください。",
+        "メルカトル地図タイル（OSM / Esri）に到達できません。ネットワークまたは CSP を確認してください。",
       );
     }
   }
