@@ -189,11 +189,10 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-            投資推移（元本 → 現在）
+            実現損益の推移（元本 → 現在）
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
-            {perf.startDate.replace(/-/g, "/")} 開始の現金{" "}
-            {formatCurrency(perf.principalYen)} がどう変わったか。点は売買、破線は月次目標総資産。
+            {perf.startDate.replace(/-/g, "/")} 開始。売りで確定した損益だけを積み上げます（保有の時価は含めません）。点は売買、破線は月次の実現目標。
           </p>
         </div>
         <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5 text-[11px]">
@@ -220,16 +219,16 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <div>
-          <p className="text-[10px] text-slate-500">現在の総魔力</p>
+          <p className="text-[10px] text-slate-500">実現ベース（元本+累積実現）</p>
           <p className="text-xl font-semibold text-white">
             {formatCurrency(perf.currentTotalYen)}
           </p>
           <p className="text-[11px] text-slate-400">
-            現金 {formatCurrency(perf.currentCashYen)}
+            現金残高 {formatCurrency(perf.currentCashYen)}（参考）
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-slate-500">元本からの損益</p>
+          <p className="text-[10px] text-slate-500">累積実現損益</p>
           <p
             className={`text-xl font-semibold ${
               profitPositive ? "text-emerald-300" : "text-rose-300"
@@ -243,12 +242,12 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-slate-500">今月の目標総資産</p>
+          <p className="text-[10px] text-slate-500">今月の実現目標ライン</p>
           <p className="text-xl font-semibold text-amber-200">
             {formatCurrency(perf.monthGoalTotalYen)}
           </p>
           <p className="text-[11px] text-slate-400">
-            利益目標 {formatCurrency(perf.monthlyTargetYen)} · 実現{" "}
+            利益目標 {formatCurrency(perf.monthlyTargetYen)} · 今月の実現{" "}
             {signedYen(perf.monthlyRealizedPnlYen)}
           </p>
         </div>
@@ -264,7 +263,7 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
             viewBox={`0 0 ${chart.w} ${chart.h}`}
             className="h-auto w-full min-w-[320px]"
             role="img"
-            aria-label="総資産の折れ線グラフ"
+            aria-label="実現損益の折れ線グラフ"
           >
             {chart.ticks.map((t) => {
               const y = chart.yAt?.(t) ?? 0;
@@ -309,7 +308,7 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
               元本
             </text>
 
-            {/* 月次目標総資産 */}
+            {/* 月次実現目標 */}
             <path
               d={chart.goalPath}
               fill="none"
@@ -318,7 +317,7 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
               strokeDasharray="5 4"
             />
 
-            {/* 総資産 */}
+            {/* 実現ベース評価 */}
             <path
               d={chart.path}
               fill="none"
@@ -337,7 +336,7 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
                 fill={pt.p.tradeCount > 0 ? "#fbbf24" : profitPositive ? "#34d399" : "#fb7185"}
               >
                 <title>
-                  {pt.p.label}: 総資産 {formatCurrency(pt.p.totalYen)} / 損益{" "}
+                  {pt.p.label}: 実現ベース {formatCurrency(pt.p.totalYen)} / 累積実現{" "}
                   {signedYen(pt.p.pnlYen)}
                   {pt.p.tradeCount > 0
                     ? ` / 約定 ${pt.p.tradeCount}件 買${formatCurrency(pt.p.buyYen)} 売${formatCurrency(pt.p.sellYen)}`
@@ -398,11 +397,11 @@ function EquityPerformanceChart({ perf }: { perf: EquityPerf }) {
             className="inline-block h-0.5 w-4 rounded"
             style={{ background: profitPositive ? "#34d399" : "#fb7185" }}
           />
-          総資産
+          実現ベース（元本+累積実現）
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 border-t border-dashed border-amber-300/80" />
-          月次目標総資産
+          月次の実現目標
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 border-t border-dashed border-slate-400/70" />
@@ -811,7 +810,7 @@ function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
             <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/80">1 · Overview</p>
             <h3 className="mt-1 text-lg font-semibold text-white">全体の損益・目標</h3>
             <p className="mt-1 text-[11px] text-slate-500">
-              元本からの利益／マイナスと、今月の目標進捗です。
+              売りで確定した損益の積み上げです。保有銘柄の時価はグラフに含めません。
             </p>
           </div>
           {assets && (
@@ -839,16 +838,16 @@ function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
           <>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Stat
-                label="現在の総資産"
+                label="現在の総資産（時価）"
                 value={formatCurrency(assets.totalYen)}
-                hint={`前日比 ${signedYen(assets.dayChangeYen)}`}
+                hint={`前日比 ${signedYen(assets.dayChangeYen)} · 参考`}
               />
               <Stat
-                label="元本からの損益"
+                label="累積実現損益"
                 value={equity ? signedYen(equity.pnlYen) : "—"}
                 hint={
                   equity
-                    ? `元本 ${formatCurrency(equity.principalYen)} · ${equity.pnlPct >= 0 ? "+" : ""}${equity.pnlPct}%`
+                    ? `実現ベース ${formatCurrency(equity.currentTotalYen)} · ${equity.pnlPct >= 0 ? "+" : ""}${equity.pnlPct}%`
                     : `元本 ${formatCurrency(assets.principalYen)}`
                 }
               />
@@ -868,7 +867,7 @@ function AssetsOpsPanels({ report }: { report: SolunaOpsAnalyticsReport }) {
               <EquityPerformanceChart perf={equity} />
             ) : (
               <p className="mt-4 text-sm text-rose-200">
-                投資推移グラフを組み立てられませんでした。再読み込みするか、Asset Trade
+                実現損益の推移を組み立てられませんでした。再読み込みするか、Asset Trade
                 実行後に再度開いてください。
               </p>
             )}
