@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { stopMapEmoji } from "@/lib/travel-icons";
 import type { TravelStop } from "@/lib/types/travel";
+import { probeReachableImage } from "@/lib/eagle-eye-earth-imagery";
+import { pickWorkingFreeBasemap } from "@/lib/maplibre-free-basemap";
 
 type TravelMapProps = {
   stops: TravelStop[];
@@ -16,23 +18,6 @@ const MAPLIBRE_CSS =
 const MAPLIBRE_JS =
   "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js";
 
-const STYLE = {
-  version: 8 as const,
-  sources: {
-    carto: {
-      type: "raster" as const,
-      tiles: [
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "© CARTO · © OpenStreetMap",
-      maxzoom: 18,
-    },
-  },
-  layers: [{ id: "carto", type: "raster" as const, source: "carto" }],
-};
 
 type MapLibreMap = {
   remove: () => void;
@@ -128,8 +113,11 @@ export default function TravelMap({
     let cancelled = false;
     let ro: ResizeObserver | null = null;
 
-    void loadMapLibre()
-      .then((maplibregl) => {
+    void (async () => {
+      try {
+        const picked = await pickWorkingFreeBasemap(probeReachableImage);
+        if (cancelled || !containerRef.current) return;
+        const maplibregl = await loadMapLibre();
         if (cancelled || !containerRef.current) return;
         maplibreRef.current = maplibregl;
         const mapped = stopsWithCoords(stopsRef.current);
@@ -139,7 +127,7 @@ export default function TravelMap({
 
         const map = new maplibregl.Map({
           container: containerRef.current,
-          style: STYLE,
+          style: picked.style,
           center,
           zoom: mapped.length ? 11 : 5,
           attributionControl: true,
@@ -170,11 +158,11 @@ export default function TravelMap({
         ro = new ResizeObserver(() => map.resize());
         ro.observe(containerRef.current);
         requestAnimationFrame(() => map.resize());
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("[TravelMap]", err);
         if (!cancelled) setError("地図を読み込めませんでした");
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
