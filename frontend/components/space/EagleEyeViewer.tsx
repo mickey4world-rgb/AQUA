@@ -43,6 +43,9 @@ import {
   setEarthTexturedPrimitiveVisible,
   type EagleEyeImageryCandidate,
 } from "@/lib/eagle-eye-earth-imagery";
+import EagleEyeScanMap, {
+  type ScanMapBounds,
+} from "@/components/space/EagleEyeScanMap";
 
 type CesiumModule = {
   // CDN global; keep intentionally loose (no npm cesium package).
@@ -341,6 +344,7 @@ export default function EagleEyeViewer({
     null,
   );
   const [footprintLabel, setFootprintLabel] = useState<string | null>(null);
+  const [scanBounds, setScanBounds] = useState<ScanMapBounds | null>(null);
   const [hud, setHud] = useState({
     speed: "—",
     nearest: "",
@@ -484,126 +488,22 @@ export default function EagleEyeViewer({
         : { lat: 35.68, lon: 139.76, altKm: 400 };
       const fp = resolveFootprintForSatellite(sat, pos.lat, pos.lon, pos.altKm);
       activeFootprintRef.current = fp;
-      setFootprintLabel(fp?.label ?? null);
+      setFootprintLabel(fp?.label ?? sat.name);
+      setScanBounds(getFootprintZoomBounds(fp));
+      setHud((prev) => ({
+        ...prev,
+        earthLayer: "MapLibre 地図を読み込み中…",
+      }));
 
-      if (footprintRef.current) viewer.entities.remove(footprintRef.current);
-
-      const zoomBounds = getFootprintZoomBounds(fp);
-
-      // ① 宇宙から衛星付近へ（3D）
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          pos.lon,
-          pos.lat,
-          Math.max(pos.altKm * 1000 + 800_000, 600_000),
-        ),
-        orientation: {
-          heading: 0,
-          pitch: Cesium.Math.toRadians(-65),
-          roll: 0,
-        },
-        duration: 1.8,
-        easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
-        complete: () => {
-          if (!viewer || viewer.isDestroyed()) return;
-          // ② WebMercator タイルを載せてから 2D へ（Geographic SingleTile は使わない）
-          void ensureEarthImagery(viewer, Cesium, {
-            withLabels: true,
-            preferSatellite: true,
-            resetBase: true,
-            mode: "map",
-          })
-            .then((imagery) => {
-              if (!viewer || viewer.isDestroyed()) return;
-              if (!imagery.usedOverlay) {
-                throw new Error("メルカトル地図タイルを表示できませんでした。");
-              }
-              setHud((prev) => ({
-                ...prev,
-                earthLayer: describeEarthLayer(imagery, "map"),
-              }));
-
-              let mapViewDone = false;
-              const finishMapView = () => {
-                if (mapViewDone || !viewer || viewer.isDestroyed()) return;
-                mapViewDone = true;
-                viewer.scene.globe.show = true;
-                if (footprintRef.current) {
-                  try {
-                    viewer.entities.remove(footprintRef.current);
-                  } catch {
-                    /* ignore */
-                  }
-                }
-                footprintRef.current = viewer.entities.add({
-                  id: `${sat.id}-footprint`,
-                  name: fp.label,
-                  rectangle: {
-                    coordinates: Cesium.Rectangle.fromDegrees(
-                      fp.west,
-                      fp.south,
-                      fp.east,
-                      fp.north,
-                    ),
-                    material:
-                      Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(
-                        0.12,
-                      ),
-                    height: 0,
-                    outline: true,
-                    outlineColor:
-                      Cesium.Color.fromCssColorString(NEAREST_COLOR).withAlpha(0.9),
-                    outlineWidth: 2,
-                  },
-                });
-                showMapCameras(true);
-                viewer.camera.flyTo({
-                  destination: Cesium.Rectangle.fromDegrees(
-                    zoomBounds.west,
-                    zoomBounds.south,
-                    zoomBounds.east,
-                    zoomBounds.north,
-                  ),
-                  duration: 1.8,
-                  easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
-                });
-                viewer.scene.requestRender?.();
-              };
-
-              // morph 完了後にカメラ移動（途中 flyTo すると黒画面のまま固まる）
-              const onMorphComplete = () => {
-                try {
-                  viewer.scene.morphComplete.removeEventListener(onMorphComplete);
-                } catch {
-                  /* ignore */
-                }
-                finishMapView();
-              };
-              viewer.scene.morphComplete.addEventListener(onMorphComplete);
-              viewer.scene.morphTo2D(1.2);
-              // morphComplete が来ない環境向けフォールバック
-              window.setTimeout(() => {
-                if (!viewer || viewer.isDestroyed()) return;
-                if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
-                  try {
-                    viewer.scene.morphComplete.removeEventListener(onMorphComplete);
-                  } catch {
-                    /* ignore */
-                  }
-                  finishMapView();
-                }
-              }, 1600);
-            })
-            .catch((error) => {
-              console.error("[EagleEye] map imagery failed", error);
-              setLoadError(
-                error instanceof Error
-                  ? error.message
-                  : "地図テクスチャの読み込みに失敗しました",
-              );
-            });
-        },
-      });
+      // Cesium 2D morph は黒画面の再発源。3D の上に MapLibre を被せる。
+      if (footprintRef.current) {
+        try {
+          viewer.entities.remove(footprintRef.current);
+        } catch {
+          /* ignore */
+        }
+        footprintRef.current = null;
+      }
 
       updateSatelliteStyles(nearestIdRef.current, sat.id);
       emitState({
@@ -613,7 +513,7 @@ export default function EagleEyeViewer({
         activeCamera: null,
       });
     },
-    [emitState, showMapCameras, updateSatelliteStyles],
+    [emitState, updateSatelliteStyles],
   );
 
   const exitMapMode = useCallback(() => {
@@ -624,6 +524,7 @@ export default function EagleEyeViewer({
     mapModeRef.current = false;
     setIsMapMode(false);
     setMapSatellite(null);
+    setScanBounds(null);
     selectedSatRef.current = null;
     activeFootprintRef.current = null;
     setFootprintLabel(null);
@@ -633,10 +534,11 @@ export default function EagleEyeViewer({
       footprintRef.current = null;
     }
 
+    // 常に 3D のままなので morph 不要。地表 HUD を軌道表記に戻す。
     void ensureEarthImagery(viewer, Cesium, {
       withLabels: false,
       preferSatellite: false,
-      resetBase: true,
+      resetBase: false,
       mode: "orbit",
     })
       .then((imagery) => {
@@ -647,26 +549,18 @@ export default function EagleEyeViewer({
       })
       .catch((error) => {
         console.error("[EagleEye] exit-map imagery failed", error);
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "地球テクスチャの読み込みに失敗しました",
-        );
       });
+
     showMapCameras(true);
-    viewer.scene.morphTo3D(1.5);
-    setTimeout(() => {
-      if (!viewer || viewer.isDestroyed()) return;
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(139.76, 20.0, 22_000_000),
-        orientation: {
-          heading: 0,
-          pitch: Cesium.Math.toRadians(-90),
-          roll: 0,
-        },
-        duration: 2,
-      });
-    }, 300);
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(139.76, 20.0, 22_000_000),
+      orientation: {
+        heading: 0,
+        pitch: Cesium.Math.toRadians(-90),
+        roll: 0,
+      },
+      duration: 1.6,
+    });
 
     updateSatelliteStyles(nearestIdRef.current, null);
     emitState({
@@ -1087,6 +981,30 @@ export default function EagleEyeViewer({
         ref={containerRef}
         className="h-full w-full overflow-hidden rounded-xl"
       />
+      {ready && isMapMode && scanBounds && (
+        <EagleEyeScanMap
+          key={`${mapSatellite?.id ?? "scan"}-${scanBounds.west.toFixed(2)}-${scanBounds.north.toFixed(2)}`}
+          bounds={scanBounds}
+          footprintLabel={footprintLabel ?? mapSatellite?.name ?? "スキャン領域"}
+          selectedCameraId={selectedCameraId}
+          onSelectCamera={(cam) => {
+            emitState({ phase: "live", activeCamera: cam });
+          }}
+          onReady={(label) => {
+            setHud((prev) => ({
+              ...prev,
+              earthLayer: `地図 · MapLibre · ${label}`,
+            }));
+          }}
+          onError={(message) => {
+            setLoadError(message);
+            setHud((prev) => ({
+              ...prev,
+              earthLayer: "地図 · 読み込み失敗",
+            }));
+          }}
+        />
+      )}
       {!ready && !loadError && (
         <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/70">
           <p className="text-sm text-slate-300">
@@ -1095,12 +1013,12 @@ export default function EagleEyeViewer({
         </div>
       )}
       {loadError && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/80 px-4">
+        <div className="absolute inset-0 z-[8] flex items-center justify-center rounded-xl bg-black/80 px-4">
           <p className="text-sm text-rose-200">{loadError}</p>
         </div>
       )}
       {ready && (
-        <div className="pointer-events-none absolute left-3 top-3 space-y-1.5">
+        <div className="pointer-events-none absolute left-3 top-3 z-[7] space-y-1.5">
           <div className="rounded-lg border border-amber-400/30 bg-black/70 px-3 py-2 text-xs">
             <p className="text-amber-300/80">
               リアルタイム軌道 · {hud.count}機
@@ -1126,16 +1044,16 @@ export default function EagleEyeViewer({
         </button>
       )}
       {ready && !isMapMode && (
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/60 px-3 py-2 text-xs text-slate-300">
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[7] rounded-lg bg-black/60 px-3 py-2 text-xs text-slate-300">
           撮影可能は強調表示 · 衛星クリックで上空写真へ
         </div>
       )}
       {ready && isMapMode && mapSatellite && (
-        <div className="pointer-events-none absolute bottom-3 left-3 max-w-xs rounded-lg bg-black/70 px-3 py-2 text-xs text-slate-300">
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[7] max-w-xs rounded-lg bg-black/70 px-3 py-2 text-xs text-slate-300">
           <p className="text-amber-200/90">スキャン画像エリア</p>
           <p className="mt-0.5">{footprintLabel ?? mapSatellite.name}</p>
           <p className="mt-1 text-[10px] text-slate-400">
-            地上ピンをクリックでカメラへ降下 · 右側に MapLibre 地図
+            メルカトル地図（MapLibre）· オレンジピンで地上カメラへ
           </p>
         </div>
       )}
