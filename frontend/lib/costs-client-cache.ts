@@ -61,6 +61,6 @@ export function costsAzureCacheKey(month: string): string {
 }
 
 export function costsSolunaOpsCacheKey(month: string): string {
-  // v2: equityPerformance 付きレポート（古いクライアントキャッシュを捨てる）
-  return `soluna-ops:v2:${month}`;
+  // v3: 実現損益ベースの折れ線（古いクライアントキャッシュを捨てる）
+  return `soluna-ops:v3:${month}`;
 }
