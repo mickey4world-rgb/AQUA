@@ -12,48 +12,44 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "full = RSS+enrich / enrich-only = 失敗カテゴリ再試行 / morning-gate = 朝チェック"
+        description: "full / enrich-only / morning-gate / schedule-probe（次定時のスキップ判定だけ検証）"
         type: choice
         options:
           - full
           - enrich-only
           - morning-gate
+          - schedule-probe
         default: full
 
 jobs:
+  schedule_probe:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'schedule-probe'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe next-schedule skip decision (schema + isToday)
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: node frontend/scripts/probe-works-news-schedule.mjs
+
   build_digest:
     if: >
-      github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'morning-gate' && github.event.inputs.mode != 'enrich-only'
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'morning-gate' && github.event.inputs.mode != 'enrich-only' && github.event.inputs.mode != 'schedule-probe'
       || github.event_name == 'schedule' && github.event.schedule != '0 22 * * *'
     runs-on: ubuntu-latest
     steps:
+      # checkout を先に置き、スキップ判定をリポジトリ内スクリプトと共有（次定時オラクルと同一ロジック）
+      - uses: actions/checkout@v4
+
       - name: Skip if today's digest already complete
         id: gate
         if: github.event_name == 'schedule'
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
-        run: |
-          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/works/news-search/cron" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d '{"step":"status"}' || true)
-          echo "status HTTP ${HTTP_CODE}"
-          cat /tmp/works-news-status.json 2>/dev/null || true
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
-          echo "enrichmentOk=${OK}"
-          if [ "${OK}" = "true" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "当日分は完了済み — checkout/npm/再enrich をスキップ"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "当日未完了または昨日フォールバック — フルパイプラインへ"
-          fi
-
-      - uses: actions/checkout@v4
-        if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
+        run: node frontend/scripts/probe-works-news-schedule.mjs --gate
 
       - name: Setup Node.js
         if: github.event_name != 'schedule' || steps.gate.outputs.skip != 'true'
@@ -120,24 +116,19 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Check enrichment status
+      - name: Check enrichment status (same probe as night skip)
         id: status
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
-          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/works/news-search/cron" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d '{"step":"status"}')
-          cat /tmp/works-news-status.json
-          echo ""
-          echo "status HTTP ${HTTP_CODE}"
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
-          echo "enrichmentOk=${OK}"
-          echo "ok=${OK}" >> "$GITHUB_OUTPUT"
+          node frontend/scripts/probe-works-news-schedule.mjs --gate
+          # --gate は skip=true のとき当日 complete。morning では ok= に読み替え
+          if grep -q '^skip=true' "$GITHUB_OUTPUT"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Force full rebuild if incomplete
         if: steps.status.outputs.ok != 'true'
@@ -150,18 +141,4 @@ jobs:
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
-        run: |
-          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
-          HTTP_CODE=$(curl -sS --max-time 60 -o /tmp/works-news-status2.json -w "%{http_code}" \
-            -X POST "${BASE%/}/api/works/news-search/cron" \
-            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d '{"step":"status"}')
-          cat /tmp/works-news-status2.json
-          echo ""
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status2.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
-          if [ "${OK}" != "true" ]; then
-            echo "::error::朝7時時点で News Search の当日（JST）AI 解説が未完了。昨日の complete を成功扱いにしない。"
-            exit 1
-          fi
-          echo "morning gate ok"
+        run: node frontend/scripts/probe-works-news-schedule.mjs --require-complete
