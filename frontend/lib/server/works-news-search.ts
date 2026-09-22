@@ -18,6 +18,7 @@ import {
 } from "@/lib/server/works-news-search-rss";
 import {
   getLatestWorksNewsDigest,
+  getTodayWorksNewsDigest,
   saveWorksNewsDigest,
   stableNewsItemId,
   worksNewsSearchDocId,
@@ -395,7 +396,9 @@ export async function enrichWorksNewsDigestCategory(
   | { ok: true; digest: NewsSearchDigest; enrichedCount: number }
   | { ok: false; reason: string }
 > {
-  const existing = await getLatestWorksNewsDigest();
+  // cron / 再取得は当日ドキュメントが正。昨日フォールバックは UI 閲覧専用。
+  const existing =
+    (await getTodayWorksNewsDigest()) ?? (await getLatestWorksNewsDigest());
   if (!existing) {
     return { ok: false, reason: "先にニュース一覧が必要です。深夜取得を待つか、一覧を再取得してください。" };
   }
@@ -468,7 +471,7 @@ export async function buildWorksNewsDigest(options?: {
 }): Promise<{ ok: true; digest: NewsSearchDigest } | { ok: false; reason: string }> {
   const docId = worksNewsSearchDocId();
   if (!options?.force) {
-    const existing = await getLatestWorksNewsDigest();
+    const existing = await getTodayWorksNewsDigest();
     if (existing?.id === docId) return { ok: true, digest: withEnrichmentMeta(existing) };
   }
 
