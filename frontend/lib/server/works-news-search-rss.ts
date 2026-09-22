@@ -2,8 +2,12 @@
  * WORKS ニュースサーチ用・複数ソース RSS 収集
  * Google News / Bing News / 公的・専門フィードを併用。
  * 主フィード不足時は同意図の緊急ライブフィードで補完（学習データ捏造は禁止）。
+ *
+ * 2026-09: 死んだ URL（デジタル庁/総務省 404、Reuters DNS、MS DevBlogs 証明書切れ）を除去し、
+ * 503/429 は rss-fetch でリトライ。英語記事の日本語訳は後段 works-news-search 側。
  */
 import { parseStringPromise } from "xml2js";
+import { fetchRssXml } from "@/lib/server/rss-fetch";
 import type { NewsSearchCategory } from "@/lib/types/works-news-search";
 
 export type RawNewsSeed = {
@@ -42,6 +46,12 @@ const FEEDS: readonly FeedDef[] = [
   },
   {
     category: "ai",
+    url: "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",
+    sourceName: "ITmedia AI+",
+    weight: 1.15,
+  },
+  {
+    category: "ai",
     url: "https://feeds.arstechnica.com/arstechnica/technology-lab",
     sourceName: "Ars Technica",
     weight: 1.0,
@@ -66,15 +76,21 @@ const FEEDS: readonly FeedDef[] = [
   },
   {
     category: "systems",
+    url: "https://www.publickey1.jp/atom.xml",
+    sourceName: "Publickey",
+    weight: 1.15,
+  },
+  {
+    category: "systems",
     url: "https://www.infoq.com/feed/",
     sourceName: "InfoQ",
     weight: 1.0,
   },
   {
     category: "systems",
-    url: "https://devblogs.microsoft.com/feed/",
-    sourceName: "Microsoft DevBlogs",
-    weight: 1.05,
+    url: "https://rss.itmedia.co.jp/rss/2.0/news_technology.xml",
+    sourceName: "ITmedia テクノロジ",
+    weight: 1.1,
   },
   {
     category: "economy",
@@ -96,9 +112,15 @@ const FEEDS: readonly FeedDef[] = [
   },
   {
     category: "economy",
-    url: "https://feeds.reuters.com/reuters/businessNews",
-    sourceName: "Reuters",
+    url: "https://news.yahoo.co.jp/rss/topics/business.xml",
+    sourceName: "Yahoo! ビジネス",
     weight: 1.1,
+  },
+  {
+    category: "economy",
+    url: "https://feeds.bbci.co.uk/news/business/rss.xml",
+    sourceName: "BBC Business",
+    weight: 1.05,
   },
   {
     category: "government",
@@ -114,15 +136,15 @@ const FEEDS: readonly FeedDef[] = [
   },
   {
     category: "government",
-    url: "https://www.digital.go.jp/news.rss",
-    sourceName: "デジタル庁",
-    weight: 1.3,
+    url: "https://news.yahoo.co.jp/rss/topics/domestic.xml",
+    sourceName: "Yahoo! 国内",
+    weight: 1.15,
   },
   {
     category: "government",
-    url: "https://www.soumu.go.jp/menu_news/s-news/index.rss",
-    sourceName: "総務省",
-    weight: 1.2,
+    url: "https://www.nhk.or.jp/rss/news/cat1.xml",
+    sourceName: "NHK 社会",
+    weight: 1.15,
   },
 ];
 
@@ -141,6 +163,12 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
     weight: 0.95,
   },
   {
+    category: "ai",
+    url: "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    sourceName: "BBC Technology",
+    weight: 0.95,
+  },
+  {
     category: "systems",
     url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+AWS+OR+DevOps+when:3d&hl=ja&gl=JP&ceid=JP:ja",
     sourceName: "Google News (3d)",
@@ -151,6 +179,12 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
     url: "https://www.publickey1.jp/atom.xml",
     sourceName: "Publickey",
     weight: 1.05,
+  },
+  {
+    category: "systems",
+    url: "https://www.watch.impress.co.jp/data/rss/1.0/ipw/feed.rdf",
+    sourceName: "Impress Watch",
+    weight: 1.0,
   },
   {
     category: "economy",
@@ -165,6 +199,12 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
     weight: 1.05,
   },
   {
+    category: "economy",
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    sourceName: "NYT Business",
+    weight: 0.95,
+  },
+  {
     category: "government",
     url: "https://news.google.com/rss/search?q=%E6%94%BF%E5%BA%9C+OR+%E5%AE%98%E5%85%AC%E5%BA%81+OR+%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+when:7d&hl=ja&gl=JP&ceid=JP:ja",
     sourceName: "Google News (7d)",
@@ -172,9 +212,9 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
   },
   {
     category: "government",
-    url: "https://www.digital.go.jp/news.rss",
-    sourceName: "デジタル庁 (retry)",
-    weight: 1.2,
+    url: "https://www.nhk.or.jp/rss/news/cat4.xml",
+    sourceName: "NHK 政治",
+    weight: 1.1,
   },
 ];
 
@@ -219,50 +259,45 @@ function isFresh(publishedAt: string | undefined, now: number): boolean {
 async function fetchFeedItems(feedUrl: string): Promise<
   Array<{ title: string; summary: string; link: string; publishedAt?: string }>
 > {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
-  try {
-    const res = await fetch(feedUrl, {
-      signal: controller.signal,
-      headers: { "User-Agent": "AquaWorksNewsSearch/1.0 (+https://www.aquacore.net)" },
-    });
-    if (!res.ok) throw new Error(`RSS HTTP ${res.status}`);
-    const xml = await res.text();
-    const parsed = await parseStringPromise(xml, { explicitArray: false });
-    const channel = parsed?.rss?.channel ?? parsed?.feed;
-    if (!channel) return [];
-
-    const rawItems = Array.isArray(channel.item)
-      ? channel.item
-      : channel.item
-        ? [channel.item]
-        : Array.isArray(channel.entry)
-          ? channel.entry
-          : channel.entry
-            ? [channel.entry]
-            : [];
-
-    return rawItems.slice(0, 12).map((item: Record<string, unknown>) => {
-      const title = stripHtml(textOf(item.title)).slice(0, 160);
-      const desc = stripHtml(
-        textOf(item.description) || textOf(item.summary) || textOf(item.content),
-      ).slice(0, 280);
-      const link = linkOf(item.link) || textOf(item.guid);
-      const published =
-        parseDate(item.pubDate) ||
-        parseDate(item.published) ||
-        parseDate(item.updated) ||
-        parseDate(item["dc:date"]);
-      return {
-        title,
-        summary: desc || title,
-        link: typeof link === "string" ? link : "",
-        publishedAt: published ? published.toISOString() : undefined,
-      };
-    });
-  } finally {
-    clearTimeout(timeout);
+  const fetched = await fetchRssXml(feedUrl, {
+    timeoutMs: FEED_TIMEOUT_MS,
+    userAgent: "AquaWorksNewsSearch/1.1 (+https://www.aquacore.net)",
+  });
+  if (!fetched.ok) {
+    throw new Error(fetched.reason);
   }
+  const parsed = await parseStringPromise(fetched.xml, { explicitArray: false });
+  const channel = parsed?.rss?.channel ?? parsed?.feed;
+  if (!channel) return [];
+
+  const rawItems = Array.isArray(channel.item)
+    ? channel.item
+    : channel.item
+      ? [channel.item]
+      : Array.isArray(channel.entry)
+        ? channel.entry
+        : channel.entry
+          ? [channel.entry]
+          : [];
+
+  return rawItems.slice(0, 12).map((item: Record<string, unknown>) => {
+    const title = stripHtml(textOf(item.title)).slice(0, 160);
+    const desc = stripHtml(
+      textOf(item.description) || textOf(item.summary) || textOf(item.content),
+    ).slice(0, 280);
+    const link = linkOf(item.link) || textOf(item.guid);
+    const published =
+      parseDate(item.pubDate) ||
+      parseDate(item.published) ||
+      parseDate(item.updated) ||
+      parseDate(item["dc:date"]);
+    return {
+      title,
+      summary: desc || title,
+      link: typeof link === "string" ? link : "",
+      publishedAt: published ? published.toISOString() : undefined,
+    };
+  });
 }
 
 async function collectFromFeedList(
