@@ -22,6 +22,7 @@ import {
   HARD_TAKE_PROFIT_RATE,
   SOFT_TAKE_PROFIT_RATE,
 } from "@/lib/soluna-asset-trade-constants";
+import { resolveAvgBuyPriceYen } from "@/lib/soluna-avg-buy-price";
 import { buildEquityPerformance } from "@/lib/soluna-equity-performance";
 import {
   SOLUNA_TRADE_RULES,
@@ -54,18 +55,6 @@ function productKey(t: SolunaTradeRecord): string {
   return t.product ?? "BTC_JPY";
 }
 
-/** 平均取得単価（加重）。保有がある銘柄向けの期待売値計算に使う */
-function averageBuyPriceForProduct(
-  allTrades: SolunaTradeRecord[],
-  product: SolunaTradeProduct,
-): number | null {
-  const buyTrades = allTrades.filter((t) => t.side === "BUY" && productKey(t) === product);
-  if (buyTrades.length === 0) return null;
-  const notional = buyTrades.reduce((s, t) => s + (t.sizeJpy ?? 0), 0);
-  if (notional <= 0) return null;
-  return buyTrades.reduce((s, t) => s + t.priceBtc * (t.sizeJpy ?? 0), 0) / notional;
-}
-
 function summarizeProductMonth(
   monthTrades: SolunaTradeRecord[],
   allTrades: SolunaTradeRecord[],
@@ -78,7 +67,13 @@ function summarizeProductMonth(
   const buys = rows.filter((t) => t.side === "BUY");
   const sells = rows.filter((t) => t.side === "SELL");
   const valueYen = Math.round(held * priceYen);
-  const avgBuyPriceYen = averageBuyPriceForProduct(allTrades, product);
+  const resolved = resolveAvgBuyPriceYen({
+    trades: allTrades,
+    product,
+    held,
+    markPriceYen: priceYen,
+  });
+  const avgBuyPriceYen = resolved.avgBuyPriceYen;
   const targetSellSoftYen =
     avgBuyPriceYen != null ? Math.round(avgBuyPriceYen * (1 + SOFT_TAKE_PROFIT_RATE)) : null;
   const targetSellHardYen =
@@ -106,6 +101,7 @@ function summarizeProductMonth(
     priceYen,
     allocationPct: totalYen > 0 ? Math.round((valueYen / totalYen) * 1000) / 10 : 0,
     avgBuyPriceYen: avgBuyPriceYen != null ? Math.round(avgBuyPriceYen) : null,
+    avgBuyEstimated: resolved.avgBuyEstimated,
     targetSellSoftYen,
     targetSellHardYen,
     expectedProfitSoftYen,

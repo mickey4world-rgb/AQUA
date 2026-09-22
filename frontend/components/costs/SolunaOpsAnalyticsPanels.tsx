@@ -578,6 +578,7 @@ function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthS
       </p>
       <p className="mt-1 text-[11px] text-slate-500">
         平均取得単価から、軟利確（+3.5%）／硬利確（+5.5%）の目安売値と想定利益を表示します。
+        買い履歴が無い保有（取引所入金の BTC など）は現在値を仮の取得単価にします。
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {rows.map((p) => {
@@ -598,6 +599,11 @@ function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthS
                 <p className="text-sm font-semibold text-white">{p.label}</p>
                 <p className="text-[11px] text-slate-400">{formatHeld(p.product, p.held)}</p>
               </div>
+              {p.avgBuyEstimated && (
+                <p className="mt-1 text-[10px] text-amber-200/80">
+                  取得履歴なし · 現在値を仮の買値として表示
+                </p>
+              )}
               <div className="relative mt-4 h-3 rounded-full bg-white/5">
                 <div
                   className="absolute top-0 h-3 rounded-full bg-gradient-to-r from-sky-500/40 via-amber-400/35 to-emerald-400/45"
@@ -626,7 +632,9 @@ function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthS
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
                 <div>
-                  <dt className="text-slate-500">平均取得</dt>
+                  <dt className="text-slate-500">
+                    {p.avgBuyEstimated ? "仮の取得（現在値）" : "平均取得"}
+                  </dt>
                   <dd className="text-sky-200">{formatUnitPrice(p.product, avg)}</dd>
                 </div>
                 <div>
@@ -656,6 +664,9 @@ function ProductProjectionChart({ products }: { products: SolunaOpsProductMonthS
                         ? signedYen(p.expectedProfitHardYen)
                         : "—"}
                     </span>
+                    {p.avgBuyEstimated && (
+                      <span className="ml-1 text-[10px] text-slate-500">（仮買値基準）</span>
+                    )}
                   </dd>
                 </div>
               </dl>
