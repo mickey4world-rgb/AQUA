@@ -477,6 +477,9 @@ async function enrichAllCategories() {
 }
 
 function isTodayComplete(status) {
+  // 旧 status（isToday 無し）はスキップ禁止 — 次定時の誤スキップ再発防止
+  if (typeof status.isToday !== "boolean") return false;
+  if (typeof status.expectedDigestId !== "string") return false;
   return (
     status.enrichmentOk === true &&
     status.enrichmentStatus === "complete" &&
