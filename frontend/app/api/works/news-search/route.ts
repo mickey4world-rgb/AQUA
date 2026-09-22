@@ -7,7 +7,14 @@ import {
   enrichWorksNewsDigestCategory,
   withEnrichmentMeta,
 } from "@/lib/server/works-news-search";
-import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
+import {
+  getLatestWorksNewsDigest,
+  getWorksNewsDigestForJstDate,
+  isAllowedWorksNewsHistoryDate,
+  listRecentWorksNewsDigestMeta,
+  WORKS_NEWS_HISTORY_DAYS,
+} from "@/lib/server/works-news-search-store";
+import { jstDateString } from "@/lib/server/soluna-system-config";
 import {
   NEWS_SEARCH_CATEGORIES,
   type NewsSearchCategory,
@@ -18,6 +25,55 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   return withApiAccessLog(request, async () => {
+    const url = new URL(request.url);
+    const dateParam = url.searchParams.get("date")?.trim() ?? "";
+    const wantHistory = url.searchParams.get("history") === "1";
+
+    const history = wantHistory
+      ? await listRecentWorksNewsDigestMeta(WORKS_NEWS_HISTORY_DAYS)
+      : undefined;
+
+    if (dateParam) {
+      if (!isAllowedWorksNewsHistoryDate(dateParam)) {
+        return Response.json(
+          {
+            ok: false,
+            digest: null,
+            error: `日付は直近 ${WORKS_NEWS_HISTORY_DAYS} 日（JST）のみ指定できます。`,
+            history,
+            today: jstDateString(),
+          },
+          { status: 400 },
+        );
+      }
+      const raw = await getWorksNewsDigestForJstDate(dateParam);
+      if (!raw) {
+        return Response.json(
+          {
+            ok: false,
+            digest: null,
+            error: `${dateParam} のニュースサーチ結果はありません（取得スキップまたは未実行）。`,
+            history,
+            today: jstDateString(),
+            selectedDate: dateParam,
+          },
+          { status: 404 },
+        );
+      }
+      const digest = withEnrichmentMeta(raw);
+      return Response.json({
+        ok: true,
+        digest,
+        needsEnrichment: digestNeedsEnrichment(digest),
+        enrichmentStatus: digest.enrichmentStatus,
+        history,
+        today: jstDateString(),
+        selectedDate: dateParam,
+        isToday: dateParam === jstDateString(),
+        readOnly: dateParam !== jstDateString(),
+      });
+    }
+
     const raw = await getLatestWorksNewsDigest();
     if (!raw) {
       return Response.json(
@@ -25,16 +81,24 @@ export async function GET(request: Request) {
           ok: false,
           digest: null,
           error: "ニュースサーチ結果がまだありません。深夜の自動取得後に表示されます。",
+          history,
+          today: jstDateString(),
         },
         { status: 404 },
       );
     }
     const digest = withEnrichmentMeta(raw);
+    const selectedDate = digest.id.replace(/^works-news-search-/, "");
     return Response.json({
       ok: true,
       digest,
       needsEnrichment: digestNeedsEnrichment(digest),
       enrichmentStatus: digest.enrichmentStatus,
+      history,
+      today: jstDateString(),
+      selectedDate,
+      isToday: selectedDate === jstDateString(),
+      readOnly: selectedDate !== jstDateString(),
     });
   });
 }
