@@ -463,21 +463,40 @@ async function enrichAllCategories() {
   }
 
   const status = await fetchStatus();
-  if (status.enrichmentOk !== true || status.enrichmentStatus !== "complete") {
+  if (
+    status.enrichmentOk !== true ||
+    status.enrichmentStatus !== "complete" ||
+    status.isToday !== true ||
+    status.digestId !== status.expectedDigestId
+  ) {
     throw new Error(
-      `enrichment incomplete status=${status.enrichmentStatus} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`,
+      `enrichment incomplete status=${status.enrichmentStatus} isToday=${status.isToday} digestId=${status.digestId} expected=${status.expectedDigestId} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`,
     );
   }
   console.log("[works-news] enrichment complete", status.digestId);
+}
+
+function isTodayComplete(status) {
+  return (
+    status.enrichmentOk === true &&
+    status.enrichmentStatus === "complete" &&
+    status.isToday === true &&
+    status.digestId === status.expectedDigestId
+  );
 }
 
 async function main() {
   if (enrichOnly) {
     console.log("[works-news] enrich-only mode");
     const status = await fetchStatus();
-    if (status.enrichmentOk === true && status.enrichmentStatus === "complete") {
+    if (isTodayComplete(status)) {
       console.log("[works-news] already complete", status.digestId);
       return;
+    }
+    if (status.reason === "today-missing" || !status.digestId) {
+      throw new Error(
+        "enrich-only には当日 digest が必要です。先に full（--force）を実行してください。",
+      );
     }
     await enrichAllCategories();
     console.log("[works-news] enrich-only pipeline ok");
@@ -486,17 +505,22 @@ async function main() {
 
   // 完了済みの当日分を毎時枠で再 ingest→再 enrich すると OpenAI 課金が爆発する。
   // --force のときだけ上書き再生成を許可する。
+  // 昨日の complete を enrichmentOk と誤認してスキップしない（isToday 必須）。
   if (!force) {
     try {
       const status = await fetchStatus();
-      if (status.enrichmentOk === true && status.enrichmentStatus === "complete") {
+      if (isTodayComplete(status)) {
         console.log(
           "[works-news] already complete — skip ingest/enrich",
           status.digestId,
         );
         return;
       }
-      if (status.enrichmentStatus === "partial" || status.needsEnrichment === true) {
+      if (
+        status.digestId &&
+        status.isToday === true &&
+        (status.enrichmentStatus === "partial" || status.needsEnrichment === true)
+      ) {
         console.log(
           "[works-news] incomplete digest — enrich-only (preserve existing AI fields)",
           status.digestId,
@@ -506,6 +530,11 @@ async function main() {
         console.log("[works-news] enrich-only recovery ok");
         return;
       }
+      console.log(
+        "[works-news] today not complete — full ingest",
+        status.digestId ?? "(none)",
+        status.reason ?? status.enrichmentStatus,
+      );
     } catch (error) {
       console.warn(
         "[works-news] status check failed, continuing full pipeline:",

@@ -42,13 +42,14 @@ jobs:
             -d '{"step":"status"}' || true)
           echo "status HTTP ${HTTP_CODE}"
           cat /tmp/works-news-status.json 2>/dev/null || true
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' else 'false')" 2>/dev/null || echo "false")
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
           echo "enrichmentOk=${OK}"
           if [ "${OK}" = "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "当日分は完了済み — checkout/npm/再enrich をスキップ"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "当日未完了または昨日フォールバック — フルパイプラインへ"
           fi
 
       - uses: actions/checkout@v4
@@ -134,7 +135,7 @@ jobs:
           cat /tmp/works-news-status.json
           echo ""
           echo "status HTTP ${HTTP_CODE}"
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') else 'false')" 2>/dev/null || echo "false")
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status.json')); print('true' if d.get('enrichmentOk') and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
           echo "enrichmentOk=${OK}"
           echo "ok=${OK}" >> "$GITHUB_OUTPUT"
 
@@ -158,9 +159,9 @@ jobs:
             -d '{"step":"status"}')
           cat /tmp/works-news-status2.json
           echo ""
-          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status2.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' else 'false')" 2>/dev/null || echo "false")
+          OK=$(python3 -c "import json; d=json.load(open('/tmp/works-news-status2.json')); print('true' if d.get('enrichmentOk') and d.get('enrichmentStatus')=='complete' and d.get('isToday') and d.get('digestId')==d.get('expectedDigestId') else 'false')" 2>/dev/null || echo "false")
           if [ "${OK}" != "true" ]; then
-            echo "::error::朝7時時点で News Search の AI 解説が未完了。プレースホルダのまま成功扱いにしない。"
+            echo "::error::朝7時時点で News Search の当日（JST）AI 解説が未完了。昨日の complete を成功扱いにしない。"
             exit 1
           fi
           echo "morning gate ok"

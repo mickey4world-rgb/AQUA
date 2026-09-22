@@ -38,8 +38,17 @@ export async function getWorksNewsDigestById(
   }
 }
 
+/** 当日（JST）のダイジェストのみ。cron / skip 判定はこちら（昨日 complete ≠ 当日完了）。 */
+export async function getTodayWorksNewsDigest(): Promise<NewsSearchDigest | null> {
+  return getWorksNewsDigestById(digestIdForDate());
+}
+
+/**
+ * UI 閲覧用: 当日が無ければ昨日まで許容（朝の空白を避ける）。
+ * cron の「当日完了」判定には使わない — getTodayWorksNewsDigest を使うこと。
+ */
 export async function getLatestWorksNewsDigest(): Promise<NewsSearchDigest | null> {
-  const today = await getWorksNewsDigestById(digestIdForDate());
+  const today = await getTodayWorksNewsDigest();
   if (today) return today;
   // 昨日分まで許容（深夜ジョブ直後の朝）
   const yesterday = new Date();
