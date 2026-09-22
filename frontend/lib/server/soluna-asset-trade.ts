@@ -64,6 +64,7 @@ import {
   clampMonthlyTargetYen,
   computeMonthlyTargetYenFromOpening,
 } from "@/lib/soluna-asset-trade-constants";
+import { averageBuyPriceYenFromTrades } from "@/lib/soluna-avg-buy-price";
 
 export {
   ASSET_PRINCIPAL_YEN,
@@ -680,23 +681,7 @@ function boughtYenOnJstDay(ledger: SolunaAssetLedger, dayKey: string): number {
 }
 
 function averageBuyPrice(ledger: SolunaAssetLedger, product: SolunaTradeProduct): number | null {
-  const buyTrades = ledger.trades.filter((t) => t.side === "BUY" && t.product === product);
-  if (buyTrades.length === 0) {
-    // 旧データ互換: product 未区別の BTC のみ
-    if (product === "BTC_JPY") {
-      const legacy = ledger.trades.filter(
-        (t) => t.side === "BUY" && (!t.product || t.product === "BTC_JPY"),
-      );
-      if (legacy.length === 0) return null;
-      const notional = legacy.reduce((s, t) => s + t.sizeJpy, 0);
-      if (notional <= 0) return null;
-      return legacy.reduce((s, t) => s + t.priceBtc * t.sizeJpy, 0) / notional;
-    }
-    return null;
-  }
-  const notional = buyTrades.reduce((s, t) => s + t.sizeJpy, 0);
-  if (notional <= 0) return null;
-  return buyTrades.reduce((s, t) => s + t.priceBtc * t.sizeJpy, 0) / notional;
+  return averageBuyPriceYenFromTrades(ledger.trades ?? [], product);
 }
 
 function heldAmount(ledger: SolunaAssetLedger, product: TradeableProduct): number {

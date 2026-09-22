@@ -418,6 +418,8 @@ export interface SolunaOpsProductMonthStat {
   allocationPct: number;
   /** 平均取得単価（円） */
   avgBuyPriceYen: number | null;
+  /** 買い履歴が無く現在値を仮置きした取得単価 */
+  avgBuyEstimated?: boolean;
   /** 軟利確の目安売値（平均取得 × soft TP） */
   targetSellSoftYen: number | null;
   /** 硬利確の目安売値（平均取得 × hard TP） */
