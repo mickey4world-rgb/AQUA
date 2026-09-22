@@ -10,6 +10,11 @@ import {
   type NewsSearchItem,
 } from "@/lib/types/works-news-search";
 import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
+import {
+  newsItemPrimarySummary,
+  newsItemPrimaryTitle,
+  newsItemSecondaryTitle,
+} from "@/lib/works-news-search-display";
 
 function attentionTone(score: number): string {
   if (score >= 80) return "border-rose-300/30 bg-rose-300/10 text-rose-100";
@@ -421,7 +426,16 @@ export default function NewsSearchPanel() {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-white">{item.title}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white">
+                        {newsItemPrimaryTitle(item)}
+                      </p>
+                      {newsItemSecondaryTitle(item) && (
+                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500">
+                          {newsItemSecondaryTitle(item)}
+                        </p>
+                      )}
+                    </div>
                     <span
                       className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${attentionTone(item.attentionScore)}`}
                     >
@@ -429,7 +443,7 @@ export default function NewsSearchPanel() {
                     </span>
                   </div>
                   <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-400">
-                    {item.summary}
+                    {newsItemPrimarySummary(item)}
                   </p>
                   {!isEnriched(item) && (
                     <p className="mt-1 text-[10px] text-amber-200/80">解説未生成</p>
@@ -460,7 +474,20 @@ export default function NewsSearchPanel() {
                         </span>
                       )}
                     </div>
-                    <h2 className="mt-3 text-lg font-medium text-white">{selected.title}</h2>
+                    <h2 className="mt-3 text-lg font-medium text-white">
+                      {newsItemPrimaryTitle(selected)}
+                    </h2>
+                    {newsItemSecondaryTitle(selected) && (
+                      <p className="mt-1 text-sm leading-relaxed text-slate-400">
+                        原文: {newsItemSecondaryTitle(selected)}
+                      </p>
+                    )}
+                    {selected.summaryJa?.trim() &&
+                      selected.summaryJa.trim() !== selected.summary.trim() && (
+                        <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                          {selected.summaryJa}
+                        </p>
+                      )}
                   </div>
                   <Block title="分かりやすい解説" body={selected.explanation} />
                   <Block title="深堀" body={selected.deepDive} />

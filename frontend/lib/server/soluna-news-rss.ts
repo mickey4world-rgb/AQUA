@@ -3,6 +3,7 @@
  * 学習データの古い関税・AI話を討伐ネタにしないための鮮度担保。
  */
 import { parseStringPromise } from "xml2js";
+import { fetchRssXml } from "@/lib/server/rss-fetch";
 
 export type RssNewsSeed = {
   title: string;
@@ -29,6 +30,10 @@ const RSS_FEEDS: ReadonlyArray<{ url: string; keyword: string }> = [
     url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     keyword: "AI 最新動向",
   },
+  {
+    url: "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",
+    keyword: "AI 最新動向",
+  },
   // 経済（直近）
   {
     url: "https://news.google.com/rss/search?q=%E4%B8%96%E7%95%8C%E7%B5%8C%E6%B8%88+OR+%E7%B1%B3%E5%9B%BD%E7%B5%8C%E6%B8%88+OR+%E6%97%A5%E6%9C%AC%E7%B5%8C%E6%B8%88+when:2d&hl=ja&gl=JP&ceid=JP:ja",
@@ -39,7 +44,7 @@ const RSS_FEEDS: ReadonlyArray<{ url: string; keyword: string }> = [
     keyword: "世界経済",
   },
   {
-    url: "https://feeds.reuters.com/reuters/businessNews",
+    url: "https://feeds.bbci.co.uk/news/business/rss.xml",
     keyword: "世界経済",
   },
 ];
@@ -78,50 +83,45 @@ function linkOf(node: unknown): string {
 async function fetchFeedItems(
   feedUrl: string,
 ): Promise<Array<{ title: string; summary: string; link: string; publishedAt?: string }>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
-  try {
-    const res = await fetch(feedUrl, {
-      signal: controller.signal,
-      headers: { "User-Agent": "SolunaNewsBot/1.1 (+https://www.aquacore.net)" },
-    });
-    if (!res.ok) throw new Error(`RSS HTTP ${res.status}`);
-    const xml = await res.text();
-    const parsed = await parseStringPromise(xml, { explicitArray: false });
-    const channel = parsed?.rss?.channel ?? parsed?.feed;
-    if (!channel) return [];
-
-    const rawItems = Array.isArray(channel.item)
-      ? channel.item
-      : channel.item
-        ? [channel.item]
-        : Array.isArray(channel.entry)
-          ? channel.entry
-          : channel.entry
-            ? [channel.entry]
-            : [];
-
-    return rawItems.slice(0, 8).map((item: Record<string, unknown>) => {
-      const title = stripHtml(textOf(item.title)).slice(0, 120);
-      const desc = stripHtml(
-        textOf(item.description) || textOf(item.summary) || textOf(item.content),
-      ).slice(0, 200);
-      const link = linkOf(item.link) || textOf(item.guid);
-      const published =
-        parseDate(item.pubDate) ||
-        parseDate(item.published) ||
-        parseDate(item.updated) ||
-        parseDate(item["dc:date"]);
-      return {
-        title,
-        summary: desc || title,
-        link: typeof link === "string" ? link : "",
-        publishedAt: published ? published.toISOString() : undefined,
-      };
-    });
-  } finally {
-    clearTimeout(timeout);
+  const fetched = await fetchRssXml(feedUrl, {
+    timeoutMs: FEED_TIMEOUT_MS,
+    userAgent: "SolunaNewsBot/1.2 (+https://www.aquacore.net)",
+  });
+  if (!fetched.ok) {
+    throw new Error(fetched.reason);
   }
+  const parsed = await parseStringPromise(fetched.xml, { explicitArray: false });
+  const channel = parsed?.rss?.channel ?? parsed?.feed;
+  if (!channel) return [];
+
+  const rawItems = Array.isArray(channel.item)
+    ? channel.item
+    : channel.item
+      ? [channel.item]
+      : Array.isArray(channel.entry)
+        ? channel.entry
+        : channel.entry
+          ? [channel.entry]
+          : [];
+
+  return rawItems.slice(0, 8).map((item: Record<string, unknown>) => {
+    const title = stripHtml(textOf(item.title)).slice(0, 120);
+    const desc = stripHtml(
+      textOf(item.description) || textOf(item.summary) || textOf(item.content),
+    ).slice(0, 200);
+    const link = linkOf(item.link) || textOf(item.guid);
+    const published =
+      parseDate(item.pubDate) ||
+      parseDate(item.published) ||
+      parseDate(item.updated) ||
+      parseDate(item["dc:date"]);
+    return {
+      title,
+      summary: desc || title,
+      link: typeof link === "string" ? link : "",
+      publishedAt: published ? published.toISOString() : undefined,
+    };
+  });
 }
 
 function isFresh(publishedAt: string | undefined, now: number): boolean {

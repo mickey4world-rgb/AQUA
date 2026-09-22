@@ -16,6 +16,7 @@ import {
   scoreAttentionSeed,
   type RawNewsSeed,
 } from "@/lib/server/works-news-search-rss";
+import { ensureJapaneseTranslations } from "@/lib/server/works-news-search-translate";
 import {
   getLatestWorksNewsDigest,
   getTodayWorksNewsDigest,
@@ -188,6 +189,14 @@ async function applyEnrichmentJson(
           : item.attentionScore;
       return {
         ...item,
+        titleJa:
+          typeof row.titleJa === "string" && row.titleJa.trim()
+            ? row.titleJa.trim()
+            : item.titleJa,
+        summaryJa:
+          typeof row.summaryJa === "string" && row.summaryJa.trim()
+            ? row.summaryJa.trim()
+            : item.summaryJa,
         deepDive:
           typeof row.deepDive === "string" && row.deepDive.trim()
             ? row.deepDive.trim()
@@ -293,14 +302,16 @@ JSON のみ返す。`;
 ${JSON.stringify(payload, null, 2)}
 
 各 index について次を埋めてください（items 配列）。仮文言や「今夜補完」は禁止。必ず具体的に書く。
-- deepDive: 背景・論点の深堀（120〜220字）
-- outlook: 今後30〜90日の予想（80〜160字）
-- explanation: 非専門家にも分かる解説（100〜180字）
-- govRelevance: 司法基盤クラウド／政府事業管理AI導入の実務への示唆（80〜160字）
+- titleJa: title/summary が英語（欧文）のとき必須の日本語訳。すでに日本語なら省略可
+- summaryJa: 同上（要約の日本語訳）
+- deepDive: 背景・論点の深堀（120〜220字・日本語）
+- outlook: 今後30〜90日の予想（80〜160字・日本語）
+- explanation: 非専門家にも分かる解説（100〜180字・日本語）
+- govRelevance: 司法基盤クラウド／政府事業管理AI導入の実務への示唆（80〜160字・日本語）
 - attentionScore: 注目度 0〜100（今日の新しさと実務影響）
 
 JSON:
-{ "items": [ { "index": 0, "deepDive": "...", "outlook": "...", "explanation": "...", "govRelevance": "...", "attentionScore": 72 } ] }`;
+{ "items": [ { "index": 0, "titleJa": "...", "summaryJa": "...", "deepDive": "...", "outlook": "...", "explanation": "...", "govRelevance": "...", "attentionScore": 72 } ] }`;
 
   const attemptErrors: string[] = [];
   let text = "";
@@ -439,7 +450,8 @@ export async function enrichWorksNewsDigestCategory(
     fetchedAt: new Date().toISOString(),
     summary: NEWS_SEARCH_CATEGORIES.map((c) => {
       const top = categories[c][0];
-      return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
+      const label = top?.titleJa?.trim() || top?.title || "—";
+      return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${label}`;
     }).join(" / "),
   };
   const digest = withEnrichmentMeta(draft, {
@@ -501,9 +513,13 @@ export async function buildWorksNewsDigest(options?: {
 
   const categories = emptyCategories();
   for (const category of NEWS_SEARCH_CATEGORIES) {
-    categories[category] = sortNewsItemsByAttention(
+    const translated = await ensureJapaneseTranslations(
       picked[category].map(seedToItem),
     );
+    if (translated.reason) {
+      console.warn(`[works-news-search] translate ${category}:`, translated.reason);
+    }
+    categories[category] = sortNewsItemsByAttention(translated.items);
   }
 
   const digest = withEnrichmentMeta({
@@ -514,7 +530,8 @@ export async function buildWorksNewsDigest(options?: {
     solunaSynced: false,
     summary: NEWS_SEARCH_CATEGORIES.map((c) => {
       const top = categories[c][0];
-      return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${top?.title ?? "—"}`;
+      const label = top?.titleJa?.trim() || top?.title || "—";
+      return `${NEWS_SEARCH_CATEGORY_LABEL[c]}: ${label}`;
     }).join(" / "),
     enrichmentStatus: "pending",
     usedFallback,

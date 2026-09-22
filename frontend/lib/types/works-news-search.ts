@@ -28,6 +28,10 @@ export type NewsSearchItem = {
   category: NewsSearchCategory;
   title: string;
   summary: string;
+  /** 英語等の原題に対する日本語訳（ある場合のみ） */
+  titleJa?: string;
+  /** 英語等の要約に対する日本語訳（ある場合のみ） */
+  summaryJa?: string;
   /** 深堀整理 */
   deepDive: string;
   /** 今後の予想 */
