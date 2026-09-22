@@ -32,6 +32,12 @@ type EnrichRunLine = {
   detail: string;
 };
 
+type HistoryEntry = {
+  date: string;
+  available: boolean;
+  enrichmentStatus?: string;
+};
+
 const ENRICHMENT_STATUS_LABEL = {
   pending: "解説待ち",
   partial: "一部のみ解説済",
@@ -39,8 +45,19 @@ const ENRICHMENT_STATUS_LABEL = {
   failed: "解説失敗",
 } as const;
 
+function formatHistoryChip(date: string, today: string): string {
+  if (date === today) return "今日";
+  const parts = date.split("-");
+  if (parts.length !== 3) return date;
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
 export default function NewsSearchPanel() {
   const [digest, setDigest] = useState<NewsSearchDigest | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [today, setToday] = useState("");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<NewsSearchCategory>("ai");
@@ -56,18 +73,31 @@ export default function NewsSearchPanel() {
     lines: EnrichRunLine[];
   } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (date?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/works/news-search");
+      const q = new URLSearchParams({ history: "1" });
+      if (date) q.set("date", date);
+      const res = await fetch(`/api/works/news-search?${q.toString()}`);
       const data = (await res.json()) as {
         ok?: boolean;
         digest?: NewsSearchDigest;
         error?: string;
+        history?: HistoryEntry[];
+        today?: string;
+        selectedDate?: string;
+        readOnly?: boolean;
       };
+      if (Array.isArray(data.history)) setHistory(data.history);
+      if (typeof data.today === "string") setToday(data.today);
+      if (typeof data.selectedDate === "string") setSelectedDate(data.selectedDate);
+      else if (date) setSelectedDate(date);
+      setReadOnly(data.readOnly === true);
+
       if (!res.ok || !data.digest) {
         setDigest(null);
+        setSelectedId(null);
         setError(data.error ?? "ニュースの読み込みに失敗しました。");
         return;
       }
@@ -88,6 +118,14 @@ export default function NewsSearchPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function selectHistoryDate(date: string) {
+    if (date === selectedDate) return;
+    setMessages([]);
+    setChatError(null);
+    setLastEnrichRun(null);
+    await load(date);
+  }
 
   const items = useMemo(
     () => sortNewsItemsByAttention(digest?.categories[category] ?? []),
@@ -148,7 +186,7 @@ export default function NewsSearchPanel() {
   }, [digest]);
 
   async function enrichAll() {
-    if (enriching || !digest) return;
+    if (enriching || !digest || readOnly) return;
     setEnriching(true);
     setError(null);
     let latest = digest;
@@ -224,7 +262,7 @@ export default function NewsSearchPanel() {
 
   async function sendChat() {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || sending || readOnly) return;
     setSending(true);
     setChatError(null);
     const nextHistory = [...messages, { role: "user" as const, content: text }];
@@ -262,7 +300,7 @@ export default function NewsSearchPanel() {
           </p>
           <p className="mt-1 text-sm text-slate-400">
             {digest
-              ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source} · 解説 ${digest.enrichmentStatus ?? (needsEnrichment ? "pending" : "complete")}${digest.solunaSynced ? " · Soluna連携済" : ""}`
+              ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source} · 解説 ${digest.enrichmentStatus ?? (needsEnrichment ? "pending" : "complete")}${digest.solunaSynced ? " · Soluna連携済" : ""}${readOnly ? " · 過去分（閲覧のみ）" : ""}`
               : "深夜に Google / Bing / 公的・専門フィードから集約します。"}
           </p>
           {enrichProgress && (
@@ -272,14 +310,57 @@ export default function NewsSearchPanel() {
         <button
           type="button"
           onClick={() => void enrichAll()}
-          disabled={enriching || !digest}
+          disabled={enriching || !digest || readOnly}
           className="rounded-full border border-cyan-300/35 bg-cyan-300/15 px-4 py-2 text-xs text-cyan-50 transition hover:bg-cyan-300/25 disabled:opacity-50"
+          title={readOnly ? "過去分は再生成できません。今日を選んでください。" : undefined}
         >
           {enriching ? "解説生成中…" : needsEnrichment ? "AIで解説を生成" : "解説を再生成"}
         </button>
       </div>
 
-      {needsEnrichment && digest && !enriching && (
+      {history.length > 0 && (
+        <div>
+          <p className="text-[11px] tracking-[0.16em] text-slate-500 uppercase">
+            直近7日（JST）
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {history.map((entry) => {
+              const active = entry.date === selectedDate;
+              return (
+                <button
+                  key={entry.date}
+                  type="button"
+                  disabled={!entry.available || loading}
+                  onClick={() => void selectHistoryDate(entry.date)}
+                  title={
+                    entry.available
+                      ? `${entry.date} · ${entry.enrichmentStatus ?? "unknown"}`
+                      : `${entry.date} · データなし`
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                    active
+                      ? "border-cyan-300/40 bg-cyan-300/15 text-cyan-50"
+                      : entry.available
+                        ? "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                        : "cursor-not-allowed border-white/5 bg-transparent text-slate-600"
+                  }`}
+                >
+                  {formatHistoryChip(entry.date, today)}
+                  {!entry.available && <span className="ml-1 opacity-60">—</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {readOnly && digest && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
+          {selectedDate} のアーカイブを表示中です。解説の再生成・AI相談は当日分のみです。
+        </div>
+      )}
+
+      {needsEnrichment && digest && !enriching && !readOnly && (
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/5 px-4 py-3 text-sm text-amber-50">
           いまは見出し一覧のみ（解説未完了）です。「AIで解説を生成」でカテゴリごとに深堀・見通しを作ります。失敗時は成功扱いせずエラーを出します。深夜ジョブも同様に解説完了まで失敗扱いです。
         </div>
@@ -417,12 +498,16 @@ export default function NewsSearchPanel() {
                 解説を踏まえた AI 相談
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                司法クラウド基盤・政府事業AI導入の観点でも答えます。選択中の記事＋本日ダイジェストが根拠です。
+                {readOnly
+                  ? "過去分は閲覧のみです。AI相談は「今日」を選んでください。"
+                  : "司法クラウド基盤・政府事業AI導入の観点でも答えます。選択中の記事＋本日ダイジェストが根拠です。"}
               </p>
               <div className="mt-3 flex-1 space-y-3 overflow-y-auto">
                 {messages.length === 0 && (
                   <p className="text-sm text-slate-500">
-                    例: 「このニュースは基盤調達にどう効く？」「5000事業の管理AIに活かせる点は？」
+                    {readOnly
+                      ? "アーカイブ表示中のため相談はできません。"
+                      : "例: 「このニュースは基盤調達にどう効く？」「5000事業の管理AIに活かせる点は？」"}
                   </p>
                 )}
                 {messages.map((message, index) => (
@@ -450,13 +535,14 @@ export default function NewsSearchPanel() {
                       void sendChat();
                     }
                   }}
-                  placeholder="最新情報を踏まえて相談…"
-                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/40"
+                  placeholder={readOnly ? "過去分は相談不可" : "最新情報を踏まえて相談…"}
+                  disabled={readOnly}
+                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/40 disabled:opacity-40"
                 />
                 <button
                   type="button"
                   onClick={() => void sendChat()}
-                  disabled={sending || !input.trim()}
+                  disabled={sending || readOnly || !input.trim()}
                   className="rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-3 py-2 text-sm text-cyan-50 disabled:opacity-40"
                 >
                   送信

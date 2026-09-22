@@ -18,7 +18,7 @@ export default function WorksNewsSearchPage() {
           <h1 className="display-section mt-4 text-white">ニュースサーチ</h1>
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-400">
             毎晩、AI・システム開発・世界経済・官公庁の注目ニュースを複数ソースから集約し、深堀・今後の見通し・出典・注目指数付きで整理します。
-            解説を選んで AI に相談でき、Soluna のニュース討伐とも連携します。
+            直近7日分は日付を切り替えて閲覧できます（過去分は閲覧のみ）。解説を選んで AI に相談でき、Soluna のニュース討伐とも連携します。
           </p>
         </Reveal>
 
