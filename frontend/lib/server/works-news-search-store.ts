@@ -4,12 +4,85 @@ import { jstDateString } from "@/lib/server/soluna-system-config";
 import type { NewsSearchDigest } from "@/lib/types/works-news-search";
 import { withCategoriesSortedByAttention } from "@/lib/works-news-search-sort";
 
+/** UI で遡れる日数（当日含む） */
+export const WORKS_NEWS_HISTORY_DAYS = 7;
+
+const JST_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function digestIdForDate(date = new Date()): string {
   return `works-news-search-${jstDateString(date)}`;
 }
 
 export function worksNewsSearchDocId(date = new Date()): string {
   return digestIdForDate(date);
+}
+
+export function worksNewsSearchDocIdForJstDate(jstDate: string): string {
+  return `works-news-search-${jstDate}`;
+}
+
+/** JST 日付文字列を日数シフト（日本は DST なし。UTC 正午基準で安全） */
+export function shiftJstDateString(jstDate: string, deltaDays: number): string {
+  if (!JST_DATE_RE.test(jstDate)) {
+    throw new Error(`invalid JST date: ${jstDate}`);
+  }
+  const [y, m, d] = jstDate.split("-").map(Number);
+  const utc = Date.UTC(y!, m! - 1, d! + deltaDays, 12, 0, 0);
+  return new Date(utc).toISOString().slice(0, 10);
+}
+
+export function isAllowedWorksNewsHistoryDate(jstDate: string, now = new Date()): boolean {
+  if (!JST_DATE_RE.test(jstDate)) return false;
+  const today = jstDateString(now);
+  if (jstDate > today) return false;
+  const oldest = shiftJstDateString(today, -(WORKS_NEWS_HISTORY_DAYS - 1));
+  return jstDate >= oldest;
+}
+
+export type WorksNewsDigestHistoryEntry = {
+  date: string;
+  id: string;
+  available: boolean;
+  fetchedAt?: string;
+  enrichmentStatus?: NewsSearchDigest["enrichmentStatus"];
+  source?: NewsSearchDigest["source"];
+  summary?: string;
+};
+
+/** 直近 N 日（JST・当日含む）の有無一覧。欠けた日も available:false で返す */
+export async function listRecentWorksNewsDigestMeta(
+  days = WORKS_NEWS_HISTORY_DAYS,
+  now = new Date(),
+): Promise<WorksNewsDigestHistoryEntry[]> {
+  const today = jstDateString(now);
+  const n = Math.max(1, Math.min(days, 31));
+  const entries: WorksNewsDigestHistoryEntry[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const date = shiftJstDateString(today, -i);
+    const id = worksNewsSearchDocIdForJstDate(date);
+    const dig = await getWorksNewsDigestById(id);
+    if (!dig) {
+      entries.push({ date, id, available: false });
+      continue;
+    }
+    entries.push({
+      date,
+      id,
+      available: true,
+      fetchedAt: dig.fetchedAt,
+      enrichmentStatus: dig.enrichmentStatus,
+      source: dig.source,
+      summary: dig.summary?.slice(0, 160),
+    });
+  }
+  return entries;
+}
+
+export async function getWorksNewsDigestForJstDate(
+  jstDate: string,
+): Promise<NewsSearchDigest | null> {
+  if (!isAllowedWorksNewsHistoryDate(jstDate)) return null;
+  return getWorksNewsDigestById(worksNewsSearchDocIdForJstDate(jstDate));
 }
 
 export async function saveWorksNewsDigest(digest: NewsSearchDigest): Promise<void> {
