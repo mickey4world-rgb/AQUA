@@ -84,10 +84,10 @@ export async function POST(request: Request) {
   }
 
   if (ingest) {
-    const { getLatestWorksNewsDigest } = await import(
+    const { getTodayWorksNewsDigest } = await import(
       "@/lib/server/works-news-search-store"
     );
-    const latest = await getLatestWorksNewsDigest();
+    const latest = await getTodayWorksNewsDigest();
     // force なしで完了済み当日 digest を pending に戻すと、毎スケジュールで
     // 4カテゴリ×OpenAI 再課金になる（degraded success の逆：成功を壊す）。
     if (
@@ -172,21 +172,37 @@ export async function POST(request: Request) {
   }
 
   if (step === "status") {
-    const { getLatestWorksNewsDigest } = await import(
+    const { getTodayWorksNewsDigest, worksNewsSearchDocId } = await import(
       "@/lib/server/works-news-search-store"
     );
-    const latest = await getLatestWorksNewsDigest();
-    if (!latest) {
-      return Response.json({ ok: false, error: "digest missing" }, { status: 404 });
+    const expectedDigestId = worksNewsSearchDocId();
+    const today = await getTodayWorksNewsDigest();
+    // 昨日の complete を enrichmentOk にすると深夜スキップが永久化する（2026-09-22 障害）。
+    if (!today) {
+      return Response.json({
+        ok: true,
+        step: "status",
+        digestId: null,
+        expectedDigestId,
+        isToday: false,
+        enrichmentStatus: "missing",
+        needsEnrichment: true,
+        enrichmentOk: false,
+        reason: "today-missing",
+      });
     }
-    const meta = withEnrichmentMeta(latest);
+    const meta = withEnrichmentMeta(today);
+    const enrichmentStatus = computeEnrichmentStatus(meta);
     return Response.json({
       ok: true,
       step: "status",
       digestId: meta.id,
-      enrichmentStatus: computeEnrichmentStatus(meta),
+      expectedDigestId,
+      isToday: meta.id === expectedDigestId,
+      enrichmentStatus,
       needsEnrichment: digestNeedsEnrichment(meta),
-      enrichmentOk: computeEnrichmentStatus(meta) === "complete",
+      enrichmentOk: enrichmentStatus === "complete",
+      fetchedAt: meta.fetchedAt,
     });
   }
 
