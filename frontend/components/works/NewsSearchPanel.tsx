@@ -11,9 +11,11 @@ import {
 } from "@/lib/types/works-news-search";
 import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
 import {
+  formatWorksNewsFetchedAtJst,
   newsItemPrimarySummary,
   newsItemPrimaryTitle,
   newsItemSecondaryTitle,
+  worksNewsDigestJstDate,
 } from "@/lib/works-news-search-display";
 
 function attentionTone(score: number): string {
@@ -305,7 +307,19 @@ export default function NewsSearchPanel() {
           </p>
           <p className="mt-1 text-sm text-slate-400">
             {digest
-              ? `取得 ${digest.fetchedAt.slice(0, 16).replace("T", " ")} · ${digest.source} · 解説 ${digest.enrichmentStatus ?? (needsEnrichment ? "pending" : "complete")}${digest.solunaSynced ? " · Soluna連携済" : ""}${readOnly ? " · 過去分（閲覧のみ）" : ""}`
+              ? (() => {
+                  const digestDate =
+                    selectedDate ?? worksNewsDigestJstDate(digest.id) ?? "";
+                  const dayLabel = !readOnly
+                    ? `本日 ${digestDate}`
+                    : digestDate
+                      ? `${digestDate}（過去分）`
+                      : "過去分";
+                  const enrich =
+                    digest.enrichmentStatus ??
+                    (needsEnrichment ? "pending" : "complete");
+                  return `${dayLabel} · 取得 ${formatWorksNewsFetchedAtJst(digest.fetchedAt)} JST · ${digest.source} · 解説 ${enrich}${digest.solunaSynced ? " · Soluna連携済" : ""}${readOnly ? " · 閲覧のみ" : ""}`;
+                })()
               : "深夜に Google / Bing / 公的・専門フィードから集約します。"}
           </p>
           {enrichProgress && (
