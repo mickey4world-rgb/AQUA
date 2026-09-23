@@ -10,9 +10,11 @@ import {
 } from "@/lib/types/works-news-search";
 import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
 import {
+  formatWorksNewsFetchedAtJst,
   newsItemPrimarySummary,
   newsItemPrimaryTitle,
   newsItemSecondaryTitle,
+  worksNewsDigestJstDate,
 } from "@/lib/works-news-search-display";
 
 function attentionTone(score: number): string {
@@ -74,6 +76,8 @@ export default function NewsSearchBrowseView({
           ? "解説未完了"
           : "見出し中心";
 
+  const digestDate = worksNewsDigestJstDate(digest.id);
+
   return (
     <div className={`space-y-4 ${className}`}>
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -82,7 +86,8 @@ export default function NewsSearchBrowseView({
             Nightly digest · read-only
           </p>
           <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-            取得 {digest.fetchedAt.slice(0, 16).replace("T", " ")} · {digest.source} ·{" "}
+            {digestDate ? `${digestDate} · ` : ""}
+            取得 {formatWorksNewsFetchedAtJst(digest.fetchedAt)} JST · {digest.source} ·{" "}
             {statusLabel}
           </p>
         </div>
