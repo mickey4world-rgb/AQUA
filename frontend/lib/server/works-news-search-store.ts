@@ -123,10 +123,9 @@ export async function getTodayWorksNewsDigest(): Promise<NewsSearchDigest | null
 export async function getLatestWorksNewsDigest(): Promise<NewsSearchDigest | null> {
   const today = await getTodayWorksNewsDigest();
   if (today) return today;
-  // 昨日分まで許容（深夜ジョブ直後の朝）
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  return getWorksNewsDigestById(digestIdForDate(yesterday));
+  // 昨日分まで許容（深夜ジョブ直後の朝）。UTC setDate ではなく JST 日付で遡る。
+  const yesterdayJst = shiftJstDateString(jstDateString(), -1);
+  return getWorksNewsDigestById(worksNewsSearchDocIdForJstDate(yesterdayJst));
 }
 
 export function stableNewsItemId(
