@@ -34,7 +34,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     description:
       "混雑予測カレンダー・時間帯別アトラクション予想・ベイマックス―／エルサ―の本日・明日アドバイスを無料公開。リアルタイム待ち時間とチャットはログイン後。",
     accent: "#f0abfc",
-    href: "/disney",
+    href: "/theme-parks",
     publicHref: "/tdr-preview",
     tag: "Experience",
   },

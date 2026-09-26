@@ -12,7 +12,7 @@ function accessLogContainer() {
 
 function inferAppFromPath(path: string): AppKey {
   if (path.startsWith("/api/stocks")) return "stocks";
-  if (path.startsWith("/api/disney")) return "disney";
+  if (path.startsWith("/api/disney") || path.startsWith("/api/usj")) return "disney";
   if (path.startsWith("/api/council")) return "council";
   if (path.startsWith("/api/soluna")) return "soluna";
   if (path.startsWith("/api/docs")) return "docs";
@@ -29,11 +29,14 @@ function inferFeatureFromPath(path: string, method: string): string {
   }
   if (path.endsWith("/stocks/watches")) return "watches";
   if (path.endsWith("/stocks/lookup")) return "lookup";
-  if (path.endsWith("/disney/chat")) return "chat";
-  if (path.endsWith("/disney/advice")) return "advice";
-  if (path.endsWith("/disney/waits")) return "waits";
-  if (path.endsWith("/disney/status")) return "status";
-  if (path.endsWith("/disney/calendar")) return "calendar";
+  if (path.endsWith("/disney/chat") || path.endsWith("/usj/chat")) return "chat";
+  if (path.endsWith("/disney/advice") || path.endsWith("/usj/advice")) return "advice";
+  if (path.endsWith("/disney/waits") || path.endsWith("/usj/waits")) return "waits";
+  if (path.endsWith("/disney/status") || path.endsWith("/usj/status")) return "status";
+  if (path.endsWith("/disney/calendar") || path.endsWith("/usj/calendar")) {
+    return "calendar";
+  }
+  if (path.endsWith("/usj/evening-advice")) return "evening-advice";
   if (path.endsWith("/council/followup")) return "followup";
   if (path.endsWith("/council/ask/step")) return "ask-step";
   if (path.endsWith("/council/ask")) return "ask";

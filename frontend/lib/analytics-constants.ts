@@ -2,7 +2,7 @@ import type { AppKey } from "@/lib/types/access-log";
 
 export const APP_LABELS: Record<AppKey, string> = {
   stocks: "保有株",
-  disney: "ディズニー",
+  disney: "テーマパーク",
   costs: "コスト分析",
   council: "AI 合議",
   soluna: "ソルーナ",
@@ -15,8 +15,9 @@ export const APP_LABELS: Record<AppKey, string> = {
 
 export const FEATURE_LABELS: Record<string, string> = {
   "stock-analysis": "保有株 AI アドバイス",
-  "disney-suggest": "ディズニー AI ガイド",
+  "disney-suggest": "テーマパーク AI ガイド",
   "disney-chat": "ディズニー ミッキーチャット",
+  "usj-chat": "USJ キャラクターチャット",
   "council-initial-logic": "合議 初見（論理）",
   "council-initial-creative": "合議 初見（発想）",
   "council-initial-skeptic": "合議 初見（懐疑）",
