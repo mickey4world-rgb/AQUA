@@ -10,7 +10,7 @@ import Reveal from "@/components/layout/Reveal";
 export const metadata: Metadata = {
   title: "AQUA — AI・社会貢献・未来技術の実験スタジオ",
   description:
-    "AQUAはAI、行政予算可視化、東京ディズニーリゾート混雑予測、宇宙分析、BOINC社会貢献を公開するPersonal Software Studioです。",
+    "AQUAはAI、行政予算可視化、テーマパーク混雑予測、宇宙分析、BOINC社会貢献を公開するPersonal Software Studioです。",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   openGraph: {
@@ -42,10 +42,10 @@ const modules: ModuleIndexEntry[] = [
   },
   {
     index: "03",
-    title: "Disney",
-    titleJa: "ディズニー",
-    desc: "TDR 混雑予測・待ち時間・キャラクターチャット",
-    href: "/disney",
+    title: "Theme Parks",
+    titleJa: "テーマパーク",
+    desc: "ディズニー＆USJ の混雑予測・待ち時間・キャラクターチャット",
+    href: "/theme-parks",
     tag: "Experience",
     accent: "#f0abfc",
   },
@@ -147,7 +147,7 @@ export default function Home() {
 
           <Reveal eager>
             <p className="mt-8 max-w-lg text-[15px] leading-7 text-slate-400">
-              保有株の監視、ディズニーの混雑分析、複数 AI 合議、宇宙観測、そして WORKS。
+              保有株の監視、テーマパークの混雑分析、複数 AI 合議、宇宙観測、そして WORKS。
               光と水のあいだに、必要な情報だけをやさしく並べました。
             </p>
           </Reveal>

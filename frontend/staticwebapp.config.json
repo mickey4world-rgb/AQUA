@@ -21,6 +21,10 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/usj/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/costs/*",
       "allowedRoles": ["authenticated"]
     },
@@ -54,6 +58,14 @@
     },
     {
       "route": "/disney/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/theme-parks",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/theme-parks/*",
       "allowedRoles": ["authenticated"]
     },
     {

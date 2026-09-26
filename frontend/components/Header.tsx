@@ -8,7 +8,7 @@ const navItems = [
   { href: "/", label: "ホーム", en: "Index" },
   { href: "/works", label: "WORKS", en: "Works" },
   { href: "/stocks", label: "保有株", en: "Stocks" },
-  { href: "/disney", label: "ディズニー", en: "Disney" },
+  { href: "/theme-parks", label: "テーマパーク", en: "Parks" },
   { href: "/council", label: "AI合議", en: "Council" },
   { href: "/soluna", label: "Soluna", en: "Soluna" },
   { href: "/space", label: "宇宙", en: "Space" },
@@ -49,7 +49,7 @@ const THEMES: Record<Exclude<HeaderVariant, "default">, ThemeStyle> = {
     logo: "from-cyan-300 to-violet-300",
   },
   disney: {
-    anchor: "/disney",
+    anchor: "/theme-parks",
     active: "text-fuchsia-300",
     logo: "from-fuchsia-300 to-sky-300",
   },

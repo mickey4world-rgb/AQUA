@@ -8,6 +8,7 @@ import {
 const PROTECTED_PREFIXES = [
   "/stocks",
   "/disney",
+  "/theme-parks",
   "/costs",
   "/council",
   "/soluna",
@@ -93,6 +94,8 @@ export const config = {
     "/neo-preview",
     "/stocks/:path*",
     "/disney/:path*",
+    "/theme-parks",
+    "/theme-parks/:path*",
     "/costs/:path*",
     "/council/:path*",
     "/soluna/:path*",

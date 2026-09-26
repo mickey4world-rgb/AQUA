@@ -9,12 +9,13 @@ import {
   formatJstDateLabel,
 } from "@/lib/disney-utils";
 import type { DisneyCalendarMonth, DisneyParkKey } from "@/lib/types/disney";
+import type { ThemeParkKey } from "@/lib/types/theme-park";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const LEGEND_LEVELS = ["low", "moderate", "high", "extreme"] as const;
 
 type DisneyCalendarProps = {
-  park: DisneyParkKey;
+  park: ThemeParkKey;
   selectedDate: string;
   onSelectDate: (date: string) => void;
   /** 公開プレビューでは /api/public/tdr-preview/calendar */
@@ -42,11 +43,11 @@ function parseYearMonth(date: string): { year: number; month: number } {
 
 function matchesRequest(
   data: DisneyCalendarMonth,
-  park: DisneyParkKey,
+  park: ThemeParkKey,
   year: number,
   month: number,
 ): boolean {
-  return data.park === park && data.year === year && data.month === month;
+  return (data.park as string) === park && data.year === year && data.month === month;
 }
 
 export default function DisneyCalendar({

@@ -16,6 +16,8 @@ export default function robots(): MetadataRoute.Robots {
         "/api/",
         "/stocks/",
         "/disney/",
+        "/theme-parks",
+        "/theme-parks/",
         "/costs/",
         "/council/",
         "/soluna/",
