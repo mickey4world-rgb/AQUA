@@ -90,6 +90,7 @@ export const config = {
     "/",
     "/sample",
     "/tdr-preview",
+    "/theme-parks-preview",
     "/works-preview",
     "/neo-preview",
     "/stocks/:path*",

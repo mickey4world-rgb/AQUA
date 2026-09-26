@@ -32,10 +32,10 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "Theme Parks",
     titleJa: "テーマパーク",
     description:
-      "ディズニー＆USJの混雑予測。TDRはカレンダー・時間帯予想・ベイマックス―／エルサ―のアドバイスを無料公開。USJはマリオ―の本日・明日アドバイスを無料公開。リアルタイム待ちとチャットはログイン後。",
+      "ディズニー＆USJの混雑予測。無料プレビューで両方のカレンダーとキャラクターアドバイスを公開。リアルタイム待ちとチャットはログイン後。",
     accent: "#f0abfc",
     href: "/theme-parks",
-    publicHref: "/tdr-preview",
+    publicHref: "/theme-parks-preview",
     tag: "Experience",
   },
   {

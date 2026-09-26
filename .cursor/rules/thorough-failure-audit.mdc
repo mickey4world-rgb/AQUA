@@ -30,6 +30,7 @@ Past failures were not “missing the keyword 徹底的”. They were **process 
 7. **Request paraphrased into implementation jargon**: User intent (“グルーピングして分かる”) was rewritten as an implementable proxy (“orgKey ごとに図形を描く”) **without verifying the paraphrase still means the same thing to a stranger**. Deploy + “done” while the paraphrase failed. Same class as copy≠invariant / weak oracle — **not limited to 相関図**.
 8. **Expression not entailed by existing data**: User requested a visible affordance (角丸グループ) **because they need something expressed from data they already have**. Agent shipped rules so fine-grained that **real registered people produced zero boxes**, then claimed done. Missing inference: **「依頼した＝今あるデータで必ずその表現が見えるべき」**. Code-path existence ≠ expression on the user’s screen.
 9. **Public demo reused production-shaped secrets**: User said SHOWCASE / テストデータ / サンプル. Agent shipped **real org names, real people names, or production-looking affiliation graphs** (最高裁・内閣官房・実ベンダー・実氏名) onto `/sample` because “realistic fixture” felt clearer. That is **not a UX miss — it is a confidentiality / security failure**. 「分かりやすいデモ」は「公開してよいデータ」の同義語ではない。
+10. **Broader rename, old CTA still wins (SHOWCASE テーマパーク)**: User asked SHOWCASE を「テーマパーク」にし USJ を追加。Agent renamed the section + added a USJ tab on the **demo card**, but left `publicHref: "/tdr-preview"` — so 「無料プレビューを見る」still opened **Disney-only**. Proxy metric was “section title + demo has USJ”. User contract was **the free-preview path itself shows Disney and USJ**. Same class as copy≠invariant: **the primary CTA destination was never walked as a stranger.**
 
 If you catch yourself saying “we fixed the button”, ask: **did the user-visible contract (解説がある) become true, or only the click handler change?**
 If you catch yourself saying “viewer is ready”, ask: **can a stranger recognize continents/map on first paint?**
@@ -37,6 +38,7 @@ If you catch yourself saying “we added group boxes”, ask: **does N=1 still s
 If you catch yourself saying “implemented as requested”, ask: **did I verify against the user’s words, or only against my rewritten proxy?**
 If you catch yourself saying “grouping works when keys match”, ask: **with the user’s current/likely data, is at least one group actually visible? If zero, the request was not delivered.**
 If you catch yourself saying “demo looks realistic”, ask: **would publishing this on the open internet leak someone’s real org / name / role? If yes or unsure — stop and invent clearly fictional sample data.**
+If you catch yourself saying “SHOWCASE に USJ を足した”, ask: **does 「無料プレビューを見る」land on a page that still shows only the old single park? If yes, the rename failed.**
 
 ## Mandatory: Request ↔ Result verification (every user-facing ship)
 
@@ -57,10 +59,20 @@ This is the default gap Mickey is pointing at: **依頼と結果が合わない*
 | Stranger test | A stranger reading only the screen (no chat history) would agree the request was met |
 | No synonym swap | “描いた / 置いた / 動いた / 200” is not accepted as proof of “分かる / 正しい / 完成” |
 | **Data-entailed expression** | Given **existing or realistic user data**, the requested affordance **actually appears** (not only “possible if data were perfect”). If it cannot appear, either fix the mapping rules or **tell the user what field must be filled** — do not ship silent empty success |
+| **Primary CTA destination** | Click the user’s main next-step control (無料プレビュー / ログイン後フル版 / publicHref / demo card CTA). The landed page must still satisfy the request’s key nouns — not an older narrower surface. Renaming a section without retargeting `publicHref` is an automatic fail |
 
 If any row fails → **not done**. Fix or ask. Do not narrate “反映しました” over a failed stranger test.
 
-Applies to: diagrams, tables, filters, copy, PROFILE text, Works cards, AI outputs, CTA labels, mobile flows — **any** place the deliverable is how something *reads or looks*.
+Applies to: diagrams, tables, filters, copy, PROFILE text, Works cards, AI outputs, CTA labels, mobile flows, **SHOWCASE section `publicHref` / preview routes** — **any** place the deliverable is how something *reads or looks*.
+
+## Mandatory: Broader product rename = every entry point
+
+When the user widens a product name (e.g. ディズニー → テーマパーク, or adds a sibling park/app):
+
+1. List **all** public entry points: section title, description, demo widget, **「無料プレビュー」CTA (`publicHref`)**, demo-card deep links, robots/sitemap, SWA anonymous routes.
+2. For each, ask: **素人はここで新スコープ（例: USJ）に届くか？**
+3. Reusing the old single-product preview URL is **designed-in degraded success** unless the old page itself gains the new scope (tabs) **and** the CTA still reads correctly.
+4. **Oracle before done**: open `publicHref` anonymously (or mentally walk it). If only the pre-rename product appears, **not done**.
 
 ## Mandatory: “依頼 ⇒ 今あるデータで見える” inference
 
@@ -156,3 +168,5 @@ Whenever shipping `/sample`, SHOWCASE demos, public previews, or any **auth-free
 - Stopping at “grouping logic exists” when the user’s map shows **zero** group boxes despite many same-org people
 - Stopping at “SHOWCASE demo looks realistic” when the fixture contains real org / person identifiers from production or screenshots
 - Treating “デモの分かりやすさ” as permission to publish confidential or production-shaped relationship data
+- Stopping at “SHOWCASE section renamed / demo tab added” when 「無料プレビュー」/`publicHref` still opens the old single-product page
+- Reusing an old preview URL after a broader rename without verifying the landed page still matches the new product nouns

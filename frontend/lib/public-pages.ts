@@ -6,6 +6,7 @@ export const PUBLIC_PAGE_LABELS: Record<string, string> = {
   "/profile": "PROFILE",
   "/login": "ログイン",
   "/tdr-preview": "SHOWCASE詳細 · TDRプレビュー",
+  "/theme-parks-preview": "SHOWCASE詳細 · テーマパークプレビュー",
   "/works-preview": "SHOWCASE詳細 · サンキープレビュー",
   "/neo-preview": "SHOWCASE詳細 · NEOプレビュー",
   "/news-search-preview": "SHOWCASE詳細 · ニュースサーチ",
@@ -48,6 +49,7 @@ export function publicPageGroup(
   }
   if (
     pathname === "/tdr-preview" ||
+    pathname === "/theme-parks-preview" ||
     pathname === "/works-preview" ||
     pathname === "/neo-preview" ||
     pathname === "/news-search-preview"

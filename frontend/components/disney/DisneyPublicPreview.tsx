@@ -195,7 +195,14 @@ function CharacterBriefing({ briefing }: { briefing: DisneyDayBriefing }) {
   );
 }
 
-export default function DisneyPublicPreview() {
+type DisneyPublicPreviewProps = {
+  /** テーマパーク統合プレビュー内ではナビ・外側余白を親に任せる */
+  embedded?: boolean;
+};
+
+export default function DisneyPublicPreview({
+  embedded = false,
+}: DisneyPublicPreviewProps) {
   const [data, setData] = useState<DisneyShowcaseSnapshot | null>(null);
   const [park, setPark] = useState<DisneyParkKey>("tdl");
   const [selectedDate, setSelectedDate] = useState<string>("");
@@ -318,16 +325,22 @@ export default function DisneyPublicPreview() {
 
   return (
     <main
-      className={`${PAGE_MAIN_CLASS} mx-auto min-h-screen max-w-6xl bg-gradient-to-b from-indigo-950 via-slate-950 to-black px-4 py-8 sm:px-6`}
+      className={
+        embedded
+          ? "space-y-0"
+          : `${PAGE_MAIN_CLASS} mx-auto min-h-screen max-w-6xl bg-gradient-to-b from-indigo-950 via-slate-950 to-black px-4 py-8 sm:px-6`
+      }
     >
-      <PublicPreviewNav showcaseAnchor="theme-parks" />
+      {!embedded && <PublicPreviewNav showcaseAnchor="theme-parks" />}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-300/80">
             TDR Public Preview
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">混雑予測プレビュー</h1>
+          <h1 className={`${embedded ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl"} mt-2 font-bold text-white`}>
+            {embedded ? "東京ディズニーリゾート 混雑予測" : "混雑予測プレビュー"}
+          </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             誰でも無料で閲覧できます（ルールベース予測・AI コストなし）。
             カレンダーは当月から最大6か月先まで選べます。

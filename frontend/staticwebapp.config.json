@@ -17,6 +17,14 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/theme-parks-preview",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/theme-parks-preview/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/disney/*",
       "allowedRoles": ["authenticated"]
     },
