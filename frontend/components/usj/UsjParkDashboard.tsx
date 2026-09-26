@@ -259,6 +259,7 @@ export default function UsjParkDashboard() {
             />
           )}
           <DisneyCrowdBreakdownPanel
+            variant="usj"
             breakdown={advice?.breakdown ?? null}
             crowdLabel={
               advice?.prediction?.crowdLabel ?? waitData?.status.crowdLabel

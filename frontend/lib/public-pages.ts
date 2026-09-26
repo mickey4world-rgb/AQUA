@@ -19,6 +19,7 @@ export const SHOWCASE_SECTION_LABELS: Record<string, string> = {
   council: "SHOWCASE · AI合議",
   stocks: "SHOWCASE · 保有株",
   disney: "SHOWCASE · ディズニー",
+  "theme-parks": "SHOWCASE · テーマパーク",
   asteroid: "SHOWCASE · 小惑星",
   soluna: "SHOWCASE · Soluna",
   relations: "SHOWCASE · 関係図",

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { trackPublicPageView } from "@/components/analytics/PublicPageTracker";
 import AsteroidShowcaseDemo from "@/components/showcase/demos/AsteroidShowcaseDemo";
 import CouncilShowcaseDemo from "@/components/showcase/demos/CouncilShowcaseDemo";
-import DisneyShowcaseDemo from "@/components/showcase/demos/DisneyShowcaseDemo";
+import ThemeParksShowcaseDemo from "@/components/showcase/demos/ThemeParksShowcaseDemo";
 import JudicialShowcaseDemo from "@/components/showcase/demos/JudicialShowcaseDemo";
 import NewsSearchShowcaseDemo from "@/components/showcase/demos/NewsSearchShowcaseDemo";
 import RelationsShowcaseDemo from "@/components/showcase/demos/RelationsShowcaseDemo";
@@ -20,7 +20,7 @@ const DEMO_MAP = {
   judicial: JudicialShowcaseDemo,
   council: CouncilShowcaseDemo,
   stocks: StocksShowcaseDemo,
-  disney: DisneyShowcaseDemo,
+  "theme-parks": ThemeParksShowcaseDemo,
   asteroid: AsteroidShowcaseDemo,
   soluna: SolunaShowcaseDemo,
   relations: RelationsShowcaseDemo,
