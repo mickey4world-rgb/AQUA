@@ -13,6 +13,11 @@ import type {
   SolunaSystemPersonalityState,
   SolunaSystemStateResponse,
 } from "@/lib/types/soluna";
+import {
+  solunaNewsPrimarySummary,
+  solunaNewsPrimaryTitle,
+  solunaNewsSecondaryTitle,
+} from "@/lib/soluna-news-display";
 
 const MEDAL_LABEL: Record<SolunaMedalKind, string> = {
   bronze: "銅",
@@ -122,7 +127,7 @@ function MonsterBoard({
                 {defeated ? " · 討伐済" : escaped ? " · 逃走" : ""}
               </p>
               <h4 className="mt-0.5 text-sm font-semibold text-rose-50">
-                {monster?.name ?? item.title}
+                {monster?.name ?? solunaNewsPrimaryTitle(item)}
               </h4>
               {monster && (
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-black/30">
@@ -132,8 +137,18 @@ function MonsterBoard({
                   />
                 </div>
               )}
-              <p className="mt-2 text-[12px] leading-relaxed text-slate-200">{item.summary}</p>
-              <p className="mt-1 text-[11px] text-slate-400">ニュース: {item.title}</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-slate-200">
+                {solunaNewsPrimarySummary(item)}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                ニュース: {solunaNewsPrimaryTitle(item)}
+                {(() => {
+                  const original = solunaNewsSecondaryTitle(item);
+                  return original ? (
+                    <span className="mt-0.5 block text-slate-500">原題: {original}</span>
+                  ) : null;
+                })()}
+              </p>
             </article>
           );
         })}

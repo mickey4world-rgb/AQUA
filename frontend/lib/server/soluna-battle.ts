@@ -6,6 +6,10 @@ import {
 } from "@/lib/server/soluna-system-config";
 import { enrichBriefingWithMonsters, pickBoss, pickTrashMobs } from "@/lib/soluna-monsters";
 import {
+  solunaNewsPrimarySummary,
+  solunaNewsPrimaryTitle,
+} from "@/lib/soluna-news-display";
+import {
   getAreaById,
   inferAreaFromBriefing,
   pickNextDestination,
@@ -213,10 +217,10 @@ function resolveEncounter(
 
   return {
     role,
-    monsterName: item.monster?.name ?? item.title,
+    monsterName: item.monster?.name ?? solunaNewsPrimaryTitle(item),
     rank,
-    newsTitle: item.title,
-    newsPlain: item.summary,
+    newsTitle: solunaNewsPrimaryTitle(item),
+    newsPlain: solunaNewsPrimarySummary(item),
     outcome,
     xpGained,
     goldFlavor,
@@ -345,8 +349,8 @@ export function resolveDailyBattle(
     depth: Number(depth.toFixed(2)),
     bossName: boss.monster?.name ?? boss.title,
     bossRank: rank as SolunaBattleResult["bossRank"],
-    newsTitle: boss.title,
-    newsPlain: boss.summary,
+    newsTitle: solunaNewsPrimaryTitle(boss),
+    newsPlain: solunaNewsPrimarySummary(boss),
     outcomeWhy: positiveSpin ?? buildOutcomeWhy(outcome, heat, depth),
     impression: buildImpression(outcome, heat, depth, messages),
     nextMove: buildNextMove(enriched, outcome),

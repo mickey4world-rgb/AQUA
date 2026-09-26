@@ -17,6 +17,7 @@ import {
   type RawNewsSeed,
 } from "@/lib/server/works-news-search-rss";
 import { ensureJapaneseTranslations } from "@/lib/server/works-news-search-translate";
+import { looksPrimarilyEnglish } from "@/lib/works-news-search-lang";
 import {
   getLatestWorksNewsDigest,
   getTodayWorksNewsDigest,
@@ -554,29 +555,46 @@ export async function markWorksNewsSolunaSynced(digest: NewsSearchDigest): Promi
   await saveWorksNewsDigest(next);
 }
 
-/** Soluna 討伐向けに AI／経済の上位を抽出 */
+/** Soluna 討伐向けに AI／経済の上位を抽出（注目度順・英語は日本語訳を付与） */
 export function mapDigestToSolunaSeedItems(digest: NewsSearchDigest): Array<{
   keyword: string;
   title: string;
   summary: string;
+  titleJa?: string;
+  summaryJa?: string;
+  attentionScore?: number;
   sourceUrl?: string;
   publishedAt?: string;
 }> {
-  const ai = digest.categories.ai.slice(0, 3).map((item) => ({
-    keyword: "AI 最新動向",
-    title: item.title,
-    summary: item.explanation || item.summary,
-    sourceUrl: item.sources.find((s) => s.url)?.url,
-    publishedAt: item.publishedAt,
-  }));
-  const economy = digest.categories.economy.slice(0, 3).map((item) => ({
-    keyword: "世界経済",
-    title: item.title,
-    summary: item.explanation || item.summary,
-    sourceUrl: item.sources.find((s) => s.url)?.url,
-    publishedAt: item.publishedAt,
-  }));
-  return [...ai, ...economy];
+  const takeTop = (items: NewsSearchItem[], keyword: string, limit: number) =>
+    [...items]
+      .sort((a, b) => (b.attentionScore ?? 0) - (a.attentionScore ?? 0))
+      .slice(0, limit)
+      .map((item) => {
+        const titleJa = item.titleJa?.trim() || undefined;
+        const summaryJa =
+          item.summaryJa?.trim() ||
+          (item.explanation?.trim() ? item.explanation.trim().slice(0, 160) : undefined);
+        const english =
+          looksPrimarilyEnglish(item.title) ||
+          looksPrimarilyEnglish(item.summary || "");
+        return {
+          keyword,
+          // 英語記事は原文を title/summary に残し、titleJa/summaryJa で日本語を載せる
+          title: item.title,
+          summary: item.explanation || item.summary,
+          titleJa: english ? titleJa : titleJa && titleJa !== item.title ? titleJa : undefined,
+          summaryJa: english ? summaryJa : undefined,
+          attentionScore: item.attentionScore,
+          sourceUrl: item.sources.find((s) => s.url)?.url,
+          publishedAt: item.publishedAt,
+        };
+      });
+
+  return [
+    ...takeTop(digest.categories.ai, "AI 最新動向", 3),
+    ...takeTop(digest.categories.economy, "世界経済", 3),
+  ];
 }
 
 export async function chatWorksNewsSearch(options: {
