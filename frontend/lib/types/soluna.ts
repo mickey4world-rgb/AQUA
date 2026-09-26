@@ -58,6 +58,12 @@ export interface SolunaNewsItem {
   publishedAt?: string;
   keyword: string;
   monster?: SolunaNewsMonster;
+  /** 英語原文があるときの日本語見出し */
+  titleJa?: string;
+  /** 英語原文があるときの日本語要約 */
+  summaryJa?: string;
+  /** 注目度（Works News Search 由来。大ボス選定に使う） */
+  attentionScore?: number;
 }
 
 export interface SolunaNewsBriefing {
