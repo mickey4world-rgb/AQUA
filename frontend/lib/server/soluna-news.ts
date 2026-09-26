@@ -8,7 +8,9 @@ import {
   getLatestBriefing,
   saveBriefing,
 } from "@/lib/server/soluna-system-store";
+import { translateBatchWithLlm } from "@/lib/server/works-news-search-translate";
 import { enrichBriefingWithMonsters, formatEncounterForPrompt, monsterizeNewsItem } from "@/lib/soluna-monsters";
+import { solunaNewsNeedsJapanese } from "@/lib/soluna-news-display";
 import type { SolunaNewsBriefing, SolunaNewsItem } from "@/lib/types/soluna";
 
 const NEWS_TIMEOUT_MS = 25_000;
@@ -30,17 +32,20 @@ function buildNewsPrompts(keywords: string[]) {
 
 JSON 形式:
 {
-  "summary": "全体を2〜3文で要約（今日の新事実のみ）",
+  "summary": "全体を2〜3文で要約（今日の新事実のみ・日本語）",
   "items": [
     {
       "keyword": "AI 最新動向",
-      "title": "見出し",
-      "summary": "80文字以内の要点",
+      "title": "見出し（原語のままでよい）",
+      "titleJa": "日本語見出し（title が英語なら必須）",
+      "summary": "80文字以内の要点（原語可）",
+      "summaryJa": "日本語要点（summary が英語なら必須）",
       "sourceUrl": "https://...",
       "publishedAt": "${todayJst}T00:00:00+09:00",
       "monsterName": "暴走規制竜レギュラ",
       "species": "dragon",
-      "rank": 4
+      "rank": 4,
+      "attentionScore": 82
     }
   ]
 }`;
@@ -85,7 +90,25 @@ function normalizeItems(raw: unknown, keywords: readonly string[]): SolunaNewsIt
     if (!title || !summary) continue;
     result.push(
       monsterizeNewsItem(
-        { title, summary, keyword, sourceUrl, publishedAt },
+        {
+          title,
+          summary,
+          keyword,
+          sourceUrl,
+          publishedAt,
+          titleJa:
+            typeof row.titleJa === "string" && row.titleJa.trim()
+              ? row.titleJa.trim()
+              : undefined,
+          summaryJa:
+            typeof row.summaryJa === "string" && row.summaryJa.trim()
+              ? row.summaryJa.trim()
+              : undefined,
+          attentionScore:
+            typeof row.attentionScore === "number" && Number.isFinite(row.attentionScore)
+              ? Math.round(row.attentionScore)
+              : undefined,
+        },
         {
           monsterName: typeof row.monsterName === "string" ? row.monsterName : undefined,
           rank: typeof row.rank === "number" ? row.rank : undefined,
@@ -102,6 +125,38 @@ function itemsLookGrounded(items: SolunaNewsItem[]): boolean {
   if (items.length === 0) return false;
   const withUrl = items.filter((item) => item.sourceUrl).length;
   return withUrl >= Math.ceil(items.length / 2);
+}
+
+/** 英語見出し・要約に日本語訳を付与（失敗時は原文のまま） */
+async function ensureSolunaItemsJapanese(
+  items: SolunaNewsItem[],
+): Promise<SolunaNewsItem[]> {
+  const needIdx: number[] = [];
+  items.forEach((item, index) => {
+    if (solunaNewsNeedsJapanese(item)) needIdx.push(index);
+  });
+  if (needIdx.length === 0) return items;
+
+  const rows = needIdx.map((index) => ({
+    index,
+    title: items[index]!.title,
+    summary: items[index]!.summary,
+  }));
+  const result = await translateBatchWithLlm(rows);
+  if (!result.ok) {
+    console.warn("[soluna-news] JP translate skipped:", result.reason);
+    return items;
+  }
+
+  return items.map((item, index) => {
+    const ja = result.map.get(index);
+    if (!ja) return item;
+    return {
+      ...item,
+      titleJa: ja.titleJa || item.titleJa,
+      summaryJa: ja.summaryJa || item.summaryJa || ja.titleJa,
+    };
+  });
 }
 
 async function fetchNewsFromGrounding(
@@ -180,6 +235,9 @@ export async function fetchGlobalNewsBriefing(options?: {
             keyword: seed.keyword,
             sourceUrl: seed.sourceUrl,
             publishedAt: seed.publishedAt,
+            titleJa: seed.titleJa,
+            summaryJa: seed.summaryJa,
+            attentionScore: seed.attentionScore,
           }),
         );
       if (itemsLookGrounded(mapped) || mapped.length >= 2) {
@@ -241,13 +299,15 @@ export async function fetchGlobalNewsBriefing(options?: {
     return { ok: false, reason: "ニュース項目を抽出できませんでした。" };
   }
 
+  items = await ensureSolunaItemsJapanese(items);
+
   const briefing: SolunaNewsBriefing = {
     id: docId,
     keywords: uniqueKeywords,
     items,
     fetchedAt: new Date().toISOString(),
     source,
-    summary: summary || items.map((item) => item.title).join(" / "),
+    summary: summary || items.map((item) => item.titleJa || item.title).join(" / "),
   };
 
   await saveBriefing(briefing);

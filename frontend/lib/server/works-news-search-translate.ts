@@ -20,7 +20,7 @@ function approxTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 3));
 }
 
-async function translateBatchWithLlm(
+export async function translateBatchWithLlm(
   rows: Array<{ index: number; title: string; summary: string }>,
 ): Promise<
   | { ok: true; map: Map<number, { titleJa: string; summaryJa: string }>; model: string }
