@@ -5,6 +5,11 @@ import type {
   SolunaNewsItem,
   SolunaNewsMonster,
 } from "@/lib/types/soluna";
+import {
+  solunaNewsPrimarySummary,
+  solunaNewsPrimaryTitle,
+  solunaNewsSecondaryTitle,
+} from "@/lib/soluna-news-display";
 
 const SPECIES_LABEL: Record<SolunaMonsterSpecies, string> = {
   dragon: "竜",
@@ -145,7 +150,17 @@ export function enrichBriefingWithMonsters(briefing: SolunaNewsBriefing): Soluna
         species?: string;
       };
       return monsterizeNewsItem(
-        { title: raw.title, summary: raw.summary, keyword: raw.keyword, sourceUrl: raw.sourceUrl, monster: raw.monster },
+        {
+          title: raw.title,
+          summary: raw.summary,
+          keyword: raw.keyword,
+          sourceUrl: raw.sourceUrl,
+          publishedAt: raw.publishedAt,
+          titleJa: raw.titleJa,
+          summaryJa: raw.summaryJa,
+          attentionScore: raw.attentionScore,
+          monster: raw.monster,
+        },
         { monsterName: raw.monsterName, rank: raw.rank, species: raw.species },
       );
     }),
@@ -158,10 +173,17 @@ export function formatEncounterForPrompt(briefing: SolunaNewsBriefing): string {
     const monster = item.monster;
     const header = monster
       ? `${index + 1}. 【Lv.${monster.rank} ${monster.speciesLabel}】${monster.name}`
-      : `${index + 1}. ${item.title}`;
+      : `${index + 1}. ${solunaNewsPrimaryTitle(item)}`;
+    const primaryTitle = solunaNewsPrimaryTitle(item);
+    const secondary = solunaNewsSecondaryTitle(item);
+    const primarySummary = solunaNewsPrimarySummary(item);
+    const attention =
+      typeof item.attentionScore === "number"
+        ? `\n   注目度: ${item.attentionScore}`
+        : "";
     return `${header}
-   正体（元ニュース）: ${item.title}
-   要点: ${item.summary}
+   正体（元ニュース）: ${primaryTitle}${secondary ? `\n   原文見出し: ${secondary}` : ""}
+   要点: ${primarySummary}${attention}
    弱点: ${monster?.weakness ?? "論点の急所"}
    キーワード: ${item.keyword}${item.publishedAt ? `\n   報道日: ${item.publishedAt.slice(0, 10)}` : ""}${item.sourceUrl ? `\n   出典: ${item.sourceUrl}` : ""}`;
   });
@@ -172,9 +194,14 @@ ${briefing.summary}
 ${lines.join("\n\n")}
 
 【鮮度ルール】上の各「正体（元ニュース）」と要点だけが本日の事実。ここに無い関税・製品名・政策は持ち出さない。古い一般知識で話を盛らないこと。
-読者がニュースを知っていても『続きが読みたい』と思えるように、怪物の生態＝ニュースの意味を噛み砕いて語ること。`;
+読者がニュースを知っていても『続きが読みたい』と思えるように、怪物の生態＝ニュースの意味を噛み砕いて語ること。
+英語の原文見出しがある場合は、会話では日本語の正体・要点を主に使い、必要なら原文を短く添える。`;
 }
 
+/**
+ * 大ボス選定: 注目度（attentionScore）優先、同点ならモンスター rank。
+ * 「議論しがいのある今日いちばん気になるネタ」をボスにする。
+ */
 export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
   const items = enrichBriefingWithMonsters(briefing).items;
   if (items.length === 0) {
@@ -184,7 +211,12 @@ export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
       keyword: "AI 最新動向",
     });
   }
-  return [...items].sort((a, b) => (b.monster?.rank ?? 1) - (a.monster?.rank ?? 1))[0];
+  return [...items].sort((a, b) => {
+    const att =
+      (b.attentionScore ?? -1) - (a.attentionScore ?? -1);
+    if (att !== 0) return att;
+    return (b.monster?.rank ?? 1) - (a.monster?.rank ?? 1);
+  })[0]!;
 }
 
 /** 大ボス以外からランク低めを最大 max 体（小物〜中ボス） */

@@ -14,6 +14,11 @@ import { formatGuildFinanceRpgReport } from "@/lib/server/soluna-asset-rpg";
 import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
 import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 import { buildDisneyGuildNoticeForNote } from "@/lib/server/disney-note-guild-notice";
+import {
+  solunaNewsPrimarySummary,
+  solunaNewsPrimaryTitle,
+  solunaNewsSecondaryTitle,
+} from "@/lib/soluna-news-display";
 
 /** Note 設定・世界観の案内ページ（無料リード冒頭） */
 export const NOTE_SETTINGS_GUIDE_URL =
@@ -237,16 +242,34 @@ function newsNarrationBlock(input: {
   battle: SolunaBattleResult;
 }): string {
   const lines = input.briefing.items.slice(0, 3).map((item, i) => {
-    const sum = (item.summary || "").trim();
-    return `${i + 1}. ${item.title}${sum ? `\n　→ ${sum.slice(0, 100)}${sum.length > 100 ? "…" : ""}` : ""}`;
+    const title = solunaNewsPrimaryTitle(item);
+    const secondary = solunaNewsSecondaryTitle(item);
+    const sum = solunaNewsPrimarySummary(item).trim();
+    return `${i + 1}. ${title}${secondary ? `\n　（原題: ${secondary}）` : ""}${sum ? `\n　→ ${sum.slice(0, 100)}${sum.length > 100 ? "…" : ""}` : ""}`;
   });
   const plain = (input.battle.newsPlain || "").trim();
   return `## きょうのニュース（ナレーション・事実）
-ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。
+ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。英語の速報は日本語訳を先に載せます。
 
 ${lines.join("\n\n") || plain || input.briefing.summary}
 
 このニュースを、ソルとルーナはモンスター討伐として読み解きます。ここから先が、今日の冒険です。`;
+}
+
+/** 有料掛け合いが薄いときの最低限の深読みテンプレ（空有料を防ぐ） */
+function paidDialogueFallback(input: {
+  battle: SolunaBattleResult;
+  escaped: boolean;
+}): string {
+  const hook = input.battle.newsPlain || input.battle.newsTitle || input.battle.bossName;
+  return `${SOL_LABEL}
+ルーナ、さっきの前半討論の続きだ。「${hook}」——で、実は面白い／心配の芯は、誰の財布と誰のスケジュールが先に動くか、だと思うんだ。
+俺の予想はこう：次の発表か価格の初動で、今日の論点が本物かどうかが一発で見える。あ、言い過ぎた？
+
+${LUNA_LABEL}
+そういう見方もあるね。深掘りするなら、数字の裏の「誰が急いでいて、誰が待てるか」よ。
+私の読みは、${input.escaped ? "取り逃がした急所を明日もう一度測ること" : "今日の結論を1行にして次の指標で検証すること"}。
+受付の子も、続きを気にしていたわ——静かに、でも楽しく行きましょう。`;
 }
 
 export function notePriceYen(): number {
@@ -294,7 +317,11 @@ export function composeDailyNote(input: {
 
   const allMessages = input.messages.filter((m) => m.role === "sol" || m.role === "luna");
   const freeDialogue = dialogueLines(allMessages.slice(0, 2));
-  const paidDialogue = dialogueLines(allMessages.slice(2));
+  const paidDialogueRaw = dialogueLines(allMessages.slice(2));
+  const paidDialogue =
+    paidDialogueRaw.trim().length >= 80
+      ? paidDialogueRaw
+      : paidDialogueFallback({ battle: input.battle, escaped });
 
   const creator = process.env.NOTE_CREATOR_URLNAME?.trim();
   const shopLine = creator ? `https://note.com/${creator}` : "このマガジンの有料購読";
@@ -364,7 +391,9 @@ ${factBlock}
 
 ${adventureLog}
 
-## 2人の掛け合い（ダイジェスト）
+## 2人の掛け合い（ダイジェスト・前半討論）
+
+事実を受け止めたあと、「面白いことが起きるぞー／心配な点があるぞー」の入口までが無料パートです。
 
 ${freeDialogue || "（本日は偵察戦から始まります）"}
 
@@ -375,7 +404,7 @@ ${paywallTeaser}
 ---
 
 【有料エリアの先にあるもの】
-・激闘の続き: 小物戦の裏側＆大ボス戦の白熱全文
+・激闘の続き: 深掘り・予想・白熱した掛け合い全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
 ・召喚獣育成: リアルな保有状況＋物語の感想
 ・拠点都市開拓: 街の成長と、受付の子や風景への想い
@@ -394,11 +423,13 @@ ${escapeHook}
 ・ハンターレベル: Lv.${input.hunter.level}
 ・複数戦成績: ${input.battle.wins ?? "—"}勝${input.battle.losses ?? "—"}敗 / 物語ゴールド +${input.battle.goldFlavorTotal ?? 0}`;
 
-  const paidBody = `有料購読のあなたへ。白熱の続きと、今日のギルド全仕事レポートです。
+  const paidBody = `有料購読のあなたへ。深掘りと予想、白熱の続き、そして今日のギルド全仕事レポートです。
 
 ## 2人の掛け合い（有料限定・激闘の裏側）
 
-${paidDialogue || "（本日は2ターンで決着がつきました）"}
+前半討論の先——予想と深掘りで、議論を楽しむパートです。
+
+${paidDialogue}
 
 ${
   escaped
