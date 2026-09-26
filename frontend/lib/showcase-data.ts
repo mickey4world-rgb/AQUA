@@ -27,12 +27,12 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     tag: "WORKS",
   },
   {
-    id: "disney",
+    id: "theme-parks",
     index: "02",
-    title: "TDR Analytics",
-    titleJa: "ディズニー",
+    title: "Theme Parks",
+    titleJa: "テーマパーク",
     description:
-      "混雑予測カレンダー・時間帯別アトラクション予想・ベイマックス―／エルサ―の本日・明日アドバイスを無料公開。リアルタイム待ち時間とチャットはログイン後。",
+      "ディズニー＆USJの混雑予測。TDRはカレンダー・時間帯予想・ベイマックス―／エルサ―のアドバイスを無料公開。USJはマリオ―の本日・明日アドバイスを無料公開。リアルタイム待ちとチャットはログイン後。",
     accent: "#f0abfc",
     href: "/theme-parks",
     publicHref: "/tdr-preview",

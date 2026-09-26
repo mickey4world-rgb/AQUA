@@ -17,6 +17,10 @@ function topFactors(breakdown: DisneyCrowdBreakdown): string[] {
     { score: breakdown.schoolK12, label: breakdown.labels.schoolK12 },
     { score: breakdown.event, label: breakdown.labels.event },
     { score: breakdown.regionalPassport, label: breakdown.labels.regionalPassport },
+    {
+      score: breakdown.shareholderPassport,
+      label: breakdown.labels.shareholderPassport,
+    },
     { score: breakdown.otherThemeParks, label: breakdown.labels.otherThemeParks },
     { score: breakdown.metroEvents, label: breakdown.labels.metroEvents },
     { score: breakdown.weather, label: breakdown.labels.weather },
@@ -28,17 +32,16 @@ function topFactors(breakdown: DisneyCrowdBreakdown): string[] {
 }
 
 function marioHeadline(level: CrowdLevel, score: number, dayLabel: string): string {
-  const intro = `It's-a me, ${MARIO_NAME}！ ${dayLabel}の混雑スコアは ${score} だ！`;
   if (level === "extreme") {
-    return `${intro} Woohoo…どころじゃない混みようだ！開園ダッシュでスターを取ろう！`;
+    return `Here we go！ It's-a me, ${MARIO_NAME}！ ${dayLabel}は混雑スコア ${score} — Woohoo…どころか大混雑コースだ！開園ダッシュでコインを掻き集めよう！`;
   }
   if (level === "high") {
-    return `${intro} ちょっと忙しいコースだね。エクスプレスは保険、まずは人気アトラクションから！`;
+    return `Let's-a go！ ${MARIO_NAME}だ！ ${dayLabel}はスコア ${score}。ちょっと忙しいぞ。ファイアー投げて人気ライドから攻略だ！`;
   }
   if (level === "moderate") {
-    return `${intro} ちょうどいいバランスさ！写真もライドも楽しめるぞ！`;
+    return `Wahoo！ ${MARIO_NAME}さ！ ${dayLabel}はちょうどいい ${score} 点。ジャンプも写真も楽しめるぞ！`;
   }
-  return `${intro} Mamma mia、空いてる！ゆっくりキノコを集めるように巡ろう！`;
+  return `Mamma mia！ ${MARIO_NAME}だ！ ${dayLabel}は空いててスコア ${score}。キノコ拾うようにゆったり巡ろう！`;
 }
 
 function marioMonologue(
@@ -46,42 +49,53 @@ function marioMonologue(
   breakdown: DisneyCrowdBreakdown,
   dayLabel: string,
 ): string[] {
-  return [
-    `${dayLabel}のマップを広げたぞ！パイプの向こうもチェック済みさ！`,
-    level === "extreme" || level === "high"
-      ? "ここがヤマ場だ！任天堂エリアか魔法界、どちらかを朝一で攻略だ！"
-      : "ゆとりあり！スヌーピーやキティのエリアで休憩してもいいぞ！",
+  const busy = level === "extreme" || level === "high";
+  const lines = [
+    `Here we go！ ${dayLabel}のマップを広げたぞ！パイプの向こうもチェック済みさ！`,
+    busy
+      ? "Woohoo…人波が多い！朝一は任天堂エリアか魔法界のどっちかでスターを取れ！コインは後からでいいぞ！"
+      : "Wahoo！ゆとりあり！スヌーピーやキティのエリアでコイン集めしながら休憩してもいいぞ！",
+    busy
+      ? "列が長いところはファイアーボールみたいにスキップ！エクスプレスは本当に必要な1〜2発だけさ！"
+      : "空いてるライドはジャンプ台だ！ポンポン回ってコインゲットだ！",
     breakdown.weather >= 40
-      ? "天気には注意だ。水分補給はパワーアップと同じくらい大事さ！"
+      ? "Mamma mia、天気には注意だ。水分補給はパワーアップと同じくらい大事さ！"
       : "天候はまずまず。帽子があると安心だぞ！",
     `いま効いてる要因: ${topFactors(breakdown).slice(0, 2).join(" / ")}`,
-    "Let's-a go！無理は禁物。1アップより笑顔の方が大事だ！",
+    busy
+      ? "体力ゲージが減ったらすぐ休憩！ゲームオーバーより1アップ優先さ。Let's-a go！"
+      : "夜のライトアップ前に写真スポットへ。最後にスター取ってクリアだ！Yahoo！",
   ];
+  return lines;
 }
 
 function marioCautions(level: CrowdLevel): string[] {
   if (level === "extreme" || level === "high") {
     return [
-      "全部クリアしようとしない。スターは3つで十分さ！",
-      "長い列で体力ゲージが減る前に休憩を！",
+      "全部クリアしようとしない。スターは3つで十分さ！ Mamma mia！",
+      "長い列で体力ゲージが減る前に休憩を！コインより笑顔優先だ！",
+      "Here we go の勢いで走りすぎない。水分と日陰を忘れずに！",
     ];
   }
-  return ["日差しと水分に注意。ゲームオーバーは避けよう！"];
+  return [
+    "日差しと水分に注意。ゲームオーバーは避けよう！",
+    "空いてても無理に全部回らない。Wahoo なペースで！",
+  ];
 }
 
 function marioTouringTips(level: CrowdLevel): string[] {
   if (level === "extreme" || level === "high") {
     return [
-      "開園直後: 任天堂ワールド → ハリー・ポッター系",
-      "昼はショー／食事で人波を避ける",
+      "Here we go！開園直後: 任天堂ワールド → ハリー・ポッター系",
+      "昼はショー／食事で人波をかわす（ファイアースキップ）",
       "エクスプレスは本当に必要な1〜2施設だけ",
-      "夕方に空いたライドを拾う",
+      "夕方に空いたライドでコインゲット",
     ];
   }
   return [
-    "午前に人気2件、午後は散策とショー",
-    "サンリオ／スヌーピーで休憩タイム",
-    "夜のライトアップ前に写真スポットへ",
+    "Let's-a go！午前に人気2件、午後は散策とショー",
+    "サンリオ／スヌーピーで休憩タイム＆コイン集め",
+    "夜のライトアップ前に写真スポットへ。Yahoo！",
   ];
 }
 

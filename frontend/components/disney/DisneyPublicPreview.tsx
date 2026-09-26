@@ -320,7 +320,7 @@ export default function DisneyPublicPreview() {
     <main
       className={`${PAGE_MAIN_CLASS} mx-auto min-h-screen max-w-6xl bg-gradient-to-b from-indigo-950 via-slate-950 to-black px-4 py-8 sm:px-6`}
     >
-      <PublicPreviewNav showcaseAnchor="disney" />
+      <PublicPreviewNav showcaseAnchor="theme-parks" />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>

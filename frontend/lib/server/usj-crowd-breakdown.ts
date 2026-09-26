@@ -81,6 +81,34 @@ function scoreExpressDemand(dateStr: string): { score: number; label: string } {
   return { score: clamp(score), label: tags.length ? tags.join("・") : "通常入場" };
 }
 
+/** ディズニー株主優待の代わり: 年間パスポート利用者の来園影響 */
+function scoreAnnualPassport(dateStr: string): { score: number; label: string } {
+  const { month, day, dayOfWeek } = parseJstDate(dateStr);
+  let score = 16;
+  const tags: string[] = [];
+  // 平日・閑散寄りは年パス常連が増えやすい
+  if (dayOfWeek >= 1 && dayOfWeek <= 4 && !isJapanHoliday(dateStr)) {
+    score += 14;
+    tags.push("平日の年パス来園");
+  }
+  if (dayOfWeek === 5 && !isJapanHoliday(dateStr)) {
+    score += 10;
+    tags.push("金曜の年パス・時間帯分散");
+  }
+  if (inMonthDayRange(month, day, [1, 15], [2, 28]) || inMonthDayRange(month, day, [6, 1], [6, 20])) {
+    score += 12;
+    tags.push("比較的空く時期の年パス利用");
+  }
+  if (dayOfWeek === 0 || dayOfWeek === 6 || isJapanHoliday(dateStr)) {
+    score += 6;
+    tags.push("週末も年パス層が下支え");
+  }
+  return {
+    score: clamp(score),
+    label: tags.length ? tags.join("・") : "年パス影響・標準",
+  };
+}
+
 /** TDR が極端に混む日は関西へ分散しやすい（Disney反省の otherThemeParks 逆転） */
 function scoreCompetitorPull(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
@@ -173,25 +201,28 @@ export function buildUsjCrowdBreakdown(dateStr: string): DisneyCrowdBreakdown {
   const weather = scoreWeatherProxy(dateStr);
   const event = scoreUsjEvents(dateStr);
   const express = scoreExpressDemand(dateStr);
+  const annualPassport = scoreAnnualPassport(dateStr);
   const competitor = scoreCompetitorPull(dateStr);
   const metro = scoreKansaiMetro(dateStr);
   const disaster = scoreDisasterImpact(dateStr);
   const historical = scoreHistoricalProxy(dateStr);
 
-  // Disney反省: 単一要因の暴走を防ぐため重みを分散。株主パス枠はエクスプレス需要へ置換。
+  // Disney反省: 単一要因の暴走を防ぐため重みを分散。
+  // 株主パス枠 → 年パス影響、地域パス枠 → エクスプレス需要、都内枠 → 関西近郊。
   const total = clamp(
-    calendar.score * 0.11 +
+    calendar.score * 0.1 +
       seasonal.score * 0.09 +
-      schoolK12.score * 0.12 +
+      schoolK12.score * 0.11 +
       universityBreak.score * 0.07 +
       weather.score * 0.06 +
-      event.score * 0.12 +
-      express.score * 0.1 +
-      competitor.score * 0.08 +
-      metro.score * 0.09 +
+      event.score * 0.11 +
+      express.score * 0.09 +
+      annualPassport.score * 0.08 +
+      competitor.score * 0.07 +
+      metro.score * 0.08 +
       disaster.score * 0.05 +
-      historical.score * 0.06 +
-      5, // ニュース・物販の粗いベース（過大にしない）
+      historical.score * 0.05 +
+      4, // ニュース・物販の粗いベース（過大にしない）
   );
 
   return {
@@ -202,7 +233,7 @@ export function buildUsjCrowdBreakdown(dateStr: string): DisneyCrowdBreakdown {
     weather: weather.score,
     event: event.score,
     regionalPassport: express.score,
-    shareholderPassport: 12,
+    shareholderPassport: annualPassport.score,
     otherThemeParks: competitor.score,
     metroEvents: metro.score,
     newsBuzz: 20,
@@ -218,7 +249,7 @@ export function buildUsjCrowdBreakdown(dateStr: string): DisneyCrowdBreakdown {
       weather: weather.label,
       event: event.label,
       regionalPassport: express.label,
-      shareholderPassport: "株主パスなし（USJ）",
+      shareholderPassport: annualPassport.label,
       otherThemeParks: competitor.label,
       metroEvents: metro.label,
       newsBuzz: "話題性・標準",

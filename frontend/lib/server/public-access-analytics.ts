@@ -213,7 +213,7 @@ export async function buildPublicAccessAnalyticsReport(
       "PV = 同一訪問者を含むアクセス回数。UU = 端末ローカル UUID ベースのユニーク訪問者。",
       "国・都市は CDN / エッジが付与するヘッダーがある場合のみ取得（Azure SWA 単体では空のことがあります）。",
       "ブラウザ・OS・画面・タイムゾーン・言語は User-Agent とクライアントヒントから推定します。",
-      "SHOWCASE 詳細はセクション表示時に計測（サンキー／訴訟／合議／株／ディズニー／小惑星／Soluna）。",
+      "SHOWCASE 詳細はセクション表示時に計測（サンキー／訴訟／合議／株／テーマパーク／小惑星／Soluna）。",
     ],
   };
 }

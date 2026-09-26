@@ -3,10 +3,9 @@
 import { disneyPanelClass } from "@/lib/disney-utils";
 import type { DisneyCrowdBreakdown } from "@/lib/types/disney";
 
-const BREAKDOWN_ITEMS: Array<{
-  key: keyof Omit<DisneyCrowdBreakdown, "total" | "labels">;
-  label: string;
-}> = [
+type BreakdownKey = keyof Omit<DisneyCrowdBreakdown, "total" | "labels">;
+
+const DISNEY_BREAKDOWN_ITEMS: Array<{ key: BreakdownKey; label: string }> = [
   { key: "calendar", label: "曜日・祝日" },
   { key: "seasonal", label: "季節・長休み" },
   { key: "schoolK12", label: "小中高・休み" },
@@ -23,18 +22,41 @@ const BREAKDOWN_ITEMS: Array<{
   { key: "disasterImpact", label: "災害・荒天" },
 ];
 
+/** USJ向けカテゴリ名（ディズニー固有語を置換） */
+const USJ_BREAKDOWN_ITEMS: Array<{ key: BreakdownKey; label: string }> = [
+  { key: "calendar", label: "曜日・祝日" },
+  { key: "seasonal", label: "季節・長休み" },
+  { key: "schoolK12", label: "小中高・休み" },
+  { key: "universityBreak", label: "大学・休み" },
+  { key: "weather", label: "天候影響" },
+  { key: "event", label: "パーク内イベント" },
+  { key: "regionalPassport", label: "エクスプレス需要" },
+  { key: "shareholderPassport", label: "年間パスポート利用者影響" },
+  { key: "otherThemeParks", label: "他テーマパーク" },
+  { key: "metroEvents", label: "関西近郊イベント" },
+  { key: "newsBuzz", label: "世間の注目" },
+  { key: "merchandise", label: "グッズ販売" },
+  { key: "historical", label: "過去傾向" },
+  { key: "disasterImpact", label: "災害・荒天" },
+];
+
 type DisneyCrowdBreakdownPanelProps = {
   breakdown: DisneyCrowdBreakdown | null;
   crowdLabel?: string;
   title?: string;
+  /** disney = TDR語彙 / usj = USJ語彙 */
+  variant?: "disney" | "usj";
 };
 
 export default function DisneyCrowdBreakdownPanel({
   breakdown,
   crowdLabel,
   title = "混雑スコア内訳",
+  variant = "disney",
 }: DisneyCrowdBreakdownPanelProps) {
   if (!breakdown) return null;
+
+  const items = variant === "usj" ? USJ_BREAKDOWN_ITEMS : DISNEY_BREAKDOWN_ITEMS;
 
   return (
     <div className={`${disneyPanelClass} p-4 sm:p-5`}>
@@ -53,7 +75,7 @@ export default function DisneyCrowdBreakdownPanel({
       </p>
 
       <div className="mt-4 space-y-3">
-        {BREAKDOWN_ITEMS.map(({ key, label }) => {
+        {items.map(({ key, label }) => {
           const score = breakdown[key];
           const detail = breakdown.labels[key];
           return (
