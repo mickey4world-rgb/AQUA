@@ -161,11 +161,15 @@ export default function ThemeParksShowcaseDemo() {
             )}
 
             <Link
-              href={tab === "usj" ? "/theme-parks?tab=usj" : "/tdr-preview"}
+              href={
+                tab === "usj"
+                  ? "/theme-parks-preview?tab=usj"
+                  : "/theme-parks-preview?tab=disney"
+              }
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-3 py-2 text-[11px] text-fuchsia-100 hover:bg-fuchsia-500/20"
             >
               {tab === "usj"
-                ? "USJダッシュボードを見る（ログイン） →"
+                ? "USJ無料プレビューをすべて見る →"
                 : "カレンダー・時間帯予想をすべて見る →"}
             </Link>
           </>

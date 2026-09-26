@@ -9,6 +9,7 @@ export default function robots(): MetadataRoute.Robots {
         "/sample",
         "/profile",
         "/tdr-preview",
+        "/theme-parks-preview",
         "/works-preview",
         "/neo-preview",
       ],

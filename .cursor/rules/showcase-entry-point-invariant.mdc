@@ -1,0 +1,33 @@
+---
+description: SHOWCASE rename/publicHref must deliver the full new product scope
+globs: frontend/lib/showcase-data.ts,frontend/components/showcase/**/*,frontend/app/**/preview/**/*,frontend/app/*-preview/**
+alwaysApply: false
+---
+
+# SHOWCASE entry points must match the section promise
+
+## Trigger
+
+Renaming or widening a SHOWCASE section (e.g. ディズニー → テーマパーク), adding a sibling product (USJ), or changing `publicHref` / 「無料プレビュー」.
+
+## Invariant
+
+**セクション名と「無料プレビューを見る」の着地は同じ製品範囲を表す。**  
+デモカードにだけ新タブを足して、`publicHref` が旧単独プレビューのまま、は失敗。
+
+## Before coding
+
+1. 依頼の原文: 何を「テーマパーク／無料で見れる」と言っているか？
+2. 実装プロキシ: `titleJa` / demo / `publicHref` / preview ページはそれぞれ何を出すか？
+3. 差分: 素人が「無料プレビュー」だけ押したとき、原文の名詞（例: USJ）に届くか？
+
+## Before done (oracle)
+
+- Click path: SHOWCASE → 無料プレビュー → assert new scope is reachable (tabs or dedicated content).
+- Demo card CTA and `publicHref` must not disagree.
+- Anonymous SWA + robots allow for any new `*-preview` route.
+
+## Forbidden
+
+- `publicHref: "/tdr-preview"` after shipping 「テーマパーク」without USJ on that landed page
+- Claiming SHOWCASE updated because only the in-section demo widget changed
