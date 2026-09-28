@@ -3,6 +3,9 @@
 > **目的**: 別の端末でも本プロジェクトを再現できるように、開発に必要なツールのインストールと初期設定手順をまとめた備忘録です。  
 > **対象リポジトリ**: [mickey4world-rgb/AQUA](https://github.com/mickey4world-rgb/AQUA)  
 > **本番 URL**: https://www.aquacore.net
+>
+> 株・証券連携（三菱UFJ eスマート / kabu・**Azure Windows VM**）:  
+> [`STOCK_KABU_SETUP.md`](./STOCK_KABU_SETUP.md) · [`STOCK_KABU_AZURE_VM.md`](./STOCK_KABU_AZURE_VM.md)
 
 ---
 

@@ -6,6 +6,9 @@ const ensuredContainers = new Set<string>();
 export const COSMOS_CONTAINERS = {
   users: process.env.COSMOS_USERS_CONTAINER ?? "Users",
   stockWatches: process.env.COSMOS_STOCK_WATCHES_CONTAINER ?? "StockWatches",
+  stockBroker: process.env.COSMOS_STOCK_BROKER_CONTAINER ?? "StockBroker",
+  stockBrokerOrders:
+    process.env.COSMOS_STOCK_BROKER_ORDERS_CONTAINER ?? "StockBrokerOrders",
   tokenUsage: process.env.COSMOS_TOKEN_USAGE_CONTAINER ?? "TokenUsage",
   accessLogs: process.env.COSMOS_ACCESS_LOGS_CONTAINER ?? "AccessLogs",
   pageViewLogs: process.env.COSMOS_PAGE_VIEW_LOGS_CONTAINER ?? "PageViewLogs",

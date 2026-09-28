@@ -5,6 +5,22 @@
       "allowedRoles": ["authenticated"]
     },
     {
+      "route": "/api/stocks/broker/sync",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/stocks/broker/sync",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/stocks/broker/intents",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/stocks/broker/orders",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/stocks/*",
       "allowedRoles": ["authenticated"]
     },
