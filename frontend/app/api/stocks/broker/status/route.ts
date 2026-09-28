@@ -15,7 +15,7 @@ export async function GET(request: Request) {
         snapshot: null,
         recentOrders,
         policy: "C1-jp-cash-sell-only",
-        hint: "ローカル kabu-bridge で npm run sync すると反映されます。自動発注は npm run trade（既定 dry-run）。手順は docs/STOCK_KABU_SETUP.md",
+        hint: "Azure VM 上で kabu-bridge: npm run sync → npm run trade（既定 dry-run）。手順は docs/STOCK_KABU_AZURE_VM.md",
       });
     }
     return Response.json({

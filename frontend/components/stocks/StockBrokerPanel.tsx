@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
 
@@ -24,6 +25,12 @@ function formatSyncedAt(iso: string): string {
   }
 }
 
+function hoursSince(iso: string): number | null {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / 3_600_000;
+}
+
 function statusLabel(status: StockBrokerOrderRecord["status"]): string {
   switch (status) {
     case "dry_run":
@@ -39,9 +46,15 @@ function statusLabel(status: StockBrokerOrderRecord["status"]): string {
   }
 }
 
-export default function StockBrokerPanel() {
+type Props = {
+  /** costs ページ埋め込み時は /stocks への導線を強める */
+  compact?: boolean;
+};
+
+export default function StockBrokerPanel({ compact = false }: Props) {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,25 +76,56 @@ export default function StockBrokerPanel() {
           setData(null);
         }
       });
+    fetch("/api/users/me")
+      .then(async (res) =>
+        res.ok ? ((await res.json()) as { id?: string }) : null,
+      )
+      .then((user) => {
+        if (!cancelled && user?.id) setViewerUserId(user.id);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
 
   const orders = data?.recentOrders ?? [];
+  const liveOrders = orders.filter((o) => o.status === "submitted");
+  const dryOrders = orders.filter((o) => o.status === "dry_run");
+
+  const syncAgeHours = useMemo(() => {
+    if (!data?.snapshot?.syncedAt) return null;
+    return hoursSince(data.snapshot.syncedAt);
+  }, [data?.snapshot?.syncedAt]);
+
+  const syncStale = syncAgeHours != null && syncAgeHours > 24;
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">
-        Broker sync · Auto trade
-      </p>
-      <h2 className="mt-1 text-base font-semibold text-white">証券口座同期・自動発注</h2>
-      <p className="mt-1 text-[11px] text-slate-400">
-        ホストは Azure Windows VM（自宅常設PCではない）。詳細は docs/STOCK_KABU_AZURE_VM.md。
-        方針C Phase1: 日本株・現物の<strong className="font-medium text-slate-300">売り</strong>
-        のみ。買い・信用・米国株は未対応。既定は dry-run（
-        <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS=1</code>{" "}
-        で本番発注）。
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">
+            Stocks · Broker
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-white">
+            株式（証券同期・自動発注）
+          </h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-100">
+            検証 · dry-run
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
+            LIVE 発注オフ
+          </span>
+        </div>
+      </div>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+        ブラウザだけで最終同期・保有・発注ログを確認できます（VM や自宅PC不要）。
+        方針C Phase1: 日本株・現物の
+        <strong className="font-medium text-slate-300">売り</strong>
+        のみ。同期更新は Azure VM 上の kabu-bridge。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
       </p>
 
@@ -93,23 +137,54 @@ export default function StockBrokerPanel() {
 
       {data && !data.connected && (
         <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-50">
-          <p>まだ同期されていません。</p>
+          <p>まだこのログインユーザー向けの同期がありません。</p>
           <p className="mt-1 text-[11px] text-amber-100/80">
             {data.hint ??
-              "Azure VM 上で kabu-bridge: npm run sync → npm run trade（docs/STOCK_KABU_AZURE_VM.md）"}
+              "Azure VM 上で kabu-bridge: npm run sync（docs/STOCK_KABU_AZURE_VM.md）"}
           </p>
+          {viewerUserId && (
+            <p className="mt-2 break-all rounded-lg border border-amber-400/20 bg-black/20 px-2 py-1.5 font-mono text-[11px] text-amber-50/90">
+              VM の .env に入れる AQUA_USER_ID = {viewerUserId}
+            </p>
+          )}
         </div>
       )}
 
+      {data?.connected &&
+        viewerUserId &&
+        data.snapshot &&
+        data.snapshot.userId !== viewerUserId && (
+          <div className="mt-3 rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-50">
+            同期データの userId（{data.snapshot.userId}）とログイン（
+            {viewerUserId}）が一致していません。VM の AQUA_USER_ID
+            をログイン ID に合わせて再 sync してください。
+          </div>
+        )}
+
       {data?.snapshot && (
         <div className="mt-4 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          {syncStale && (
+            <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-50">
+              最終同期から約 {Math.floor(syncAgeHours ?? 0)}{" "}
+              時間経過しています。VM が止まっている／市場外のときは更新されません。様子見中は「最終同期時点」のスナップショットとして読んでください。
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
               <p className="text-[10px] uppercase tracking-wider text-slate-500">
                 株式余力
               </p>
               <p className="mt-1 text-lg font-semibold text-white">
                 {formatYen(data.snapshot.cash.stockAccountWallet)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                保有銘柄
+              </p>
+              <p className="mt-1 text-lg font-semibold text-white">
+                {data.snapshot.holdings.length}
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
@@ -122,12 +197,28 @@ export default function StockBrokerPanel() {
             </div>
           </div>
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+              dry-run ログ{" "}
+              <span className="font-semibold text-amber-200">{dryOrders.length}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+              LIVE 発注ログ{" "}
+              <span className="font-semibold text-emerald-200">
+                {liveOrders.length}
+              </span>
+            </div>
+          </div>
+
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               保有 ({data.snapshot.holdings.length})
             </p>
             {data.snapshot.holdings.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-400">保有なし</p>
+              <p className="mt-2 text-sm text-slate-400">
+                保有なし（最終同期時点）。手元に株がある場合は次回 sync
+                で反映されます。
+              </p>
             ) : (
               <ul className="mt-2 divide-y divide-white/5 rounded-xl border border-white/10">
                 {data.snapshot.holdings.map((h) => (
@@ -193,6 +284,18 @@ export default function StockBrokerPanel() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {compact && (
+        <div className="mt-4">
+          <Link
+            href="/stocks"
+            className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 transition hover:border-cyan-400/40 hover:bg-cyan-500/15"
+          >
+            株ダッシュボードでウォッチ・助言も見る
+            <span aria-hidden>→</span>
+          </Link>
         </div>
       )}
     </section>

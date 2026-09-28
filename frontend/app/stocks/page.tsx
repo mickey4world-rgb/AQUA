@@ -109,8 +109,8 @@ export default function StocksPage() {
               保有株ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
-              米国・日本のウォッチ銘柄と、証券口座から同期した保有・余力を俯瞰できます。
-              AI 売買アドバイスはウォッチ銘柄向け。証券同期は Phase1（照会のみ・発注なし）。
+              ウォッチ銘柄の AI 助言と、証券口座から同期した保有・余力をブラウザで俯瞰できます。
+              自動発注は検証（dry-run）既定。PC／VM を触らなくても、最終同期時点の状況はここから確認できます。
             </p>
           </div>
           {!loading && sortedWatches.length > 0 && (

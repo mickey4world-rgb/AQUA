@@ -1,3 +1,9 @@
 # az bicep build artifact — source of truth is main.bicep
 main.json
 .deploy-credentials.local
+.env.vm.local
+*.local
+scripts/_WriteEnv.ps1
+scripts/_*.ps1
+vm-kabu-aqua.rdp
+

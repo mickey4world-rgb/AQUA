@@ -9,6 +9,7 @@ import DailyUsageChart from "@/components/costs/DailyUsageChart";
 import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
 import SolunaOpsAnalyticsPanels from "@/components/costs/SolunaOpsAnalyticsPanels";
+import StockBrokerPanel from "@/components/stocks/StockBrokerPanel";
 import UsageHistory from "@/components/costs/UsageHistory";
 import {
   costsAzureCacheKey,
@@ -24,7 +25,7 @@ import type {
 } from "@/lib/types/analytics";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 
-type CostsTab = "ai" | "assets" | "note-boinc";
+type CostsTab = "ai" | "assets-crypto" | "assets-stocks" | "note-boinc";
 
 function currentMonthParam(): string {
   const now = new Date();
@@ -83,7 +84,7 @@ export default function CostsPage() {
 
   const loadingAi = tab === "ai" && loadedMonth !== month && !dashboard;
   const azureLoading = tab === "ai" && azureLoadedMonth !== month && !azureInfra;
-  const needsSolunaOps = tab === "assets" || tab === "note-boinc";
+  const needsSolunaOps = tab === "assets-crypto" || tab === "note-boinc";
   const loadingSoluna = needsSolunaOps && solunaLoadedMonth !== month && !solunaOps;
   const isCurrentMonth = useMemo(() => month === currentMonthParam(), [month]);
 
@@ -215,8 +216,8 @@ export default function CostsPage() {
               コスト・利用分析ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
-              AI トークン・Azure 実績、資産運用の損益、Soluna Note・BOINC
-              を分けて確認できます。表示はキャッシュ優先で、重い外部取得は裏のバッチ更新です。
+              AI・Azure コスト、資産運用（仮想通貨／株式）、Soluna Note・BOINC
+              を分けて確認できます。株式は最終同期スナップショットをブラウザだけで見られます。
               {refreshing ? " · 最新を確認中…" : ""}
             </p>
             <Link
@@ -272,21 +273,32 @@ export default function CostsPage() {
           </button>
           <button
             type="button"
-            onClick={() => setTab("assets")}
+            onClick={() => setTab("assets-crypto")}
             className={`rounded-full px-4 py-2 text-sm transition ${
-              tab === "assets"
+              tab === "assets-crypto"
                 ? "bg-gradient-to-r from-amber-500 to-yellow-600 text-white"
                 : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
-            資産運用
+            資産運用 · 仮想通貨
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("assets-stocks")}
+            className={`rounded-full px-4 py-2 text-sm transition ${
+              tab === "assets-stocks"
+                ? "bg-gradient-to-r from-cyan-600 to-sky-600 text-white"
+                : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+            }`}
+          >
+            資産運用 · 株式
           </button>
           <button
             type="button"
             onClick={() => setTab("note-boinc")}
             className={`rounded-full px-4 py-2 text-sm transition ${
               tab === "note-boinc"
-                ? "bg-gradient-to-r from-cyan-600 to-teal-600 text-white"
+                ? "bg-gradient-to-r from-teal-600 to-emerald-600 text-white"
                 : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
@@ -318,16 +330,27 @@ export default function CostsPage() {
               />
             </div>
           )
+        ) : tab === "assets-stocks" ? (
+          <div className="mt-8 space-y-4">
+            <p className="text-sm text-slate-400">
+              仮想通貨（Soluna）とは別枠です。証券口座の最終同期・dry-run
+              ログをブラウザだけで確認できます。ウォッチ銘柄の AI
+              助言は株ダッシュボードへ。
+            </p>
+            <StockBrokerPanel compact />
+          </div>
         ) : loadingSoluna ? (
           <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">
             <span
               className={`h-4 w-4 animate-spin rounded-full border-2 ${
-                tab === "assets"
+                tab === "assets-crypto"
                   ? "border-amber-400/30 border-t-amber-300"
                   : "border-cyan-400/30 border-t-cyan-300"
               }`}
             />
-            {tab === "assets" ? "資産運用データを読み込み中..." : "Note・BOINC データを読み込み中..."}
+            {tab === "assets-crypto"
+              ? "仮想通貨の運用データを読み込み中..."
+              : "Note・BOINC データを読み込み中..."}
           </div>
         ) : solunaError ? (
           <div className="mt-10 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
@@ -337,7 +360,7 @@ export default function CostsPage() {
           <div className="mt-8">
             <SolunaOpsAnalyticsPanels
               report={solunaOps}
-              view={tab === "assets" ? "assets" : "note-boinc"}
+              view={tab === "assets-crypto" ? "assets" : "note-boinc"}
             />
           </div>
         ) : null}
