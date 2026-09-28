@@ -29,6 +29,10 @@ function inferFeatureFromPath(path: string, method: string): string {
   }
   if (path.endsWith("/stocks/watches")) return "watches";
   if (path.endsWith("/stocks/lookup")) return "lookup";
+  if (path.endsWith("/stocks/broker/sync")) return "broker-sync";
+  if (path.endsWith("/stocks/broker/status")) return "broker-status";
+  if (path.endsWith("/stocks/broker/intents")) return "broker-intents";
+  if (path.endsWith("/stocks/broker/orders")) return "broker-orders";
   if (path.endsWith("/disney/chat") || path.endsWith("/usj/chat")) return "chat";
   if (path.endsWith("/disney/advice") || path.endsWith("/usj/advice")) return "advice";
   if (path.endsWith("/disney/waits") || path.endsWith("/usj/waits")) return "waits";

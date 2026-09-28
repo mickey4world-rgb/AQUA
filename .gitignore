@@ -16,6 +16,8 @@ api/local.settings.json
 .env
 .env.local
 .env.*.local
+tools/kabu-bridge/.env
+
 
 # Python
 __pycache__/

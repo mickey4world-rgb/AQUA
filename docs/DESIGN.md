@@ -43,7 +43,7 @@ Azure Static Web Apps 上の Next.js アプリとして、認証・複数ドメ�
 | **Portal** | `/` | モジュール索引（07 Modules）、動的背景、**SHOWCASE** 導線 |
 | **Showcase** | `/sample` | 認証不要の Studio デモ（6 モジュール体験） |
 | **Works** | `/works/*` | AI 相談（図解ビューワー）、司法ノート、行政お金の流れ、資料生成 |
-| **Stocks** | `/stocks` | 日米株ウォッチ + AI 売買アドバイス |
+| **Stocks** | `/stocks` | 日米株ウォッチ + AI 助言 + **証券同期／自動発注（eスマート kabu）**。発注ホストは Azure Windows VM（[`STOCK_KABU_AZURE_VM.md`](./STOCK_KABU_AZURE_VM.md)） |
 | **Disney** | `/disney` | TDR 混雑・待ち時間・キャラクターチャット |
 | **Council** | `/council` | 複数 AI 合議（国内 / グローバル） |
 | **Soluna** | `/soluna` | ソル（太陽）＋ルーナ（月）の育成型 AI コンパニオン |

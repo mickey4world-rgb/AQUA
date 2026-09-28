@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import StockBrokerPanel from "@/components/stocks/StockBrokerPanel";
 import StockWatchDetail from "@/components/stocks/StockWatchDetail";
 import StockWatchForm from "@/components/stocks/StockWatchForm";
 import StockWatchList from "@/components/stocks/StockWatchList";
@@ -108,8 +109,8 @@ export default function StocksPage() {
               保有株ダッシュボード
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
-              米国・日本の保有銘柄を一覧で俯瞰し、選択した銘柄の売却見込み額と
-              AI 売買アドバイスを確認できます。
+              米国・日本のウォッチ銘柄と、証券口座から同期した保有・余力を俯瞰できます。
+              AI 売買アドバイスはウォッチ銘柄向け。証券同期は Phase1（照会のみ・発注なし）。
             </p>
           </div>
           {!loading && sortedWatches.length > 0 && (
@@ -120,6 +121,10 @@ export default function StocksPage() {
               銘柄をウォッチ中
             </div>
           )}
+        </div>
+
+        <div className="mt-6">
+          <StockBrokerPanel />
         </div>
 
         <section className="mt-8">

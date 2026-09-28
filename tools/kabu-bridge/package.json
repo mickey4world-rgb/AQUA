@@ -1,0 +1,13 @@
+{
+  "name": "kabu-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node src/sync.mjs",
+    "probe": "node src/probe.mjs",
+    "trade": "node src/trade.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
