@@ -10,6 +10,7 @@ import FeatureBreakdownTable from "@/components/costs/FeatureBreakdownTable";
 import QuotaCard from "@/components/costs/QuotaCard";
 import SolunaOpsAnalyticsPanels from "@/components/costs/SolunaOpsAnalyticsPanels";
 import StockBrokerPanel from "@/components/stocks/StockBrokerPanel";
+import StockWatchForm from "@/components/stocks/StockWatchForm";
 import UsageHistory from "@/components/costs/UsageHistory";
 import {
   costsAzureCacheKey,
@@ -343,6 +344,7 @@ export default function CostsPage() {
               </p>
             </div>
             <StockBrokerPanel />
+            <StockWatchForm fixedMarket="jp" onCreated={() => {}} />
           </div>
         ) : loadingSoluna ? (
           <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">
