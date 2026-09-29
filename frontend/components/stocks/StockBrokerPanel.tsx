@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
+import type { StockEquityPerformance } from "@/lib/stock-equity-performance";
 import {
   formatStockTradeReasonWithRules,
   type StockTradeRuleCategory,
 } from "@/lib/stock-trade-rules";
 import StockTradeRulesPanel from "@/components/stocks/StockTradeRulesPanel";
+import StockEquityChart from "@/components/stocks/StockEquityChart";
+import StockAuditLessonsPanel, {
+  type StockAuditLessonView,
+} from "@/components/stocks/StockAuditLessonsPanel";
 
 type ApiRule = {
   id: number;
@@ -17,11 +22,23 @@ type ApiRule = {
   summary: string;
 };
 
+type Goals = {
+  principalYen: number;
+  monthlySellProfitTargetYen: number;
+  monthlySellProfitTargetRate: number;
+  smallInvestCashFloorYen: number;
+  smallInvestMode: boolean;
+};
+
 type StatusResponse = {
   connected: boolean;
   snapshot: StockBrokerSnapshot | null;
   recentOrders?: StockBrokerOrderRecord[];
   tradeRules?: ApiRule[];
+  tradeLessons?: StockAuditLessonView[];
+  lessonNotes?: string[];
+  equityPerformance?: StockEquityPerformance;
+  goals?: Goals;
   policy?: string;
   hint?: string;
 };
@@ -105,6 +122,7 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
   const orders = data?.recentOrders ?? [];
   const liveOrders = orders.filter((o) => o.status === "submitted");
   const dryOrders = orders.filter((o) => o.status === "dry_run");
+  const goals = data?.goals;
 
   const syncAgeHours = useMemo(() => {
     if (!data?.snapshot?.syncedAt) return null;
@@ -112,6 +130,10 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
   }, [data?.snapshot?.syncedAt]);
 
   const syncStale = syncAgeHours != null && syncAgeHours > 24;
+
+  const goalBadge = goals
+    ? `元本目安 ${formatYen(goals.principalYen)} · 月次売り益 ${(goals.monthlySellProfitTargetRate * 100).toFixed(1)}%（${formatYen(goals.monthlySellProfitTargetYen)}）`
+    : "元本目安 80万 · 月次売り益 2%";
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
@@ -129,8 +151,13 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
             検証 · dry-run
           </span>
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
-            元本目安 80万 · 月次売り益 2万
+            {goalBadge}
           </span>
+          {goals?.smallInvestMode && (
+            <span className="rounded-full border border-sky-400/30 bg-sky-500/15 px-2.5 py-1 text-[11px] font-medium text-sky-100">
+              少額投資モード（現金&lt;{formatYen(goals.smallInvestCashFloorYen)}）
+            </span>
+          )}
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
             LIVE 発注オフ
           </span>
@@ -176,6 +203,12 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
             をログイン ID に合わせて再 sync してください。
           </div>
         )}
+
+      {data?.equityPerformance && (
+        <div className="mt-4">
+          <StockEquityChart perf={data.equityPerformance} />
+        </div>
+      )}
 
       {data?.snapshot && (
         <div className="mt-4 space-y-4">
@@ -304,6 +337,13 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
           </ul>
         </div>
       )}
+
+      <div className="mt-4">
+        <StockAuditLessonsPanel
+          lessons={data?.tradeLessons}
+          lessonNotes={data?.lessonNotes}
+        />
+      </div>
 
       <div className="mt-6">
         <StockTradeRulesPanel rules={data?.tradeRules} />

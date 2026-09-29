@@ -77,7 +77,7 @@ SWA 単体では kabu に届かない。VM は「クラウド上の取引専用W
 | 秘密 | `STOCK_KABU_BRIDGE_SECRET` / API・取引パスワードをチャット・Git に書かない。VM 上は ACL 付き `.env` または Key Vault |
 | 発注ゲート | `KABU_ALLOW_LIVE_ORDERS=0` 既定。検証ポート `18081` から |
 | 更新 | Windows Update 自動。ローカル管理者を最小に |
-| 監査 | bridge の dry-run / submitted を Cosmos `StockBrokerOrders` に残す（既存） |
+| 監査 | bridge の dry-run / submitted を Cosmos に残す。注文報告後に監査AIが良い点・反省を記録し、同因が月内2回以上で条件候補に昇格 |
 | 送信 | VM → インターネットは HTTPS（AQUA）と Windows Update 程度に限定（NSG Outbound は段階的に絞れる） |
 | ゲストOS | Install スクリプトで **Windows Firewall が 18080/81 inbound を Block**（NSG の二重化） |
 

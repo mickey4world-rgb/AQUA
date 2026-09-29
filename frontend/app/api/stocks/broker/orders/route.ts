@@ -1,5 +1,6 @@
 import { authorizeStockBridge } from "@/lib/server/stock-broker";
 import { recordBrokerOrder } from "@/lib/server/stock-broker-trade";
+import { recordStockTradeLessonForOrder } from "@/lib/server/stock-trade-lessons";
 import { parseJsonBody } from "@/lib/server/security";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
@@ -17,6 +18,7 @@ type OrderReportBody = {
   dryRun?: boolean;
   reason?: string;
   ruleIds?: number[];
+  realizedPnlYen?: number;
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;
@@ -75,11 +77,21 @@ export async function POST(request: Request) {
       ruleIds: Array.isArray(body.ruleIds)
         ? body.ruleIds.filter((n): n is number => typeof n === "number")
         : undefined,
+      realizedPnlYen:
+        typeof body.realizedPnlYen === "number"
+          ? body.realizedPnlYen
+          : undefined,
       kabuOrderId:
         typeof body.kabuOrderId === "string" ? body.kabuOrderId : undefined,
       kabuResultCode: body.kabuResultCode,
       message: typeof body.message === "string" ? body.message : undefined,
     });
+
+    // 監査AI（失敗しても注文報告は成功）
+    if (saved.status === "dry_run" || saved.status === "submitted") {
+      void recordStockTradeLessonForOrder(saved).catch(() => undefined);
+    }
+
     return Response.json({ ok: true, id: saved.id, status: saved.status });
   } catch (error) {
     return Response.json(
