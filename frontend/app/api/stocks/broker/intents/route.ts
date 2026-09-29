@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * kabu-bridge が取得する発注インテント（Phase C1: 日本株・現物売りのみ）。
+ * kabu-bridge が取得する発注インテント（Phase C2: 日本株・現物の買い/売りシミュ）。
  * Bearer STOCK_KABU_BRIDGE_SECRET + ?userId=
  */
 export async function GET(request: Request) {
@@ -44,10 +44,10 @@ export async function GET(request: Request) {
 
     return Response.json({
       ok: true,
-      policy: "C1-jp-cash-sell-only",
+      policy: "C2-jp-cash-buy-sell-sim",
       sessionOpenGuess: isRoughJpEquitySession(),
       intents,
-      note: "買い・信用・米国株は未対応。KABU_ALLOW_LIVE_ORDERS なしでは bridge は dry-run。",
+      note: "検証: 現物の買い/売り dry-run。KABU_ALLOW_LIVE_ORDERS なしでは sendorder しない。信用・米国株は未対応。",
     });
   } catch (error) {
     return Response.json(

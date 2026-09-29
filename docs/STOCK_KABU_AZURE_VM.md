@@ -2,7 +2,7 @@
 
 > **依頼の不変条件**: 自宅にPCを常設しない。判断・画面は既存 AQUA（SWA）、発注口だけ Azure 上の Windows に置く。  
 > **証券制約**: kabu API は **同一マシンの localhost** のみ（[公式FAQ](https://kabucom.github.io/kabusapi/ptal/faq.html)）。  
-> **方針C Phase C1**: 日本株・現物・売りのみ。既定 dry-run。
+> **方針C Phase C2**: 日本株・現物の**買い／売り**シミュレーション。既定 dry-run。条件 #1〜#19。
 
 関連: [`STOCK_KABU_SETUP.md`](./STOCK_KABU_SETUP.md) · bridge: `tools/kabu-bridge`
 

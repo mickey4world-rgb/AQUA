@@ -4,11 +4,25 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
+import {
+  formatStockTradeReasonWithRules,
+  type StockTradeRuleCategory,
+} from "@/lib/stock-trade-rules";
+import StockTradeRulesPanel from "@/components/stocks/StockTradeRulesPanel";
+
+type ApiRule = {
+  id: number;
+  category: StockTradeRuleCategory;
+  categoryLabel: string;
+  title: string;
+  summary: string;
+};
 
 type StatusResponse = {
   connected: boolean;
   snapshot: StockBrokerSnapshot | null;
   recentOrders?: StockBrokerOrderRecord[];
+  tradeRules?: ApiRule[];
   policy?: string;
   hint?: string;
 };
@@ -122,10 +136,11 @@ export default function StockBrokerPanel({ compact = false }: Props) {
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-        ブラウザだけで最終同期・保有・発注ログを確認できます（VM や自宅PC不要）。
-        方針C Phase1: 日本株・現物の
-        <strong className="font-medium text-slate-300">売り</strong>
-        のみ。同期更新は Azure VM 上の kabu-bridge。
+        ホストは Azure Windows VM。方針C Phase C2: 日本株・現物の
+        <strong className="font-medium text-slate-300">買い／売り</strong>
+        シミュレーション（検証・dry-run 既定）。
+        <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS=1</code>{" "}
+        で本番発注。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
       </p>
 
@@ -262,7 +277,9 @@ export default function StockBrokerPanel({ compact = false }: Props) {
                     {o.side === "sell" ? "売" : "買"} {o.symbol} ×{o.qty}
                   </p>
                   <p className="truncate text-[11px] text-slate-500">
-                    {o.message || o.reason}
+                    {formatStockTradeReasonWithRules(o.reason, o.ruleIds) ||
+                      o.message ||
+                      o.reason}
                   </p>
                 </div>
                 <div className="shrink-0 text-right text-[11px] text-slate-400">
@@ -298,6 +315,10 @@ export default function StockBrokerPanel({ compact = false }: Props) {
           </Link>
         </div>
       )}
+
+      <div className="mt-6">
+        <StockTradeRulesPanel rules={data?.tradeRules} />
+      </div>
     </section>
   );
 }

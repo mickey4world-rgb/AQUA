@@ -16,6 +16,7 @@ type OrderReportBody = {
   status?: StockBrokerOrderRecord["status"];
   dryRun?: boolean;
   reason?: string;
+  ruleIds?: number[];
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;
@@ -71,6 +72,9 @@ export async function POST(request: Request) {
       status: body.status,
       dryRun: Boolean(body.dryRun),
       reason: typeof body.reason === "string" ? body.reason : "",
+      ruleIds: Array.isArray(body.ruleIds)
+        ? body.ruleIds.filter((n): n is number => typeof n === "number")
+        : undefined,
       kabuOrderId:
         typeof body.kabuOrderId === "string" ? body.kabuOrderId : undefined,
       kabuResultCode: body.kabuResultCode,
