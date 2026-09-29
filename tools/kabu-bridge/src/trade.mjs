@@ -32,7 +32,7 @@ loadDotEnv();
 const config = loadConfig();
 const allowLive = process.env.KABU_ALLOW_LIVE_ORDERS?.trim() === "1";
 const tradePassword = process.env.KABU_TRADE_PASSWORD?.trim() ?? "";
-const maxQty = Math.max(1, Number(process.env.KABU_MAX_QTY_PER_ORDER ?? 100) || 100);
+const maxQty = Math.max(1, Number(process.env.KABU_MAX_QTY_PER_ORDER ?? 200) || 200);
 const whitelist = (process.env.KABU_SYMBOL_WHITELIST ?? "")
   .split(",")
   .map((s) => s.trim())

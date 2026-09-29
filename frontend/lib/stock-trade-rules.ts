@@ -1,6 +1,6 @@
 /**
- * 株式（kabu）自動売買の条件カタログ（コスト・株画面の共通番号）
- * Soluna の #1〜#19 と同型。番号は表示・理由参照用。
+ * 日本株自動運用の条件カタログ（コスト画面・ログの共通番号）
+ * /stocks（米国株）とは別。仮想通貨 Soluna と同型の番号付き整理。
  */
 import {
   STOCK_HARD_TAKE_PROFIT_MULT,
@@ -11,6 +11,8 @@ import {
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
+  STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+  STOCK_PRINCIPAL_YEN,
 } from "@/lib/stock-trade-constants";
 
 export type StockTradeRuleCategory =
@@ -35,14 +37,13 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 1,
     category: "universe",
-    title: "対象市場",
-    summary:
-      "日本株・現物のみ。米国株・信用・先物は対象外。検証ポート（18081）から開始",
+    title: "対象・分離",
+    summary: `日本株・現物のみ（kabu）。元本目安 ${yen(STOCK_PRINCIPAL_YEN)}。米国株の「保有株」ページとは別系統。検証ポート 18081 から`,
   },
   {
     id: 2,
     category: "risk",
-    title: "1回の買付上限",
+    title: "1インテント買付上限",
     summary: `1インテントあたり概算 ${yen(STOCK_MAX_TRADE_YEN)} まで（単元 ${STOCK_LOT_SIZE} 株）`,
   },
   {
@@ -116,7 +117,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 14,
     category: "sell",
     title: "数量キャップ",
-    summary: `1注文あたり最大 ${STOCK_MAX_QTY_PER_ORDER} 株（env で上書き可）`,
+    summary: `1注文あたり最大 ${STOCK_MAX_QTY_PER_ORDER} 株（env KABU_MAX_QTY_PER_ORDER で上書き可）`,
   },
   {
     id: 15,
@@ -149,6 +150,24 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     title: "条件達成銘柄の同時シミュレーション",
     summary:
       "同じ時間帯に複数銘柄が買い/売り条件を満たしたら銘柄同士で競わせず、枠（日次・現金・単元・数量）の範囲で同時にインテント化",
+  },
+  {
+    id: 20,
+    category: "mode",
+    title: "月次売り益目標",
+    summary: `毎月の売り側おおよそ実現益 ${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)} を目標（元本 ${yen(STOCK_PRINCIPAL_YEN)} の約 2.5%/月）。達成判定用`,
+  },
+  {
+    id: 21,
+    category: "buy",
+    title: "月次目標到達後の買い停止",
+    summary: `当月の売り益概算が ${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)} に達したら新規買いを見送り（売り・利確は継続）`,
+  },
+  {
+    id: 22,
+    category: "risk",
+    title: "元本対比の過大建玉抑制",
+    summary: `1回の買付概算が元本目安 ${yen(STOCK_PRINCIPAL_YEN)} の 70% を超えるインテントは見送り（集中リスク回避）`,
   },
 ];
 
