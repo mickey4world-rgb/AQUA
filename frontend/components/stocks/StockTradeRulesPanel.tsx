@@ -37,13 +37,13 @@ export default function StockTradeRulesPanel({ rules }: Props) {
         Stocks · Rules
       </p>
       <h2 className="mt-1 text-base font-semibold text-white">
-        株式 売買条件（#{list[0]?.id ?? 1}〜#{list[list.length - 1]?.id ?? 19}）
+        {`日本株 売買条件（#1〜#${list[list.length - 1]?.id ?? 22}）`}
       </h2>
       <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-        仮想通貨（Soluna）と同様に番号付きで整理しています。dry-run /
-        発注ログの理由に付く{" "}
-        <span className="text-cyan-200/90">#8+#2</span>{" "}
-        などと対応します。明日の検証は dry-run のまま実市場を観察する想定です。
+        仮想通貨（Soluna）と同様に番号付き。米国株の「保有株」ページとは別系統です。
+        dry-run / 発注ログの理由に付く{" "}
+        <span className="text-cyan-200/90">#8+#2</span> などと対応。
+        元本目安 80万円・毎月売り益目標 2万円。
       </p>
 
       <div className="mt-4 space-y-4">

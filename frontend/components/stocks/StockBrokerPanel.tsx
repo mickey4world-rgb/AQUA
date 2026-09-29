@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
@@ -61,11 +60,11 @@ function statusLabel(status: StockBrokerOrderRecord["status"]): string {
 }
 
 type Props = {
-  /** costs ページ埋め込み時は /stocks への導線を強める */
+  /** @deprecated 米国株ページとは分離済み。互換のため残置 */
   compact?: boolean;
 };
 
-export default function StockBrokerPanel({ compact = false }: Props) {
+export default function StockBrokerPanel({ compact: _compact = false }: Props) {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
@@ -130,15 +129,17 @@ export default function StockBrokerPanel({ compact = false }: Props) {
             検証 · dry-run
           </span>
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
+            元本目安 80万 · 月次売り益 2万
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
             LIVE 発注オフ
           </span>
         </div>
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-        ホストは Azure Windows VM。方針C Phase C2: 日本株・現物の
-        <strong className="font-medium text-slate-300">買い／売り</strong>
-        シミュレーション（検証・dry-run 既定）。
+        日本株・kabu 自動運用です。米国株の「保有株」ページとは別系統。
+        方針C: 現物の買い／売りシミュレーション（dry-run 既定）。
         <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS=1</code>{" "}
         で本番発注。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
@@ -301,18 +302,6 @@ export default function StockBrokerPanel({ compact = false }: Props) {
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      {compact && (
-        <div className="mt-4">
-          <Link
-            href="/stocks"
-            className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 transition hover:border-cyan-400/40 hover:bg-cyan-500/15"
-          >
-            株ダッシュボードでウォッチ・助言も見る
-            <span aria-hidden>→</span>
-          </Link>
         </div>
       )}
 

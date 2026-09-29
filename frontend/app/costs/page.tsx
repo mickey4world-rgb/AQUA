@@ -291,7 +291,7 @@ export default function CostsPage() {
                 : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
-            資産運用 · 株式
+            資産運用 · 日本株
           </button>
           <button
             type="button"
@@ -332,12 +332,17 @@ export default function CostsPage() {
           )
         ) : tab === "assets-stocks" ? (
           <div className="mt-8 space-y-4">
-            <p className="text-sm text-slate-400">
-              仮想通貨（Soluna）とは別枠です。証券口座の最終同期・dry-run
-              ログをブラウザだけで確認できます。ウォッチ銘柄の AI
-              助言は株ダッシュボードへ。
-            </p>
-            <StockBrokerPanel compact />
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                日本株 · 自動資産運用（kabu）
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                仮想通貨（Soluna）および米国株の「保有株」ページとは別枠です。元本目安
+                80万円・毎月の売り益目標 2万円。検証は dry-run
+                のまま、条件 #1〜#22 と同期・発注ログをここで確認します。
+              </p>
+            </div>
+            <StockBrokerPanel />
           </div>
         ) : loadingSoluna ? (
           <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">

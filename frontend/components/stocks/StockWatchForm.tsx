@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  marketLabel,
   stockInputClass,
   stockLabelClass,
   stockPanelClass,
@@ -14,7 +13,7 @@ type StockWatchFormProps = {
 };
 
 export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
-  const [market, setMarket] = useState<StockMarket>("us");
+  const [market] = useState<StockMarket>("us");
   const [ticker, setTicker] = useState("");
   const [name, setName] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
@@ -75,51 +74,32 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
     onCreated();
   }
 
-  const currencyLabel = market === "jp" ? "JPY" : "USD";
-  const tickerPlaceholder = market === "jp" ? "7203" : "TSLA";
-  const namePlaceholder = market === "jp" ? "トヨタ自動車" : "Tesla, Inc.";
-  const pricePlaceholder = market === "jp" ? "2500" : "395.00";
+  const currencyLabel = "USD";
+  const tickerPlaceholder = "TSLA";
+  const namePlaceholder = "Tesla, Inc.";
+  const pricePlaceholder = "395.00";
 
   return (
     <form onSubmit={handleSubmit} className={`${stockPanelClass} p-5`}>
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">保有銘柄を追加</h2>
+        <h2 className="text-lg font-semibold text-white">米国株を追加</h2>
         <span className="text-xs uppercase tracking-wider text-slate-500">
-          US / JP Markets
+          US Markets
         </span>
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className={stockLabelClass}>市場</label>
-          <select
-            value={market}
-            onChange={(e) => setMarket(e.target.value as StockMarket)}
-            className={stockInputClass}
-          >
-            <option value="us">米国株</option>
-            <option value="jp">日本株</option>
-          </select>
-        </div>
         <div>
           <label className={stockLabelClass}>銘柄コード</label>
           <input
             required
             value={ticker}
-            onChange={(e) =>
-              setTicker(
-                market === "jp"
-                  ? e.target.value.replace(/[^\d.]/g, "")
-                  : e.target.value.toUpperCase(),
-              )
-            }
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
             onBlur={(e) => lookupName(e.target.value)}
             placeholder={tickerPlaceholder}
             className={stockInputClass}
           />
           <p className="mt-1 text-xs text-slate-500">
-            {market === "jp"
-              ? "4桁コード（例: 7203）を入力"
-              : "ティッカーシンボル（例: TSLA）を入力"}
+            ティッカーシンボル（例: TSLA）を入力
           </p>
         </div>
         <div>
@@ -139,8 +119,8 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
           <input
             required
             type="number"
-            step={market === "jp" ? "1" : "0.01"}
-            min={market === "jp" ? "1" : "0.01"}
+            step="0.01"
+            min="0.01"
             value={buyPrice}
             onChange={(e) => setBuyPrice(e.target.value)}
             placeholder={pricePlaceholder}
@@ -175,7 +155,7 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder={`${marketLabel(market)} · 長期保有 など`}
+            placeholder="US · 長期保有 など"
             className={stockInputClass}
           />
         </div>

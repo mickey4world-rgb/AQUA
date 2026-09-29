@@ -13,6 +13,9 @@ import {
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
+  STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+  STOCK_PAUSE_BUYS_AFTER_MONTHLY_SELL_TARGET,
+  STOCK_PRINCIPAL_YEN,
 } from "@/lib/stock-trade-constants";
 import type {
   StockBrokerOrderRecord,
@@ -49,6 +52,10 @@ function intentIdFor(userId: string, symbol: string, side: string, dayJst: strin
 
 function jstDayId(d = new Date()): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+}
+
+function jstMonthPrefix(d = new Date()): string {
+  return jstDayId(d).slice(0, 7);
 }
 
 function roundDownToLot(qty: number): number {
@@ -119,6 +126,27 @@ export async function buildStockBrokerTradeIntents(
   let remainingDailyBuy = Math.max(0, STOCK_MAX_DAILY_BUY_YEN - todayBuyYen);
   let remainingCash = Math.max(0, cash - minCashKeep);
 
+  const monthPrefix = jstMonthPrefix();
+  const monthlySellProfitApprox = recentOrders
+    .filter((o) => {
+      if (o.side !== "sell") return false;
+      if (o.status !== "dry_run" && o.status !== "submitted") return false;
+      return jstDayId(new Date(o.createdAt)).startsWith(monthPrefix);
+    })
+    .reduce((sum, o) => {
+      const watch = watches.find(
+        (w) => displayTicker(w.ticker, "jp") === o.symbol,
+      );
+      const px =
+        snapshot.holdings.find((h) => h.symbol === o.symbol)?.price ?? 0;
+      const cost = watch?.buyPrice ?? 0;
+      if (cost > 0 && px > 0) return sum + (px - cost) * o.qty;
+      return sum;
+    }, 0);
+  const pauseBuysForMonthlyTarget =
+    STOCK_PAUSE_BUYS_AFTER_MONTHLY_SELL_TARGET &&
+    monthlySellProfitApprox >= STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN;
+
   for (const watch of watches) {
     let advice;
     try {
@@ -168,8 +196,9 @@ export async function buildStockBrokerTradeIntents(
       }
     }
 
-    // --- 買い (#8 / #9 / #10 / #2 / #3 / #5 / #6 / #19) ---
+    // --- 買い (#8 / #9 / #10 / #2 / #3 / #5 / #6 / #19 / #21 / #22) ---
     if (advice.action === "buy" && advice.trend === "bullish" && price > 0) {
+      if (pauseBuysForMonthlyTarget) continue;
       if (remainingDailyBuy < price * STOCK_LOT_SIZE) continue;
       if (remainingCash < price * STOCK_LOT_SIZE) continue;
 
@@ -177,6 +206,7 @@ export async function buildStockBrokerTradeIntents(
         STOCK_MAX_TRADE_YEN,
         remainingDailyBuy,
         remainingCash,
+        STOCK_PRINCIPAL_YEN * 0.7,
       );
       let qty =
         typeof watch.shares === "number" && watch.shares >= STOCK_LOT_SIZE
@@ -186,11 +216,13 @@ export async function buildStockBrokerTradeIntents(
       qty = roundDownToLot(qty);
       if (qty < STOCK_LOT_SIZE) continue;
 
-      const notional = qty * price;
+      let notional = qty * price;
       if (notional > budget) {
         qty = roundDownToLot(budget / price);
+        notional = qty * price;
       }
       if (qty < STOCK_LOT_SIZE) continue;
+      if (notional > STOCK_PRINCIPAL_YEN * 0.7) continue;
 
       const singleCap = portfolioApprox * STOCK_MAX_SINGLE_ASSET_RATIO;
       const existingValue = (holding?.qty ?? 0) * price;
@@ -215,7 +247,7 @@ export async function buildStockBrokerTradeIntents(
         qty,
         frontOrderType: 10,
         reason: `AI買い + 強気: ${advice.summary.slice(0, 120)}`,
-        ruleIds: [1, 2, 3, 5, 6, 8, 9, 10, 15, 19],
+        ruleIds: [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22],
         watchId: watch.id,
         adviceAction: advice.action,
         createdAt: new Date().toISOString(),

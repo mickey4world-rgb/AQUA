@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import StockBrokerPanel from "@/components/stocks/StockBrokerPanel";
+import Link from "next/link";
 import StockWatchDetail from "@/components/stocks/StockWatchDetail";
 import StockWatchForm from "@/components/stocks/StockWatchForm";
 import StockWatchList from "@/components/stocks/StockWatchList";
@@ -12,7 +12,9 @@ import type { StockWatchWithAdvice } from "@/lib/types/stock";
 
 async function fetchWatches(): Promise<StockWatchWithAdvice[] | null> {
   const res = await fetch("/api/stocks/watches");
-  return res.ok ? ((await res.json()) as StockWatchWithAdvice[]) : null;
+  if (!res.ok) return null;
+  const data = (await res.json()) as StockWatchWithAdvice[];
+  return data.filter((w) => (w.market ?? "us") === "us");
 }
 
 export default function StocksPage() {
@@ -31,7 +33,6 @@ export default function StocksPage() {
     [watches, sortKey],
   );
 
-  // AI アドバイス付きの詳細が届くまでは一覧が持っている情報をそのまま見せる。
   const selectedDetail = useMemo(() => {
     if (!selectedId) return null;
     if (fetchedDetail?.id === selectedId && fetchedDetail.watch) {
@@ -62,11 +63,9 @@ export default function StocksPage() {
 
   useEffect(() => {
     let cancelled = false;
-
     fetchWatches().then((data) => {
       if (!cancelled) applyWatches(data);
     });
-
     return () => {
       cancelled = true;
     };
@@ -74,9 +73,7 @@ export default function StocksPage() {
 
   useEffect(() => {
     if (!selectedId) return;
-
     let cancelled = false;
-
     fetch(`/api/stocks/watches/${selectedId}?ai=1`)
       .then(async (res) =>
         res.ok ? ((await res.json()) as StockWatchWithAdvice) : null,
@@ -85,7 +82,6 @@ export default function StocksPage() {
       .then((watch) => {
         if (!cancelled) setFetchedDetail({ id: selectedId, watch });
       });
-
     return () => {
       cancelled = true;
     };
@@ -103,16 +99,20 @@ export default function StocksPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300/80">
-              Global Portfolio
+              US Portfolio
             </p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              保有株ダッシュボード
+              保有株（米国）
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
-              ウォッチ銘柄の AI 助言と、証券口座から同期した保有・余力をブラウザで俯瞰できます。
-              検証は dry-run のまま、日本株の<strong className="text-slate-300">買い／売り</strong>
-              シミュレーションが可能です。条件は仮想通貨と同様に #1〜#19 で整理しています。
+              米国株のウォッチと AI 助言の管理画面です。日本株の自動資産運用（kabu）とは別物で、ここには混ぜません。
             </p>
+            <Link
+              href="/costs"
+              className="mt-3 inline-flex text-sm text-cyan-300/90 underline-offset-2 hover:underline"
+            >
+              日本株の自動運用・条件は「コスト → 資産運用 · 株式」へ →
+            </Link>
           </div>
           {!loading && sortedWatches.length > 0 && (
             <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
@@ -122,10 +122,6 @@ export default function StocksPage() {
               銘柄をウォッチ中
             </div>
           )}
-        </div>
-
-        <div className="mt-6">
-          <StockBrokerPanel />
         </div>
 
         <section className="mt-8">
@@ -170,9 +166,6 @@ export default function StocksPage() {
                   />
                 ) : (
                   <div className="flex min-h-[20rem] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center lg:min-h-[28rem]">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 text-2xl">
-                      🌐
-                    </div>
                     <p className="text-sm text-slate-400">
                       一覧から銘柄を選択すると、詳細情報が表示されます。
                     </p>
@@ -189,11 +182,8 @@ export default function StocksPage() {
               Register
             </p>
             <h2 className="mt-2 text-xl font-semibold text-white">
-              銘柄を追加
+              米国株を追加
             </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              新しいウォッチ銘柄を登録します。日常の確認は上の一覧・詳細から行えます。
-            </p>
           </div>
           <StockWatchForm onCreated={loadWatches} />
         </section>
