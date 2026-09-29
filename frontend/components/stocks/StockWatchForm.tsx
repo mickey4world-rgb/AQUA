@@ -10,15 +10,22 @@ import type { StockMarket } from "@/lib/types/stock";
 
 type StockWatchFormProps = {
   onCreated: () => void;
+  /** 固定市場。省略時は米国株（保有株ページ用） */
+  fixedMarket?: StockMarket;
 };
 
-export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
-  const [market] = useState<StockMarket>("us");
+export default function StockWatchForm({
+  onCreated,
+  fixedMarket = "us",
+}: StockWatchFormProps) {
+  const market = fixedMarket;
   const [ticker, setTicker] = useState("");
   const [name, setName] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
   const [shares, setShares] = useState("");
-  const [targetMultiplier, setTargetMultiplier] = useState("1.3");
+  const [targetMultiplier, setTargetMultiplier] = useState(
+    market === "jp" ? "1.2" : "1.3",
+  );
   const [memo, setMemo] = useState("");
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -48,7 +55,7 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ticker,
+        ticker: market === "jp" ? ticker.trim() : ticker,
         market,
         name: name.trim() || undefined,
         buyPrice: parseFloat(buyPrice),
@@ -68,38 +75,55 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
     setName("");
     setBuyPrice("");
     setShares("");
-    setTargetMultiplier("1.3");
+    setTargetMultiplier(market === "jp" ? "1.2" : "1.3");
     setMemo("");
     setLoading(false);
     onCreated();
   }
 
-  const currencyLabel = "USD";
-  const tickerPlaceholder = "TSLA";
-  const namePlaceholder = "Tesla, Inc.";
-  const pricePlaceholder = "395.00";
+  const isJp = market === "jp";
+  const currencyLabel = isJp ? "JPY" : "USD";
+  const tickerPlaceholder = isJp ? "7203" : "TSLA";
+  const namePlaceholder = isJp ? "トヨタ自動車" : "Tesla, Inc.";
+  const pricePlaceholder = isJp ? "2500" : "395.00";
 
   return (
     <form onSubmit={handleSubmit} className={`${stockPanelClass} p-5`}>
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold text-white">米国株を追加</h2>
+        <h2 className="text-lg font-semibold text-white">
+          {isJp ? "自動運用用・日本株ウォッチ" : "米国株を追加"}
+        </h2>
         <span className="text-xs uppercase tracking-wider text-slate-500">
-          US Markets
+          {isJp ? "JP · Auto" : "US Markets"}
         </span>
       </div>
+      {isJp && (
+        <p className="mt-2 text-[11px] text-slate-400">
+          米国株の「保有株」ページとは別。kabu シミュレーションの AI
+          判定対象です（最大20銘柄）。
+        </p>
+      )}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <label className={stockLabelClass}>銘柄コード</label>
           <input
             required
             value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            onChange={(e) =>
+              setTicker(
+                isJp
+                  ? e.target.value.replace(/[^\d.]/g, "")
+                  : e.target.value.toUpperCase(),
+              )
+            }
             onBlur={(e) => lookupName(e.target.value)}
             placeholder={tickerPlaceholder}
             className={stockInputClass}
           />
           <p className="mt-1 text-xs text-slate-500">
-            ティッカーシンボル（例: TSLA）を入力
+            {isJp
+              ? "4桁コード（例: 7203）。Yahoo 用に .T は自動付与されます"
+              : "ティッカーシンボル（例: TSLA）を入力"}
           </p>
         </div>
         <div>
@@ -119,8 +143,8 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
           <input
             required
             type="number"
-            step="0.01"
-            min="0.01"
+            step={isJp ? "1" : "0.01"}
+            min={isJp ? "1" : "0.01"}
             value={buyPrice}
             onChange={(e) => setBuyPrice(e.target.value)}
             placeholder={pricePlaceholder}
@@ -128,7 +152,7 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
           />
         </div>
         <div>
-          <label className={stockLabelClass}>保有株数</label>
+          <label className={stockLabelClass}>株数（参考）</label>
           <input
             type="number"
             step="1"
@@ -155,7 +179,7 @@ export default function StockWatchForm({ onCreated }: StockWatchFormProps) {
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder="US · 長期保有 など"
+            placeholder={isJp ? "自動運用 · 利確目標" : "US · 長期保有"}
             className={stockInputClass}
           />
         </div>
