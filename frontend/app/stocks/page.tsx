@@ -110,7 +110,8 @@ export default function StocksPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-400 sm:text-base">
               ウォッチ銘柄の AI 助言と、証券口座から同期した保有・余力をブラウザで俯瞰できます。
-              自動発注は検証（dry-run）既定。PC／VM を触らなくても、最終同期時点の状況はここから確認できます。
+              検証は dry-run のまま、日本株の<strong className="text-slate-300">買い／売り</strong>
+              シミュレーションが可能です。条件は仮想通貨と同様に #1〜#19 で整理しています。
             </p>
           </div>
           {!loading && sortedWatches.length > 0 && (

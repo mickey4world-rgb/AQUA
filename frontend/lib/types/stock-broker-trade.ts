@@ -19,9 +19,11 @@ export interface StockBrokerTradeIntent {
   symbolName?: string;
   exchange: number;
   qty: number;
-  /** 成行のみ Phase C1 */
+  /** 成行のみ Phase C */
   frontOrderType: 10;
   reason: string;
+  /** 適用した売買条件番号（#1〜） */
+  ruleIds?: number[];
   watchId?: string;
   adviceAction?: string;
   createdAt: string;
@@ -40,6 +42,7 @@ export interface StockBrokerOrderRecord {
   status: StockBrokerOrderStatus;
   dryRun: boolean;
   reason: string;
+  ruleIds?: number[];
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;

@@ -1,11 +1,11 @@
 /**
- * Phase C — 現物売りインテントを取得し、dry-run または sendorder
+ * Phase C2 — 現物の売り/買いインテントを取得し、dry-run または sendorder
  *
  * 安全装置:
  * - KABU_ALLOW_LIVE_ORDERS=1 が無い限り絶対に sendorder しない
- * - ホワイトリスト KABU_SYMBOL_WHITELIST（カンマ区切り）。空なら全JP売り候補
+ * - ホワイトリスト KABU_SYMBOL_WHITELIST（カンマ区切り）。空なら全JP候補
  * - KABU_MAX_QTY_PER_ORDER（既定 100）
- * - 買い・信用は実装しない
+ * - 信用は実装しない
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -68,20 +68,21 @@ async function reportOrder(payload) {
   return body;
 }
 
-function buildCashSellOrder(intent) {
+function buildCashOrder(intent) {
   const qty = Math.min(intent.qty, maxQty);
+  const isSell = intent.side === "sell";
   return {
     Password: tradePassword,
     Symbol: String(intent.symbol),
     Exchange: Number(intent.exchange) || 1,
     SecurityType: 1,
-    Side: "1", // 売
-    CashMargin: 1, // 現物
-    DelivType: 0,
-    FundType: "  ", // 現物売: 半角スペース2つ
+    Side: isSell ? "1" : "2",
+    CashMargin: 1,
+    DelivType: isSell ? 0 : 2,
+    FundType: isSell ? "  " : "AA",
     AccountType: Number(process.env.KABU_ACCOUNT_TYPE ?? 4) || 4,
     Qty: qty,
-    FrontOrderType: 10, // 成行
+    FrontOrderType: 10,
     Price: 0,
     ExpireDay: 0,
   };
@@ -114,7 +115,7 @@ if (allowLive && !tradePassword) {
 const intentPayload = await fetchIntents();
 const intents = Array.isArray(intentPayload.intents) ? intentPayload.intents : [];
 console.log(
-  `[kabu-bridge] intents=${intents.length} sessionGuess=${intentPayload.sessionOpenGuess}`,
+  `[kabu-bridge] intents=${intents.length} sessionGuess=${intentPayload.sessionOpenGuess} policy=${intentPayload.policy ?? "?"}`,
 );
 
 if (intents.length === 0) {
@@ -128,8 +129,8 @@ if (allowLive) {
 }
 
 for (const intent of intents) {
-  if (intent.side !== "sell") {
-    console.log(`[skip] buy not supported yet ${intent.symbol}`);
+  if (intent.side !== "sell" && intent.side !== "buy") {
+    console.log(`[skip] unsupported side ${intent.side} ${intent.symbol}`);
     continue;
   }
   if (whitelist.length > 0 && !whitelist.includes(String(intent.symbol))) {
@@ -144,47 +145,54 @@ for (const intent of intents) {
       status: "skipped",
       dryRun: !allowLive,
       reason: "whitelist",
+      ruleIds: intent.ruleIds,
       message: "KABU_SYMBOL_WHITELIST 外",
     });
     continue;
   }
 
-  const orderBody = buildCashSellOrder(intent);
+  const orderBody = buildCashOrder(intent);
   const qty = orderBody.Qty;
+  const sideLabel = intent.side === "sell" ? "SELL" : "BUY";
+  const ruleLabel = Array.isArray(intent.ruleIds)
+    ? intent.ruleIds.map((n) => `#${n}`).join("+")
+    : "";
 
   if (!allowLive) {
     console.log(
-      `[dry-run] SELL ${intent.symbol} x${qty} exch=${orderBody.Exchange} — ${intent.reason}`,
+      `[dry-run] ${sideLabel} ${intent.symbol} x${qty} exch=${orderBody.Exchange} ${ruleLabel} — ${intent.reason}`,
     );
     await reportOrder({
       userId: config.aquaUserId,
       intentId: intent.id,
-      side: "sell",
+      side: intent.side,
       symbol: intent.symbol,
       exchange: orderBody.Exchange,
       qty,
       status: "dry_run",
       dryRun: true,
       reason: intent.reason,
+      ruleIds: intent.ruleIds,
       message: "KABU_ALLOW_LIVE_ORDERS 未設定のため未発注",
     });
     continue;
   }
 
-  console.log(`[LIVE] SELL ${intent.symbol} x${qty}`);
+  console.log(`[LIVE] ${sideLabel} ${intent.symbol} x${qty} ${ruleLabel}`);
   const result = await sendOrder(config.kabuBaseUrl, token, orderBody);
   const orderId =
     result.body?.OrderId ?? result.body?.orderId ?? result.body?.Result ?? undefined;
   await reportOrder({
     userId: config.aquaUserId,
     intentId: intent.id,
-    side: "sell",
+    side: intent.side,
     symbol: intent.symbol,
     exchange: orderBody.Exchange,
     qty,
     status: result.ok ? "submitted" : "rejected",
     dryRun: false,
     reason: intent.reason,
+    ruleIds: intent.ruleIds,
     kabuOrderId: orderId != null ? String(orderId) : undefined,
     kabuResultCode: result.body?.Code ?? result.status,
     message: result.ok
