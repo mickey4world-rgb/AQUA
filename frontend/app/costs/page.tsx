@@ -339,7 +339,7 @@ export default function CostsPage() {
               </h2>
               <p className="mt-1 text-sm text-slate-400">
                 仮想通貨（Soluna）および米国株の「保有株」ページとは別枠です。元本目安
-                80万円・毎月の売り益目標 2万円。検証は dry-run
+                80万円・毎月の売り益目標は元本の 2%以上。検証は dry-run
                 のまま、条件 #1〜#22 と同期・発注ログをここで確認します。
               </p>
             </div>

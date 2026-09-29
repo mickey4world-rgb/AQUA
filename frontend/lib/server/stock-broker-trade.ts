@@ -13,10 +13,11 @@ import {
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
-  STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
-  STOCK_PAUSE_BUYS_AFTER_MONTHLY_SELL_TARGET,
   STOCK_PRINCIPAL_YEN,
+  STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
+  STOCK_SMALL_TRADE_YEN,
 } from "@/lib/stock-trade-constants";
+import { getStockTradeLessonBias } from "@/lib/server/stock-trade-lessons";
 import type {
   StockBrokerOrderRecord,
   StockBrokerTradeIntent,
@@ -126,26 +127,12 @@ export async function buildStockBrokerTradeIntents(
   let remainingDailyBuy = Math.max(0, STOCK_MAX_DAILY_BUY_YEN - todayBuyYen);
   let remainingCash = Math.max(0, cash - minCashKeep);
 
-  const monthPrefix = jstMonthPrefix();
-  const monthlySellProfitApprox = recentOrders
-    .filter((o) => {
-      if (o.side !== "sell") return false;
-      if (o.status !== "dry_run" && o.status !== "submitted") return false;
-      return jstDayId(new Date(o.createdAt)).startsWith(monthPrefix);
-    })
-    .reduce((sum, o) => {
-      const watch = watches.find(
-        (w) => displayTicker(w.ticker, "jp") === o.symbol,
-      );
-      const px =
-        snapshot.holdings.find((h) => h.symbol === o.symbol)?.price ?? 0;
-      const cost = watch?.buyPrice ?? 0;
-      if (cost > 0 && px > 0) return sum + (px - cost) * o.qty;
-      return sum;
-    }, 0);
-  const pauseBuysForMonthlyTarget =
-    STOCK_PAUSE_BUYS_AFTER_MONTHLY_SELL_TARGET &&
-    monthlySellProfitApprox >= STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN;
+  const smallInvestMode = cash < STOCK_SMALL_INVEST_CASH_FLOOR_YEN;
+  const perTradeCap = smallInvestMode ? STOCK_SMALL_TRADE_YEN : STOCK_MAX_TRADE_YEN;
+
+  const lessonBias = await getStockTradeLessonBias(userId).catch(() => null);
+  const preferEarlierTakeProfit = Boolean(lessonBias?.preferEarlierTakeProfit);
+  const avoidChaseBuys = Boolean(lessonBias?.avoidChaseBuys);
 
   for (const watch of watches) {
     let advice;
@@ -159,8 +146,13 @@ export async function buildStockBrokerTradeIntents(
     const holding = snapshot.holdings.find((h) => h.symbol === symbol && h.qty > 0);
     const price = advice.currentPrice > 0 ? advice.currentPrice : holding?.price ?? 0;
 
-    // --- 売り (#11 / #12 / #13 / #14) ---
-    if (advice.action === "sell" && holding) {
+    // --- 売り ---
+    const softSell =
+      advice.action === "sell" ||
+      (preferEarlierTakeProfit &&
+        watch.targetPrice > 0 &&
+        advice.currentPrice >= watch.targetPrice * 0.95);
+    if (softSell && holding) {
       const hitTarget =
         watch.targetPrice > 0 && advice.currentPrice >= watch.targetPrice;
       const watchQty =
@@ -173,7 +165,12 @@ export async function buildStockBrokerTradeIntents(
         STOCK_MAX_QTY_PER_ORDER,
       );
       if (qty > 0) {
-        const ruleIds = hitTarget ? [1, 11, 12, 13, 14, 15, 19] : [1, 12, 13, 14, 15, 19];
+        const ruleIds = [
+          ...(hitTarget
+            ? [1, 11, 12, 13, 14, 15, 19, 20, 23]
+            : [1, 12, 13, 14, 15, 19, 20, 23]),
+        ];
+        if (preferEarlierTakeProfit) ruleIds.push(24);
         intents.push({
           id: intentIdFor(userId, symbol, "sell", day),
           userId,
@@ -196,14 +193,14 @@ export async function buildStockBrokerTradeIntents(
       }
     }
 
-    // --- 買い (#8 / #9 / #10 / #2 / #3 / #5 / #6 / #19 / #21 / #22) ---
+    // --- 買い ---
     if (advice.action === "buy" && advice.trend === "bullish" && price > 0) {
-      if (pauseBuysForMonthlyTarget) continue;
+      if (avoidChaseBuys && advice.changePct > 3) continue;
       if (remainingDailyBuy < price * STOCK_LOT_SIZE) continue;
       if (remainingCash < price * STOCK_LOT_SIZE) continue;
 
       const budget = Math.min(
-        STOCK_MAX_TRADE_YEN,
+        perTradeCap,
         remainingDailyBuy,
         remainingCash,
         STOCK_PRINCIPAL_YEN * 0.7,
@@ -236,6 +233,10 @@ export async function buildStockBrokerTradeIntents(
       remainingCash -= finalNotional;
       remainingDailyBuy -= finalNotional;
 
+      const ruleIds = [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22, 23];
+      if (smallInvestMode) ruleIds.push(21);
+      if (avoidChaseBuys) ruleIds.push(24);
+
       intents.push({
         id: intentIdFor(userId, symbol, "buy", day),
         userId,
@@ -246,8 +247,10 @@ export async function buildStockBrokerTradeIntents(
         exchange: holding?.exchange || 1,
         qty,
         frontOrderType: 10,
-        reason: `AI買い + 強気: ${advice.summary.slice(0, 120)}`,
-        ruleIds: [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22],
+        reason: smallInvestMode
+          ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}`
+          : `AI買い + 強気: ${advice.summary.slice(0, 120)}`,
+        ruleIds,
         watchId: watch.id,
         adviceAction: advice.action,
         createdAt: new Date().toISOString(),
@@ -295,6 +298,7 @@ export async function recordBrokerOrder(
     dryRun: input.dryRun,
     reason: input.reason,
     ruleIds: input.ruleIds,
+    realizedPnlYen: input.realizedPnlYen,
     kabuOrderId: input.kabuOrderId,
     kabuResultCode: input.kabuResultCode,
     message: input.message,

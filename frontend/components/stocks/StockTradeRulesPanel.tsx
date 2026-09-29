@@ -30,6 +30,10 @@ const ORDER: StockTradeRuleCategory[] = [
 export default function StockTradeRulesPanel({ rules }: Props) {
   const list: Array<StockTradeRule | ApiRule> =
     rules && rules.length > 0 ? rules : STOCK_TRADE_RULES;
+  const catalogMaxId = Math.max(
+    ...list.filter((r) => r.id < 100).map((r) => r.id),
+    24,
+  );
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
@@ -37,13 +41,13 @@ export default function StockTradeRulesPanel({ rules }: Props) {
         Stocks · Rules
       </p>
       <h2 className="mt-1 text-base font-semibold text-white">
-        {`日本株 売買条件（#1〜#${list[list.length - 1]?.id ?? 22}）`}
+        {`日本株 売買条件（#1〜#${catalogMaxId}）`}
       </h2>
       <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
         仮想通貨（Soluna）と同様に番号付き。米国株の「保有株」ページとは別系統です。
         dry-run / 発注ログの理由に付く{" "}
         <span className="text-cyan-200/90">#8+#2</span> などと対応。
-        元本目安 80万円・毎月売り益目標 2万円。
+        元本目安 80万円・毎月売り益目標は元本の 2%以上。
       </p>
 
       <div className="mt-4 space-y-4">

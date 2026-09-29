@@ -11,8 +11,12 @@ import {
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
+  STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
   STOCK_PRINCIPAL_YEN,
+  STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
+  STOCK_SMALL_TRADE_YEN,
+  STOCK_AUDIT_PROMOTE_THRESHOLD,
 } from "@/lib/stock-trade-constants";
 
 export type StockTradeRuleCategory =
@@ -155,19 +159,32 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 20,
     category: "mode",
     title: "月次売り益目標",
-    summary: `毎月の売り側おおよそ実現益 ${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)} を目標（元本 ${yen(STOCK_PRINCIPAL_YEN)} の約 2.5%/月）。達成判定用`,
+    summary: `毎月の売り側実現益の合計が元本 ${yen(STOCK_PRINCIPAL_YEN)} の ${(STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE * 100).toFixed(1)}%（${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)}）以上を目標。グラフ・達成率の基準`,
   },
   {
     id: 21,
     category: "buy",
-    title: "月次目標到達後の買い停止",
-    summary: `当月の売り益概算が ${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)} に達したら新規買いを見送り（売り・利確は継続）`,
+    title: "現金薄いときの少額投資",
+    summary: `証券余力が ${yen(STOCK_SMALL_INVEST_CASH_FLOOR_YEN)} を下回っても売買は継続。買付は1インテント ${yen(STOCK_SMALL_TRADE_YEN)} までに縮小（売りは通常どおり）`,
   },
   {
     id: 22,
     category: "risk",
     title: "元本対比の過大建玉抑制",
     summary: `1回の買付概算が元本目安 ${yen(STOCK_PRINCIPAL_YEN)} の 70% を超えるインテントは見送り（集中リスク回避）`,
+  },
+  {
+    id: 23,
+    category: "mode",
+    title: "監査AI",
+    summary:
+      "売買（dry-run含む）のたびに独立モデルが良い点・反省を記録。会話用モデルとは別系統",
+  },
+  {
+    id: 24,
+    category: "mode",
+    title: "反省の条件昇格",
+    summary: `同じ反省・良い点が月内で ${STOCK_AUDIT_PROMOTE_THRESHOLD} 回以上続いたら、運用バイアス／条件候補に自動追加して次回判断に反映`,
   },
 ];
 

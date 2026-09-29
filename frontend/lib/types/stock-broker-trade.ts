@@ -43,6 +43,8 @@ export interface StockBrokerOrderRecord {
   dryRun: boolean;
   reason: string;
   ruleIds?: number[];
+  /** 売り時の実現損益概算（円）。グラフ用 */
+  realizedPnlYen?: number;
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;
