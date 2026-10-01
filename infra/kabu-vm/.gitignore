@@ -3,6 +3,8 @@ main.json
 .deploy-credentials.local
 .env.vm.local
 *.local
+Enable-Autologon-FromLocal.ps1
+.last-*.json
 scripts/_WriteEnv.ps1
 scripts/_*.ps1
 vm-kabu-aqua.rdp

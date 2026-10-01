@@ -64,7 +64,19 @@ Portal → VM → **開始**。慣れるまでこれで十分。
 - **kabu ポートのインターネット公開**
 - **パスワードを .bat / リポジトリに平文保存**（必ず Autologon.exe）
 
-## セキュリティ残リスク（受け入れ）
+## 明日の本番開始チェック（JST）
+
+VM 無人化適用後の朝の確認:
+
+1. Portal で VM が **実行中**（AutoLogon 済みなら aquaadmin が console Active）
+2. RDP で入り、kabuステーション **API アイコン緑**（検証 18081）を目視
+3. 切るときは × ではなく `C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat`
+4. `.env`: `KABU_ALLOW_LIVE_ORDERS=1`・`KABU_TRADE_PASSWORD` 設定済みであること
+5. コスト画面に **日本株ウォッチ** があること（無いと intents=0）
+6. `C:\kabu-setup\sync.log` / `trade.log` にエラーが無いこと
+
+初回は検証ポート 18081 のまま LIVE 発注。問題なければ後で 18080 に切替。
+
 
 AutoLogon はディスク上に認証情報を置く。許容条件:
 
