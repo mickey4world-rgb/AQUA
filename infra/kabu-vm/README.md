@@ -53,7 +53,12 @@ Remove-Variable adminPassText, adminPass, BSTR -ErrorAction SilentlyContinue
 5. `scripts/Install-KabuHost.ps1`（Node + bridge + `.env` ACL + ゲストFW）
 6. `C:\kabu-bridge\.env` を埋める（`KABU_ALLOW_LIVE_ORDERS=0`）
 7. `npm run probe` → `sync` → `trade`（dry-run）
-8. 平日 16:30 JST 自動停止を確認。朝起動は `Start-Stop-Notes.md`
+8. 平日 16:30 JST 自動停止を確認。朝起動・無人ログオンは `Start-Stop-Notes.md`
+9. 無人化する場合（推奨順）:
+   - `scripts/Configure-KabuSessionKeepAlive.ps1`（スクセ無効・tscon bat）
+   - `scripts/Enable-KabuAutoLogon.ps1`（Sysinternals・パスワードはGUIのみ）
+   - `scripts/Configure-KabuAutostart.ps1`（kabu スタートアップ + bridge タスク）
+   - RDP 切断は必ず `C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat`（×禁止）
 
 ## コスト（既定）
 

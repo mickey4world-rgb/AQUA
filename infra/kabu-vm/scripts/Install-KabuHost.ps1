@@ -100,7 +100,9 @@ Write-Host @"
    - KABU_ALLOW_LIVE_ORDERS=0
 2. Start kabuステーション, confirm API icon green
 3. cd $BridgeRoot; npm run probe; npm run sync; npm run trade
-4. Task Scheduler (market hours): sync every 15m, trade every 15m — see docs/STOCK_KABU_AZURE_VM.md
+4. Task Scheduler (market hours): sync every 15m, trade every 15m — or run Configure-KabuAutostart.ps1
+5. Unattended (optional): Configure-KabuSessionKeepAlive.ps1 → Enable-KabuAutoLogon.ps1 → Configure-KabuAutostart.ps1
+   Disconnect via C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat (never RDP ×)
 
 SECURITY: Do not open inbound TCP 18080/18081 on NSG or firewall.
 "@
