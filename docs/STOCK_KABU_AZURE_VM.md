@@ -91,7 +91,10 @@ SWA 単体では kabu に届かない。VM は「クラウド上の取引専用W
 | `infra/kabu-vm/main.bicep` | VNet / NSG / NIC / Public IP / VM / 自動シャットダウン / tags |
 | `infra/kabu-vm/parameters.json` | サイズ・名前の既定値（パスワードは含めない） |
 | `infra/kabu-vm/scripts/Install-KabuHost.ps1` | VM 上: Node・bridge・`.env` ACL・ゲストFW |
-| `infra/kabu-vm/scripts/Start-Stop-Notes.md` | 市場時間 Start/Stop の Automation メモ |
+| `infra/kabu-vm/scripts/Configure-KabuSessionKeepAlive.ps1` | スクセ/スリープ無効・RDS時間制限なし・tscon bat |
+| `infra/kabu-vm/scripts/Enable-KabuAutoLogon.ps1` | Sysinternals Autologon 取得＋GUI Enable |
+| `infra/kabu-vm/scripts/Configure-KabuAutostart.ps1` | kabu スタートアップ＋bridge 定期タスク |
+| `infra/kabu-vm/scripts/Start-Stop-Notes.md` | 朝 Start / 無人ログオン / 落とし穴 |
 
 ---
 
@@ -112,8 +115,9 @@ SWA 単体では kabu に届かない。VM は「クラウド上の取引専用W
 |------|----------|---------------------------|
 | 収集 | bridge `sync` → AQUA broker API | VM 未作成時は同期ゼロ（明示） |
 | 発注 | dry-run 既定・LIVE フラグ・売りのみ | 買い／信用／自動LIVE |
-| 計算コスト | B2s・16:30 shutdown・市場時間方針 | 朝の自動 Start（初期は手動） |
-| 秘密 | `.env` ACL・チャット禁止・secure param | Key Vault 連携（任意・次段） |
+| 計算コスト | B2s・16:30 shutdown・市場時間方針 | 朝の自動 Start は Automation 次段（手順は Start-Stop-Notes） |
+| 無人セッション | SessionKeepAlive / Autologon / Autostart スクリプト | Mickey が VM 上で Enable するまで未適用 |
+| 秘密 | `.env` ACL・チャット禁止・secure param・Autologon は Sysinternals | Key Vault 連携（任意・次段） |
 | ネットワーク | Deny 18080/81・Deny RDP Internet・/32 or JIT | Bastion（コストのため非採用） |
 | オラクル | what-if → NSG ルール確認 → probe/sync/trade dry-run | 本番 LIVE は別ゲート |
 
