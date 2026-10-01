@@ -75,6 +75,18 @@ export interface StockAdvice {
   changePct: number;
   ma5: number;
   ma25: number;
+  /** 短期MAからの乖離率（%） */
+  ma5DeviationPct?: number;
+  /** 長期MAからの乖離率（%） */
+  ma25DeviationPct?: number;
+  rsi14?: number;
+  bollingerWidthPct?: number;
+  macdCross?: "golden" | "dead" | "none";
+  volumeSpikeRatio?: number;
+  /** PER など取得できたときのみ */
+  trailingPe?: number | null;
+  priceToBook?: number | null;
+  dividendYieldPct?: number | null;
   trend: "bullish" | "bearish";
   buyPrice: number;
   targetPrice: number;

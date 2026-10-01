@@ -30,6 +30,20 @@ type Goals = {
   smallInvestMode: boolean;
 };
 
+type GuardrailsView = {
+  monthlyHalt?: boolean;
+  mainBreaker?: boolean;
+  monthlyLossYen?: number;
+  cumulativeLossYen?: number;
+  notes?: string[];
+  tradingHalted?: boolean;
+  layers?: {
+    perTradeMaxLossYen: number;
+    monthlyMaxLossYen: number;
+    cumulativeMaxLossYen: number;
+  };
+};
+
 type StatusResponse = {
   connected: boolean;
   snapshot: StockBrokerSnapshot | null;
@@ -39,6 +53,7 @@ type StatusResponse = {
   lessonNotes?: string[];
   equityPerformance?: StockEquityPerformance;
   goals?: Goals;
+  guardrails?: GuardrailsView;
   policy?: string;
   hint?: string;
 };
@@ -173,6 +188,64 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
       </p>
 
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+
+      {data?.guardrails?.mainBreaker || data?.guardrails?.tradingHalted ? (
+        <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-50">
+          <p className="font-semibold">第3層メインブレーカー作動中</p>
+          <p className="mt-1 text-[12px] text-rose-100/90">
+            通算損失上限に達したため売買権限を停止し、保有の全決済を優先します。再開は手動解除が必要です。
+          </p>
+          {(data.guardrails.notes ?? []).map((n) => (
+            <p key={n} className="mt-1 text-[11px] text-rose-100/80">
+              {n}
+            </p>
+          ))}
+        </div>
+      ) : data?.guardrails?.monthlyHalt ? (
+        <div className="mt-3 rounded-xl border border-amber-400/35 bg-amber-500/12 px-3 py-2 text-sm text-amber-50">
+          <p className="font-semibold">第2層: 当月の自動売買を停止中</p>
+          <p className="mt-1 text-[12px] text-amber-100/85">
+            当月実現損失が上限（
+            {formatYen(data.guardrails.layers?.monthlyMaxLossYen ?? 45_000)}
+            ）に達しました。硬損切り以外の新規売買は見送ります。
+          </p>
+        </div>
+      ) : null}
+
+      {data?.guardrails?.layers && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3 text-[11px] text-slate-400">
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
+            第1層 1取引 ≤{" "}
+            <span className="text-slate-200">
+              {formatYen(data.guardrails.layers.perTradeMaxLossYen)}
+            </span>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
+            第2層 月次 ≤{" "}
+            <span className="text-slate-200">
+              {formatYen(data.guardrails.layers.monthlyMaxLossYen)}
+            </span>
+            {typeof data.guardrails.monthlyLossYen === "number" && (
+              <span className="text-slate-500">
+                {" "}
+                · 今月損 {formatYen(data.guardrails.monthlyLossYen)}
+              </span>
+            )}
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
+            第3層 通算 ≤{" "}
+            <span className="text-slate-200">
+              {formatYen(data.guardrails.layers.cumulativeMaxLossYen)}
+            </span>
+            {typeof data.guardrails.cumulativeLossYen === "number" && (
+              <span className="text-slate-500">
+                {" "}
+                · 累計損 {formatYen(data.guardrails.cumulativeLossYen)}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {!data && !error && (
         <p className="mt-3 text-sm text-slate-400">読み込み中…</p>
