@@ -42,6 +42,10 @@ interface StockLedgerDoc {
   id: string;
   userId: string;
   tradeLessons: StockTradeLesson[];
+  /** 第3層メインブレーカー — 手動解除まで売買権限停止 */
+  tradingHalted?: boolean;
+  tradingHaltedAt?: string;
+  tradingHaltReason?: string;
   updatedAt: string;
 }
 
@@ -353,4 +357,44 @@ export async function getStockTradeLessonBias(
     notes,
     promotedRules,
   };
+}
+
+export type StockTradingHaltState = {
+  halted: boolean;
+  haltedAt?: string;
+  reason?: string;
+};
+
+export async function getStockTradingHalt(
+  userId: string,
+): Promise<StockTradingHaltState> {
+  const ledger = await loadLedger(userId);
+  return {
+    halted: Boolean(ledger.tradingHalted),
+    haltedAt: ledger.tradingHaltedAt,
+    reason: ledger.tradingHaltReason,
+  };
+}
+
+/** 第3層到達時に売買権限を停止（手動解除まで継続） */
+export async function engageStockTradingHalt(
+  userId: string,
+  reason: string,
+): Promise<StockTradingHaltState> {
+  const ledger = await loadLedger(userId);
+  if (ledger.tradingHalted) {
+    return {
+      halted: true,
+      haltedAt: ledger.tradingHaltedAt,
+      reason: ledger.tradingHaltReason,
+    };
+  }
+  const haltedAt = new Date().toISOString();
+  await saveLedger({
+    ...ledger,
+    tradingHalted: true,
+    tradingHaltedAt: haltedAt,
+    tradingHaltReason: reason,
+  });
+  return { halted: true, haltedAt, reason };
 }

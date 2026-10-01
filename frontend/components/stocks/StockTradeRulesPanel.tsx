@@ -25,6 +25,8 @@ const ORDER: StockTradeRuleCategory[] = [
   "buy",
   "sell",
   "mode",
+  "signal",
+  "deferred",
 ];
 
 export default function StockTradeRulesPanel({ rules }: Props) {
@@ -32,7 +34,7 @@ export default function StockTradeRulesPanel({ rules }: Props) {
     rules && rules.length > 0 ? rules : STOCK_TRADE_RULES;
   const catalogMaxId = Math.max(
     ...list.filter((r) => r.id < 100).map((r) => r.id),
-    24,
+    41,
   );
 
   return (

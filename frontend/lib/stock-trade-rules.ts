@@ -1,22 +1,40 @@
 /**
  * 日本株自動運用の条件カタログ（コスト画面・ログの共通番号）
  * /stocks（米国株）とは別。仮想通貨 Soluna と同型の番号付き整理。
+ *
+ * 分類:
+ * - 組み込み（エンジン／分析で強制または強く反映）
+ * - 信号（AI・テクニカル入力。単独では発注しない）
+ * - 将来（データ源が未接続／不安定のためカタログのみ）
  */
 import {
+  STOCK_AUDIT_PROMOTE_THRESHOLD,
+  STOCK_CUMULATIVE_MAX_LOSS_YEN,
+  STOCK_DAILY_MAX_LOSS_YEN,
+  STOCK_HARD_STOP_LOSS_RATE,
   STOCK_HARD_TAKE_PROFIT_MULT,
   STOCK_LOT_SIZE,
   STOCK_MAX_ACTIVE_JP_WATCHES,
   STOCK_MAX_DAILY_BUY_YEN,
+  STOCK_MAX_POSITION_PCT_OF_PRINCIPAL,
   STOCK_MAX_QTY_PER_ORDER,
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
+  STOCK_MONTHLY_MAX_LOSS_YEN,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+  STOCK_PER_TRADE_MAX_LOSS_YEN,
   STOCK_PRINCIPAL_YEN,
+  STOCK_RSI_OVERBOUGHT,
+  STOCK_RSI_OVERSOLD,
+  STOCK_SESSION_CLOSE_BLACKOUT_MIN,
+  STOCK_SESSION_OPEN_BLACKOUT_MIN,
   STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
   STOCK_SMALL_TRADE_YEN,
-  STOCK_AUDIT_PROMOTE_THRESHOLD,
+  STOCK_SOFT_STOP_LOSS_RATE,
+  STOCK_VIX_BUY_BLOCK,
+  STOCK_VOLUME_SPIKE_MULT,
 } from "@/lib/stock-trade-constants";
 
 export type StockTradeRuleCategory =
@@ -24,7 +42,9 @@ export type StockTradeRuleCategory =
   | "risk"
   | "buy"
   | "sell"
-  | "mode";
+  | "mode"
+  | "signal"
+  | "deferred";
 
 export interface StockTradeRule {
   id: number;
@@ -71,8 +91,8 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 6,
     category: "risk",
-    title: "単一銘柄上限",
-    summary: `1銘柄の想定時価は余力+保有概算の ${pct(STOCK_MAX_SINGLE_ASSET_RATIO)} まで`,
+    title: "単一銘柄上限（ポジションサイジング）",
+    summary: `1銘柄の想定時価は余力+保有概算の ${pct(STOCK_MAX_SINGLE_ASSET_RATIO)}、かつ元本の ${pct(STOCK_MAX_POSITION_PCT_OF_PRINCIPAL)} まで`,
   },
   {
     id: 7,
@@ -134,7 +154,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 16,
     category: "mode",
     title: "取引時間ゲート",
-    summary: "東証の粗いセッション（9:00–11:30 / 12:30–15:00 JST）を sessionOpenGuess として付与",
+    summary: `東証セッション（9:00–11:30 / 12:30–15:00 JST）。寄り直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は禁止（#30）`,
   },
   {
     id: 17,
@@ -159,7 +179,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 20,
     category: "mode",
     title: "月次売り益目標",
-    summary: `毎月の売り側実現益の合計が元本 ${yen(STOCK_PRINCIPAL_YEN)} の ${(STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE * 100).toFixed(1)}%（${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)}）以上を目標。グラフ・達成率の基準`,
+    summary: `毎月の売り側実現益の合計が元本 ${yen(STOCK_PRINCIPAL_YEN)} の ${(STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE * 100).toFixed(0)}%（${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)}）以上を目標。グラフ・達成率の基準`,
   },
   {
     id: 21,
@@ -186,6 +206,118 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     title: "反省の条件昇格",
     summary: `同じ反省・良い点が月内で ${STOCK_AUDIT_PROMOTE_THRESHOLD} 回以上続いたら、運用バイアス／条件候補に自動追加して次回判断に反映`,
   },
+  // --- リスク管理（今回追加・必須） ---
+  {
+    id: 25,
+    category: "sell",
+    title: "ハード損切り",
+    summary: `取得単価から ${pct(STOCK_HARD_STOP_LOSS_RATE)} 以下で強制売り検討（日次損失CB中でも例外として継続）`,
+  },
+  {
+    id: 26,
+    category: "sell",
+    title: "ソフト損切り",
+    summary: `取得単価から ${pct(STOCK_SOFT_STOP_LOSS_RATE)} 付近かつ下降トレンドなら売り検討（硬損切りの手前）`,
+  },
+  {
+    id: 27,
+    category: "risk",
+    title: "1日最大損失（サーキットブレーカー）",
+    summary: `当日の実現損失合計が ${yen(STOCK_DAILY_MAX_LOSS_YEN)} 以上なら新規買い停止。硬損切り売りのみ例外`,
+  },
+  {
+    id: 28,
+    category: "signal",
+    title: "テクニカル指標（AIトレンド入力）",
+    summary: `SMA乖離・RSI（≥${STOCK_RSI_OVERBOUGHT} 買われすぎ / ≤${STOCK_RSI_OVERSOLD} 売られすぎ）・ボリンジャー幅・MACDクロスを日足から算出し、買い/売り判定とAI解説に渡す`,
+  },
+  {
+    id: 29,
+    category: "mode",
+    title: "市場環境ゲート（地合い）",
+    summary: `VIX≥${STOCK_VIX_BUY_BLOCK} または日経平均が概ね -2.5% 以下の急落地合いでは新規買い見送り。S&P・ナスダック・USD/JPY は参考ログ`,
+  },
+  {
+    id: 30,
+    category: "mode",
+    title: "寄り・引けの時間帯制限",
+    summary: `寄り付き直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は sessionOpenGuess=false（流動性・値動き荒れ回避）`,
+  },
+  {
+    id: 31,
+    category: "buy",
+    title: "出来高スパイク警戒",
+    summary: `当日出来高が過去5日平均の ${STOCK_VOLUME_SPIKE_MULT} 倍以上かつ下落中は新規買い見送り（約定・需給リスク）`,
+  },
+  {
+    id: 32,
+    category: "signal",
+    title: "ファンダメンタルズ（参考入力）",
+    summary:
+      "取得できた PER / PBR / 配当利回りをAI解説と判定理由に添付。同業比較や自己資本比率の硬ゲートはデータ安定化まで行わない",
+  },
+  {
+    id: 33,
+    category: "buy",
+    title: "決算ニュース回避（暫定）",
+    summary:
+      "直近ニュース見出しに「決算」「業績」等がある銘柄は新規買いを様子見へ（厳密な発表日カレンダーは将来 #36）",
+  },
+  {
+    id: 34,
+    category: "signal",
+    title: "ニュース・センチメント（ソフト）",
+    summary:
+      "価格変動コンテキストのニュースをAI解説に渡し、ポジ/ネガを自然言語で補足。数値スコアの硬ゲートは未実装（トークンコスト優先）",
+  },
+  // --- 将来（カタログ明示・未強制） ---
+  {
+    id: 35,
+    category: "deferred",
+    title: "売買スプレッド（板）",
+    summary:
+      "最良気配の差が広い銘柄はエントリー禁止 — kabu 板APIの安定取得後に組み込み予定。現状は未強制",
+  },
+  {
+    id: 36,
+    category: "deferred",
+    title: "決算発表カレンダー",
+    summary:
+      "発表 N 日前からポジション非保有 — 信頼できるJP決算カレンダー連携後に硬ゲート化。暫定は #33",
+  },
+  {
+    id: 37,
+    category: "deferred",
+    title: "信用残（買い残・売り残）",
+    summary:
+      "将来の決済売り圧力の監視 — 無料で安定した信用残フィードが無いため未強制",
+  },
+  {
+    id: 38,
+    category: "deferred",
+    title: "EPS成長・自己資本比率の硬ゲート",
+    summary:
+      "コンセンサス超えや財務健全性の数値ゲート — 安定したファンダAPI確保後。現状は #32 の参考表示のみ",
+  },
+  // --- 3層ガードレール（添付設計） ---
+  {
+    id: 39,
+    category: "risk",
+    title: "第1層: 1取引あたり最大損失",
+    summary: `1トレードの想定損失を ${yen(STOCK_PER_TRADE_MAX_LOSS_YEN)}（元本の約 ${((STOCK_PER_TRADE_MAX_LOSS_YEN / STOCK_PRINCIPAL_YEN) * 100).toFixed(2)}%）までに制限。含み損がこの額または ${pct(STOCK_HARD_STOP_LOSS_RATE)} に達したら強制売り検討。建玉も損切り到達時の損失がこの額を超えないよう縮小`,
+  },
+  {
+    id: 40,
+    category: "risk",
+    title: "第2層: 1ヶ月の最大許容損失",
+    summary: `当月の実現損失合計が ${yen(STOCK_MONTHLY_MAX_LOSS_YEN)}（元本の約 ${((STOCK_MONTHLY_MAX_LOSS_YEN / STOCK_PRINCIPAL_YEN) * 100).toFixed(2)}%）以上なら当月の自動売買を停止。連敗・暴落相場での出血を止める`,
+  },
+  {
+    id: 41,
+    category: "risk",
+    title: "第3層: 通算最大許容損失（メインブレーカー）",
+    summary: `通算の実現損失が ${yen(STOCK_CUMULATIVE_MAX_LOSS_YEN)} に達したら保有を全決済し、AIの売買権限を停止（手動解除まで）。アプリ全体の最終ブレーカー`,
+  },
 ];
 
 export function stockTradeRuleById(id: number): StockTradeRule | undefined {
@@ -204,6 +336,10 @@ export function stockCategoryLabelJa(category: StockTradeRuleCategory): string {
       return "売り条件";
     case "mode":
       return "運用モード";
+    case "signal":
+      return "AI・信号入力";
+    case "deferred":
+      return "将来（未強制）";
     default:
       return category;
   }
