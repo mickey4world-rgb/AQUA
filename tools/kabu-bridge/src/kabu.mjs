@@ -60,7 +60,7 @@ export async function kabuGet(baseUrl, token, path) {
 }
 
 /** 保有・余力を AQUA 用の正規化形に変換（証券ブランド名は載せない） */
-export function normalizeSnapshot(userId, cash, positions) {
+export function normalizeSnapshot(userId, cash, positions, bridgeMeta) {
   const positionList = Array.isArray(positions) ? positions : [];
   const holdings = positionList.map((p) => ({
     symbol: String(p.Symbol ?? ""),
@@ -83,5 +83,6 @@ export function normalizeSnapshot(userId, cash, positions) {
     },
     holdings,
     rawPositionCount: holdings.length,
+    bridgeMeta: bridgeMeta ?? undefined,
   };
 }

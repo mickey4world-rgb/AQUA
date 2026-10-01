@@ -17,6 +17,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/api/stocks/cron/weekly-universe",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/stocks/*",
       "allowedRoles": ["authenticated"]
     },

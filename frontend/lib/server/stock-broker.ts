@@ -71,6 +71,19 @@ export async function upsertStockBrokerSnapshot(
     },
     holdings,
     rawPositionCount: payload.rawPositionCount ?? holdings.length,
+    bridgeMeta: payload.bridgeMeta
+      ? {
+          allowLiveOrders: Boolean(payload.bridgeMeta.allowLiveOrders),
+          kabuBaseUrl:
+            typeof payload.bridgeMeta.kabuBaseUrl === "string"
+              ? payload.bridgeMeta.kabuBaseUrl
+              : undefined,
+          kabuPort:
+            typeof payload.bridgeMeta.kabuPort === "number"
+              ? payload.bridgeMeta.kabuPort
+              : undefined,
+        }
+      : undefined,
     updatedAt: now,
   };
 

@@ -37,7 +37,11 @@ const [cash, positions] = await Promise.all([
   kabuGet(config.kabuBaseUrl, token, "/kabusapi/positions"),
 ]);
 
-const snapshot = normalizeSnapshot(config.aquaUserId, cash, positions);
+const snapshot = normalizeSnapshot(config.aquaUserId, cash, positions, {
+  allowLiveOrders: process.env.KABU_ALLOW_LIVE_ORDERS?.trim() === "1",
+  kabuBaseUrl: config.kabuBaseUrl,
+  kabuPort: Number(new URL(config.kabuBaseUrl).port) || undefined,
+});
 
 const res = await fetch(`${config.aquaBridgeUrl}/api/stocks/broker/sync`, {
   method: "POST",

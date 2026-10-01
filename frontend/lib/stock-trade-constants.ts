@@ -99,3 +99,15 @@ export const STOCK_AUDIT_PROMOTE_THRESHOLD = 2;
 
 /** 折れ線に残す日次ポイント上限 */
 export const STOCK_MAX_EQUITY_POINTS = 120;
+
+/**
+ * 週末ユニバース見直し: アクティブ目標数（#7 の上限以下）。
+ * 利確しやすい単元買い銘柄をこの件数前後に保つ。
+ */
+export const STOCK_WEEKLY_TARGET_ACTIVE_JP = 8;
+
+/** 週末1回あたりの入れ替え上限（deactivate + activate の組） */
+export const STOCK_WEEKLY_MAX_ROTATIONS = 3;
+
+/** 週次採点で「過熱」とみなす直近騰落率（%）— 追撃より押し目待ち */
+export const STOCK_WEEKLY_OVERHEAT_CHANGE_PCT = 8;

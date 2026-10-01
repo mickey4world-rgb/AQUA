@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:travel-geocode": "npx --yes tsx lib/travel-geocode-query.test.ts",
+    "test:stock-weekly": "npx --yes tsx lib/stock-weekly-rotation.test.ts",
+    "test:stock-news-affinity": "npx --yes tsx lib/stock-news-affinity.test.ts",
     "seed:users": "node scripts/seed-users.mjs",
     "setup:token-usage": "node scripts/setup-token-usage.mjs",
     "setup:access-logs": "node scripts/setup-access-logs.mjs",

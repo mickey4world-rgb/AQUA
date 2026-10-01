@@ -44,6 +44,31 @@ type GuardrailsView = {
   };
 };
 
+type TradeCandidate = {
+  code: string;
+  name: string;
+  isActive: boolean;
+  registered: boolean;
+  shares: number;
+  heldQty: number;
+  buyPrice: number;
+  targetPrice: number;
+  memo?: string;
+  tier?: string | null;
+  tags?: string[];
+  newsFitBonus?: number;
+  weeklyScore?: number | null;
+  lotYen?: number | null;
+  affordable?: boolean | null;
+};
+
+type LiveMode = {
+  allowLiveOrders: boolean;
+  kabuPort: number | null;
+  productionApi: boolean;
+  source: string;
+};
+
 type StatusResponse = {
   connected: boolean;
   snapshot: StockBrokerSnapshot | null;
@@ -52,8 +77,19 @@ type StatusResponse = {
   tradeLessons?: StockAuditLessonView[];
   lessonNotes?: string[];
   equityPerformance?: StockEquityPerformance;
+  tradeCandidates?: TradeCandidate[];
+  liveMode?: LiveMode;
   goals?: Goals;
   guardrails?: GuardrailsView;
+  weeklyUniverseReview?: {
+    weekId: string;
+    applied: boolean;
+    dryRun: boolean;
+    summary: string;
+    desiredActiveCodes: string[];
+    newsDigestId?: string | null;
+    createdAt: string;
+  } | null;
   policy?: string;
   hint?: string;
 };
@@ -150,6 +186,14 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
     ? `元本目安 ${formatYen(goals.principalYen)} · 月次売り益 ${(goals.monthlySellProfitTargetRate * 100).toFixed(1)}%（${formatYen(goals.monthlySellProfitTargetYen)}）`
     : "元本目安 80万 · 月次売り益 2%";
 
+  const liveMode = data?.liveMode;
+  const allowLive = liveMode?.allowLiveOrders === true;
+  const productionApi = liveMode?.productionApi === true;
+  const candidates = data?.tradeCandidates ?? [];
+  const activeCandidates = candidates.filter((c) => c.isActive);
+  const parkedCandidates = candidates.filter((c) => !c.isActive && c.registered);
+  const unregistered = candidates.filter((c) => !c.registered);
+
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -162,8 +206,25 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
           </h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-100">
-            検証 · dry-run
+          <span
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+              allowLive
+                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
+                : "border-amber-400/30 bg-amber-500/15 text-amber-100"
+            }`}
+          >
+            {allowLive ? "LIVE 発注オン" : "検証 · dry-run"}
+          </span>
+          <span
+            className={`rounded-full border px-2.5 py-1 text-[11px] ${
+              productionApi
+                ? "border-sky-400/35 bg-sky-500/15 text-sky-100"
+                : "border-white/10 bg-white/5 text-slate-300"
+            }`}
+          >
+            {liveMode?.kabuPort
+              ? `API :${liveMode.kabuPort}${productionApi ? " 本番" : " 検証"}`
+              : "API 未同期"}
           </span>
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
             {goalBadge}
@@ -173,21 +234,140 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
               少額投資モード（現金&lt;{formatYen(goals.smallInvestCashFloorYen)}）
             </span>
           )}
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
-            LIVE 発注オフ
-          </span>
         </div>
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
         日本株・kabu 自動運用です。米国株の「保有株」ページとは別系統。
-        方針C: 現物の買い／売りシミュレーション（dry-run 既定）。
-        <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS=1</code>{" "}
-        で本番発注。
+        LIVE 表示は VM sync の{" "}
+        <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS</code> / ポートを反映します。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
       </p>
 
+      {data?.weeklyUniverseReview && (
+        <div className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2 text-[12px] text-cyan-50/95">
+          <p className="font-medium text-cyan-100">
+            週末ユニバース #{data.weeklyUniverseReview.weekId}
+            {data.weeklyUniverseReview.dryRun
+              ? " · dry-run"
+              : data.weeklyUniverseReview.applied
+                ? " · 適用済"
+                : ""}
+          </p>
+          <p className="mt-1 text-[11px] text-cyan-100/75">
+            {data.weeklyUniverseReview.summary}
+          </p>
+          {data.weeklyUniverseReview.desiredActiveCodes.length > 0 && (
+            <p className="mt-1 text-[11px] text-slate-300">
+              アクティブ希望:{" "}
+              {data.weeklyUniverseReview.desiredActiveCodes.join(", ")}
+            </p>
+          )}
+          {data.weeklyUniverseReview.newsDigestId && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              News Search: {data.weeklyUniverseReview.newsDigestId}
+            </p>
+          )}
+        </div>
+      )}
+
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+
+      {candidates.length > 0 && (
+        <div className="mt-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              売買候補一覧
+            </p>
+            <p className="text-[11px] text-slate-500">
+              アクティブ {activeCandidates.length} · 監視メモ{" "}
+              {parkedCandidates.length}
+              {unregistered.length > 0
+                ? ` · 未登録 ${unregistered.length}`
+                : ""}
+            </p>
+          </div>
+          <div className="mt-2 overflow-x-auto rounded-xl border border-white/10">
+            <table className="min-w-full text-left text-[12px]">
+              <thead className="bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">状態</th>
+                  <th className="px-3 py-2 font-medium">コード</th>
+                  <th className="px-3 py-2 font-medium">銘柄</th>
+                  <th className="px-3 py-2 font-medium">参考単価</th>
+                  <th className="px-3 py-2 font-medium">単元</th>
+                  <th className="px-3 py-2 font-medium">保有</th>
+                  <th className="px-3 py-2 font-medium">週次</th>
+                  <th className="px-3 py-2 font-medium">メモ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {candidates.map((c) => {
+                  const status = !c.registered
+                    ? "未登録"
+                    : c.isActive
+                      ? "アクティブ"
+                      : "監視メモ";
+                  const statusClass = !c.registered
+                    ? "text-slate-500"
+                    : c.isActive
+                      ? "text-emerald-300"
+                      : "text-amber-200";
+                  return (
+                    <tr key={c.code} className="text-slate-300">
+                      <td className={`px-3 py-2 whitespace-nowrap ${statusClass}`}>
+                        {status}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-200">
+                        {c.code}
+                      </td>
+                      <td className="px-3 py-2 text-white">
+                        <span className="block max-w-[10rem] truncate sm:max-w-none">
+                          {c.name}
+                        </span>
+                        {c.tier && (
+                          <span className="text-[10px] text-slate-500">
+                            {c.tier}
+                            {c.newsFitBonus && c.newsFitBonus > 0
+                              ? ` · News+${c.newsFitBonus}`
+                              : ""}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {c.buyPrice > 0 ? formatYen(c.buyPrice) : "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {c.lotYen != null
+                          ? formatYen(c.lotYen)
+                          : c.buyPrice > 0
+                            ? formatYen(c.buyPrice * 100)
+                            : "—"}
+                        {c.affordable === false ? (
+                          <span className="ml-1 text-[10px] text-rose-300">
+                            枠外
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {c.heldQty > 0
+                          ? `${c.heldQty.toLocaleString("ja-JP")}株`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-400">
+                        {c.weeklyScore != null ? c.weeklyScore : "—"}
+                      </td>
+                      <td className="px-3 py-2 max-w-[14rem] truncate text-slate-500">
+                        {c.memo || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {data?.guardrails?.mainBreaker || data?.guardrails?.tradingHalted ? (
         <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-50">

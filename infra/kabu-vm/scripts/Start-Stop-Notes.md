@@ -46,14 +46,17 @@ cd C:\path\to\repo\infra\kabu-vm\scripts
 
 Portal → VM → **開始**。慣れるまでこれで十分。
 
-### B. Automation Account（次の段階）
+### B. Automation Account（適用済スクリプト）
 
-1. Japan East に Automation Account（従量）
-2. Runbook: `Start-AzVM` / `Stop-AzVM`
-3. スケジュール例（JST）
-   - Start: 月–金 08:00
-   - Stop: 月–金 16:30（Auto-shutdown と二重でも可）
-4. Managed Identity に VM の起動/停止権限
+`scripts/Deploy-WeekdayVmStart.ps1` で Japan East に Automation Account を作成し:
+
+- Runbook: `Start-KabuVm`（Managed Identity で Start-AzVM）
+- スケジュール: **月–金 05:00 JST**
+- 停止: 既存 Auto-shutdown **毎日 16:30 JST**（deallocate）に任せる
+
+```powershell
+pwsh infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1
+```
 
 朝 Start 後、AutoLogon → スタートアップ kabu → 遅延つき bridge タスク、の順で無人化する。
 
