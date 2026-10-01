@@ -7,8 +7,13 @@ import {
   getStockTradingHalt,
   listStockTradeLessons,
 } from "@/lib/server/stock-trade-lessons";
+import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-universe-review";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
+import {
+  STOCK_JP_UNIVERSE,
+  stockJpUniverseByCode,
+} from "@/lib/stock-jp-universe";
 import { displayTicker } from "@/lib/stock-utils";
 import {
   STOCK_CUMULATIVE_MAX_LOSS_YEN,
@@ -24,7 +29,7 @@ import { stockTradeRulesForApi } from "@/lib/stock-trade-rules";
 /** ログインユーザーの証券同期＋注文＋条件＋監査＋元本対比グラフ */
 export async function GET(request: Request) {
   return withApiAccessLog(request, async (auth) => {
-    const [snapshot, recentOrders, lessons, bias, watches, halt] =
+    const [snapshot, recentOrders, lessons, bias, watches, halt, weeklyReview] =
       await Promise.all([
         getStockBrokerSnapshot(auth.userId),
         listRecentBrokerOrders(auth.userId, 200).catch(() => []),
@@ -36,9 +41,9 @@ export async function GET(request: Request) {
             halted: false,
           }),
         ),
+        getLatestWeeklyUniverseReview(auth.userId).catch(() => null),
       ]);
 
-    // 売り注文に実現損益が無い場合、ウォッチ取得単価から概算を付与（グラフ用・非破壊）
     const ordersForChart = recentOrders.map((o) => {
       if (o.side !== "sell" || o.realizedPnlYen != null) return o;
       const watch = watches.find(
@@ -77,6 +82,65 @@ export async function GET(request: Request) {
       orders: ordersForChart,
       tradingHalted: halt.halted,
     });
+
+    const holdingQty = new Map<string, number>();
+    for (const h of snapshot?.holdings ?? []) {
+      holdingQty.set(
+        h.symbol,
+        (holdingQty.get(h.symbol) ?? 0) + (h.qty ?? 0),
+      );
+    }
+
+    const jpWatches = watches.filter((w) => (w.market ?? "us") === "jp");
+    const watchByCode = new Map(
+      jpWatches.map((w) => [displayTicker(w.ticker, "jp"), w] as const),
+    );
+    const scoreByCode = new Map(
+      (weeklyReview?.scores ?? []).map((s) => [s.code, s] as const),
+    );
+
+    const candidateCodes = new Set<string>([
+      ...STOCK_JP_UNIVERSE.map((e) => e.code),
+      ...watchByCode.keys(),
+    ]);
+
+    const tradeCandidates = [...candidateCodes]
+      .map((code) => {
+        const watch = watchByCode.get(code);
+        const uni = stockJpUniverseByCode(code);
+        const score = scoreByCode.get(code);
+        return {
+          code,
+          name: watch?.name || uni?.name || code,
+          isActive: watch?.isActive === true,
+          registered: Boolean(watch),
+          shares: watch?.shares ?? 0,
+          heldQty: holdingQty.get(code) ?? 0,
+          buyPrice: watch?.buyPrice ?? score?.price ?? 0,
+          targetPrice: watch?.targetPrice ?? 0,
+          memo: watch?.memo,
+          tier: uni?.tier ?? null,
+          tags: uni ? [...uni.tags] : [],
+          newsFitBonus: score?.newsFitBonus ?? 0,
+          weeklyScore: score?.score ?? null,
+          lotYen: score?.lotYen ?? null,
+          affordable: score?.affordable ?? null,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        if (a.registered !== b.registered) return a.registered ? -1 : 1;
+        return (b.weeklyScore ?? -999) - (a.weeklyScore ?? -999);
+      });
+
+    const meta = snapshot?.bridgeMeta;
+    const allowLiveOrders =
+      typeof meta?.allowLiveOrders === "boolean"
+        ? meta.allowLiveOrders
+        : recentOrders.some((o) => o.status === "submitted");
+    const kabuPort = meta?.kabuPort ?? null;
+    const productionApi = kabuPort === 18080;
+
     const payload = {
       connected: Boolean(snapshot),
       snapshot,
@@ -85,6 +149,13 @@ export async function GET(request: Request) {
       tradeLessons: lessons,
       lessonNotes: bias?.notes ?? [],
       equityPerformance,
+      tradeCandidates,
+      liveMode: {
+        allowLiveOrders,
+        kabuPort,
+        productionApi,
+        source: meta ? "bridge-sync" : "inferred",
+      },
       guardrails: {
         ...guardrails,
         tradingHalted: halt.halted,
@@ -104,9 +175,20 @@ export async function GET(request: Request) {
         smallInvestMode: cash < STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
       },
       policy: "C2-jp-cash-buy-sell-sim",
+      weeklyUniverseReview: weeklyReview
+        ? {
+            weekId: weeklyReview.weekId,
+            applied: weeklyReview.applied,
+            dryRun: weeklyReview.dryRun,
+            summary: weeklyReview.summary,
+            desiredActiveCodes: weeklyReview.desiredActiveCodes,
+            newsDigestId: weeklyReview.newsDigestId ?? null,
+            createdAt: weeklyReview.createdAt,
+          }
+        : null,
       hint: snapshot
         ? undefined
-        : "Azure VM 上で kabu-bridge: npm run sync → npm run trade（既定 dry-run）。手順は docs/STOCK_KABU_AZURE_VM.md",
+        : "Azure VM 上で kabu-bridge: npm run sync → npm run trade。手順は docs/STOCK_KABU_AZURE_VM.md",
     };
     return Response.json(payload);
   });

@@ -18,6 +18,15 @@ export interface StockBrokerCash {
   auPayCardWallet?: number;
 }
 
+export interface StockBrokerBridgeMeta {
+  /** VM の KABU_ALLOW_LIVE_ORDERS=1 */
+  allowLiveOrders: boolean;
+  /** 例: http://localhost:18080 */
+  kabuBaseUrl?: string;
+  /** 18080=本番API / 18081=検証API */
+  kabuPort?: number;
+}
+
 export interface StockBrokerSnapshot {
   id: string;
   userId: string;
@@ -26,6 +35,8 @@ export interface StockBrokerSnapshot {
   cash: StockBrokerCash;
   holdings: StockBrokerHolding[];
   rawPositionCount: number;
+  /** bridge sync 時の LIVE / ポート状態（無い旧スナップショットあり） */
+  bridgeMeta?: StockBrokerBridgeMeta;
   updatedAt: string;
 }
 
@@ -36,4 +47,5 @@ export interface StockBrokerSyncPayload {
   cash: StockBrokerCash;
   holdings: StockBrokerHolding[];
   rawPositionCount?: number;
+  bridgeMeta?: StockBrokerBridgeMeta;
 }

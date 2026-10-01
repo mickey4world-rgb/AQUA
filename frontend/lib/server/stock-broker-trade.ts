@@ -5,6 +5,9 @@ import { analyzeStock } from "@/lib/server/stock-analysis";
 import { getStockBrokerSnapshot } from "@/lib/server/stock-broker";
 import { getStockMarketRegime } from "@/lib/server/stock-market-regime";
 import { listStockWatches } from "@/lib/server/stock-watches";
+import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
+import { scoreStockNewsAffinity } from "@/lib/stock-news-affinity";
+import { stockJpUniverseByCode } from "@/lib/stock-jp-universe";
 import { displayTicker } from "@/lib/stock-utils";
 import {
   STOCK_DAILY_MAX_LOSS_YEN,
@@ -191,6 +194,7 @@ export async function buildStockBrokerTradeIntents(
   const avoidChaseBuys = Boolean(lessonBias?.avoidChaseBuys);
 
   const regime = await getStockMarketRegime().catch(() => null);
+  const newsDigest = await getLatestWorksNewsDigest().catch(() => null);
   const blockNewBuys =
     guardrails.mainBreaker ||
     guardrails.monthlyHalt ||
@@ -221,7 +225,34 @@ export async function buildStockBrokerTradeIntents(
     return intents;
   }
 
-  for (const watch of watches) {
+  // News Search 適合が高い銘柄の買いを先に枠消化する
+  const newsFitByCode = new Map<
+    string,
+    ReturnType<typeof scoreStockNewsAffinity>
+  >();
+  for (const w of watches) {
+    const code = displayTicker(w.ticker, "jp");
+    const uni = stockJpUniverseByCode(code);
+    newsFitByCode.set(
+      code,
+      scoreStockNewsAffinity({
+        code,
+        name: w.name || code,
+        tags: uni ? [...uni.tags] : [],
+        digest: newsDigest,
+      }),
+    );
+  }
+  const watchesOrdered = [...watches].sort((a, b) => {
+    const codeA = displayTicker(a.ticker, "jp");
+    const codeB = displayTicker(b.ticker, "jp");
+    return (
+      (newsFitByCode.get(codeB)?.bonus ?? 0) -
+      (newsFitByCode.get(codeA)?.bonus ?? 0)
+    );
+  });
+
+  for (const watch of watchesOrdered) {
     let advice;
     try {
       advice = await analyzeStock(watch);
@@ -355,11 +386,29 @@ export async function buildStockBrokerTradeIntents(
       remainingCash -= finalNotional;
       remainingDailyBuy -= finalNotional;
 
+      const uni = stockJpUniverseByCode(symbol);
+      const newsFit =
+        newsFitByCode.get(symbol) ??
+        scoreStockNewsAffinity({
+          code: symbol,
+          name: watch.name || advice.companyName || symbol,
+          tags: uni ? [...uni.tags] : [],
+          digest: newsDigest,
+        });
+
       const ruleIds = [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39];
       if (smallInvestMode) ruleIds.push(21);
       if (avoidChaseBuys) ruleIds.push(24);
       if ((advice.rsi14 ?? 50) <= 30) ruleIds.push(28);
       if (guardrails.monthlyHalt) ruleIds.push(40);
+      if (newsFit.bonus > 0) ruleIds.push(43);
+
+      const newsNote =
+        newsFit.bonus > 0
+          ? ` / News適合+${newsFit.bonus}`
+          : newsDigest
+            ? " / News参照・直接ヒットなし"
+            : "";
 
       intents.push({
         id: intentIdFor(userId, symbol, "buy", day),
@@ -372,8 +421,8 @@ export async function buildStockBrokerTradeIntents(
         qty,
         frontOrderType: 10,
         reason: smallInvestMode
-          ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}`
-          : `AI買い + 強気: ${advice.summary.slice(0, 120)}`,
+          ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}${newsNote}`
+          : `AI買い + 強気: ${advice.summary.slice(0, 120)}${newsNote}`,
         ruleIds,
         watchId: watch.id,
         adviceAction: advice.action,

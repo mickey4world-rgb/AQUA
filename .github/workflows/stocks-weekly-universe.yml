@@ -1,0 +1,52 @@
+name: Stocks Weekly Universe Review
+
+on:
+  schedule:
+    # 土曜 10:00 JST = 金曜 25:00 なし → 土曜 01:00 UTC
+    - cron: "0 1 * * 6"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "apply / dry-run / force"
+        type: choice
+        options:
+          - apply
+          - dry-run
+          - force
+        default: apply
+
+jobs:
+  weekly_universe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run weekend JP watch auto-seed / rotation
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          STOCK_AUTO_TRADE_USER_ID: ${{ vars.STOCK_AUTO_TRADE_USER_ID }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'apply' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOLUNA_CRON_SECRET:-}" ]; then
+            echo "SOLUNA_CRON_SECRET not set"
+            exit 1
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          BODY='{}'
+          if [ "$MODE" = "dry-run" ]; then
+            BODY='{"dryRun":true}'
+          elif [ "$MODE" = "force" ]; then
+            BODY='{"force":true}'
+          fi
+          if [ -n "${STOCK_AUTO_TRADE_USER_ID:-}" ]; then
+            BODY=$(echo "$BODY" | jq -c --arg u "$STOCK_AUTO_TRADE_USER_ID" '. + {userId:$u}')
+          fi
+          echo "POST $BASE/api/stocks/cron/weekly-universe mode=$MODE"
+          RESP=$(curl -sfS -X POST \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data "$BODY" \
+            "${BASE%/}/api/stocks/cron/weekly-universe" \
+            --max-time 90)
+          echo "$RESP" | jq '{ok,skipped,weekId,applied,dryRun,summary,desiredActiveCodes,appliedActions}'
+          echo "$RESP" | jq -e '.ok == true' >/dev/null

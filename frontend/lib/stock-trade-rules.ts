@@ -35,6 +35,8 @@ import {
   STOCK_SOFT_STOP_LOSS_RATE,
   STOCK_VIX_BUY_BLOCK,
   STOCK_VOLUME_SPIKE_MULT,
+  STOCK_WEEKLY_MAX_ROTATIONS,
+  STOCK_WEEKLY_TARGET_ACTIVE_JP,
 } from "@/lib/stock-trade-constants";
 
 export type StockTradeRuleCategory =
@@ -99,6 +101,19 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     category: "risk",
     title: "ウォッチ数上限",
     summary: `日本株アクティブウォッチは ${STOCK_MAX_ACTIVE_JP_WATCHES} 銘柄までをシミュレーション対象`,
+  },
+  {
+    id: 42,
+    category: "universe",
+    title: "週末ユニバース自動シード",
+    summary: `毎週末に固定候補を利確しやすさ＋Works News Search 適合で採点し、アクティブ目標 ${STOCK_WEEKLY_TARGET_ACTIVE_JP}・入れ替え最大 ${STOCK_WEEKLY_MAX_ROTATIONS}。単元不可は監視メモ。保有はローテアウトしない`,
+  },
+  {
+    id: 43,
+    category: "signal",
+    title: "News Search 適合（ソフト）",
+    summary:
+      "深夜バッチの Works News Search ダイジェストを参照。銘柄タグ×カテゴリ/キーワード一致を週末スコア加点と日次買いの優先順に反映（ヒットなしでも欠測減点はしない）",
   },
   {
     id: 8,

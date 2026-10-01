@@ -67,7 +67,7 @@ Remove-Variable adminPassText, adminPass, BSTR -ErrorAction SilentlyContinue
 | サイズ | `Standard_B2s` |
 | ディスク | Standard SSD 128GB |
 | 停止 | 毎日 16:30 JST Auto-shutdown（deallocate） |
-| 起動 | 初期は手動／後で Automation |
+| 起動 | **平日 05:00 JST** Automation（`Deploy-WeekdayVmStart.ps1`） |
 | Bastion / Spot | **含めない** |
 
 停止中もディスク課金は残る。不要になったら VM + ディスク削除。
