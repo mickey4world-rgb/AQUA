@@ -11,6 +11,23 @@ Azure の **Auto-shutdown**（Bicep で 16:30 JST）は「止める」だけ。
 | Sysinternals AutoLogon | **要**（無人化する場合） | 再起動／deallocate 後に人間の RDP なしでデスクトップまで進める |
 | スタートアップで kabu | **要** | API は GUI 起動後のみ |
 | Task Scheduler で bridge | **要** | sync/trade は GUI 不要。ログオン遅延＋定期が安定 |
+| 手動バッチ | 任意 | `C:\kabu-setup\Sync-Now.cmd`（probe+sync。引数 `trade` で発注も） |
+
+## sync / trade は毎回手動不要（自動化済）
+
+**結論: VM 起動のたびに `npm run sync` を手で叩く必要はない。**
+
+| タイミング | タスク / バッチ | 内容 |
+|------------|-----------------|------|
+| ログオン後 ~3分 | `kabu-bridge-logon-sync` | probe → sync（kabu GUI 起動待ち） |
+| ログオン後 ~4分 | `kabu-bridge-logon-trade` | trade |
+| 以降 15分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | 定期 sync / trade |
+| 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | probe+sync（`Sync-Now.cmd trade` で発注も） |
+
+再登録: `powershell -File C:\kabu-setup\Ensure-KabuSyncAutomation.ps1`  
+ログ: `C:\kabu-setup\sync.log` / `trade.log` / `manual-sync.log`
+
+**失敗時の見方**: Task Result≠0 または sync.log に `token failed: HTTP 401` → `.env` の `KABU_API_PASSWORD` が kabuステーション（開いているポート側）の API パスワードと不一致。自動化は動いているが認証が通らない。
 | RDP×ではなく tscon | **必須** | Azure では切断でデスクトップ描画が止まり GUI/API が死ぬことが多い |
 | スクセ／スリープ無効 | **必須** | ロックで同様に止まる |
 | セッション時間制限なし | **必須**（Windows Server） | 切断・アイドルで強制サインアウトされうる |

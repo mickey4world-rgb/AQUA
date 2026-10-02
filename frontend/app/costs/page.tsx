@@ -82,6 +82,7 @@ export default function CostsPage() {
   );
   const [solunaError, setSolunaError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [jpWatchRefreshToken, setJpWatchRefreshToken] = useState(0);
 
   const loadingAi = tab === "ai" && loadedMonth !== month && !dashboard;
   const azureLoading = tab === "ai" && azureLoadedMonth !== month && !azureInfra;
@@ -343,8 +344,11 @@ export default function CostsPage() {
                 のまま、条件 #1〜#22 と同期・発注ログをここで確認します。
               </p>
             </div>
-            <StockBrokerPanel />
-            <StockWatchForm fixedMarket="jp" onCreated={() => {}} />
+            <StockBrokerPanel refreshToken={jpWatchRefreshToken} />
+            <StockWatchForm
+              fixedMarket="jp"
+              onCreated={() => setJpWatchRefreshToken((n) => n + 1)}
+            />
           </div>
         ) : loadingSoluna ? (
           <div className="mt-10 flex items-center gap-3 text-sm text-slate-400">

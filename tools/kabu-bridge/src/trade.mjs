@@ -119,7 +119,28 @@ console.log(
 );
 
 if (intents.length === 0) {
-  console.log("[kabu-bridge] nothing to do");
+  console.log("[kabu-bridge] nothing to do — report idle check");
+  const jstStamp = new Date().toLocaleString("sv-SE", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+  });
+  // 同じ時間帯（分を落としたキー）は上書きし、時間帯チャートに点検が残る
+  const hourKey = jstStamp.slice(0, 13).replace(" ", "T"); // YYYY-MM-DDTHH
+  await reportOrder({
+    id: `idle-${config.aquaUserId}-${hourKey}`,
+    userId: config.aquaUserId,
+    intentId: `idle-${hourKey}`,
+    side: "buy",
+    symbol: "_CHECK_",
+    exchange: 1,
+    qty: 0,
+    status: "skipped",
+    dryRun: !allowLive,
+    reason: intentPayload.sessionOpenGuess
+      ? "条件未達・見送り（点検）"
+      : "場外または条件未達・見送り（点検）",
+    message: `intents=0 sessionGuess=${intentPayload.sessionOpenGuess} policy=${intentPayload.policy ?? "?"}`,
+  });
   process.exit(0);
 }
 
