@@ -31,6 +31,8 @@ type StockWatchListProps = {
   sortKey: StockSortKey;
   onSortChange: (sortKey: StockSortKey) => void;
   onSelect: (id: string) => void;
+  onDelete?: (id: string) => void;
+  deletingId?: string | null;
 };
 
 export default function StockWatchList({
@@ -39,6 +41,8 @@ export default function StockWatchList({
   sortKey,
   onSortChange,
   onSelect,
+  onDelete,
+  deletingId = null,
 }: StockWatchListProps) {
   if (watches.length === 0) {
     return (
@@ -68,12 +72,13 @@ export default function StockWatchList({
         </label>
       </div>
 
-      <div className="hidden border-b border-white/10 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-slate-500 sm:grid sm:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] sm:gap-3">
+      <div className="hidden border-b border-white/10 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-slate-500 sm:grid sm:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.6fr)_auto] sm:gap-3">
         <span>銘柄</span>
         <span>現在値</span>
         <span>前日比</span>
         <span>損益</span>
         <span>判定</span>
+        <span className="sr-only">操作</span>
       </div>
 
       <ul className="divide-y divide-white/5">
@@ -87,82 +92,110 @@ export default function StockWatchList({
             advice && watch.shares > 0
               ? calcMarketValue(advice.currentPrice, watch.shares)
               : null;
+          const busy = deletingId === watch.id;
 
           return (
             <li key={watch.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(watch.id)}
-                className={`w-full px-4 py-3 text-left transition sm:grid sm:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] sm:items-center sm:gap-3 ${
+              <div
+                className={`flex items-stretch gap-2 px-2 sm:grid sm:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.6fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                   selected
                     ? "bg-gradient-to-r from-cyan-500/10 to-violet-500/10"
                     : "hover:bg-white/5"
                 }`}
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-medium text-white">{displayName}</p>
-                    <MarketBadge market={market} />
+                <button
+                  type="button"
+                  onClick={() => onSelect(watch.id)}
+                  className="min-w-0 flex-1 py-3 text-left sm:contents"
+                >
+                  <div className="min-w-0 px-2 sm:px-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-medium text-white">
+                        {displayName}
+                      </p>
+                      <MarketBadge market={market} />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {displayTicker(watch.ticker, market)}
+                      {marketValue !== null && (
+                        <>
+                          <span className="mx-1">·</span>
+                          評価 {formatPrice(marketValue, market)}
+                        </>
+                      )}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {displayTicker(watch.ticker, market)}
-                    {marketValue !== null && (
-                      <>
-                        <span className="mx-1">·</span>
-                        評価 {formatPrice(marketValue, market)}
-                      </>
+
+                  <div className="mt-2 hidden text-sm sm:mt-0 sm:block">
+                    {advice ? (
+                      <span className="font-medium text-slate-100">
+                        {formatPrice(advice.currentPrice, market)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
                     )}
-                  </p>
-                </div>
+                  </div>
 
-                <div className="mt-2 text-sm sm:mt-0">
-                  {advice ? (
-                    <span className="font-medium text-slate-100">
-                      {formatPrice(advice.currentPrice, market)}
-                    </span>
-                  ) : (
-                    <span className="text-slate-600">—</span>
-                  )}
-                </div>
+                  <div className="mt-1 hidden text-sm sm:mt-0 sm:block">
+                    {advice ? (
+                      <span
+                        className={
+                          advice.changePct >= 0
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }
+                      >
+                        {advice.changePct >= 0 ? "+" : ""}
+                        {advice.changePct.toFixed(2)}%
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </div>
 
-                <div className="mt-1 text-sm sm:mt-0">
-                  {advice ? (
+                  <div className="mt-1 hidden text-sm sm:mt-0 sm:block">
+                    {advice ? (
+                      <span
+                        className={
+                          advice.profitPct >= 0
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }
+                      >
+                        {advice.profitPct >= 0 ? "+" : ""}
+                        {advice.profitPct.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </div>
+
+                  <div className="mt-2 sm:mt-0">
                     <span
-                      className={
-                        advice.changePct >= 0 ? "text-emerald-400" : "text-rose-400"
-                      }
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${actionStyles[action]}`}
                     >
-                      {advice.changePct >= 0 ? "+" : ""}
-                      {advice.changePct.toFixed(2)}%
+                      {actionLabels[action]}
                     </span>
-                  ) : (
-                    <span className="text-slate-600">—</span>
-                  )}
-                </div>
+                  </div>
+                </button>
 
-                <div className="mt-1 text-sm sm:mt-0">
-                  {advice ? (
-                    <span
-                      className={
-                        advice.profitPct >= 0 ? "text-emerald-400" : "text-rose-400"
-                      }
+                {onDelete && (
+                  <div className="flex shrink-0 items-center py-3 pr-2 sm:pr-0">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(watch.id);
+                      }}
+                      className="rounded-md border border-rose-400/30 px-2 py-1 text-[11px] font-medium text-rose-300 transition hover:border-rose-300/50 hover:bg-rose-500/10 disabled:opacity-50"
+                      aria-label={`${displayName} を削除`}
                     >
-                      {advice.profitPct >= 0 ? "+" : ""}
-                      {advice.profitPct.toFixed(1)}%
-                    </span>
-                  ) : (
-                    <span className="text-slate-600">—</span>
-                  )}
-                </div>
-
-                <div className="mt-2 sm:mt-0">
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${actionStyles[action]}`}
-                  >
-                    {actionLabels[action]}
-                  </span>
-                </div>
-              </button>
+                      {busy ? "削除中…" : "削除"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </li>
           );
         })}

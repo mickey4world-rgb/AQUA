@@ -8,6 +8,7 @@ import {
   listStockTradeLessons,
 } from "@/lib/server/stock-trade-lessons";
 import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-universe-review";
+import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
 import {
@@ -111,6 +112,7 @@ export async function GET(request: Request) {
         const score = scoreByCode.get(code);
         return {
           code,
+          watchId: watch?.id ?? null,
           name: watch?.name || uni?.name || code,
           isActive: watch?.isActive === true,
           registered: Boolean(watch),
@@ -141,6 +143,14 @@ export async function GET(request: Request) {
     const kabuPort = meta?.kabuPort ?? null;
     const productionApi = kabuPort === 18080;
 
+    const activeWatchCount = jpWatches.filter((w) => w.isActive).length;
+    const activity = buildStockBrokerActivity({
+      orders: recentOrders,
+      snapshot,
+      activeWatchCount,
+      allowLiveOrders,
+    });
+
     const payload = {
       connected: Boolean(snapshot),
       snapshot,
@@ -150,6 +160,7 @@ export async function GET(request: Request) {
       lessonNotes: bias?.notes ?? [],
       equityPerformance,
       tradeCandidates,
+      activity,
       liveMode: {
         allowLiveOrders,
         kabuPort,

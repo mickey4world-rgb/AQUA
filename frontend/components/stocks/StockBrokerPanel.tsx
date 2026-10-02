@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
 import type { StockEquityPerformance } from "@/lib/stock-equity-performance";
@@ -10,9 +10,11 @@ import {
 } from "@/lib/stock-trade-rules";
 import StockTradeRulesPanel from "@/components/stocks/StockTradeRulesPanel";
 import StockEquityChart from "@/components/stocks/StockEquityChart";
+import StockTradeActivityPanel from "@/components/stocks/StockTradeActivityPanel";
 import StockAuditLessonsPanel, {
   type StockAuditLessonView,
 } from "@/components/stocks/StockAuditLessonsPanel";
+import type { StockBrokerActivity } from "@/lib/stock-broker-activity";
 
 type ApiRule = {
   id: number;
@@ -46,6 +48,7 @@ type GuardrailsView = {
 
 type TradeCandidate = {
   code: string;
+  watchId?: string | null;
   name: string;
   isActive: boolean;
   registered: boolean;
@@ -78,6 +81,7 @@ type StatusResponse = {
   lessonNotes?: string[];
   equityPerformance?: StockEquityPerformance;
   tradeCandidates?: TradeCandidate[];
+  activity?: StockBrokerActivity;
   liveMode?: LiveMode;
   goals?: Goals;
   guardrails?: GuardrailsView;
@@ -130,33 +134,42 @@ function statusLabel(status: StockBrokerOrderRecord["status"]): string {
 type Props = {
   /** @deprecated 米国株ページとは分離済み。互換のため残置 */
   compact?: boolean;
+  /** 銘柄追加など外部操作後に再取得させるカウンタ */
+  refreshToken?: number;
 };
 
-export default function StockBrokerPanel({ compact: _compact = false }: Props) {
+export default function StockBrokerPanel({
+  compact: _compact = false,
+  refreshToken = 0,
+}: Props) {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/stocks/broker/status")
+  const loadStatus = useCallback(() => {
+    return fetch("/api/stocks/broker/status")
       .then(async (res) =>
         res.ok
           ? ((await res.json()) as StatusResponse)
           : Promise.reject(new Error("status fetch failed")),
       )
       .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          setError(null);
-        }
+        setData(payload);
+        setError(null);
       })
       .catch(() => {
-        if (!cancelled) {
-          setError("証券同期状況を取得できませんでした。");
-          setData(null);
-        }
+        setError("証券同期状況を取得できませんでした。");
+        setData(null);
       });
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus, refreshToken]);
+
+  useEffect(() => {
+    let cancelled = false;
     fetch("/api/users/me")
       .then(async (res) =>
         res.ok ? ((await res.json()) as { id?: string }) : null,
@@ -169,6 +182,34 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
       cancelled = true;
     };
   }, []);
+
+  async function handleDeleteWatch(candidate: TradeCandidate) {
+    if (!candidate.watchId || !candidate.registered) return;
+    const label = `${candidate.name}（${candidate.code}）`;
+    if (
+      !confirm(
+        `${label} を登録から削除しますか？\n自動売買の対象外になります。`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(candidate.watchId);
+    try {
+      const res = await fetch(`/api/stocks/watches/${candidate.watchId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setError("銘柄の削除に失敗しました。");
+        return;
+      }
+      setError(null);
+      await loadStatus();
+    } catch {
+      setError("銘柄の削除に失敗しました。");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const orders = data?.recentOrders ?? [];
   const liveOrders = orders.filter((o) => o.status === "submitted");
@@ -273,6 +314,8 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
 
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
+      {data?.activity && <StockTradeActivityPanel activity={data.activity} />}
+
       {candidates.length > 0 && (
         <div className="mt-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -299,6 +342,7 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
                   <th className="px-3 py-2 font-medium">保有</th>
                   <th className="px-3 py-2 font-medium">週次</th>
                   <th className="px-3 py-2 font-medium">メモ</th>
+                  <th className="px-3 py-2 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -359,6 +403,20 @@ export default function StockBrokerPanel({ compact: _compact = false }: Props) {
                       </td>
                       <td className="px-3 py-2 max-w-[14rem] truncate text-slate-500">
                         {c.memo || "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {c.registered && c.watchId ? (
+                          <button
+                            type="button"
+                            disabled={deletingId === c.watchId}
+                            onClick={() => void handleDeleteWatch(c)}
+                            className="rounded-md border border-rose-400/30 px-2 py-1 text-[11px] font-medium text-rose-300 transition hover:border-rose-300/50 hover:bg-rose-500/10 disabled:opacity-50"
+                          >
+                            {deletingId === c.watchId ? "削除中…" : "削除"}
+                          </button>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
                       </td>
                     </tr>
                   );

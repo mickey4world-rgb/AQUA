@@ -27,6 +27,7 @@ export default function StocksPage() {
   } | null>(null);
   const [sortKey, setSortKey] = useState<StockSortKey>("registered");
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const sortedWatches = useMemo(
     () => sortStockWatches(watches, sortKey),
@@ -89,8 +90,19 @@ export default function StocksPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("この銘柄を削除しますか？")) return;
-    await fetch(`/api/stocks/watches/${id}`, { method: "DELETE" });
-    loadWatches();
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/stocks/watches/${id}`, { method: "DELETE" });
+      if (!res.ok) return;
+      if (selectedId === id) {
+        setSelectedId(null);
+        setFetchedDetail(null);
+        setMobileView("list");
+      }
+      await loadWatches();
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -144,6 +156,8 @@ export default function StocksPage() {
                     setSelectedId(id);
                     setMobileView("detail");
                   }}
+                  onDelete={handleDelete}
+                  deletingId={deletingId}
                 />
               </div>
               <div
