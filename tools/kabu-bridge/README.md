@@ -8,6 +8,7 @@
 | コマンド | 内容 |
 |---------|------|
 | `npm run probe` | トークン＋余力確認 |
+| `npm run health` | ステーション到達／トークン可否を AQUA へ報告（失敗時も送る・外出確認用） |
 | `npm run sync` | 余力・保有 → AQUA |
 | `npm run trade` | 買い/売りインテント → **既定 dry-run** / LIVE 時 sendorder |
 

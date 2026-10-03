@@ -343,6 +343,14 @@ export default function CostsPage() {
                 80万円・毎月の売り益目標は元本の 2%以上。検証は dry-run
                 のまま、条件 #1〜#22 と同期・発注ログをここで確認します。
               </p>
+              <p className="mt-2">
+                <a
+                  href="/costs/kabu-check"
+                  className="text-sm font-medium text-cyan-300 underline-offset-2 hover:underline"
+                >
+                  外出先・携帯向け: 株ステーション確認（PIN付き）
+                </a>
+              </p>
             </div>
             <StockBrokerPanel refreshToken={jpWatchRefreshToken} />
             <StockWatchForm

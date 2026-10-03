@@ -62,22 +62,7 @@ export async function POST(request: Request) {
           : undefined,
       bridgeMeta:
         body.bridgeMeta && typeof body.bridgeMeta === "object"
-          ? {
-              allowLiveOrders: Boolean(
-                (body.bridgeMeta as { allowLiveOrders?: boolean })
-                  .allowLiveOrders,
-              ),
-              kabuBaseUrl:
-                typeof (body.bridgeMeta as { kabuBaseUrl?: string })
-                  .kabuBaseUrl === "string"
-                  ? (body.bridgeMeta as { kabuBaseUrl: string }).kabuBaseUrl
-                  : undefined,
-              kabuPort:
-                typeof (body.bridgeMeta as { kabuPort?: number }).kabuPort ===
-                "number"
-                  ? (body.bridgeMeta as { kabuPort: number }).kabuPort
-                  : undefined,
-            }
+          ? (body.bridgeMeta as StockBrokerSyncPayload["bridgeMeta"])
           : undefined,
     });
     return Response.json({

@@ -9,6 +9,14 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/api/stocks/broker/health",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/api/stocks/broker/ops-gate",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/stocks/broker/intents",
       "allowedRoles": ["anonymous", "authenticated"]
     },

@@ -1,5 +1,6 @@
 /**
  * Phase1 sync — 余力・保有を AQUA に POST（発注なし）
+ * 失敗時も health を送り、外出先でステーション状態を確認できるようにする。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,6 +11,7 @@ import {
   loadConfig,
   normalizeSnapshot,
 } from "./kabu.mjs";
+import { probeStationHttp, reportBridgeHealth } from "./report-health.mjs";
 
 function loadDotEnv() {
   const dir = dirname(fileURLToPath(import.meta.url));
@@ -31,33 +33,68 @@ loadDotEnv();
 const config = loadConfig();
 console.log(`[kabu-bridge] sync start → ${config.aquaBridgeUrl}`);
 
-const token = await fetchKabuToken(config.kabuBaseUrl, config.apiPassword);
-const [cash, positions] = await Promise.all([
-  kabuGet(config.kabuBaseUrl, token, "/kabusapi/wallet/cash"),
-  kabuGet(config.kabuBaseUrl, token, "/kabusapi/positions"),
-]);
+const stationReachable = await probeStationHttp(config.kabuBaseUrl);
 
-const snapshot = normalizeSnapshot(config.aquaUserId, cash, positions, {
-  allowLiveOrders: process.env.KABU_ALLOW_LIVE_ORDERS?.trim() === "1",
-  kabuBaseUrl: config.kabuBaseUrl,
-  kabuPort: Number(new URL(config.kabuBaseUrl).port) || undefined,
-});
+try {
+  const token = await fetchKabuToken(config.kabuBaseUrl, config.apiPassword);
+  const [cash, positions] = await Promise.all([
+    kabuGet(config.kabuBaseUrl, token, "/kabusapi/wallet/cash"),
+    kabuGet(config.kabuBaseUrl, token, "/kabusapi/positions"),
+  ]);
 
-const res = await fetch(`${config.aquaBridgeUrl}/api/stocks/broker/sync`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${config.aquaBridgeSecret}`,
-  },
-  body: JSON.stringify(snapshot),
-});
+  const bridgeMeta = {
+    allowLiveOrders: process.env.KABU_ALLOW_LIVE_ORDERS?.trim() === "1",
+    kabuBaseUrl: config.kabuBaseUrl,
+    kabuPort: Number(new URL(config.kabuBaseUrl).port) || undefined,
+    stationReachable: true,
+    stationTokenOk: true,
+    lastError: null,
+    healthReportedAt: new Date().toISOString(),
+  };
 
-const body = await res.json().catch(() => ({}));
-if (!res.ok) {
-  console.error("[kabu-bridge] AQUA sync failed", res.status, body);
+  const snapshot = normalizeSnapshot(
+    config.aquaUserId,
+    cash,
+    positions,
+    bridgeMeta,
+  );
+
+  const res = await fetch(`${config.aquaBridgeUrl}/api/stocks/broker/sync`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.aquaBridgeSecret}`,
+    },
+    body: JSON.stringify(snapshot),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await reportBridgeHealth(config, {
+      stationReachable: true,
+      stationTokenOk: true,
+      lastError: `AQUA sync HTTP ${res.status}`,
+    });
+    console.error("[kabu-bridge] AQUA sync failed", res.status, body);
+    process.exit(1);
+  }
+
+  await reportBridgeHealth(config, {
+    stationReachable: true,
+    stationTokenOk: true,
+    lastError: null,
+  });
+
+  console.log(
+    `[kabu-bridge] ok holdings=${snapshot.holdings.length} cash=${snapshot.cash.stockAccountWallet} id=${body.id ?? "?"}`,
+  );
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  await reportBridgeHealth(config, {
+    stationReachable,
+    stationTokenOk: false,
+    lastError: message,
+  });
+  console.error("[kabu-bridge] sync failed:", message);
   process.exit(1);
 }
-
-console.log(
-  `[kabu-bridge] ok holdings=${snapshot.holdings.length} cash=${snapshot.cash.stockAccountWallet} id=${body.id ?? "?"}`,
-);
