@@ -4,6 +4,11 @@ import {
   resolveStockName,
 } from "@/lib/server/stock-market";
 import {
+  STOCK_DIP_MAX_RSI,
+  STOCK_DIP_MONTH_LOOKBACK,
+  STOCK_DIP_NEAR_MONTH_PCT,
+  STOCK_DIP_NEAR_WEEK_PCT,
+  STOCK_DIP_WEEK_LOOKBACK,
   STOCK_HARD_STOP_LOSS_RATE,
   STOCK_RSI_OVERBOUGHT,
   STOCK_RSI_OVERSOLD,
@@ -76,6 +81,10 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
   }
 
   const closes = history.map((row) => row.close);
+  const lows = history.map((row) => {
+    const low = Number(row.low);
+    return Number.isFinite(low) && low > 0 ? low : row.close;
+  });
   const volumes = history.map((row) => Number(row.volume ?? 0));
   const latest = history[history.length - 1]!;
   const previous = history[history.length - 2]!;
@@ -83,6 +92,26 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
   const currentPrice = latest.close;
   const previousClose = previous.close;
   const changePct = ((currentPrice - previousClose) / previousClose) * 100;
+
+  const weekSlice = lows.slice(-STOCK_DIP_WEEK_LOOKBACK);
+  const monthSlice = lows.slice(-STOCK_DIP_MONTH_LOOKBACK);
+  const weekLow = weekSlice.length ? Math.min(...weekSlice) : currentPrice;
+  const monthLow = monthSlice.length ? Math.min(...monthSlice) : currentPrice;
+  const nearWeekLow =
+    weekLow > 0 && currentPrice <= weekLow * (1 + STOCK_DIP_NEAR_WEEK_PCT);
+  const nearMonthLow =
+    monthLow > 0 && currentPrice <= monthLow * (1 + STOCK_DIP_NEAR_MONTH_PCT);
+  const weekProximity =
+    weekLow > 0
+      ? Math.max(0, 1 - (currentPrice - weekLow) / (weekLow * STOCK_DIP_NEAR_WEEK_PCT || 1))
+      : 0;
+  const monthProximity =
+    monthLow > 0
+      ? Math.max(
+          0,
+          1 - (currentPrice - monthLow) / (monthLow * STOCK_DIP_NEAR_MONTH_PCT || 1),
+        )
+      : 0;
 
   const ma5 = sma(closes, 5);
   const ma25 = sma(closes, Math.min(25, closes.length));
@@ -223,6 +252,36 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     );
   }
 
+  // 安値ゾーン（週次/月次）: 解説用メモ＋自動売買の別経路候補。
+  // action は従来ロジックを維持し、dipBuyEligible で「安値拾い」を別枠にする。
+  const crashVolume =
+    volSpike >= STOCK_VOLUME_SPIKE_MULT && changePct < -1.5;
+  let dipScore = 0;
+  if (nearWeekLow || nearMonthLow) {
+    dipScore =
+      Math.round(monthProximity * 50) +
+      Math.round(weekProximity * 30) +
+      Math.round(Math.max(0, Math.min(20, STOCK_DIP_MAX_RSI - rsi14)));
+    if (macdSnap.cross === "dead") dipScore -= 15;
+    if (changePct < -3) dipScore -= 10;
+    dipScore = Math.max(0, dipScore);
+    reasons.push(
+      `安値ゾーン: 週安値比 ${(((currentPrice - weekLow) / weekLow) * 100).toFixed(1)}%` +
+        ` / 月安値比 ${(((currentPrice - monthLow) / monthLow) * 100).toFixed(1)}%` +
+        `（スコア ${dipScore}）。自動売買はウォッチ数に対する割合枠まで別枠採用（残りは従来条件）。`,
+    );
+  }
+  // 未保有(shares=0)のときの action=sell は取得単価メモ由来の損切り表示であり、
+  // 新規の安値ゾーン買いをブロックしない。保有中の売り推奨だけ除外する。
+  const dipBuyEligible =
+    market === "jp" &&
+    !(action === "sell" && watch.shares > 0) &&
+    !earningsNews &&
+    !crashVolume &&
+    rsi14 <= STOCK_DIP_MAX_RSI &&
+    (nearWeekLow || nearMonthLow) &&
+    dipScore > 0;
+
   const actionLabel = {
     hold: "保有継続",
     buy: "買い検討",
@@ -263,5 +322,9 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     reasons,
     priceChangeContext,
     fetchedAt: new Date().toISOString(),
+    nearWeekLow,
+    nearMonthLow,
+    dipBuyEligible,
+    dipScore,
   };
 }

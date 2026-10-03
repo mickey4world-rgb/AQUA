@@ -92,6 +92,33 @@ export const STOCK_VOLUME_SPIKE_MULT = 2.5;
 export const STOCK_RSI_OVERBOUGHT = 70;
 export const STOCK_RSI_OVERSOLD = 30;
 
+/**
+ * 安値ゾーン買い（週次・月次の押し目拾い）。
+ * 従来の「上昇トレンド＋buy」(#8)と並走。固定件数ではなく、
+ * 当日分析対象ウォッチ数に対する割合で安値枠を抑え、残りは #8 のみで判断する。
+ */
+/** 週次安値の参照日数（営業日） */
+export const STOCK_DIP_WEEK_LOOKBACK = 5;
+/** 月次安値の参照日数（営業日） */
+export const STOCK_DIP_MONTH_LOOKBACK = 20;
+/** 週次安値からの許容乖離（この以内ならゾーン内） */
+export const STOCK_DIP_NEAR_WEEK_PCT = 0.02;
+/** 月次安値からの許容乖離 */
+export const STOCK_DIP_NEAR_MONTH_PCT = 0.03;
+/** 安値買いを許可する RSI 上限（過熱し始めた反発は従来条件へ譲る） */
+export const STOCK_DIP_MAX_RSI = 45;
+/**
+ * 安値ゾーン買いの枠 = floor(当日ウォッチ数 × この割合)。
+ * 例: 4銘柄 → 安値最大2・残り2は従来#8のみ。件数そのものに固定しない。
+ */
+export const STOCK_DIP_BUY_SHARE_OF_WATCHES = 0.5;
+
+/** 当日の分析対象ウォッチ数から、安値ゾーン買いの採用上限を求める */
+export function maxDipBuysForWatchCount(watchCount: number): number {
+  if (!(watchCount > 0)) return 0;
+  return Math.floor(watchCount * STOCK_DIP_BUY_SHARE_OF_WATCHES);
+}
+
 export const STOCK_SOFT_SELL_VIA_AI = true;
 
 /** 監査AI: 同因が月内この回数以上で条件候補に昇格 */
