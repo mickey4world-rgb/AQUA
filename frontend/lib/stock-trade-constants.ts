@@ -41,6 +41,12 @@ export const STOCK_MAX_POSITION_PCT_OF_PRINCIPAL = 0.35;
 /** 日本株アクティブウォッチ上限 */
 export const STOCK_MAX_ACTIVE_JP_WATCHES = 20;
 
+/**
+ * 監視メモ（非アクティブ）から買い挑戦として分析する上限。
+ * アクティブより好条件のときだけ買いインテント対象になる。
+ */
+export const STOCK_MAX_MEMO_CHALLENGER_WATCHES = 12;
+
 /** bridge 1注文あたり株数上限 */
 export const STOCK_MAX_QTY_PER_ORDER = 200;
 

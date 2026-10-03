@@ -22,6 +22,7 @@ import {
   STOCK_LOT_SIZE,
   STOCK_MAX_ACTIVE_JP_WATCHES,
   STOCK_MAX_DAILY_BUY_YEN,
+  STOCK_MAX_MEMO_CHALLENGER_WATCHES,
   STOCK_MAX_POSITION_PCT_OF_PRINCIPAL,
   STOCK_MAX_QTY_PER_ORDER,
   STOCK_MAX_SINGLE_ASSET_RATIO,
@@ -112,7 +113,13 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 42,
     category: "universe",
     title: "週末ユニバース自動シード",
-    summary: `毎週末に固定候補を利確しやすさ＋Works News Search 適合で採点し、アクティブ目標 ${STOCK_WEEKLY_TARGET_ACTIVE_JP}・入れ替え最大 ${STOCK_WEEKLY_MAX_ROTATIONS}。単元不可は監視メモ。保有はローテアウトしない`,
+    summary: `毎週末に固定候補を利確しやすさ（月次目標までの回転向き）＋News Search 適合で採点し、アクティブ目標 ${STOCK_WEEKLY_TARGET_ACTIVE_JP}・入れ替え最大 ${STOCK_WEEKLY_MAX_ROTATIONS}。単元不可は監視メモ。保有はローテアウトしない`,
+  },
+  {
+    id: 45,
+    category: "buy",
+    title: "監視メモ好条件チャレンジ",
+    summary: `非アクティブ（監視メモ）も最大 ${STOCK_MAX_MEMO_CHALLENGER_WATCHES} 銘柄まで分析し、買いシグナル優先度がアクティブ最良を上回るときだけ買いインテント可。売りは保有があるときのみ`,
   },
   {
     id: 43,

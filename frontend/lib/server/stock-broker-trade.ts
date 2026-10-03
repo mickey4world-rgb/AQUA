@@ -14,6 +14,7 @@ import {
   STOCK_LOT_SIZE,
   STOCK_MAX_ACTIVE_JP_WATCHES,
   STOCK_MAX_DAILY_BUY_YEN,
+  STOCK_MAX_MEMO_CHALLENGER_WATCHES,
   maxDipBuysForWatchCount,
   STOCK_MAX_POSITION_PCT_OF_PRINCIPAL,
   STOCK_MAX_QTY_PER_ORDER,
@@ -28,6 +29,10 @@ import {
   STOCK_VOLUME_SPIKE_MULT,
 } from "@/lib/stock-trade-constants";
 import type { StockAdvice, StockWatch } from "@/lib/types/stock";
+import {
+  isMemoBuyBetterThanActive,
+  stockBuySignalPriority,
+} from "@/lib/stock-buy-priority";
 import {
   evaluateStockGuardrails,
   isPerTradeLossBreached,
@@ -125,10 +130,21 @@ export async function buildStockBrokerTradeIntents(
   const snapshot = await getStockBrokerSnapshot(userId);
   if (!snapshot) return [];
 
-  const watches = (await listStockWatches(userId))
-    .filter((w) => w.isActive && (w.market ?? "us") === "jp")
+  const allJp = (await listStockWatches(userId)).filter(
+    (w) => (w.market ?? "us") === "jp",
+  );
+  const activeWatches = allJp
+    .filter((w) => w.isActive)
     .slice(0, STOCK_MAX_ACTIVE_JP_WATCHES);
+  const memoChallengers = allJp
+    .filter((w) => !w.isActive)
+    .slice(0, STOCK_MAX_MEMO_CHALLENGER_WATCHES);
+  // アクティブ優先で分析。監視メモは「好条件なら買い」挑戦枠。
+  const watches = [...activeWatches, ...memoChallengers];
   if (watches.length === 0) return [];
+  const activeSymbols = new Set(
+    activeWatches.map((w) => displayTicker(w.ticker, "jp")),
+  );
 
   const day = jstDayId();
   const expiresAt = new Date(Date.now() + 45 * 60_000).toISOString();
@@ -276,12 +292,27 @@ export async function buildStockBrokerTradeIntents(
     analyzed.push({ watch, advice, symbol, holding, price });
   }
 
+  const bestActivePriority = analyzed
+    .filter((r) => activeSymbols.has(r.symbol))
+    .reduce((max, r) => Math.max(max, stockBuySignalPriority(r.advice)), 0);
+
+  const canBuyRow = (row: Analyzed): boolean => {
+    if (activeSymbols.has(row.symbol)) return true;
+    // 監視メモ: アクティブ最良より好条件のときだけ買い可 (#45)
+    return isMemoBuyBetterThanActive(
+      stockBuySignalPriority(row.advice),
+      bestActivePriority,
+    );
+  };
+
   const tryPushBuy = (input: {
     row: Analyzed;
     mode: "trend" | "dip";
   }): boolean => {
     if (blockNewBuys) return false;
+    if (!canBuyRow(input.row)) return false;
     const { watch, advice, symbol, holding, price } = input.row;
+    const fromMemo = !activeSymbols.has(symbol);
     if (!(price > 0)) return false;
     if (avoidChaseBuys && advice.changePct > 3) return false;
     if (
@@ -347,6 +378,7 @@ export async function buildStockBrokerTradeIntents(
       input.mode === "dip"
         ? [1, 2, 3, 5, 6, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39, 44]
         : [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39];
+    if (fromMemo) ruleIds.push(45);
     if (smallInvestMode) ruleIds.push(21);
     if (avoidChaseBuys) ruleIds.push(24);
     if ((advice.rsi14 ?? 50) <= 30) ruleIds.push(28);
@@ -365,6 +397,9 @@ export async function buildStockBrokerTradeIntents(
           (advice.nearMonthLow ? " 月安値" : "") +
           (advice.nearWeekLow ? " 週安値" : "")
         : "";
+    const memoNote = fromMemo
+      ? ` / 監視メモ挑戦(#45) 優先度${stockBuySignalPriority(advice)}>${bestActivePriority}`
+      : "";
 
     intents.push({
       id: intentIdFor(userId, symbol, "buy", day),
@@ -378,10 +413,10 @@ export async function buildStockBrokerTradeIntents(
       frontOrderType: 10,
       reason:
         input.mode === "dip"
-          ? `安値ゾーン買い(#44): ${advice.summary.slice(0, 100)}${dipNote}${newsNote}`
+          ? `安値ゾーン買い(#44): ${advice.summary.slice(0, 100)}${dipNote}${memoNote}${newsNote}`
           : smallInvestMode
-            ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}${newsNote}`
-            : `AI買い + 強気(#8): ${advice.summary.slice(0, 120)}${newsNote}`,
+            ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}${memoNote}${newsNote}`
+            : `AI買い + 強気(#8): ${advice.summary.slice(0, 120)}${memoNote}${newsNote}`,
       ruleIds,
       watchId: watch.id,
       adviceAction: advice.action,
@@ -469,13 +504,16 @@ export async function buildStockBrokerTradeIntents(
   }
 
   // --- 買い Path B: 安値ゾーン（週次/月次）。従来未約定の中からスコア順 ---
-  // 固定件数ではなく、当日ウォッチ数の約半数まで。残りは #8 のみで判断。
+  // 枠はアクティブ数の約半数。監視メモは #45 でアクティブより好条件のときだけ。
   if (!blockNewBuys) {
-    const dipSlotCap = maxDipBuysForWatchCount(analyzed.length);
+    const dipSlotCap = maxDipBuysForWatchCount(
+      activeWatches.length > 0 ? activeWatches.length : analyzed.length,
+    );
     const dipCandidates = analyzed
       .filter(
         (row) =>
           !boughtSymbols.has(row.symbol) &&
+          canBuyRow(row) &&
           row.advice.dipBuyEligible === true &&
           (row.advice.dipScore ?? 0) > 0 &&
           row.price > 0,
