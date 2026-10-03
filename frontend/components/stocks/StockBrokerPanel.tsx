@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
@@ -313,6 +314,14 @@ export default function StockBrokerPanel({
         <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS</code> / ポートを反映します。
         監視メモ銘柄もアクティブより好条件なら買い可。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
+      </p>
+      <p className="mt-2">
+        <Link
+          href="/costs/kabu-check"
+          className="inline-flex rounded-full border border-cyan-400/35 bg-cyan-500/15 px-3 py-1 text-[12px] font-medium text-cyan-50"
+        >
+          外出先確認（携帯向け）→
+        </Link>
       </p>
 
       {data?.vmStatus && (

@@ -19,10 +19,11 @@ Azure の **Auto-shutdown**（Bicep で 16:30 JST）は「止める」だけ。
 
 | タイミング | タスク / バッチ | 内容 |
 |------------|-----------------|------|
-| ログオン後 ~3分 | `kabu-bridge-logon-sync` | probe → sync（kabu GUI 起動待ち） |
+| ログオン後 ~3分 | `kabu-bridge-logon-sync` | probe → health → sync（kabu GUI 起動待ち） |
 | ログオン後 ~4分 | `kabu-bridge-logon-trade` | trade |
-| 以降 15分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | 定期 sync / trade |
-| 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | probe+sync（`Sync-Now.cmd trade` で発注も） |
+| 以降 15分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | health+sync / trade |
+| 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | probe+health+sync（`Sync-Now.cmd trade` で発注も） |
+| 外出先確認 | 携帯 → `https://www.aquacore.net/costs/kabu-check` | RDP不要。AQUAログイン＋確認PIN |
 
 再登録: `powershell -File C:\kabu-setup\Ensure-KabuSyncAutomation.ps1`  
 ログ: `C:\kabu-setup\sync.log` / `trade.log` / `manual-sync.log`

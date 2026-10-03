@@ -56,6 +56,7 @@ function Reg-Task([string]$Name, [string]$Cmd, [bool]$Logon, [int]$EveryMin) {
 Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
   "@echo off",
   ("cd /d " + $BridgeRoot),
+  ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
   ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
@@ -68,6 +69,7 @@ Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
   ("timeout /t " + $LogonDelaySeconds + " /nobreak >nul"),
   ("cd /d " + $BridgeRoot),
   ("`"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
+  ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
   ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
@@ -87,6 +89,7 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   "echo ===== %DATE% %TIME% Sync-Now =====>> \"%LOG%\"",
   "cd /d \"%BRIDGE%\"",
   ("call `"" + $npmCmd + "`" run probe >> \"%LOG%\" 2>&1"),
+  ("call `"" + $npmCmd + "`" run health >> \"%LOG%\" 2>&1"),
   ("call `"" + $npmCmd + "`" run sync >> \"%LOG%\" 2>&1"),
   "if /I \"%~1\"==\"trade\" call `"" + $npmCmd + "`" run trade >> \"%LOG%\" 2>&1",
   "echo done. see %LOG%",

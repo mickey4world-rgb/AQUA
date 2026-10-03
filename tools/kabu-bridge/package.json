@@ -5,6 +5,7 @@
   "scripts": {
     "sync": "node src/sync.mjs",
     "probe": "node src/probe.mjs",
+    "health": "node src/health.mjs",
     "trade": "node src/trade.mjs"
   },
   "engines": {

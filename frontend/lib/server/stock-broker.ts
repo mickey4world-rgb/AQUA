@@ -72,18 +72,88 @@ export async function upsertStockBrokerSnapshot(
     holdings,
     rawPositionCount: payload.rawPositionCount ?? holdings.length,
     bridgeMeta: payload.bridgeMeta
-      ? {
-          allowLiveOrders: Boolean(payload.bridgeMeta.allowLiveOrders),
-          kabuBaseUrl:
-            typeof payload.bridgeMeta.kabuBaseUrl === "string"
-              ? payload.bridgeMeta.kabuBaseUrl
-              : undefined,
-          kabuPort:
-            typeof payload.bridgeMeta.kabuPort === "number"
-              ? payload.bridgeMeta.kabuPort
-              : undefined,
-        }
+      ? normalizeBridgeMeta(payload.bridgeMeta)
       : undefined,
+    updatedAt: now,
+  };
+
+  await (await brokerContainer()).items.upsert(doc);
+  return doc;
+}
+
+function normalizeBridgeMeta(
+  meta: NonNullable<StockBrokerSyncPayload["bridgeMeta"]>,
+): NonNullable<StockBrokerSnapshot["bridgeMeta"]> {
+  return {
+    allowLiveOrders: Boolean(meta.allowLiveOrders),
+    kabuBaseUrl:
+      typeof meta.kabuBaseUrl === "string" ? meta.kabuBaseUrl : undefined,
+    kabuPort: typeof meta.kabuPort === "number" ? meta.kabuPort : undefined,
+    stationReachable:
+      typeof meta.stationReachable === "boolean"
+        ? meta.stationReachable
+        : undefined,
+    stationTokenOk:
+      typeof meta.stationTokenOk === "boolean"
+        ? meta.stationTokenOk
+        : undefined,
+    lastError:
+      typeof meta.lastError === "string"
+        ? meta.lastError.slice(0, 240)
+        : meta.lastError === null
+          ? null
+          : undefined,
+    healthReportedAt:
+      typeof meta.healthReportedAt === "string"
+        ? meta.healthReportedAt
+        : undefined,
+  };
+}
+
+/**
+ * sync 失敗時でもヘルスだけ更新（現金・保有は既存を維持）。
+ * スナップショットが無いときは最小ドキュメントを作る。
+ */
+export async function upsertStockBrokerHealth(input: {
+  userId: string;
+  stationReachable: boolean;
+  stationTokenOk: boolean;
+  lastError?: string | null;
+  allowLiveOrders?: boolean;
+  kabuBaseUrl?: string;
+  kabuPort?: number;
+  reportedAt?: string;
+}): Promise<StockBrokerSnapshot> {
+  const now = new Date().toISOString();
+  const userId = input.userId.trim();
+  if (!userId) throw new Error("userId is required");
+
+  const existing = await getStockBrokerSnapshot(userId);
+  const reportedAt = input.reportedAt ?? now;
+  const bridgeMeta = normalizeBridgeMeta({
+    allowLiveOrders:
+      input.allowLiveOrders ?? existing?.bridgeMeta?.allowLiveOrders ?? false,
+    kabuBaseUrl: input.kabuBaseUrl ?? existing?.bridgeMeta?.kabuBaseUrl,
+    kabuPort: input.kabuPort ?? existing?.bridgeMeta?.kabuPort,
+    stationReachable: input.stationReachable,
+    stationTokenOk: input.stationTokenOk,
+    lastError: input.lastError ?? null,
+    healthReportedAt: reportedAt,
+  });
+
+  const doc: StockBrokerSnapshot = {
+    id: snapshotId(userId),
+    userId,
+    broker: "kabu",
+    syncedAt: existing?.syncedAt ?? reportedAt,
+    cash: existing?.cash ?? {
+      stockAccountWallet: 0,
+      auKCStockAuShareWallet: 0,
+      auPayCardWallet: 0,
+    },
+    holdings: existing?.holdings ?? [],
+    rawPositionCount: existing?.rawPositionCount ?? 0,
+    bridgeMeta,
     updatedAt: now,
   };
 

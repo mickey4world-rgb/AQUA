@@ -11,7 +11,9 @@ import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-univers
 import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
+import { buildStockStationCheck } from "@/lib/stock-station-check";
 import { buildStockVmRuntimeStatus } from "@/lib/stock-vm-status";
+import { readOpsUnlockFromCookie } from "@/lib/server/stock-ops-pin";
 import {
   STOCK_JP_UNIVERSE,
   stockJpUniverseByCode,
@@ -156,6 +158,14 @@ export async function GET(request: Request) {
       snapshot,
       orders: recentOrders,
     });
+    const stationCheck = buildStockStationCheck({
+      snapshot,
+      orders: recentOrders,
+    });
+    const opsUnlocked = readOpsUnlockFromCookie(
+      request.headers.get("cookie"),
+      auth.userId,
+    );
 
     const payload = {
       connected: Boolean(snapshot),
@@ -168,6 +178,8 @@ export async function GET(request: Request) {
       tradeCandidates,
       activity,
       vmStatus,
+      stationCheck,
+      opsUnlocked,
       liveMode: {
         allowLiveOrders,
         kabuPort,

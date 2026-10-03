@@ -25,6 +25,14 @@ export interface StockBrokerBridgeMeta {
   kabuBaseUrl?: string;
   /** 18080=本番API / 18081=検証API */
   kabuPort?: number;
+  /** localhost の kabu HTTP に届いたか */
+  stationReachable?: boolean;
+  /** API パスワードでトークン取得できたか（＝ログイン／API有効） */
+  stationTokenOk?: boolean;
+  /** 直近ヘルス／sync 失敗理由（短文） */
+  lastError?: string | null;
+  /** ヘルス報告時刻（失敗時も更新。sync 成功時は syncedAt と近い） */
+  healthReportedAt?: string;
 }
 
 export interface StockBrokerSnapshot {
