@@ -14,6 +14,7 @@ import {
   STOCK_LOT_SIZE,
   STOCK_MAX_ACTIVE_JP_WATCHES,
   STOCK_MAX_DAILY_BUY_YEN,
+  maxDipBuysForWatchCount,
   STOCK_MAX_POSITION_PCT_OF_PRINCIPAL,
   STOCK_MAX_QTY_PER_ORDER,
   STOCK_MAX_SINGLE_ASSET_RATIO,
@@ -26,6 +27,7 @@ import {
   STOCK_SMALL_TRADE_YEN,
   STOCK_VOLUME_SPIKE_MULT,
 } from "@/lib/stock-trade-constants";
+import type { StockAdvice, StockWatch } from "@/lib/types/stock";
 import {
   evaluateStockGuardrails,
   isPerTradeLossBreached,
@@ -252,17 +254,147 @@ export async function buildStockBrokerTradeIntents(
     );
   });
 
+  type Analyzed = {
+    watch: StockWatch;
+    advice: StockAdvice;
+    symbol: string;
+    holding: (typeof snapshot.holdings)[number] | undefined;
+    price: number;
+  };
+  const analyzed: Analyzed[] = [];
+
   for (const watch of watchesOrdered) {
-    let advice;
+    let advice: StockAdvice;
     try {
       advice = await analyzeStock(watch);
     } catch {
       continue;
     }
-
     const symbol = displayTicker(watch.ticker, "jp");
     const holding = snapshot.holdings.find((h) => h.symbol === symbol && h.qty > 0);
     const price = advice.currentPrice > 0 ? advice.currentPrice : holding?.price ?? 0;
+    analyzed.push({ watch, advice, symbol, holding, price });
+  }
+
+  const tryPushBuy = (input: {
+    row: Analyzed;
+    mode: "trend" | "dip";
+  }): boolean => {
+    if (blockNewBuys) return false;
+    const { watch, advice, symbol, holding, price } = input.row;
+    if (!(price > 0)) return false;
+    if (avoidChaseBuys && advice.changePct > 3) return false;
+    if (
+      (advice.volumeSpikeRatio ?? 0) >= STOCK_VOLUME_SPIKE_MULT &&
+      advice.changePct < -1
+    ) {
+      return false;
+    }
+    if (remainingDailyBuy < price * STOCK_LOT_SIZE) return false;
+    if (remainingCash < price * STOCK_LOT_SIZE) return false;
+
+    const principalCap = STOCK_PRINCIPAL_YEN * STOCK_MAX_POSITION_PCT_OF_PRINCIPAL;
+    const budget = Math.min(
+      perTradeCap,
+      remainingDailyBuy,
+      remainingCash,
+      STOCK_PRINCIPAL_YEN * 0.7,
+      principalCap,
+      layer1NotionalCap,
+    );
+    let qty =
+      typeof watch.shares === "number" && watch.shares >= STOCK_LOT_SIZE
+        ? roundDownToLot(watch.shares)
+        : roundDownToLot(budget / price);
+    qty = Math.min(qty, STOCK_MAX_QTY_PER_ORDER);
+    qty = roundDownToLot(qty);
+    if (qty < STOCK_LOT_SIZE) return false;
+
+    let notional = qty * price;
+    if (notional > budget) {
+      qty = roundDownToLot(budget / price);
+      notional = qty * price;
+    }
+    if (qty < STOCK_LOT_SIZE) return false;
+    if (notional > STOCK_PRINCIPAL_YEN * 0.7) return false;
+
+    const singleCap = Math.min(
+      portfolioApprox * STOCK_MAX_SINGLE_ASSET_RATIO,
+      principalCap,
+    );
+    const existingValue = (holding?.qty ?? 0) * price;
+    if (existingValue + qty * price > singleCap && singleCap > 0) {
+      const room = Math.max(0, singleCap - existingValue);
+      qty = roundDownToLot(room / price);
+    }
+    if (qty < STOCK_LOT_SIZE) return false;
+
+    const finalNotional = qty * price;
+    remainingCash -= finalNotional;
+    remainingDailyBuy -= finalNotional;
+
+    const uni = stockJpUniverseByCode(symbol);
+    const newsFit =
+      newsFitByCode.get(symbol) ??
+      scoreStockNewsAffinity({
+        code: symbol,
+        name: watch.name || advice.companyName || symbol,
+        tags: uni ? [...uni.tags] : [],
+        digest: newsDigest,
+      });
+
+    const ruleIds =
+      input.mode === "dip"
+        ? [1, 2, 3, 5, 6, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39, 44]
+        : [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39];
+    if (smallInvestMode) ruleIds.push(21);
+    if (avoidChaseBuys) ruleIds.push(24);
+    if ((advice.rsi14 ?? 50) <= 30) ruleIds.push(28);
+    if (guardrails.monthlyHalt) ruleIds.push(40);
+    if (newsFit.bonus > 0) ruleIds.push(43);
+
+    const newsNote =
+      newsFit.bonus > 0
+        ? ` / News適合+${newsFit.bonus}`
+        : newsDigest
+          ? " / News参照・直接ヒットなし"
+          : "";
+    const dipNote =
+      input.mode === "dip"
+        ? ` / 安値ゾーン score=${advice.dipScore ?? 0}` +
+          (advice.nearMonthLow ? " 月安値" : "") +
+          (advice.nearWeekLow ? " 週安値" : "")
+        : "";
+
+    intents.push({
+      id: intentIdFor(userId, symbol, "buy", day),
+      userId,
+      side: "buy",
+      symbol,
+      watchTicker: watch.ticker,
+      symbolName: watch.name || advice.companyName || symbol,
+      exchange: holding?.exchange || 1,
+      qty,
+      frontOrderType: 10,
+      reason:
+        input.mode === "dip"
+          ? `安値ゾーン買い(#44): ${advice.summary.slice(0, 100)}${dipNote}${newsNote}`
+          : smallInvestMode
+            ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}${newsNote}`
+            : `AI買い + 強気(#8): ${advice.summary.slice(0, 120)}${newsNote}`,
+      ruleIds,
+      watchId: watch.id,
+      adviceAction: advice.action,
+      createdAt: new Date().toISOString(),
+      expiresAt,
+    });
+    return true;
+  };
+
+  const boughtSymbols = new Set<string>();
+
+  for (const row of analyzed) {
+    const { watch, advice, symbol, holding, price } = row;
 
     const hardStop =
       holding != null &&
@@ -280,7 +412,6 @@ export async function buildStockBrokerTradeIntents(
         watch.targetPrice > 0 &&
         advice.currentPrice >= watch.targetPrice * 0.95);
 
-    // 月次CB / 日次CB 中は硬損切り以外の売りを止める
     const haltNonStopSells =
       (guardrails.monthlyHalt || dailyLossCircuit) && !hardStop;
     if (softSell && holding && !haltNonStopSells) {
@@ -329,106 +460,38 @@ export async function buildStockBrokerTradeIntents(
       }
     }
 
-    // --- 買い ---
-    if (
-      !blockNewBuys &&
-      advice.action === "buy" &&
-      advice.trend === "bullish" &&
-      price > 0
-    ) {
-      if (avoidChaseBuys && advice.changePct > 3) continue;
-      if (
-        (advice.volumeSpikeRatio ?? 0) >= STOCK_VOLUME_SPIKE_MULT &&
-        advice.changePct < -1
-      ) {
-        continue;
+    // --- 買い Path A: 従来（AI buy + 強気トレンド）---
+    if (advice.action === "buy" && advice.trend === "bullish" && price > 0) {
+      if (tryPushBuy({ row, mode: "trend" })) {
+        boughtSymbols.add(symbol);
       }
-      if (remainingDailyBuy < price * STOCK_LOT_SIZE) continue;
-      if (remainingCash < price * STOCK_LOT_SIZE) continue;
+    }
+  }
 
-      const principalCap = STOCK_PRINCIPAL_YEN * STOCK_MAX_POSITION_PCT_OF_PRINCIPAL;
-      const budget = Math.min(
-        perTradeCap,
-        remainingDailyBuy,
-        remainingCash,
-        STOCK_PRINCIPAL_YEN * 0.7,
-        principalCap,
-        layer1NotionalCap,
-      );
-      let qty =
-        typeof watch.shares === "number" && watch.shares >= STOCK_LOT_SIZE
-          ? roundDownToLot(watch.shares)
-          : roundDownToLot(budget / price);
-      qty = Math.min(qty, STOCK_MAX_QTY_PER_ORDER);
-      qty = roundDownToLot(qty);
-      if (qty < STOCK_LOT_SIZE) continue;
+  // --- 買い Path B: 安値ゾーン（週次/月次）。従来未約定の中からスコア順 ---
+  // 固定件数ではなく、当日ウォッチ数の約半数まで。残りは #8 のみで判断。
+  if (!blockNewBuys) {
+    const dipSlotCap = maxDipBuysForWatchCount(analyzed.length);
+    const dipCandidates = analyzed
+      .filter(
+        (row) =>
+          !boughtSymbols.has(row.symbol) &&
+          row.advice.dipBuyEligible === true &&
+          (row.advice.dipScore ?? 0) > 0 &&
+          row.price > 0,
+      )
+      .sort(
+        (a, b) =>
+          (b.advice.dipScore ?? 0) - (a.advice.dipScore ?? 0) ||
+          (newsFitByCode.get(b.symbol)?.bonus ?? 0) -
+            (newsFitByCode.get(a.symbol)?.bonus ?? 0),
+      )
+      .slice(0, dipSlotCap);
 
-      let notional = qty * price;
-      if (notional > budget) {
-        qty = roundDownToLot(budget / price);
-        notional = qty * price;
+    for (const row of dipCandidates) {
+      if (tryPushBuy({ row, mode: "dip" })) {
+        boughtSymbols.add(row.symbol);
       }
-      if (qty < STOCK_LOT_SIZE) continue;
-      if (notional > STOCK_PRINCIPAL_YEN * 0.7) continue;
-
-      const singleCap = Math.min(
-        portfolioApprox * STOCK_MAX_SINGLE_ASSET_RATIO,
-        principalCap,
-      );
-      const existingValue = (holding?.qty ?? 0) * price;
-      if (existingValue + qty * price > singleCap && singleCap > 0) {
-        const room = Math.max(0, singleCap - existingValue);
-        qty = roundDownToLot(room / price);
-      }
-      if (qty < STOCK_LOT_SIZE) continue;
-
-      const finalNotional = qty * price;
-      remainingCash -= finalNotional;
-      remainingDailyBuy -= finalNotional;
-
-      const uni = stockJpUniverseByCode(symbol);
-      const newsFit =
-        newsFitByCode.get(symbol) ??
-        scoreStockNewsAffinity({
-          code: symbol,
-          name: watch.name || advice.companyName || symbol,
-          tags: uni ? [...uni.tags] : [],
-          digest: newsDigest,
-        });
-
-      const ruleIds = [1, 2, 3, 5, 6, 8, 9, 10, 15, 19, 20, 22, 23, 27, 29, 39];
-      if (smallInvestMode) ruleIds.push(21);
-      if (avoidChaseBuys) ruleIds.push(24);
-      if ((advice.rsi14 ?? 50) <= 30) ruleIds.push(28);
-      if (guardrails.monthlyHalt) ruleIds.push(40);
-      if (newsFit.bonus > 0) ruleIds.push(43);
-
-      const newsNote =
-        newsFit.bonus > 0
-          ? ` / News適合+${newsFit.bonus}`
-          : newsDigest
-            ? " / News参照・直接ヒットなし"
-            : "";
-
-      intents.push({
-        id: intentIdFor(userId, symbol, "buy", day),
-        userId,
-        side: "buy",
-        symbol,
-        watchTicker: watch.ticker,
-        symbolName: watch.name || advice.companyName || symbol,
-        exchange: holding?.exchange || 1,
-        qty,
-        frontOrderType: 10,
-        reason: smallInvestMode
-          ? `少額投資モード(現金<${STOCK_SMALL_INVEST_CASH_FLOOR_YEN}): ${advice.summary.slice(0, 100)}${newsNote}`
-          : `AI買い + 強気: ${advice.summary.slice(0, 120)}${newsNote}`,
-        ruleIds,
-        watchId: watch.id,
-        adviceAction: advice.action,
-        createdAt: new Date().toISOString(),
-        expiresAt,
-      });
     }
   }
 

@@ -98,6 +98,14 @@ export interface StockAdvice {
   priceChangeContext: PriceChangeContext[];
   aiInsight?: AiStockInsight;
   fetchedAt: string;
+  /** 週次安値ゾーン内（自動売買の安値買い候補） */
+  nearWeekLow?: boolean;
+  /** 月次安値ゾーン内 */
+  nearMonthLow?: boolean;
+  /** 安値買い候補か（売り優先・イベント回避後） */
+  dipBuyEligible?: boolean;
+  /** 安値の深さスコア（高いほど優先。1日あたり採用上限あり） */
+  dipScore?: number;
 }
 
 export interface StockWatchWithAdvice extends StockWatch {

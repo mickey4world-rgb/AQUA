@@ -11,6 +11,12 @@ import {
   STOCK_AUDIT_PROMOTE_THRESHOLD,
   STOCK_CUMULATIVE_MAX_LOSS_YEN,
   STOCK_DAILY_MAX_LOSS_YEN,
+  STOCK_DIP_MAX_RSI,
+  STOCK_DIP_MONTH_LOOKBACK,
+  STOCK_DIP_NEAR_MONTH_PCT,
+  STOCK_DIP_NEAR_WEEK_PCT,
+  STOCK_DIP_BUY_SHARE_OF_WATCHES,
+  STOCK_DIP_WEEK_LOOKBACK,
   STOCK_HARD_STOP_LOSS_RATE,
   STOCK_HARD_TAKE_PROFIT_MULT,
   STOCK_LOT_SIZE,
@@ -120,7 +126,13 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     category: "buy",
     title: "AI買い + 強気トレンド",
     summary:
-      "ウォッチAIが buy かつ短期トレンドが強気のとき買いインテントを生成（条件達成銘柄は互いに除外しない）",
+      "ウォッチAIが buy かつ短期トレンドが強気のとき買いインテントを生成（条件達成銘柄は互いに除外しない）。安値ゾーン買い(#44)とは別枠で並走",
+  },
+  {
+    id: 44,
+    category: "buy",
+    title: "週次・月次安値ゾーン買い（件数上限）",
+    summary: `週安値(${STOCK_DIP_WEEK_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_WEEK_PCT)} 以内、または月安値(${STOCK_DIP_MONTH_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_MONTH_PCT)} 以内、かつ RSI≤${STOCK_DIP_MAX_RSI}。下降でも候補になるが採用枠は当日ウォッチ数の約 ${pct(STOCK_DIP_BUY_SHARE_OF_WATCHES)}（floor）まで・スコア順。残り枠は #8 の従来条件のみで判断（全員安値買いしない）`,
   },
   {
     id: 9,
