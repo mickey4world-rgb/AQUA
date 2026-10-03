@@ -25,8 +25,10 @@ const now = new Date("2026-10-06T01:00:00Z");
   };
   const view = buildStockStationCheck({ snapshot: snap, orders: [], now });
   assert.equal(view.overallOk, true);
+  assert.equal(view.greenMark, true);
+  assert.equal(view.needsInteractiveLogin, false);
   assert.equal(
-    view.items.find((i) => i.id === "station-login")?.ok,
+    view.items.find((i) => i.id === "green-mark")?.ok,
     true,
   );
 }
@@ -52,10 +54,9 @@ const now = new Date("2026-10-06T01:00:00Z");
   };
   const view = buildStockStationCheck({ snapshot: snap, orders: [], now });
   assert.equal(view.overallOk, false);
-  assert.equal(
-    view.items.find((i) => i.id === "station-login")?.ok,
-    false,
-  );
+  assert.equal(view.greenMark, false);
+  assert.equal(view.needsInteractiveLogin, true);
+  assert.ok(view.loginHint.includes("Tailscale"));
 }
 
 console.log("stock-station-check.test.ts: ok");
