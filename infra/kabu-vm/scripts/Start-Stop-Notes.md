@@ -23,7 +23,8 @@ Azure の **Auto-shutdown**（Bicep で 16:30 JST）は「止める」だけ。
 | ログオン後 ~4分 | `kabu-bridge-logon-trade` | trade |
 | 以降 15分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | health+sync / trade |
 | 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | probe+health+sync（`Sync-Now.cmd trade` で発注も） |
-| 外出先確認 | 携帯 → `https://www.aquacore.net/costs/kabu-check` | RDP不要。AQUAログイン＋確認PIN |
+| 外出先ログイン | Tailscale → Windows App → 株ステーション OTP | 公開 RDP なし。手順 `docs/STOCK_KABU_PHONE_LOGIN.md` |
+| 緑マーク確認 | 携帯 → `https://www.aquacore.net/costs/kabu-check` | AQUAログイン＋確認PIN。トークン成功＝API緑相当 |
 
 再登録: `powershell -File C:\kabu-setup\Ensure-KabuSyncAutomation.ps1`  
 ログ: `C:\kabu-setup\sync.log` / `trade.log` / `manual-sync.log`

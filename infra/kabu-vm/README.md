@@ -49,7 +49,8 @@ Remove-Variable adminPassText, adminPass, BSTR -ErrorAction SilentlyContinue
 1. Portal 出力の `publicIpAddress` を控える（チャットにパスワードは貼らない）
 2. **JIT**（Defender for Cloud）を有効化、または NSG が `/32` のみであることを確認
 3. NSG に `Deny-KabuApi-Internet`（18080/81）があること
-4. RDP → kabuステーション インストール → API アイコン緑（検証 18081）
+4. RDP（初期構築時・信頼IPまたは JIT）→ kabuステーション インストール → API アイコン緑（検証 18081）
+5. 外出先 OTP 用: `scripts/Install-TailscaleForPhoneAccess.ps1` + `docs/STOCK_KABU_PHONE_LOGIN.md`（Internet RDP は開けない）
 5. `scripts/Install-KabuHost.ps1`（Node + bridge + `.env` ACL + ゲストFW）
 6. `C:\kabu-bridge\.env` を埋める（`KABU_ALLOW_LIVE_ORDERS=0`）
 7. `npm run probe` → `sync` → `trade`（dry-run）

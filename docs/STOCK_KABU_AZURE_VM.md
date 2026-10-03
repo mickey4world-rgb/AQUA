@@ -47,23 +47,26 @@ SWA 単体では kabu に届かない。VM は「クラウド上の取引専用W
 
 **禁止**: ルータ／NSG で `18080`/`18081` をインターネット公開。
 
-### 2.1 外出先・携帯からの確認（RDPしない）
+### 2.1 外出先・携帯からのログインと緑マーク確認
+
+株ステーションは **パスコード／ワンタイムパスワード** が必要なため、外出先でも **GUI 操作** が要る。  
+インターネット公開の RDP は使わない（隔離）。詳細手順: [`STOCK_KABU_PHONE_LOGIN.md`](./STOCK_KABU_PHONE_LOGIN.md)
 
 | 層 | 内容 |
 |----|------|
 | 端末 | 携帯の画面ロック（パスコード／生体） |
-| AQUA | SWA ログイン（許可アカウントのみ） |
-| 段階解除 | `/costs/kabu-check` の確認 PIN（6〜12桁・30分） |
-| 見えるもの | VM 応答 / 株ステーション起動 / APIログイン / 同期 / LIVE|dry-run |
-| 見えない・できない | RDP、kabu ポート直叩き、他アプリ操作、発注UI経由の秘密 |
+| 画面操作 | **Tailscale（私設VPN）** → Windows App → VM 上で OTP／パスコード入力 |
+| AQUA | `/costs/kabu-check`（ログイン＋確認 PIN）で **API 緑マーク相当** を確認 |
+| 緑のオラクル | bridge `health`/`sync` のトークン成功＝GUI の API 緑と同等 |
+| 開けない | Internet → RDP 3389、Internet → 18080/81 |
 
 **隔離（のっとられ対策）**
 
-- 携帯や AQUA セッションが漏れても、届くのは **読み取り専用の状態** だけ（発注口は VM 内 localhost）。
-- VM が漏れても、持っているのは bridge 秘密と kabu ローカル認証だけ。**他 Personal Apps の DB キーや Soluna 秘密は載せない**。
-- Inbound: kabu API・RDP を Internet Deny。確認は常に **VM → AQUA（送信）→ 携帯が AQUA を見る**。
+- 公開インターネットに管理ポートを増やさない。Tailscale はオーバーレイ（NSG の Deny-RDP-Internet / Deny-KabuApi を維持）。
+- AQUA 側は読み取り＋確認 PIN。発注口は VM localhost のまま。
+- VM が漏れても、持っているのは bridge 秘密と kabu ローカル認証だけ。**他 Personal Apps の秘密は載せない**。
 
-bridge: `npm run health` はトークン失敗時も AQUA に報告する（外出先で「未ログイン」が分かる）。
+bridge: `npm run health` はトークン失敗時も AQUA に報告する（外出先で「緑でない」が分かる）。
 
 ---
 
