@@ -15,6 +15,11 @@ import StockAuditLessonsPanel, {
   type StockAuditLessonView,
 } from "@/components/stocks/StockAuditLessonsPanel";
 import type { StockBrokerActivity } from "@/lib/stock-broker-activity";
+import type { StockVmRuntimeStatus } from "@/lib/stock-vm-status";
+import {
+  buildWeeklyChangeItems,
+  weeklyChangeBadgeByCode,
+} from "@/lib/stock-weekly-change-labels";
 
 type ApiRule = {
   id: number;
@@ -91,9 +96,16 @@ type StatusResponse = {
     dryRun: boolean;
     summary: string;
     desiredActiveCodes: string[];
+    appliedActions?: Array<{
+      type: string;
+      code: string;
+      ok?: boolean;
+      error?: string;
+    }>;
     newsDigestId?: string | null;
     createdAt: string;
   } | null;
+  vmStatus?: StockVmRuntimeStatus;
   policy?: string;
   hint?: string;
 };
@@ -235,6 +247,23 @@ export default function StockBrokerPanel({
   const parkedCandidates = candidates.filter((c) => !c.isActive && c.registered);
   const unregistered = candidates.filter((c) => !c.registered);
 
+  const weeklyChanges = useMemo(() => {
+    const nameByCode = new Map(
+      candidates.map((c) => [c.code, c.name] as const),
+    );
+    return buildWeeklyChangeItems(
+      data?.weeklyUniverseReview?.appliedActions,
+      nameByCode,
+    );
+  }, [candidates, data?.weeklyUniverseReview?.appliedActions]);
+
+  const weeklyBadges = useMemo(
+    () => weeklyChangeBadgeByCode(weeklyChanges),
+    [weeklyChanges],
+  );
+  const weeklyAdds = weeklyChanges.filter((c) => c.side === "add");
+  const weeklyRemoves = weeklyChanges.filter((c) => c.side === "remove");
+
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -282,25 +311,145 @@ export default function StockBrokerPanel({
         日本株・kabu 自動運用です。米国株の「保有株」ページとは別系統。
         LIVE 表示は VM sync の{" "}
         <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS</code> / ポートを反映します。
+        監視メモ銘柄もアクティブより好条件なら買い可。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
       </p>
 
-      {data?.weeklyUniverseReview && (
-        <div className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2 text-[12px] text-cyan-50/95">
-          <p className="font-medium text-cyan-100">
-            週末ユニバース #{data.weeklyUniverseReview.weekId}
-            {data.weeklyUniverseReview.dryRun
-              ? " · dry-run"
-              : data.weeklyUniverseReview.applied
-                ? " · 適用済"
+      {data?.vmStatus && (
+        <div
+          className={`mt-3 rounded-xl border px-3 py-2.5 ${
+            data.vmStatus.state === "running"
+              ? "border-emerald-400/35 bg-emerald-500/10"
+              : data.vmStatus.state === "idle_ok"
+                ? "border-sky-400/30 bg-sky-500/10"
+                : data.vmStatus.state === "stale"
+                  ? "border-amber-400/35 bg-amber-500/10"
+                  : "border-white/15 bg-white/[0.04]"
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                data.vmStatus.state === "running"
+                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-50"
+                  : data.vmStatus.state === "idle_ok"
+                    ? "border-sky-400/40 bg-sky-500/20 text-sky-50"
+                    : data.vmStatus.state === "stale"
+                      ? "border-amber-400/40 bg-amber-500/20 text-amber-50"
+                      : "border-white/20 bg-white/10 text-slate-200"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  data.vmStatus.state === "running"
+                    ? "bg-emerald-300"
+                    : data.vmStatus.state === "idle_ok"
+                      ? "bg-sky-300"
+                      : data.vmStatus.state === "stale"
+                        ? "bg-amber-300"
+                        : "bg-slate-400"
+                }`}
+              />
+              Azure VM · {data.vmStatus.label}
+            </span>
+            <span className="text-[11px] text-slate-400">
+              {data.vmStatus.sessionOpenNow ? "おおよそ場中" : "場外寄り"}
+              {data.vmStatus.kabuPort != null
+                ? ` · API :${data.vmStatus.kabuPort}`
                 : ""}
+              {data.vmStatus.allowLiveOrders === true
+                ? " · LIVE"
+                : data.vmStatus.allowLiveOrders === false
+                  ? " · dry-run"
+                  : ""}
+            </span>
+          </div>
+          <p className="mt-1.5 text-[12px] text-slate-200/90">
+            {data.vmStatus.detail}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            最終同期:{" "}
+            {data.vmStatus.lastSyncedAt
+              ? formatSyncedAt(data.vmStatus.lastSyncedAt)
+              : "なし"}
+            {" · "}
+            最終 trade/点検:{" "}
+            {data.vmStatus.lastHeartbeatAt
+              ? formatSyncedAt(data.vmStatus.lastHeartbeatAt)
+              : "なし"}
+          </p>
+        </div>
+      )}
+
+      {data?.weeklyUniverseReview && (
+        <div className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-2.5 text-[12px] text-cyan-50/95">
+          <p className="font-medium text-cyan-100">
+            週末の銘柄入れ替え #{data.weeklyUniverseReview.weekId}
+            {data.weeklyUniverseReview.dryRun
+              ? " · 試算のみ"
+              : data.weeklyUniverseReview.applied
+                ? " · 反映済み"
+                : ""}
+            {data.weeklyUniverseReview.createdAt
+              ? ` · ${formatSyncedAt(data.weeklyUniverseReview.createdAt)}`
+              : ""}
           </p>
           <p className="mt-1 text-[11px] text-cyan-100/75">
             {data.weeklyUniverseReview.summary}
           </p>
+
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200/90">
+                追加した銘柄
+              </p>
+              {weeklyAdds.length === 0 ? (
+                <p className="mt-1 text-[11px] text-slate-400">なし</p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-[11px] text-emerald-50">
+                  {weeklyAdds.map((item) => (
+                    <li key={`add-${item.code}`}>
+                      <span className="font-medium">
+                        {item.name}（{item.code}）
+                      </span>
+                      <span className="text-emerald-100/70">
+                        {" "}
+                        — {item.verb}
+                        {!item.ok ? " · 失敗" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-200/90">
+                外した銘柄（監視メモへ）
+              </p>
+              {weeklyRemoves.length === 0 ? (
+                <p className="mt-1 text-[11px] text-slate-400">なし</p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-[11px] text-amber-50">
+                  {weeklyRemoves.map((item) => (
+                    <li key={`rm-${item.code}`}>
+                      <span className="font-medium">
+                        {item.name}（{item.code}）
+                      </span>
+                      <span className="text-amber-100/70">
+                        {" "}
+                        — {item.verb}
+                        {!item.ok ? " · 失敗" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
           {data.weeklyUniverseReview.desiredActiveCodes.length > 0 && (
-            <p className="mt-1 text-[11px] text-slate-300">
-              アクティブ希望:{" "}
+            <p className="mt-2 text-[11px] text-slate-300">
+              いまのアクティブ希望:{" "}
               {data.weeklyUniverseReview.desiredActiveCodes.join(", ")}
             </p>
           )}
@@ -351,7 +500,7 @@ export default function StockBrokerPanel({
                     ? "未登録"
                     : c.isActive
                       ? "アクティブ"
-                      : "監視メモ";
+                      : "監視メモ（好条件なら買い可）";
                   const statusClass = !c.registered
                     ? "text-slate-500"
                     : c.isActive
@@ -360,7 +509,18 @@ export default function StockBrokerPanel({
                   return (
                     <tr key={c.code} className="text-slate-300">
                       <td className={`px-3 py-2 whitespace-nowrap ${statusClass}`}>
-                        {status}
+                        <span className="block">{status}</span>
+                        {weeklyBadges.get(c.code) && (
+                          <span
+                            className={`mt-0.5 inline-block rounded border px-1.5 py-0.5 text-[10px] ${
+                              weeklyBadges.get(c.code) === "今週追加"
+                                ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-100"
+                                : "border-amber-400/35 bg-amber-500/15 text-amber-100"
+                            }`}
+                          >
+                            {weeklyBadges.get(c.code)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 font-mono text-slate-200">
                         {c.code}

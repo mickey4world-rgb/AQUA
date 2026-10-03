@@ -117,6 +117,32 @@ export function scoreTakeProfitEase(input: WeeklyScoreInput): WeeklyScoreResult 
     reasons.push(
       `硬利確1単元 約 ${tpYenAtTarget.toLocaleString("ja-JP")}円（月次目標比 ${(ratio * 100).toFixed(0)}%）`,
     );
+
+    // 月次目標達成には回転が必要。1回が厚すぎ／薄すぎより、短期で回せる単元を優遇。
+    const roundsToMonthly = Math.ceil(
+      STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN / tpYenAtTarget,
+    );
+    if (roundsToMonthly >= 4 && roundsToMonthly <= 15) {
+      score += 16;
+      reasons.push(
+        `月次目標まで概算 ${roundsToMonthly} 回転（短期利確・回数向き）`,
+      );
+    } else if (roundsToMonthly <= 3) {
+      score += 10;
+      reasons.push(`1回利が厚め（概算 ${roundsToMonthly} 回転で月次）`);
+    } else if (roundsToMonthly <= 25) {
+      score += 6;
+      reasons.push(`回転多め（概算 ${roundsToMonthly} 回で月次）`);
+    }
+
+    const lotsInTradeCap = STOCK_MAX_TRADE_YEN / lotYen;
+    if (lotsInTradeCap >= 2) {
+      const rotBonus = Math.min(12, Math.round((lotsInTradeCap - 1) * 4));
+      score += rotBonus;
+      reasons.push(
+        `買付枠内で約 ${lotsInTradeCap.toFixed(1)} 単元分の回転余地`,
+      );
+    }
   }
 
   const tierBonus = TIER_BONUS[input.tier] ?? 0;
