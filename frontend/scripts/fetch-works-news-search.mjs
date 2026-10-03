@@ -3,6 +3,7 @@
  * RSS（主＋緊急フィード）→ ingest → カテゴリ別 enrich（最大3パス再試行）。
  * --enrich-only: 既存 digest の未完了カテゴリだけ再試行。
  * --force: 当日分を上書き ingest。
+ * --soft-incomplete: 深夜リトライ枠用。enrich 未完了でも exit 0（朝ゲートは厳格失敗のまま）。
  */
 import { createHash } from "crypto";
 import { parseStringPromise } from "xml2js";
@@ -15,6 +16,8 @@ const baseUrl = (process.env.PRODUCTION_URL || "https://www.aquacore.net").repla
 );
 const force = process.argv.includes("--force");
 const enrichOnly = process.argv.includes("--enrich-only");
+/** 同夜の再試行枠: 未完了でも workflow red にしない（メールノイズ抑制）。朝ゲートは別。 */
+const softIncomplete = process.argv.includes("--soft-incomplete");
 const RETRY_PASSES = 3;
 const RETRY_DELAY_MS = 8_000;
 
@@ -469,11 +472,16 @@ async function enrichAllCategories() {
     status.isToday !== true ||
     status.digestId !== status.expectedDigestId
   ) {
-    throw new Error(
-      `enrichment incomplete status=${status.enrichmentStatus} isToday=${status.isToday} digestId=${status.digestId} expected=${status.expectedDigestId} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`,
-    );
+    const detail = `enrichment incomplete status=${status.enrichmentStatus} isToday=${status.isToday} digestId=${status.digestId} expected=${status.expectedDigestId} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`;
+    if (softIncomplete) {
+      // 深夜の複数枠は SWA 一時 500 で落ちやすい。同夜リトライ／朝ゲートに委ね、GitHub 失敗メールを抑える。
+      console.warn(`[works-news] SOFT incomplete (will retry later / morning-gate): ${detail}`);
+      return { complete: false, status };
+    }
+    throw new Error(detail);
   }
   console.log("[works-news] enrichment complete", status.digestId);
+  return { complete: true, status };
 }
 
 function isTodayComplete(status) {

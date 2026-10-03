@@ -71,9 +71,12 @@ jobs:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手動は厳格（未完了なら red）
             node frontend/scripts/fetch-works-news-search.mjs --force
           else
-            node frontend/scripts/fetch-works-news-search.mjs
+            # 深夜スケジュールは soft: SWA 一時 500 で workflow red→メール連打しない。
+            # 朝 7:00 morning_gate だけ厳格失敗（本当に朝未完了のとき通知）。
+            node frontend/scripts/fetch-works-news-search.mjs --soft-incomplete
           fi
 
   enrich_retry:
