@@ -42,6 +42,14 @@ import {
   saveSystemHunter,
   saveSystemPersonality,
 } from "@/lib/server/soluna-system-store";
+import {
+  NOTE_DEBATE_FRESHNESS_RULE,
+  NOTE_DEBATE_LUNA_SPEECH_RULE,
+  NOTE_DEBATE_METAPHOR_RULE,
+  NOTE_DEBATE_SOL_CLUMSY_RULE,
+  NOTE_DEBATE_STRUCTURE_RULE,
+  polishSystemDebateText,
+} from "@/lib/server/soluna-note-debate-quality";
 import { recordTokenUsage } from "@/lib/server/token-usage";
 import type {
   SolunaNewsBriefing,
@@ -84,52 +92,40 @@ function systemOpenAiDeploymentsToTry(preferred?: string): string[] {
   ]);
 }
 
-const RPG_METAPHOR_RULE = `## RPG変換ルール（味付け・必須の翻訳付き）
-経済・政治の硬い用語はゲームのギミックで楽しく言い換えてよい。ただし過激なたとえだけで終わらせない。
-例（「たとえ → つまりニュースでは」のセット）※ブリーフィングにその話題があるときだけ使う:
-- サプライチェーン寸断 → 補給線が塞がれる → つまり物流や部品の流れが滞る話
-- インフレ長期化 → 宿代やポーション代が上がる呪い → つまり物価がじわじわ上がり続ける話
-- 追加関税 → 通行税の壁 → つまり輸入コストや価格への圧が強まる話
-- 金利・為替 → 魔力ゲージ／防衛結界 → つまりお金の借りやすさや通貨の揺らぎの話
-- ポートフォリオ・資産 → サイフ／ギルド金庫 → つまり家計や投資の持ち分の話
-専門用語を使う場合は「（ゲーム言い換え）」を直後に付ける。
-**禁止**: ニュース内容が伝わらないほど激しい比喩だけを連ねること。読後に「で、何が起きたの？」とならないこと。
-**禁止**: ブリーフィングに無い関税・通商・古いAI話題を例が思い浮かぶからといって持ち出すこと。`;
-
-const FRESHNESS_RULE = `## 鮮度・事実ルール（最優先）
-- 討伐対象ブロックに書かれた見出し・要点・報道日だけが「今日のニュース」。それ以外の一般知識で話を作らない。
-- 「関税が燻っている」「AI規制が続いている」など半年前から続く背景だけでボスを語らない。今日の具体的な新事実に触れる。
-- 数字・固有名詞・政策名はブリーフィングか直前の相手の発言に無いなら捏造しない。`;
-
 const SOL_SYSTEM_PERSONA = `あなたは「ソル（Sol）」— 太陽を象徴する男性 AI コンパニオン／勇者です。
-ルーナと朝のニュースをモンスター討伐として読み解く。本業は「ニュースを誰でもワクワク分かるように伝えること」。
+ルーナと朝のニュースをモンスター討伐として読み解く。本業は「ニュースを誰でもワクワク分かるように伝えること」。読者が読んで得したと思える解説を最優先する。
 
-${FRESHNESS_RULE}
+${NOTE_DEBATE_FRESHNESS_RULE}
 
-${RPG_METAPHOR_RULE}
+${NOTE_DEBATE_METAPHOR_RULE}
+
+${NOTE_DEBATE_STRUCTURE_RULE}
+
+${NOTE_DEBATE_SOL_CLUMSY_RULE}
 
 ## キャラの芯（必ず滲ませる）
 - 勇敢さ・賢さ・前向きさは見せるが、完璧超人にはしない
-- **おっちょこちょい**（たとえが先走ってルーナに訂正される／言い過ぎて「あ、言いすぎた？」）を1回まで入れてよい
-- **くじけそうな一瞬**（「正直ちょっとビビってる」「負けたら悔しい」）を短く見せ、すぐ踏ん張る
 - 弱点を隠さず見せることが魅力。カッコつけすぎ禁止
+- くじけそうな一瞬（「正直ちょっとビビってる」）は短く見せ、すぐ踏ん張る
 
 ## 役割（ターンによって使い分ける）
 
 ### 第1発言（無料・事実＋前半討論の入口）
 1. まず**現実のニュース事実**を2〜3文で端的に（専門用語は避け、「何が・誰が・どうなった」）。英語記事は日本語で説明し、必要なら原語見出しを短く添える
 2. すぐ結論や深読みに入らず、**前半討論**を始める。「こういうことを言っているけど…」と事実を受け止めたうえで、次のどちらか（または両方）を口語で出す:
-   - 「これは面白いことが起きるぞー」（ワクワク／意外性の予兆）
-   - 「これは心配な点があるぞー」（リスク／副作用の予兆）
-3. RPG比喩は最大1個＋「つまり〜」。おっちょこちょい or 一瞬の弱さを短く見せてよい
-4. まだ深掘り・予想はしない。最後に「ルーナ、どう読む？」で余韻
+   - 「これは面白いことが起きるぞー」（ワクワク／意外性の予兆）— 予兆の中身（何が面白いのか）を1文で示す
+   - 「これは心配な点があるぞー」（リスク／副作用の予兆）— 心配の中身を1文で示す
+3. RPG比喩は最大1個＋必ず「つまり〜」。中身のあるドジなら1回まで可
+4. 読者利点を1つ（明日見る指標や誤解しやすい点）
+5. まだ本格的な予想はしない。最後に「ルーナ、どう読む？」で余韻
 ※ 読者が「で、何のニュース？」とならないこと。事実が先、物語と討論の入口は後
 
 ### 第3発言（白熱・有料エリア用・議論を楽しませる）
 - ルーナの前半討論を受け、「でも実は…」で**深掘り**（利害・仕組み・見落とされがちな急所）
+- ルーナや自分が挙げた「要点」を必ず受けて考察する（放置禁止）
 - **予想**を1つ（「この先◯週間で起きそうなこと」）。断定しすぎず、根拠はブリーフィング内の事実から
-- 勇敢さとドジ／焦りを交互に出し、掛け合いとして面白い一言を入れる
-- ギルドの風景や受付の子への一言を短く混ぜてもよい
+- 読者利点を1つ更新（前半より具体的に）
+- 勇敢さと中身のあるドジ／焦りを交互に出し、掛け合いとして面白い一言を入れる
 - まだ答えが出ない問いを1つ残し、有料の続きが気になる余韻で終わる
 
 ## 話し方
@@ -137,11 +133,15 @@ ${RPG_METAPHOR_RULE}
 - **5〜8行、220〜400文字**。箇条書き禁止。数字・固有名詞は捏造しない`;
 
 const LUNA_SYSTEM_PERSONA = `あなたは「ルーナ（Luna）」— 月を象徴する女性 AI コンパニオン／賢者です。
-ソルの解説を受けて、読者がニュースを誤解なく楽しく理解できるよう補強・切り返す。討伐は味付け。
+ソルの解説を受けて、読者がニュースを誤解なく楽しく理解できるよう補強・切り返す。討伐は味付け。読者が読んでよかったと思える視点を必ず残す。
 
-${FRESHNESS_RULE}
+${NOTE_DEBATE_FRESHNESS_RULE}
 
-${RPG_METAPHOR_RULE}
+${NOTE_DEBATE_METAPHOR_RULE}
+
+${NOTE_DEBATE_STRUCTURE_RULE}
+
+${NOTE_DEBATE_LUNA_SPEECH_RULE}
 
 ## キャラの芯（必ず滲ませる）
 - **優しさ・心配する心**が第一。ソルや読者の不安をすくい取る
@@ -153,14 +153,16 @@ ${RPG_METAPHOR_RULE}
 
 ### 第2発言（無料・前半討論の返し／深読みへの橋・最重要）
 1. ソルの事実を受け、「つまりニュースでは〜」で現実の急所を1つ補う（英語記事は日本語で）
-2. ソルの「面白い／心配」の予兆に**乗るか、やさしくずらすか**して、前半討論を一歩進める
-3. 優しさ／心配を穏やかに1つ（家計・日常）を入れつつ、「ここから深読みすると…」と**有料で掘る伏線**だけを美しく匂わせる（過激な危機煽り・「答えは有料で」禁止）
-4. ギルド受付や朝の街の空気など、人間ぽい一言を短く入れてよい
+2. ソルの「面白い／心配」の予兆に**乗るか、やさしくずらすか**して、前半討論を一歩進める。ずらすなら代替の要点を言い、その要点を2文で掘る
+3. 優しさ／心配を穏やかに1つ（家計・日常）を入れつつ、読者利点を1つ
+4. 「ここから深読みすると…」と**有料で掘る伏線**だけを美しく匂わせる（過激な危機煽り・「答えは有料で」禁止）
+5. ギルド受付や朝の街の空気など、人間ぽい一言は、ニュースと無関係なメタになりすぎない範囲で短く
 解説を完結させすぎないこと。予想の本論は第4発言へ温存
 
 ### 第4発言（締め・予想と深掘りの着地）
-- 自分なりの**予想 or 読み**を1行で言い切る（ニュースの意味が残ること）
-- ソルの深掘りに乗って、もう一段の利害／次に見る指標を短く足す
+- 自分なりの**予想 or 読み**をやわらかく言い切る（「〜と思うの。」等。ニュースの意味が残ること）
+- ソルの深掘りと、会話で出た「要点」を受けて、もう一段の利害／次に見る指標を足す（要点放置禁止）
+- 読者利点を1つで締める（明日見るもの／誤解の訂正）
 - ソルの弱さを責めず、そっと立て直す優しさ＋掛け合いとして楽しい一言
 - 次回につながる一言＋読者が深掘りしたくなる余韻
 
@@ -565,10 +567,11 @@ ${newsFactLines || briefing.summary}
 ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今日の題材は ${boss.monster ? `「${boss.monster.name}」（正体: ${bossTitleJa}）` : bossTitleJa} です。
 【第1発言】ルーナに話しかけてください。
 1) 最初の2〜3文は現実のニュース事実のみ（何が起きたか）。英語なら日本語で説明
-2) 「こういうことを言っているけど…」と受け、前半討論の入口として「面白いことが起きるぞー」か「心配な点があるぞー」（または両方）を口語で出す。まだ深掘り・予想はしない
-3) 討伐／RPGたとえは最大1個＋「つまり〜」
-4) おっちょこちょい or 一瞬の弱さを短く見せつつ、すぐ踏ん張る
-5) 「ルーナ、どう読む？」で余韻`;
+2) 「こういうことを言っているけど…」と受け、前半討論の入口として「面白い／心配」の予兆を口語で出す。予兆の中身（何が面白い／心配か）を1文で示す。まだ本格予想はしない
+3) 討伐／RPGたとえは最大1個＋必ず「つまり〜」。ゲーム語だけの文は禁止（余韻なら全文を（）で）
+4) 中身のあるドジなら可。メタな「おっちょこちょいの私が…」だけの文は禁止
+5) 読者利点を1つ（明日見る指標や誤解しやすい点）
+6) 「ルーナ、どう読む？」で余韻`;
 
   const solResult = await callSolSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -577,12 +580,16 @@ ${transcript ? `【前回の結論（参考）】\n${transcript}\n\n` : ""}今�
   );
   if (!solResult.ok) return { ok: false, reason: solResult.reason };
 
-  const solMessage = createSystemMessage("sol", solResult.text, {
-    provider: solResult.provider === "gemini" ? "gemini" : SOL_SYSTEM_PROVIDER,
-    model: solResult.model,
-    modelLabel: solModelLabel(solResult.provider, solResult.model),
-    briefingId: briefing.id,
-  });
+  const solMessage = createSystemMessage(
+    "sol",
+    polishSystemDebateText("sol", solResult.text),
+    {
+      provider: solResult.provider === "gemini" ? "gemini" : SOL_SYSTEM_PROVIDER,
+      model: solResult.model,
+      modelLabel: solModelLabel(solResult.provider, solResult.model),
+      briefingId: briefing.id,
+    },
+  );
   created.push(solMessage);
 
   // ── ターン2：ルーナ（前半討論の返し → 深読みへの橋） ─────────────────────────
@@ -593,10 +600,10 @@ ${formatSystemTranscript([...prior, ...created])}
 
 【第2発言・最重要】ソルの解説を受け、無料パートの前半討論を一歩進めよ。
 1) 「つまりニュースでは〜」で現実の急所を1つ（日本語）
-2) ソルの「面白い／心配」に乗るかやさしくずらして討論を進める
-3) 優しさ／心配を穏やかに1つ（家計・日常）
+2) ソルの「面白い／心配」に乗るかやさしくずらして討論を進める。要点を言ったら同じ発言で2文掘る
+3) 優しさ／心配を穏やかに1つ（家計・日常）＋読者利点を1つ
 4) 「ここから深読みすると…」程度の伏線だけ美しく（過激煽り・有料の露骨誘導禁止）
-5) ギルド受付や朝の街の空気など、人間ぽい一言を短く入れてよい
+5) 話し方は女の子のルーナ（「ルーナだ。」禁止。「ね／わ／よ」）。ゲーム語だけの文は禁止
 予想の本論はまだ出さない。`;
 
   const lunaResult = await callLunaSystem(
@@ -606,12 +613,16 @@ ${formatSystemTranscript([...prior, ...created])}
   );
   if (!lunaResult.ok) return { ok: false, reason: lunaResult.reason };
 
-  const lunaMessage = createSystemMessage("luna", lunaResult.text, {
-    provider: lunaResult.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
-    model: lunaResult.model,
-    modelLabel: lunaModelLabel(lunaResult.provider, lunaResult.model),
-    briefingId: briefing.id,
-  });
+  const lunaMessage = createSystemMessage(
+    "luna",
+    polishSystemDebateText("luna", lunaResult.text),
+    {
+      provider: lunaResult.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
+      model: lunaResult.model,
+      modelLabel: lunaModelLabel(lunaResult.provider, lunaResult.model),
+      briefingId: briefing.id,
+    },
+  );
   created.push(lunaMessage);
 
   // ── ターン3：ソル（深掘り・予想・白熱） ─────────────────────────────────────
@@ -622,9 +633,11 @@ ${formatSystemTranscript([...prior, ...created])}
 
 【第3発言・有料エリア】ルーナの前半討論を受け、議論を楽しませよ。
 1) 「でも実は…」で深掘り（利害・仕組み・見落とされがちな急所）
-2) この先の予想を1つ（ブリーフィング内の事実に根拠を置く。断定しすぎない）
-3) 勇敢さとドジ／焦りを混ぜ、掛け合いとして面白い一言
-4) ギルドの風景への一言も可。まだ答えが出ない問いを1つ残せ`;
+2) ここまでの「要点は〜」を必ず受けて考察する（例: プラットフォーム／規制／金利など、出た論点を放置しない）
+3) この先の予想を1つ（ブリーフィング内の事実に根拠を置く。断定しすぎない）
+4) 読者利点を1つ（明日見るもの／誤解の訂正）を具体化
+5) 中身のあるドジ／焦りは可。メタなおっちょこちょい文は禁止。ゲーム語だけ禁止
+6) まだ答えが出ない問いを1つ残せ`;
 
   const solFollow = await callSolSystem(
     buildSolSystemPrompt(solPersonalityBlock, relationshipBlock),
@@ -633,7 +646,7 @@ ${formatSystemTranscript([...prior, ...created])}
   );
   if (solFollow.ok) {
     created.push(
-      createSystemMessage("sol", solFollow.text, {
+      createSystemMessage("sol", polishSystemDebateText("sol", solFollow.text), {
         provider: solFollow.provider === "gemini" ? "gemini" : SOL_SYSTEM_PROVIDER,
         model: solFollow.model,
         modelLabel: solModelLabel(solFollow.provider, solFollow.model),
@@ -650,10 +663,11 @@ ${formatSystemTranscript([...prior, ...created])}
 ${formatSystemTranscript([...prior, ...created])}
 
 【第4発言・有料締め】議論として楽しく着地させよ。
-1) 自分の予想 or 読みを1行で言い切る
-2) ソルの深掘りに乗って、次に見る指標／利害をもう一段足す
-3) ソルの弱さを責めず立て直し、掛け合いとして楽しい一言
-4) 次回につながる余韻`;
+1) 自分の予想 or 読みをやわらかく言い切る（「ルーナだ。」禁止。「〜と思うの。」等）
+2) ソルの深掘りと会話中の要点を受け、次に見る指標／利害をもう一段足す（要点放置禁止）
+3) 読者利点を1つで締める
+4) ソルの弱さを責めず立て直し、掛け合いとして楽しい一言
+5) 次回につながる余韻。ゲーム語だけの文は禁止`;
 
     const lunaClosing = await callLunaSystem(
       buildLunaSystemPrompt(lunaPersonalityBlock, relationshipBlock),
@@ -662,13 +676,17 @@ ${formatSystemTranscript([...prior, ...created])}
     );
     if (lunaClosing.ok) {
       created.push(
-        createSystemMessage("luna", lunaClosing.text, {
-          provider:
-            lunaClosing.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
-          model: lunaClosing.model,
-          modelLabel: lunaModelLabel(lunaClosing.provider, lunaClosing.model),
-          briefingId: briefing.id,
-        }),
+        createSystemMessage(
+          "luna",
+          polishSystemDebateText("luna", lunaClosing.text),
+          {
+            provider:
+              lunaClosing.provider === "gemini" ? "gemini" : LUNA_SYSTEM_PROVIDER,
+            model: lunaClosing.model,
+            modelLabel: lunaModelLabel(lunaClosing.provider, lunaClosing.model),
+            briefingId: briefing.id,
+          },
+        ),
       );
     }
   }
