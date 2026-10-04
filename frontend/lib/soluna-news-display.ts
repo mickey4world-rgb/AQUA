@@ -26,6 +26,34 @@ export function solunaNewsSecondaryTitle(
   return item.title;
 }
 
+/**
+ * Note／討伐ログ用: 英語があるときは英語を先に、直後に日本語訳。
+ * 依頼: 「英語の記載は後ろに日本語訳」
+ */
+export function formatSolunaNewsHeadlineWithJa(
+  item: Pick<SolunaNewsItem, "title" | "titleJa">,
+): string {
+  const raw = item.title.trim();
+  const ja = item.titleJa?.trim();
+  if (looksPrimarilyEnglish(raw) && ja && ja !== raw) {
+    return `${raw}\n　（日本語: ${ja}）`;
+  }
+  if (ja) return ja;
+  return raw;
+}
+
+export function formatSolunaNewsSummaryWithJa(
+  item: Pick<SolunaNewsItem, "summary" | "summaryJa">,
+): string {
+  const raw = item.summary.trim();
+  const ja = item.summaryJa?.trim();
+  if (!raw && !ja) return "";
+  if (looksPrimarilyEnglish(raw) && ja && ja !== raw) {
+    return `${raw}\n　（日本語: ${ja}）`;
+  }
+  return ja || raw;
+}
+
 export function solunaNewsNeedsJapanese(
   item: Pick<SolunaNewsItem, "title" | "summary" | "titleJa" | "summaryJa">,
 ): boolean {

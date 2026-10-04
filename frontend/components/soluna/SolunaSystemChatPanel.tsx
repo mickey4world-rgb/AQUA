@@ -141,12 +141,19 @@ function MonsterBoard({
                 {solunaNewsPrimarySummary(item)}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                ニュース: {solunaNewsPrimaryTitle(item)}
                 {(() => {
                   const original = solunaNewsSecondaryTitle(item);
-                  return original ? (
-                    <span className="mt-0.5 block text-slate-500">原題: {original}</span>
-                  ) : null;
+                  if (original) {
+                    return (
+                      <>
+                        ニュース: {original}
+                        <span className="mt-0.5 block text-slate-500">
+                          日本語: {solunaNewsPrimaryTitle(item)}
+                        </span>
+                      </>
+                    );
+                  }
+                  return <>ニュース: {solunaNewsPrimaryTitle(item)}</>;
                 })()}
               </p>
             </article>

@@ -34,6 +34,19 @@ export const NOTE_DEBATE_STRUCTURE_RULE = `## 議論の骨格（全ターン・�
    説教や精神論だけで終わらない。
 3. **前半と後半の接続**: 前の発言が挙げた論点（例: 米国製プラットフォーム／規制／金利）を受けたら、その論点の考察を必ず入れる。無視して別話題へ飛ばない。`;
 
+/**
+ * 有料・激闘ラウンドの中身（空の掛け合い禁止）。
+ * 依頼: 報道→深読み→疑問と推測→注意点→具体と「気を付けていこう」。
+ */
+export const NOTE_DEBATE_DEEP_READ_RULE = `## 深読みラウンドの型（有料・激闘の裏側・必須）
+各ターンで次の流れを口語で埋める（全部同じ長さでなくてよいが、抜けは禁止）:
+1. **報道の要約**: 「各ニュース／この見出しではこう言っている」と事実を短く言い直す
+2. **深読み**: 「でも深読みすると、今後こう読み取れるよね」と先読みを1つ（断定しすぎない）
+3. **疑問と推測**: 「ここで疑問なのは〜。推測だけど〜かもしれない」を必ず入れる
+4. **だから気をつける**: 「だからこういうことを気にして動いていかないとだよね」
+5. **具体と締め**: 「具体的には…」「私たち（読者）も今後気を付けていこう」まで落とす
+RPGたとえだけで埋めない。ニュースの意味と行動のヒントが残ること。`;
+
 export const NOTE_DEBATE_FRESHNESS_RULE = `## 鮮度・事実ルール（最優先）
 - 討伐対象ブロックに書かれた見出し・要点・報道日だけが「今日のニュース」。それ以外の一般知識で話を作らない。
 - 「関税が燻っている」「AI規制が続いている」など半年前から続く背景だけでボスを語らない。今日の具体的な新事実に触れる。
@@ -108,16 +121,26 @@ export function softenLunaSpeech(text: string): string {
   return out;
 }
 
+/** モデルが誤って出力する &nbsp; を除去（Note にそのまま出さない） */
+export function stripNbspArtifacts(text: string): string {
+  return text
+    .replace(/&nbsp;?/gi, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ *\n */g, "\n");
+}
+
 export function polishSystemDebateText(
   role: DebateSpeaker,
   text: string,
 ): string {
   let out = text.trim();
   if (!out) return out;
+  out = stripNbspArtifacts(out);
   out = stripHollowClumsyMeta(out);
   out = wrapHollowRpgAsides(out);
   if (role === "luna") {
     out = softenLunaSpeech(out);
   }
-  return out.replace(/\n{3,}/g, "\n\n").trim();
+  return stripNbspArtifacts(out.replace(/\n{3,}/g, "\n\n").trim());
 }

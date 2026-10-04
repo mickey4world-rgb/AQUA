@@ -163,6 +163,8 @@ export function formatAdventureLogForNote(battle: {
   outcome: "victory" | "escape";
   newsPlain?: string;
   newsTitle?: string;
+  /** 0〜1。大ボス戦の白熱度の目安 */
+  heat?: number;
   encounters?: Array<{
     role: string;
     monsterName: string;
@@ -191,22 +193,39 @@ export function formatAdventureLogForNote(battle: {
   const trash = encounters.filter((e) => e.role !== "boss");
   const bossEnc = encounters.find((e) => e.role === "boss");
 
+  const hookOf = (plain: string) => {
+    const t = plain.replace(/\s+/g, " ").trim();
+    if (!t) return "論点の芯がまだ霧の中";
+    const cut = t.split(/[。．]/)[0]?.trim() || t;
+    return cut.length > 72 ? `${cut.slice(0, 72)}…` : cut;
+  };
+
   const trashBlocks =
     trash.length > 0
       ? trash
           .map((enc, i) => {
             const label = enc.outcome === "victory" ? "完全勝利" : "取り逃がし";
-            return `⚔️ 第${i + 1}戦（小競り合い）：vs ${enc.monsterName}（Lv.${enc.rank}）
+            return `⚔️ 第${i + 1}戦（小物）：vs ${enc.monsterName}（Lv.${enc.rank}）
 
 発生ニュース: ${enc.newsPlain}
+気になる点: ${hookOf(enc.newsPlain)}
+白熱状況: そこまで白熱するほど熱い会議ではなく終わった——だから小物モンスター
 結果: 【${label}】 経験値+${enc.xpGained} / ${enc.goldFlavor}ゴールド${enc.lootName ? ` / ${enc.lootName}` : ""}`;
           })
           .join("\n\n")
       : "";
 
+  const bossHeat =
+    (battle as { heat?: number }).heat !== undefined &&
+    Number((battle as { heat?: number }).heat) < 0.45
+      ? "大ボス枠だが、議論はもう一声。主戦場としての熱は足りない朝"
+      : "本会議級の白熱——今日いちばん議論が熱くなった試合";
+
   const bossBlock = `🐉 大ボス戦：vs ${battle.bossName}（Lv.${battle.bossRank}）
 
-発生ニュース: ${battle.newsPlain ?? ""}
+発生ニュース: ${battle.newsPlain ?? bossEnc?.newsPlain ?? ""}
+気になる点: ${hookOf(battle.newsPlain ?? bossEnc?.newsPlain ?? "")}
+白熱状況: ${bossHeat}
 結果: 【${battle.outcome === "victory" ? "討伐成功" : "取り逃がし"}】${
     bossEnc
       ? ` 経験値+${bossEnc.xpGained}${bossEnc.lootName ? ` / ${bossEnc.lootName}` : ""}`
@@ -228,10 +247,12 @@ export function formatAdventureLogForNote(battle: {
 ${place}
 ギルドを出発するとき、受付の子が「気をつけてね」と小さく手を振っていた——そんな朝です。
 
+無料パートでは、各試合ごとの「気になる点」と、議論の白熱状況（小物戦か大ボス級か）が読めます。丁寧な討論の全文は有料エリアへ。
+
 ## 発生ニュース（事実）
 ${battle.newsPlain || "（本日の大ボス関連ニュース）"}
 
-## 読み解き＝討伐
+## 読み解き＝討伐（試合カード）
 ${trashBlocks ? `${trashBlocks}\n\n` : ""}${bossBlock}
 
 📊 本日の遠征成果

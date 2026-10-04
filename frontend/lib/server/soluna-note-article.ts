@@ -15,10 +15,10 @@ import { formatAdventureLogForNote } from "@/lib/server/soluna-journey";
 import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 import { buildDisneyGuildNoticeForNote } from "@/lib/server/disney-note-guild-notice";
 import {
-  solunaNewsPrimarySummary,
-  solunaNewsPrimaryTitle,
-  solunaNewsSecondaryTitle,
+  formatSolunaNewsHeadlineWithJa,
+  formatSolunaNewsSummaryWithJa,
 } from "@/lib/soluna-news-display";
+import { stripNbspArtifacts } from "@/lib/server/soluna-note-debate-quality";
 
 /** Note 設定・世界観の案内ページ（無料リード冒頭） */
 export const NOTE_SETTINGS_GUIDE_URL =
@@ -51,7 +51,8 @@ function escapeHtml(text: string): string {
 
 const SOL_LABEL = "⚔️ ソル（勇者）";
 const LUNA_LABEL = "📖 ルーナ（賢者）";
-const CHARACTER_LABELS = [SOL_LABEL, LUNA_LABEL];
+const RECEPTION_LABEL = "ギルド受付の子";
+const CHARACTER_LABELS = [SOL_LABEL, LUNA_LABEL, RECEPTION_LABEL];
 
 /** note CDN 配下のみ本文画像として許可（外部直リンクは公開時に拒否される） */
 function isNoteHostedImageUrl(src: string): boolean {
@@ -84,6 +85,8 @@ export function toNoteHtml(text: string): NoteHtmlParts {
   const imageKeys: string[] = [];
   let lastBlockId: string | null = null;
   const chunks: string[] = [];
+  // モデル／テンプレ由来の &nbsp; は Note 本文に出さない
+  text = stripNbspArtifacts(text);
 
   const push = (part: { html: string; id: string }) => {
     chunks.push(part.html);
@@ -202,6 +205,9 @@ function harvestReflection(input: {
 }): string {
   const impression = (input.battle.impression || input.battle.outcomeWhy || "").trim();
   const next = (input.battle.nextMove || "").trim();
+  const lunaImpression = next
+    ? `そうね……あの子の言葉、わたしも同じ気持ちよ。わたしの感想としては、${next}——続きは、夜の街灯の下でゆっくりね。`
+    : "そうね……あの子の言葉、わたしも同じ気持ちよ。たとえは味付け。大事なのはニュース自体が楽しく理解できること。そういう見方もあるね、で終われるのが理想よ。";
   return `## 今日の感想（人間ぽく）
 ${impression || "今日のニュースも、討伐を通じて立体的に見えてきた。"}
 
@@ -212,12 +218,11 @@ ${
     : "今日の収穫はギルドの燃料だ。受付の子が『おかえり』って微笑んでくれたのが、なんか一番嬉しかったな。"
 }
 
+${RECEPTION_LABEL}
+心配していたの、あなたが無事に戻ってきたこと。
+
 ${LUNA_LABEL}
-${
-  next
-    ? `心配していたの、あなたが無事に戻ってきたこと。感想としては、${next}——続きは、夜の街灯の下でゆっくりね。`
-    : "たとえは味付け。大事なのはニュース自体が楽しく理解できること。そういう見方もあるね、で終われるのが理想よ。"
-}`;
+${lunaImpression}`;
 }
 
 /** 注目を引くタイトル（事実フック＋好奇心） */
@@ -242,14 +247,15 @@ function newsNarrationBlock(input: {
   battle: SolunaBattleResult;
 }): string {
   const lines = input.briefing.items.slice(0, 3).map((item, i) => {
-    const title = solunaNewsPrimaryTitle(item);
-    const secondary = solunaNewsSecondaryTitle(item);
-    const sum = solunaNewsPrimarySummary(item).trim();
-    return `${i + 1}. ${title}${secondary ? `\n　（原題: ${secondary}）` : ""}${sum ? `\n　→ ${sum.slice(0, 100)}${sum.length > 100 ? "…" : ""}` : ""}`;
+    const headline = formatSolunaNewsHeadlineWithJa(item);
+    const sum = formatSolunaNewsSummaryWithJa(item).trim();
+    const sumShort =
+      sum.length > 160 ? `${sum.slice(0, 160)}…` : sum;
+    return `${i + 1}. ${headline}${sumShort ? `\n　→ ${sumShort}` : ""}`;
   });
   const plain = (input.battle.newsPlain || "").trim();
   return `## きょうのニュース（ナレーション・事実）
-ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。英語の速報は日本語訳を先に載せます。
+ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。英語の見出しがあるときは英語のあとに日本語訳を添えます。
 
 ${lines.join("\n\n") || plain || input.briefing.summary}
 
@@ -262,15 +268,191 @@ function paidDialogueFallback(input: {
   escaped: boolean;
 }): string {
   const hook = input.battle.newsPlain || input.battle.newsTitle || input.battle.bossName;
+  const nextHint =
+    (input.battle.nextMove || "").trim() ||
+    (input.escaped
+      ? "取り逃がした急所を、明日もう一度測ること"
+      : "今日の結論を1行にして、次の指標で検証すること");
   return `${SOL_LABEL}
-ルーナ、さっきの前半討論の続きだ。「${hook}」——で、実は面白い／心配の芯は、誰の財布と誰のスケジュールが先に動くか、だと思うんだ。
-俺の予想はこう：次の発表か価格の初動で、今日の論点が本物かどうかが一発で見える。あ、言い過ぎた？
+ルーナ、さっきの前半討論の続きだ。各ニュースでは「${hook}」と言っている。でも深読みすると、今後は誰の財布と誰のスケジュールが先に動くか——そこが先に見えてくると思うんだ。
+ここで疑問なのは、表の見出しが騒いでいる急所と、現場が本当に急いでいる急所が同じかどうか。推測だけど、次の発表か価格の初動で答えが一発で見えるはずだ。
+だから、そういうズレを気にして動いていかないとだよね。具体的には、明日の初動を一行メモしておくこと。あ、言い過ぎた？ でも、私たちも気を付けていこう。
 
 ${LUNA_LABEL}
-そういう見方もあるね。深掘りするなら、数字の裏の「誰が急いでいて、誰が待てるか」よ。
-たとえばプラットフォームや規制の論点が出ていたら、その仕組みが誰の日程を動かすかを同じ息で話すわ。
-わたしの読みは、${input.escaped ? "取り逃がした急所を明日もう一度測ること" : "今日の結論を1行にして次の指標で検証すること"}。
-読者の利点としては、明日の初動で「予想が当たったか」を一行メモしておくだけで、ニュースの見方が変わると思うの。`;
+そういう見方もあるね。報道の言い方を受けて深読みするなら、数字の裏の「誰が急いでいて、誰が待てるか」よ。
+疑問は、その急ぐ側が読者のサイフにどう波及するか。推測だけど、仕組みが見えた瞬間に誤解が一気に解けるわ。
+だからこういうことを気にして動いていかないとだよね。具体的には、${nextHint}——私たちも今後気を付けていこう。読者の利点としては、明日の初動で「予想が当たったか」を一行残すだけで、ニュースの見方が変わると思うの。`;
+}
+
+type NoteMatchEncounter = {
+  role: string;
+  monsterName: string;
+  rank: number;
+  newsTitle: string;
+  newsPlain: string;
+  outcome: "victory" | "escape";
+};
+
+/** 報道文から「主張 vs しかし／専門家」などの対立を拾う */
+export function splitNewsTension(text: string): {
+  claim: string;
+  counter: string | null;
+} {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return { claim: "（論点の芯がまだ霧の中）", counter: null };
+  const m = t.match(
+    /^(.+?)(しかし|一方で|一方|だが|ただ|ところが|他方|それでも)(.+)$/,
+  );
+  if (m) {
+    return {
+      claim: m[1].trim().replace(/[。．]$/, ""),
+      counter: `${m[2]}${m[3]}`.trim(),
+    };
+  }
+  const expert = t.match(/^(.+?)((?:法学の)?専門家[^。．]{0,40}(?:は|が|たち)[^。．]*)(.*)$/);
+  if (expert && expert[2]) {
+    const claim = expert[1].trim().replace(/[。．]$/, "") || t.slice(0, 80);
+    const counter = `${expert[2]}${expert[3] || ""}`.trim();
+    return { claim, counter: counter || null };
+  }
+  const sentence = t.split(/[。．]/)[0]?.trim() || t;
+  return {
+    claim: sentence.length > 110 ? `${sentence.slice(0, 110)}…` : sentence,
+    counter: null,
+  };
+}
+
+function matchHeatLine(role: string, battleHeat: number): string {
+  if (role === "boss") {
+    return battleHeat < 0.45
+      ? "大ボス枠だが、議論はもう一声。主戦場としての熱は足りない朝"
+      : "本会議級の白熱——今日いちばん議論が熱くなった試合";
+  }
+  return "そこまで白熱するほど熱い会議ではなく終わった——だから小物モンスター";
+}
+
+function enrichPlainFromBriefing(
+  enc: NoteMatchEncounter,
+  briefing: SolunaNewsBriefing,
+): string {
+  const plain = (enc.newsPlain || "").trim();
+  if (plain.length >= 40) return plain;
+  const hit = briefing.items.find((item) => {
+    const ja = formatSolunaNewsHeadlineWithJa(item).replace(/\n/g, " ");
+    const title = item.titleJa?.trim() || item.title;
+    return (
+      title === enc.newsTitle ||
+      ja.includes(enc.newsTitle) ||
+      enc.newsTitle.includes(title.slice(0, 12)) ||
+      formatSolunaNewsSummaryWithJa(item).includes(plain.slice(0, 20))
+    );
+  });
+  if (!hit) return plain || enc.newsTitle;
+  return formatSolunaNewsSummaryWithJa(hit) || plain || enc.newsTitle;
+}
+
+function resolveNoteMatches(input: {
+  battle: SolunaBattleResult;
+  briefing: SolunaNewsBriefing;
+}): NoteMatchEncounter[] {
+  const fromBattle = (input.battle.encounters ?? []).map((enc) => ({
+    role: enc.role,
+    monsterName: enc.monsterName,
+    rank: enc.rank,
+    newsTitle: enc.newsTitle,
+    newsPlain: enc.newsPlain,
+    outcome: enc.outcome,
+  }));
+  if (fromBattle.length > 0) return fromBattle;
+
+  const items = input.briefing.items.slice(0, 3);
+  if (items.length === 0) {
+    return [
+      {
+        role: "boss",
+        monsterName: input.battle.bossName,
+        rank: input.battle.bossRank,
+        newsTitle: input.battle.newsTitle || input.battle.bossName,
+        newsPlain: input.battle.newsPlain || "",
+        outcome: input.battle.outcome,
+      },
+    ];
+  }
+  return items.map((item, index) => {
+    const isBoss = index === items.length - 1;
+    return {
+      role: isBoss ? "boss" : index === 0 ? "trash" : "mid",
+      monsterName: isBoss
+        ? input.battle.bossName
+        : `Lv.${item.monster?.rank ?? 2} ${item.monster?.name ?? formatSolunaNewsHeadlineWithJa(item).split("\n")[0]}`,
+      rank: item.monster?.rank ?? (isBoss ? input.battle.bossRank : 2),
+      newsTitle: formatSolunaNewsHeadlineWithJa(item).split("\n")[0] || item.title,
+      newsPlain: formatSolunaNewsSummaryWithJa(item) || item.summary,
+      outcome: isBoss ? input.battle.outcome : "victory",
+    };
+  });
+}
+
+/**
+ * 有料: 1試合ごとの丁寧な討論（対立する見方の中身まで）。
+ * 依頼例: 「企業が…法的責任を負うべき。しかし法学の専門家たちは…」→ 専門家側の議論。
+ */
+export function formatPaidPerMatchDebates(input: {
+  battle: SolunaBattleResult;
+  briefing: SolunaNewsBriefing;
+}): string {
+  const matches = resolveNoteMatches(input);
+  const heat = input.battle.heat ?? 0.5;
+  const blocks = matches.map((enc, index) => {
+    const plain = enrichPlainFromBriefing(enc, input.briefing);
+    const { claim, counter } = splitNewsTension(plain);
+    const roleLabel =
+      enc.role === "boss" ? "大ボス戦" : enc.role === "mid" ? "中ボス戦" : "小物戦";
+    const heatLine = matchHeatLine(enc.role, heat);
+    const counterFocus =
+      counter ||
+      "表の主張の裏側——誰が得をして、誰がリスクを引き受けるか";
+    const resultLabel = enc.outcome === "victory" ? "討伐成功" : "取り逃がし";
+
+    return `### 第${index + 1}試合（${roleLabel}）：vs ${enc.monsterName}（Lv.${enc.rank}）
+
+白熱状況: ${heatLine}
+結果: 【${resultLabel}】
+
+${SOL_LABEL}
+各ニュースではこう言っている。「${claim}」。${
+      counter
+        ? `でも続きがある——「${counter}」。`
+        : "でも深読みすると、この一文の先にまだ急所がある。"
+    }
+俺が掘りたいのは後段だ。${
+      /専門家/.test(counterFocus)
+        ? "「専門家たち」が何を根拠にそう言うのか、そこを飛ばすと討論が空っぽになる。"
+        : `対立の芯は「${counterFocus.slice(0, 80)}${counterFocus.length > 80 ? "…" : ""}」だと思う。`
+    }
+疑問は、読者がどっちの立場を自分のサイフや仕事に引きつけるべきか、だ。推測だけど、見出しの勢いより、後段の条件や留保のほうが明日効く。
+${
+      enc.role === "boss"
+        ? "だから今日の本会議はここだ。気を付けて動こう——具体的には、この対立のどちら側の発表が次に来るかをメモすること。私たちも気を付けていこう。"
+        : "ただ、ここまで白熱するほど熱い会議にはならなかった。論点はあるけど着地が早い——だから小物モンスターだったんだ。それでも、この対立は見逃さない。"
+    }
+
+${LUNA_LABEL}
+そういう見方もあるね。報道の前半だけ読んで満足するのは危険よ。わたしが丁寧に見たいのは、「${counterFocus.slice(0, 90)}${counterFocus.length > 90 ? "…" : ""}」の中身。
+${
+  /専門家|法学/.test(`${claim}${counterFocus}`)
+    ? "法学の専門家たちが何を守ろうとしているのか——企業責任の線引きなのか、技術の制御可能性なのか——そこを言葉にしないと、ただのスローガン討論で終わるわ。"
+    : "表の主張を受けて、反対側／留保側が何を言っているかを同じ息で話す。それがこの試合の丁寧な討論よ。"
+}
+疑問は、明日の読者にとって「どちらが先に動く事実」か。推測だけど、${enc.role === "boss" ? "大ボス級の熱があるなら、次の指標で検証できるはず" : "小物戦でも、対立の型だけは覚えておく価値があるわ"}。
+だからこういうことを気にして動いていかないとだよね。具体的には、この試合の対立を一行で残すこと——私たちも今後気を付けていこう。`;
+  });
+
+  return `## 試合ごとの丁寧な討論（有料）
+
+1試合ずつ、報道の主張と「しかし／専門家側」などの対立を掘ります。白熱しなかった試合は小物——熱い会議だった試合が大ボスです。
+
+${blocks.join("\n\n")}`;
 }
 
 export function notePriceYen(): number {
@@ -319,10 +501,13 @@ export function composeDailyNote(input: {
   const allMessages = input.messages.filter((m) => m.role === "sol" || m.role === "luna");
   const freeDialogue = dialogueLines(allMessages.slice(0, 2));
   const paidDialogueRaw = dialogueLines(allMessages.slice(2));
-  const paidDialogue =
-    paidDialogueRaw.trim().length >= 80
-      ? paidDialogueRaw
-      : paidDialogueFallback({ battle: input.battle, escaped });
+  // 空の掛け合い（字数だけある／深読み骨格なし）はフォールバックで埋める
+  const paidHasDepth =
+    /深読み|疑問|推測|気を付け|具体的に/.test(paidDialogueRaw) &&
+    paidDialogueRaw.trim().length >= 120;
+  const paidDialogue = paidHasDepth
+    ? paidDialogueRaw
+    : paidDialogueFallback({ battle: input.battle, escaped });
 
   const creator = process.env.NOTE_CREATOR_URLNAME?.trim();
   const shopLine = creator ? `https://note.com/${creator}` : "このマガジンの有料購読";
@@ -364,6 +549,10 @@ export function composeDailyNote(input: {
     briefing: input.briefing,
     battle: input.battle,
   });
+  const paidPerMatchDebates = formatPaidPerMatchDebates({
+    battle: input.battle,
+    briefing: input.briefing,
+  });
 
   // キャラ画像は見出し（eyecatch）のみ。本文へ aquacore 直リンクを置くと
   // note 公開時に「本文に利用できない内容が含まれています」で拒否される。
@@ -372,6 +561,8 @@ export function composeDailyNote(input: {
 ${SOL_LABEL} ／ ${LUNA_LABEL}
 今日もニュースをモンスターに変えて、2人が世界を旅しながら討伐に挑みます。
 まず事実を知り、それから物語でハラハラしながら理解する——それがこのギルドの朝の流儀です。
+
+無料パートでは、各試合ごとの「気になる点」と、議論の白熱状況（小物戦か大ボス級か）が読めます。有料パートでは、1試合ごとの丁寧な討論——「しかし／専門家たちは…」など対立する見方の中身まで掘ります。
 ${
   (assets?.lastPromptBattleMode ?? assets?.battleMode) === "attack"
     ? `
@@ -394,7 +585,7 @@ ${adventureLog}
 
 ## 2人の掛け合い（ダイジェスト・前半討論）
 
-事実を受け止めたあと、「面白いことが起きるぞー／心配な点があるぞー」の入口までが無料パートです。
+事実を受け止めたあと、「面白いことが起きるぞー／心配な点があるぞー」の入口までが無料パートです。ここでも、各試合の気になる点と白熱状況が読めるようにしています。
 
 ${freeDialogue || "（本日は偵察戦から始まります）"}
 
@@ -405,6 +596,7 @@ ${paywallTeaser}
 ---
 
 【有料エリアの先にあるもの】
+・試合ごとの丁寧な討論: 1試合ずつ、報道の主張と「しかし／専門家側」の対立まで
 ・激闘の続き: 深掘り・予想・白熱した掛け合い全文
 ・${escaped ? "リベンジ戦略" : "収穫レポート"}: ${escaped ? "次の防衛策と市場の見通し" : "メダル・アイテムの使い道"}
 ・召喚獣育成: リアルな保有状況＋物語の感想
@@ -424,7 +616,9 @@ ${escapeHook}
 ・ハンターレベル: Lv.${input.hunter.level}
 ・複数戦成績: ${input.battle.wins ?? "—"}勝${input.battle.losses ?? "—"}敗 / 物語ゴールド +${input.battle.goldFlavorTotal ?? 0}`;
 
-  const paidBody = `有料購読のあなたへ。深掘りと予想、白熱の続き、そして今日のギルド全仕事レポートです。
+  const paidBody = `有料購読のあなたへ。1試合ごとの丁寧な討論、深掘りと予想、白熱の続き、そして今日のギルド全仕事レポートです。
+
+${paidPerMatchDebates}
 
 ## 2人の掛け合い（有料限定・激闘の裏側）
 
