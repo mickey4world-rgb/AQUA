@@ -6,9 +6,9 @@ import type {
   SolunaNewsMonster,
 } from "@/lib/types/soluna";
 import {
-  solunaNewsPrimarySummary,
+  formatSolunaNewsHeadlineWithJa,
+  formatSolunaNewsSummaryWithJa,
   solunaNewsPrimaryTitle,
-  solunaNewsSecondaryTitle,
 } from "@/lib/soluna-news-display";
 
 const SPECIES_LABEL: Record<SolunaMonsterSpecies, string> = {
@@ -174,16 +174,15 @@ export function formatEncounterForPrompt(briefing: SolunaNewsBriefing): string {
     const header = monster
       ? `${index + 1}. 【Lv.${monster.rank} ${monster.speciesLabel}】${monster.name}`
       : `${index + 1}. ${solunaNewsPrimaryTitle(item)}`;
-    const primaryTitle = solunaNewsPrimaryTitle(item);
-    const secondary = solunaNewsSecondaryTitle(item);
-    const primarySummary = solunaNewsPrimarySummary(item);
+    const headline = formatSolunaNewsHeadlineWithJa(item).replace(/\n/g, " ");
+    const summary = formatSolunaNewsSummaryWithJa(item).replace(/\n/g, " ");
     const attention =
       typeof item.attentionScore === "number"
         ? `\n   注目度: ${item.attentionScore}`
         : "";
     return `${header}
-   正体（元ニュース）: ${primaryTitle}${secondary ? `\n   原文見出し: ${secondary}` : ""}
-   要点: ${primarySummary}${attention}
+   正体（元ニュース）: ${headline}
+   要点: ${summary}${attention}
    弱点: ${monster?.weakness ?? "論点の急所"}
    キーワード: ${item.keyword}${item.publishedAt ? `\n   報道日: ${item.publishedAt.slice(0, 10)}` : ""}${item.sourceUrl ? `\n   出典: ${item.sourceUrl}` : ""}`;
   });
@@ -195,7 +194,7 @@ ${lines.join("\n\n")}
 
 【鮮度ルール】上の各「正体（元ニュース）」と要点だけが本日の事実。ここに無い関税・製品名・政策は持ち出さない。古い一般知識で話を盛らないこと。
 読者がニュースを知っていても『続きが読みたい』と思えるように、怪物の生態＝ニュースの意味を噛み砕いて語ること。
-英語の原文見出しがある場合は、会話では日本語の正体・要点を主に使い、必要なら原文を短く添える。`;
+英語見出しがある場合は「英語（日本語: …）」の順。会話でも英語のあとに日本語訳を添えてよい。`;
 }
 
 /**
