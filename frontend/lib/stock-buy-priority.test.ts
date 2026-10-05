@@ -27,5 +27,7 @@ assert.ok(isMemoBuyBetterThanActive(180, 170));
 assert.ok(!isMemoBuyBetterThanActive(170, 170));
 assert.ok(isMemoBuyBetterThanActive(50, 0));
 assert.ok(!isMemoBuyBetterThanActive(0, 0));
+assert.ok(isMemoBuyBetterThanActive(150, 170, { isCore: true }));
+assert.ok(!isMemoBuyBetterThanActive(130, 170, { isCore: true }));
 
 console.log("stock-buy-priority.test.ts: ok");

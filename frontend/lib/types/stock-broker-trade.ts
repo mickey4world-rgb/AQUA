@@ -31,6 +31,20 @@ export interface StockBrokerTradeIntent {
   expiresAt: string;
 }
 
+/** 買い見送りの銘柄別診断（bridge / Costs で追えるようにする） */
+export interface StockBrokerBuySkip {
+  symbol: string;
+  symbolName?: string;
+  reasons: string[];
+  /** 参考: dipEligible / action / trend / dipScore など */
+  meta?: Record<string, string | number | boolean | null | undefined>;
+}
+
+export interface StockBrokerTradePlan {
+  intents: StockBrokerTradeIntent[];
+  buySkips: StockBrokerBuySkip[];
+}
+
 export interface StockBrokerOrderRecord {
   id: string;
   userId: string;

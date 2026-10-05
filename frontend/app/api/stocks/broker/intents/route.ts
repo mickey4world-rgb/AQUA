@@ -14,6 +14,7 @@ export const maxDuration = 60;
 /**
  * kabu-bridge が取得する発注インテント（Phase C2: 日本株・現物の買い/売りシミュ）。
  * Bearer STOCK_KABU_BRIDGE_SECRET + ?userId=
+ * buySkips: 銘柄ごとの見送り理由（条件見直し用オラクル）
  */
 export async function GET(request: Request) {
   if (!authorizeStockBridge(request)) {
@@ -35,9 +36,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const all = await buildStockBrokerTradeIntents(userId);
+    const plan = await buildStockBrokerTradeIntents(userId);
     const intents = [];
-    for (const intent of all) {
+    for (const intent of plan.intents) {
       if (await wasIntentAlreadyHandled(userId, intent.id)) continue;
       intents.push(intent);
     }
@@ -47,7 +48,8 @@ export async function GET(request: Request) {
       policy: "C2-jp-cash-buy-sell-sim",
       sessionOpenGuess: isRoughJpEquitySession(),
       intents,
-      note: "検証: 現物の買い/売り dry-run。KABU_ALLOW_LIVE_ORDERS なしでは sendorder しない。信用・米国株は未対応。",
+      buySkips: plan.buySkips,
+      note: "検証: 現物の買い/売り dry-run。KABU_ALLOW_LIVE_ORDERS なしでは sendorder しない。信用・米国株は未対応。buySkips に見送り理由。",
     });
   } catch (error) {
     return Response.json(

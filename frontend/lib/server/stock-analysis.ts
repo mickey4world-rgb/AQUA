@@ -229,6 +229,17 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     reasons.push(
       `出来高が5日平均の ${volSpike.toFixed(1)} 倍かつ下落。需給悪化の可能性があるため見送りです。`,
     );
+  } else if (
+    // #8 部分解禁: 下降でも RSI 売られすぎ + 週/月安値なら押し目買い
+    trend === "bearish" &&
+    rsi14 <= STOCK_RSI_OVERSOLD &&
+    (nearWeekLow || nearMonthLow) &&
+    macdSnap.cross !== "dead"
+  ) {
+    action = "buy";
+    reasons.push(
+      `下降トレンドだが RSI ${rsi14.toFixed(0)} ≤ ${STOCK_RSI_OVERSOLD}（売られすぎ）かつ週/月安値付近のため、押し目買いを検討できます（#8部分解禁）。`,
+    );
   } else if (trend === "bearish" && profitPct > 0) {
     action = "watch";
     reasons.push(

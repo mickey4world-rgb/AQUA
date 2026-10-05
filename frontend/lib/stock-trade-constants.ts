@@ -26,6 +26,12 @@ export const STOCK_SMALL_INVEST_CASH_FLOOR_YEN = 300_000;
 /** 少額投資モード時の1インテント上限（円） */
 export const STOCK_SMALL_TRADE_YEN = 50_000;
 
+/**
+ * 安値ゾーン買い(#44)は少額モードでも「1単元まで」許可する。
+ * 例: 4755 が約6.6万/単元でも、現金が余力内なら1単元は組める。
+ */
+export const STOCK_SMALL_DIP_ALLOW_ONE_LOT = true;
+
 /** JST 1日あたりの買付シミュレーション合計上限（円） */
 export const STOCK_MAX_DAILY_BUY_YEN = 600_000;
 
@@ -119,11 +125,39 @@ export const STOCK_DIP_MAX_RSI = 45;
  */
 export const STOCK_DIP_BUY_SHARE_OF_WATCHES = 0.5;
 
-/** 当日の分析対象ウォッチ数から、安値ゾーン買いの採用上限を求める */
-export function maxDipBuysForWatchCount(watchCount: number): number {
+/**
+ * 安値候補がウォッチの半分以上いる「混み日」は枠を広げる。
+ * 例: 4銘柄中3候補 → floor(4×0.75)=3。
+ */
+export const STOCK_DIP_BUY_SHARE_WHEN_CROWDED = 0.75;
+
+/** 混み日判定: eligibleCount / watchCount がこの以上 */
+export const STOCK_DIP_CROWDED_ELIGIBLE_RATIO = 0.5;
+
+/**
+ * 当日の分析対象ウォッチ数から、安値ゾーン買いの採用上限を求める。
+ * @param eligibleCount 渡すと候補が多い日は枠を 75% に拡大
+ */
+export function maxDipBuysForWatchCount(
+  watchCount: number,
+  eligibleCount?: number,
+): number {
   if (!(watchCount > 0)) return 0;
-  return Math.floor(watchCount * STOCK_DIP_BUY_SHARE_OF_WATCHES);
+  const crowded =
+    eligibleCount != null &&
+    eligibleCount > 0 &&
+    eligibleCount / watchCount >= STOCK_DIP_CROWDED_ELIGIBLE_RATIO;
+  const share = crowded
+    ? STOCK_DIP_BUY_SHARE_WHEN_CROWDED
+    : STOCK_DIP_BUY_SHARE_OF_WATCHES;
+  return Math.floor(watchCount * share);
 }
+
+/**
+ * 監視メモ(#45): コア銘柄はアクティブ最良との差がこの以内なら買い可。
+ * 厳密な「上回る」だと memo コアが永遠に買えないことがある。
+ */
+export const STOCK_MEMO_CORE_PRIORITY_SLACK = 30;
 
 export const STOCK_SOFT_SELL_VIA_AI = true;
 

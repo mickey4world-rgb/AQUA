@@ -322,7 +322,7 @@ export function buildStockIdleDiagnosis(input: {
 
   if (cashYen > 0 && holdingsCount === 0 && activeWatchCount > 0) {
     reasons.push(
-      `現金約 ${cashYen.toLocaleString("ja-JP")} 円はありますが、直近は買い条件未達です（従来: buy+強気 / 安値ゾーン / 監視メモがアクティブより好条件）。`,
+      `現金約 ${cashYen.toLocaleString("ja-JP")} 円はありますが、直近は買い条件未達です（#8強気or押し目 / #44安値枠 / #45監視メモ。詳細は intents の buySkips）。`,
     );
   }
 

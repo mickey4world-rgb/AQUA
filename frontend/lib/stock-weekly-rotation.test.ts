@@ -143,4 +143,62 @@ assert.equal(jpTpYenAtHardTarget(1500), 30_000); // 15万 * 0.2
   assert.equal(id, "2026-10-03");
 }
 
+// コアは soft ローテで監視メモへ落とさない（スコア低くても）
+{
+  const scores = [
+    scoreTakeProfitEase({
+      code: "4689",
+      name: "LINEヤフー",
+      price: 500,
+      changePct: 9,
+      tier: "core",
+      heldShares: 0,
+      currentlyActive: true,
+    }),
+    scoreTakeProfitEase({
+      code: "4755",
+      name: "楽天",
+      price: 650,
+      changePct: 9,
+      tier: "core",
+      heldShares: 0,
+      currentlyActive: true,
+    }),
+    scoreTakeProfitEase({
+      code: "9107",
+      name: "川崎汽船",
+      price: 2000,
+      changePct: -1,
+      tier: "satellite",
+      heldShares: 0,
+      currentlyActive: true,
+    }),
+    scoreTakeProfitEase({
+      code: "1963",
+      name: "日揮",
+      price: 1500,
+      changePct: -2,
+      tier: "satellite",
+      heldShares: 0,
+      currentlyActive: false,
+    }),
+  ];
+  const plan = planWeeklyRotation({
+    scores,
+    existingCodes: new Set(["4689", "4755", "9107"]),
+    targetActive: 2,
+    maxRotations: 3,
+    weekId: "2026-10-04",
+  });
+  assert.ok(plan.desiredActiveCodes.includes("4689"));
+  assert.ok(plan.desiredActiveCodes.includes("4755"));
+  assert.ok(
+    !plan.actions.some(
+      (a) =>
+        (a.code === "4689" || a.code === "4755") && a.type === "deactivate",
+    ),
+    "core must not soft-deactivate to memo",
+  );
+}
+
 console.log("stock-weekly-rotation.test.ts: ok");
