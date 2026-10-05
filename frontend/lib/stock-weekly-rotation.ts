@@ -15,6 +15,13 @@ import {
 } from "@/lib/stock-trade-constants";
 import type { StockJpUniverseTier } from "@/lib/stock-jp-universe";
 
+/** コア銘柄は週次 soft ローテで監視メモへ落とさない（単元不可は除く） */
+export function isCoreProtectedFromWeeklyDeactivate(
+  tier: StockJpUniverseTier,
+): boolean {
+  return tier === "core";
+}
+
 export type WeeklyScoreInput = {
   code: string;
   name: string;
@@ -264,10 +271,29 @@ export function planWeeklyRotation(args: {
   const heldCodes = new Set(
     ranked.filter((s) => s.heldShares > 0).map((s) => s.code),
   );
-  const fillers = ranked.filter(
-    (s) => s.affordable && !heldCodes.has(s.code),
-  );
+  // 既にアクティブ／保有の買えるコアは目標超過でも desired 維持（memo 落とし禁止）
+  const coreKeepCodes = ranked
+    .filter(
+      (s) =>
+        isCoreProtectedFromWeeklyDeactivate(s.tier) &&
+        s.affordable &&
+        (s.currentlyActive || s.heldShares > 0),
+    )
+    .map((s) => s.code);
+
   const desiredActiveCodes: string[] = [...heldCodes];
+  for (const code of coreKeepCodes) {
+    if (!desiredActiveCodes.includes(code)) desiredActiveCodes.push(code);
+  }
+  // 空き枠はコアを先に、その後スコア順
+  const fillers = ranked
+    .filter((s) => s.affordable && !desiredActiveCodes.includes(s.code))
+    .sort((a, b) => {
+      const ac = isCoreProtectedFromWeeklyDeactivate(a.tier) ? 1 : 0;
+      const bc = isCoreProtectedFromWeeklyDeactivate(b.tier) ? 1 : 0;
+      if (bc !== ac) return bc - ac;
+      return b.score - a.score;
+    });
   for (const s of fillers) {
     if (desiredActiveCodes.length >= targetActive) break;
     desiredActiveCodes.push(s.code);
@@ -341,14 +367,27 @@ export function planWeeklyRotation(args: {
   }
 
   // 一部入れ替え: 目標超過分だけ、スコア低い excess を落とす（上限 maxRotations）
+  // コアは soft deactivate しない（#42）。単元不可の forcedDown は従来どおり。
+  const softKickable = softExcess.filter(
+    (s) => !isCoreProtectedFromWeeklyDeactivate(s.tier),
+  );
+  for (const s of softExcess) {
+    if (isCoreProtectedFromWeeklyDeactivate(s.tier)) {
+      actions.push({
+        type: "keep",
+        code: s.code,
+        reason: "コア銘柄は週次 soft ローテで監視メモへ落とさない",
+      });
+    }
+  }
   const currentlyActiveCount = ranked.filter((s) => s.currentlyActive).length;
   const projected =
     currentlyActiveCount - forcedDown.length + toRaise.length;
   const overshoot = Math.max(0, projected - targetActive);
-  softExcess.sort((a, b) => a.score - b.score);
-  const kicks = Math.min(maxRotations, overshoot, softExcess.length);
+  softKickable.sort((a, b) => a.score - b.score);
+  const kicks = Math.min(maxRotations, overshoot, softKickable.length);
   for (let i = 0; i < kicks; i++) {
-    const s = softExcess[i]!;
+    const s = softKickable[i]!;
     actions.push({
       type: "deactivate",
       code: s.code,

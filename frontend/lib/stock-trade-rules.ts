@@ -16,6 +16,7 @@ import {
   STOCK_DIP_NEAR_MONTH_PCT,
   STOCK_DIP_NEAR_WEEK_PCT,
   STOCK_DIP_BUY_SHARE_OF_WATCHES,
+  STOCK_DIP_BUY_SHARE_WHEN_CROWDED,
   STOCK_DIP_WEEK_LOOKBACK,
   STOCK_HARD_STOP_LOSS_RATE,
   STOCK_HARD_TAKE_PROFIT_MULT,
@@ -27,6 +28,7 @@ import {
   STOCK_MAX_QTY_PER_ORDER,
   STOCK_MAX_SINGLE_ASSET_RATIO,
   STOCK_MAX_TRADE_YEN,
+  STOCK_MEMO_CORE_PRIORITY_SLACK,
   STOCK_MIN_CASH_RATIO,
   STOCK_MONTHLY_MAX_LOSS_YEN,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE,
@@ -113,13 +115,19 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 42,
     category: "universe",
     title: "週末ユニバース自動シード",
-    summary: `毎週末に固定候補を利確しやすさ（月次目標までの回転向き）＋News Search 適合で採点し、アクティブ目標 ${STOCK_WEEKLY_TARGET_ACTIVE_JP}・入れ替え最大 ${STOCK_WEEKLY_MAX_ROTATIONS}。単元不可は監視メモ。保有はローテアウトしない`,
+    summary: `毎週末に固定候補を利確しやすさ（月次目標までの回転向き）＋News Search 適合で採点し、アクティブ目標 ${STOCK_WEEKLY_TARGET_ACTIVE_JP}・入れ替え最大 ${STOCK_WEEKLY_MAX_ROTATIONS}。単元不可は監視メモ。保有はローテアウトしない。コア銘柄は soft ローテで監視メモへ落とさない`,
   },
   {
     id: 45,
     category: "buy",
     title: "監視メモ好条件チャレンジ",
-    summary: `非アクティブ（監視メモ）も最大 ${STOCK_MAX_MEMO_CHALLENGER_WATCHES} 銘柄まで分析し、買いシグナル優先度がアクティブ最良を上回るときだけ買いインテント可。売りは保有があるときのみ`,
+    summary: `非アクティブ（監視メモ）も最大 ${STOCK_MAX_MEMO_CHALLENGER_WATCHES} 銘柄まで分析し、買いシグナル優先度がアクティブ最良を上回るとき買い可。コアは優先度差 ≤${STOCK_MEMO_CORE_PRIORITY_SLACK} でも可。売りは保有があるときのみ`,
+  },
+  {
+    id: 46,
+    category: "buy",
+    title: "少額でも安値1単元許可",
+    summary: `少額投資モード(#21)でも安値ゾーン買い(#44)は1単元まで枠を引き上げ。単元コストが ${yen(STOCK_SMALL_TRADE_YEN)} を超えても余力内なら買える（4755対策）`,
   },
   {
     id: 43,
@@ -131,15 +139,14 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 8,
     category: "buy",
-    title: "AI買い + 強気トレンド",
-    summary:
-      "ウォッチAIが buy かつ短期トレンドが強気のとき買いインテントを生成（条件達成銘柄は互いに除外しない）。安値ゾーン買い(#44)とは別枠で並走",
+    title: "AI買い + 強気／押し目部分解禁",
+    summary: `ウォッチAIが buy かつ（強気、または下降でも RSI≤${STOCK_RSI_OVERSOLD}＋週/月安値）のとき買いインテント。安値ゾーン買い(#44)とは別枠で並走`,
   },
   {
     id: 44,
     category: "buy",
     title: "週次・月次安値ゾーン買い（件数上限）",
-    summary: `週安値(${STOCK_DIP_WEEK_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_WEEK_PCT)} 以内、または月安値(${STOCK_DIP_MONTH_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_MONTH_PCT)} 以内、かつ RSI≤${STOCK_DIP_MAX_RSI}。下降でも候補になるが採用枠は当日ウォッチ数の約 ${pct(STOCK_DIP_BUY_SHARE_OF_WATCHES)}（floor）まで・スコア順。残り枠は #8 の従来条件のみで判断（全員安値買いしない）`,
+    summary: `週安値(${STOCK_DIP_WEEK_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_WEEK_PCT)} 以内、または月安値(${STOCK_DIP_MONTH_LOOKBACK}日)の ${pct(STOCK_DIP_NEAR_MONTH_PCT)} 以内、かつ RSI≤${STOCK_DIP_MAX_RSI}。採用枠はウォッチ数の約 ${pct(STOCK_DIP_BUY_SHARE_OF_WATCHES)}（floor）。安値候補が半数以上いる日は約 ${pct(STOCK_DIP_BUY_SHARE_WHEN_CROWDED)} に拡大・スコア順。少額モードでも1単元まで(#46)`,
   },
   {
     id: 9,
@@ -219,7 +226,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 21,
     category: "buy",
     title: "現金薄いときの少額投資",
-    summary: `証券余力が ${yen(STOCK_SMALL_INVEST_CASH_FLOOR_YEN)} を下回っても売買は継続。買付は1インテント ${yen(STOCK_SMALL_TRADE_YEN)} までに縮小（売りは通常どおり）`,
+    summary: `証券余力が ${yen(STOCK_SMALL_INVEST_CASH_FLOOR_YEN)} を下回っても売買は継続。買付は1インテント ${yen(STOCK_SMALL_TRADE_YEN)} までに縮小。ただし安値ゾーン(#44)は1単元まで例外(#46)。売りは通常どおり`,
   },
   {
     id: 22,
