@@ -9,6 +9,7 @@ $base = "https://raw.githubusercontent.com/mickey4world-rgb/AQUA/main/infra/kabu
 $files = @(
   "Configure-KabuSessionKeepAlive.ps1",
   "Configure-KabuAutostart.ps1",
+  "Ensure-KabuSyncAutomation.ps1",
   "Enable-KabuAutoLogon.ps1"
 )
 foreach ($f in $files) {
