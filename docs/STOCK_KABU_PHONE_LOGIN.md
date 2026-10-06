@@ -95,9 +95,11 @@ powershell -File C:\kabu-setup\Install-TailscaleForPhoneAccess.ps1
 2. 携帯 Tailscale を On
 3. Windows App で `vm-kabu-aqua` に接続
 4. 株ステーションで **パスコード／OTP** を入力 → **API アイコン緑**を目視
-5. **GUI 緑の直後**、可能なら `C:\kabu-setup\Sync-Now.cmd` を一度実行（ログオン待ちの wait-ready が拾う前でも即同期できる）
-6. 接続を切るときは **× を使わない**。`C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat`（tscon）
+5. **GUI 緑の直後**、デスクトップ／スタートの **「3 Sync-Now (OTP後の同期)」** を実行
+6. 切るときは **× を使わない**。デスクトップ／スタートの **「4 RDP切断 (デスクトップ維持)」**（tscon）
 7. `/costs/kabu-check` を開き、大きな **緑** と「余力・保有の同期」が新しいことを確認
+
+Server Manager はログオン時に出ないよう無効化済み。デスクトップに残っていた場合はショートカット設定時に削除する。
 
 注意: **GUI の緑 ≠ 自動で sync 済み**。トークンが取れない半死状態だと緑のまま AQUA が赤のまま残ります。  
 そのときは **株ステーションを再起動 → 再ログイン → Sync-Now.cmd**。
