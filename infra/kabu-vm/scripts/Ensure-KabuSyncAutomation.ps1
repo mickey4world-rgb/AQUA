@@ -107,29 +107,29 @@ Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 
-# Manual helper (double-clickable) — OTP直後はこれを叩く
+# Manual helper (double-clickable). Single-quoted so PowerShell does not treat %LOG% as modulo.
 Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
-  "@echo off",
-  "setlocal",
-  ("set BRIDGE=" + $BridgeRoot),
-  ("set SETUP=" + $SetupDir),
-  "set LOG=%SETUP%\manual-sync.log",
-  "echo ===== %DATE% %TIME% Sync-Now =====>> \"%LOG%\"",
-  "cd /d \"%BRIDGE%\"",
-  "set KABU_WAIT_READY_MINUTES=5",
-  ("call `"" + $npmCmd + "`" run wait-ready >> \"%LOG%\" 2>&1"),
-  "if errorlevel 1 (",
-  "  echo WAIT_READY_FAILED — GUI緑でもダメなら株ステーション再起動後に再実行>> \"%LOG%\"",
-  "  echo WAIT_READY_FAILED. Restart kabuStation if GUI is green but API stuck.",
-  "  type \"%LOG%\" | more",
-  "  exit /b 1",
-  ")",
-  ("call `"" + $npmCmd + "`" run probe >> \"%LOG%\" 2>&1"),
-  ("call `"" + $npmCmd + "`" run health >> \"%LOG%\" 2>&1"),
-  ("call `"" + $npmCmd + "`" run sync >> \"%LOG%\" 2>&1"),
-  "if /I \"%~1\"==\"trade\" call `"" + $npmCmd + "`" run trade >> \"%LOG%\" 2>&1",
-  "echo done. see %LOG%",
-  "type \"%LOG%\" | more"
+  '@echo off',
+  'setlocal',
+  ('set BRIDGE=' + $BridgeRoot),
+  ('set SETUP=' + $SetupDir),
+  'set LOG=%SETUP%\manual-sync.log',
+  'echo ===== %DATE% %TIME% Sync-Now =====>> "%LOG%"',
+  'cd /d "%BRIDGE%"',
+  'set KABU_WAIT_READY_MINUTES=5',
+  ('call "' + $npmCmd + '" run wait-ready >> "%LOG%" 2>&1'),
+  'if errorlevel 1 (',
+  '  echo WAIT_READY_FAILED - restart kabuStation if GUI green but API stuck>> "%LOG%"',
+  '  echo WAIT_READY_FAILED. Restart kabuStation if GUI is green but API stuck.',
+  '  type "%LOG%" | more',
+  '  exit /b 1',
+  ')',
+  ('call "' + $npmCmd + '" run probe >> "%LOG%" 2>&1'),
+  ('call "' + $npmCmd + '" run health >> "%LOG%" 2>&1'),
+  ('call "' + $npmCmd + '" run sync >> "%LOG%" 2>&1'),
+  ('if /I "%~1"=="trade" call "' + $npmCmd + '" run trade >> "%LOG%" 2>&1'),
+  'echo done. see %LOG%',
+  'type "%LOG%" | more'
 )
 
 Reg-Task -Name "kabu-bridge-sync" -Cmd (Join-Path $SetupDir "run-sync.cmd") `
