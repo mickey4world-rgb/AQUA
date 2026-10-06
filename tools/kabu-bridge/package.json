@@ -6,7 +6,8 @@
     "sync": "node src/sync.mjs",
     "probe": "node src/probe.mjs",
     "health": "node src/health.mjs",
-    "trade": "node src/trade.mjs"
+    "trade": "node src/trade.mjs",
+    "wait-ready": "node src/wait-ready.mjs"
   },
   "engines": {
     "node": ">=20"

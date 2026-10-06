@@ -100,7 +100,7 @@ bridge: `npm run health` はトークン失敗時も AQUA に報告する（外�
 | 更新 | Windows Update 自動。ローカル管理者を最小に |
 | 監査 | bridge の dry-run / submitted を Cosmos に残す。注文報告後に監査AIが良い点・反省を記録し、同因が月内2回以上で条件候補に昇格 |
 | 週末ユニバース | GHA `stocks-weekly-universe.yml`（土曜 10:00 JST）→ `/api/stocks/cron/weekly-universe`。利確しやすさ＋**Works News Search 適合**で採点。アクティブ目標8・入れ替え最大3。SWA に `STOCK_AUTO_TRADE_USER_ID` が必要 |
-| VM 起動 | Automation `aa-kabu-aqua` 平日 **05:00 JST** Start（`Deploy-WeekdayVmStart.ps1`） |
+| VM 起動 | Automation `aa-kabu-aqua` 平日 **07:00 JST** Start（`Deploy-WeekdayVmStart.ps1`） |
 | VM 停止 | Auto-shutdown **16:30 JST** deallocate（土日も停止） |
 | 送信 | VM → インターネットは HTTPS（AQUA）と Windows Update 程度に限定（NSG Outbound は段階的に絞れる） |
 | ゲストOS | Install スクリプトで **Windows Firewall が 18080/81 inbound を Block**（NSG の二重化） |

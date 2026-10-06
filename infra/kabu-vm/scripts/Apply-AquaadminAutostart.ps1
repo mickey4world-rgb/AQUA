@@ -76,33 +76,21 @@ function Reg-Task([string]$Name, [string]$Cmd, [bool]$Logon, [int]$EveryMin) {
 }
 
 if ((Test-Path (Join-Path $BridgeRoot "package.json")) -and $npmCmd) {
-  Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
-    "@echo off",
-    ("cd /d " + $BridgeRoot),
-    ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
-  )
-  Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
-    "@echo off",
-    ("cd /d " + $BridgeRoot),
-    ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
-  )
-  Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
-    "@echo off",
-    "timeout /t 180 /nobreak >nul",
-    ("cd /d " + $BridgeRoot),
-    ("`"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
-    ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
-  )
-  Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
-    "@echo off",
-    "timeout /t 240 /nobreak >nul",
-    ("cd /d " + $BridgeRoot),
-    ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
-  )
-  Reg-Task "kabu-bridge-sync" (Join-Path $SetupDir "run-sync.cmd") $false 15
-  Reg-Task "kabu-bridge-trade" (Join-Path $SetupDir "run-trade.cmd") $false 15
-  Reg-Task "kabu-bridge-logon-sync" (Join-Path $SetupDir "run-sync-after-logon.cmd") $true 0
-  Reg-Task "kabu-bridge-logon-trade" (Join-Path $SetupDir "run-trade-after-logon.cmd") $true 0
+  $ensure = Join-Path $PSScriptRoot "Ensure-KabuSyncAutomation.ps1"
+  if (-not (Test-Path -LiteralPath $ensure)) {
+    $ensure = Join-Path $SetupDir "Ensure-KabuSyncAutomation.ps1"
+  }
+  if (Test-Path -LiteralPath $ensure) {
+    & $ensure -BridgeRoot $BridgeRoot -SetupDir $SetupDir -TargetUser $TargetUser
+  } else {
+    Write-Host "ENSURE_SCRIPT_MISSING — falling back to legacy task reg"
+    Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
+      "@echo off",
+      ("cd /d " + $BridgeRoot),
+      ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
+    )
+    Reg-Task "kabu-bridge-sync" (Join-Path $SetupDir "run-sync.cmd") $false 15
+  }
 } else {
   Write-Host "BRIDGE_OR_NPM_MISSING"
 }

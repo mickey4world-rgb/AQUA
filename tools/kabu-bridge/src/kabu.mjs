@@ -27,11 +27,15 @@ export function loadConfig() {
   };
 }
 
+/** kabu API がハングすると Task Scheduler が IgnoreNew で後続 sync を全部落とす */
+const KABU_FETCH_TIMEOUT_MS = Number(process.env.KABU_FETCH_TIMEOUT_MS ?? 12_000);
+
 export async function fetchKabuToken(baseUrl, apiPassword) {
   const res = await fetch(`${baseUrl}/kabusapi/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ APIPassword: apiPassword }),
+    signal: AbortSignal.timeout(KABU_FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.Token) {
@@ -45,6 +49,7 @@ export async function fetchKabuToken(baseUrl, apiPassword) {
 export async function kabuGet(baseUrl, token, path) {
   const res = await fetch(`${baseUrl}${path}`, {
     headers: { "X-API-KEY": token },
+    signal: AbortSignal.timeout(KABU_FETCH_TIMEOUT_MS),
   });
   const text = await res.text();
   let body;

@@ -1,9 +1,11 @@
-# Azure Automation: 平日 05:00 JST に vm-kabu-aqua を起動
+# Azure Automation: 平日朝に vm-kabu-aqua を起動
 #
 # 適用:
 #   powershell -ExecutionPolicy Bypass -File infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1
+#   # 既定 07:00 JST（勤務先から遠隔 OTP する前提。旧 05:00 は無効化すること）
 #
 # 停止は既存 Auto-shutdown 16:30 JST（deallocate）に任せる。
+# ※ 起動時刻を遅らせても「緑なのに sync 不可」は直らない。OTP後 wait-ready / 再起動が本丸。
 
 param(
   [string]$ResourceGroup = "rg-personal-apps-prod",
@@ -11,8 +13,13 @@ param(
   [string]$Location = "japaneast",
   [string]$AutomationAccount = "aa-kabu-aqua",
   [string]$RunbookName = "Start-KabuVm",
-  [string]$ScheduleName = "weekday-0500-jst-start"
+  [int]$StartHour = 7,
+  [int]$StartMinute = 0,
+  [string]$ScheduleName = ""
 )
+if (-not $ScheduleName) {
+  $ScheduleName = ("weekday-{0:d2}{1:d2}-jst-start" -f $StartHour, $StartMinute)
+}
 
 $ErrorActionPreference = "Continue"
 
@@ -93,26 +100,28 @@ az automation runbook publish `
   -n $RunbookName `
   -o none
 
-# 次の平日 05:00 JST
+# 次の平日 StartHour:StartMinute JST
 $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
 $nowLocal = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
-$candidate = Get-Date -Year $nowLocal.Year -Month $nowLocal.Month -Day $nowLocal.Day -Hour 5 -Minute 0 -Second 0
+$candidate = Get-Date -Year $nowLocal.Year -Month $nowLocal.Month -Day $nowLocal.Day `
+  -Hour $StartHour -Minute $StartMinute -Second 0
 if ($candidate -le $nowLocal) { $candidate = $candidate.AddDays(1) }
 while ($candidate.DayOfWeek -eq "Saturday" -or $candidate.DayOfWeek -eq "Sunday") {
   $candidate = $candidate.AddDays(1)
 }
-$startTimeIso = $candidate.ToString("yyyy-MM-dd") + "T05:00:00+09:00"
-Write-Host "Schedule startTime=$startTimeIso"
+$startTimeIso = $candidate.ToString("yyyy-MM-dd") + ("T{0:d2}:{1:d2}:00+09:00" -f $StartHour, $StartMinute)
+Write-Host "Schedule startTime=$startTimeIso name=$ScheduleName"
 
 $base = "https://management.azure.com/subscriptions/$subId/resourceGroups/$ResourceGroup/providers/Microsoft.Automation/automationAccounts/$AutomationAccount"
 $api = "2022-08-08"
 $schFile = Join-Path $env:TEMP "aa-sch.json"
 $jsFile = Join-Path $env:TEMP "aa-js.json"
 
+$desc = "Weekday {0:d2}:{1:d2} JST start for $VmName" -f $StartHour, $StartMinute
 @{
   name = $ScheduleName
   properties = @{
-    description = "Weekday 05:00 JST start for $VmName"
+    description = $desc
     startTime = $startTimeIso
     frequency = "Week"
     interval = 1
@@ -157,6 +166,19 @@ az rest --method put `
 if ($LASTEXITCODE -ne 0) { throw "jobSchedule put failed" }
 
 Write-Host ""
-Write-Host "DONE: weekday 05:00 JST start → $VmName"
+Write-Host ("DONE: weekday {0:d2}:{1:d2} JST start → {2}" -f $StartHour, $StartMinute, $VmName)
 Write-Host "Stop remains Auto-shutdown 16:30 JST (deallocate)."
-Write-Host "nextRun should show the next weekday 05:00 Asia/Tokyo."
+Write-Host ("nextRun should show the next weekday {0:d2}:{1:d2} Asia/Tokyo." -f $StartHour, $StartMinute)
+# 旧 05:00 / 06:30 スケジュールが残ると二重起動するので無効化
+$disableFile = Join-Path $env:TEMP "aa-sch-disable.json"
+'{"properties":{"isEnabled":false}}' | Set-Content $disableFile -Encoding utf8
+foreach ($oldName in @("weekday-0500-jst-start", "weekday-0630-jst-start")) {
+  if ($oldName -eq $ScheduleName) { continue }
+  Write-Host "Disabling old schedule if present: $oldName"
+  az rest --method patch `
+    --url "$base/schedules/${oldName}?api-version=$api" `
+    --body "@$disableFile" `
+    --headers "Content-Type=application/json" `
+    -o none 2>$null
+}
+Write-Host "旧 05:00/06:30 schedule は無効化を試行済み（無ければ無視でOK）。"
