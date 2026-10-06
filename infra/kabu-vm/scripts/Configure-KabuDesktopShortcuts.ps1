@@ -1,11 +1,8 @@
 #Requires -Version 5.1
-<#
-.SYNOPSIS
-  Morning flow shortcuts on Desktop + Start Menu, and stop Server Manager popping up.
-
-  3 = Sync-Now (OTP後の同期)
-  4 = Disconnect-Rdp-KeepDesktop (×ではなく tscon)
-#>
+# Morning flow shortcuts on Desktop + Start Menu; suppress Server Manager.
+# ASCII-only source (Windows PowerShell 5.1 / Run Command safe).
+#   3 = Sync-Now
+#   4 = Disconnect-Rdp-KeepDesktop (tscon)
 param(
   [string]$SetupDir = "C:\kabu-setup",
   [string]$TargetUser = "aquaadmin"
@@ -16,10 +13,10 @@ $ErrorActionPreference = "Stop"
 $syncCmd = Join-Path $SetupDir "Sync-Now.cmd"
 $disconnectBat = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.bat"
 if (-not (Test-Path -LiteralPath $syncCmd)) {
-  throw "Missing $syncCmd — run Ensure-KabuSyncAutomation.ps1 first"
+  throw ("Missing " + $syncCmd + " - run Ensure-KabuSyncAutomation.ps1 first")
 }
 if (-not (Test-Path -LiteralPath $disconnectBat)) {
-  throw "Missing $disconnectBat — run Configure-KabuSessionKeepAlive.ps1 first"
+  throw ("Missing " + $disconnectBat + " - run Configure-KabuSessionKeepAlive.ps1 first")
 }
 
 $userProfile = "C:\Users\$TargetUser"
@@ -42,16 +39,16 @@ function New-Lnk([string]$Path, [string]$Target, [string]$WorkDir, [string]$Desc
 
 $names = @(
   @{
-    File = "3 Sync-Now (OTP後の同期).lnk"
+    File = "3 Sync-Now.lnk"
     Target = $syncCmd
     WorkDir = $SetupDir
-    Desc = "OTP/緑マーク後に余力・保有を AQUA へ同期"
+    Desc = "After OTP/green: sync cash and holdings to AQUA"
   },
   @{
-    File = "4 RDP切断 (デスクトップ維持).lnk"
+    File = "4 Disconnect-RDP-KeepDesktop.lnk"
     Target = $disconnectBat
     WorkDir = $SetupDir
-    Desc = "RDPの×禁止。tsconでデスクトップを生かしたまま切断"
+    Desc = "Do not close RDP with X. tscon keeps desktop alive"
   }
 )
 
@@ -64,8 +61,7 @@ foreach ($n in $names) {
 Write-Host "==> Disable Server Manager at logon"
 foreach ($hive in @(
   "HKLM:\SOFTWARE\Microsoft\ServerManager",
-  "HKCU:\Software\Microsoft\ServerManager",
-  ("Registry::HKEY_USERS\.DEFAULT\Software\Microsoft\ServerManager")
+  "HKCU:\Software\Microsoft\ServerManager"
 )) {
   try {
     if (-not (Test-Path $hive)) { New-Item -Path $hive -Force | Out-Null }
@@ -73,11 +69,10 @@ foreach ($hive in @(
       -PropertyType DWord -Value 1 -Force | Out-Null
     Write-Host ("REG_OK " + $hive)
   } catch {
-    Write-Host ("REG_SKIP " + $hive + " " + $_.Exception.Message)
+    Write-Host ("REG_SKIP " + $hive)
   }
 }
 
-# aquaadmin SID registry (Run Command may not load that HKCU)
 try {
   $sid = (New-Object System.Security.Principal.NTAccount($TargetUser)).Translate(
     [System.Security.Principal.SecurityIdentifier]
@@ -91,17 +86,16 @@ try {
   Write-Host ("REG_USER_SKIP " + $_.Exception.Message)
 }
 
-# Disable ServerManager scheduled task if present
-Get-ScheduledTask -TaskName "ServerManager*" -ErrorAction SilentlyContinue | ForEach-Object {
-  Disable-ScheduledTask -TaskName $_.TaskName -ErrorAction SilentlyContinue | Out-Null
-  Write-Host ("TASK_DISABLED " + $_.TaskName)
-}
+Get-ScheduledTask -ErrorAction SilentlyContinue |
+  Where-Object { $_.TaskName -like "ServerManager*" } |
+  ForEach-Object {
+    Disable-ScheduledTask -TaskName $_.TaskName -ErrorAction SilentlyContinue | Out-Null
+    Write-Host ("TASK_DISABLED " + $_.TaskName)
+  }
 
-# Remove Server Manager / IE / Edge junk from desktops (do not auto-launch chrome)
 $junkPatterns = @(
   "*Server Manager*",
   "*ServerManager*",
-  "*Windows Administrative Tools*",
   "*Internet Explorer*",
   "*Microsoft Edge.lnk"
 )
@@ -117,10 +111,10 @@ foreach ($dir in @($desktop, $publicDesktop)) {
   }
 }
 
-# Startup: do not launch Server Manager
 $startup = Join-Path $userProfile "AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
 if (Test-Path $startup) {
-  Get-ChildItem -LiteralPath $startup -Filter "*ServerManager*" -ErrorAction SilentlyContinue |
+  Get-ChildItem -LiteralPath $startup -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "*ServerManager*" } |
     ForEach-Object {
       Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
       Write-Host ("STARTUP_REMOVED " + $_.FullName)
