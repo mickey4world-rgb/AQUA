@@ -31,9 +31,32 @@ $ensureSrc = Join-Path $src.FullName "infra\kabu-vm\scripts\Ensure-KabuSyncAutom
 Copy-Item $ensureSrc (Join-Path $scriptsDir "Ensure-KabuSyncAutomation.ps1") -Force
 Copy-Item $ensureSrc (Join-Path $SetupDir "Ensure-KabuSyncAutomation.ps1") -Force
 
+foreach ($scriptName in @(
+  "Ensure-KabuSyncAutomation.ps1",
+  "Configure-KabuDesktopShortcuts.ps1",
+  "Configure-KabuSessionKeepAlive.ps1"
+)) {
+  $p = Join-Path $src.FullName ("infra\kabu-vm\scripts\" + $scriptName)
+  if (Test-Path -LiteralPath $p) {
+    Copy-Item $p (Join-Path $scriptsDir $scriptName) -Force
+    Copy-Item $p (Join-Path $SetupDir $scriptName) -Force
+  }
+}
+if (Test-Path (Join-Path $SetupDir "Configure-KabuSessionKeepAlive.ps1")) {
+  Write-Host "==> Ensure Disconnect-Rdp bat exists"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $SetupDir "Configure-KabuSessionKeepAlive.ps1") `
+    -SetupDir $SetupDir
+}
+
 Write-Host "==> Register tasks (wait-ready / Daily 07:05)"
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $SetupDir "Ensure-KabuSyncAutomation.ps1") `
   -BridgeRoot $BridgeRoot -SetupDir $SetupDir
+
+if (Test-Path (Join-Path $SetupDir "Configure-KabuDesktopShortcuts.ps1")) {
+  Write-Host "==> Desktop / Start Menu shortcuts + disable Server Manager"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $SetupDir "Configure-KabuDesktopShortcuts.ps1") `
+    -SetupDir $SetupDir
+}
 
 Write-Host ("wait-ready=" + (Test-Path (Join-Path $BridgeRoot "src\wait-ready.mjs")))
 Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue | ForEach-Object {

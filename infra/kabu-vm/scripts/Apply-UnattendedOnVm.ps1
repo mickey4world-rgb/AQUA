@@ -10,6 +10,7 @@ $files = @(
   "Configure-KabuSessionKeepAlive.ps1",
   "Configure-KabuAutostart.ps1",
   "Ensure-KabuSyncAutomation.ps1",
+  "Configure-KabuDesktopShortcuts.ps1",
   "Enable-KabuAutoLogon.ps1"
 )
 foreach ($f in $files) {
@@ -28,6 +29,12 @@ Expand-Archive -Path $zip -DestinationPath $SetupDir -Force
 
 Write-Host "==> Autostart kabu plus bridge tasks"
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptsDir "Configure-KabuAutostart.ps1")
+
+$shortcutPs1 = Join-Path $ScriptsDir "Configure-KabuDesktopShortcuts.ps1"
+if (Test-Path -LiteralPath $shortcutPs1) {
+  Write-Host "==> Desktop / Start Menu shortcuts + disable Server Manager"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $shortcutPs1
+}
 
 Write-Host "==> Env readiness (names only)"
 $envPath = "C:\kabu-bridge\.env"
