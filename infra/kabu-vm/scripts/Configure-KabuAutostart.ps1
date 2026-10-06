@@ -114,40 +114,23 @@ function Register-SimpleTask {
   Write-Host ("TASK_OK " + $TaskName)
 }
 
-$syncCmd = Join-Path $SetupDir "run-sync.cmd"
-Write-CmdFile $syncCmd @(
-  "@echo off",
-  ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
-)
-
-$tradeCmd = Join-Path $SetupDir "run-trade.cmd"
-Write-CmdFile $tradeCmd @(
-  "@echo off",
-  ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
-)
-
-$logonSync = Join-Path $SetupDir "run-sync-after-logon.cmd"
-Write-CmdFile $logonSync @(
-  "@echo off",
-  ("timeout /t " + $BridgeDelaySeconds + " /nobreak >nul"),
-  ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
-)
-
-$logonTrade = Join-Path $SetupDir "run-trade-after-logon.cmd"
-Write-CmdFile $logonTrade @(
-  "@echo off",
-  ("timeout /t " + ($BridgeDelaySeconds + 60) + " /nobreak >nul"),
-  ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
-)
-
-Register-SimpleTask -TaskName "kabu-bridge-sync" -CmdPath $syncCmd -EveryMin $IntervalMinutes
-Register-SimpleTask -TaskName "kabu-bridge-trade" -CmdPath $tradeCmd -EveryMin $IntervalMinutes
-Register-SimpleTask -TaskName "kabu-bridge-logon-sync" -CmdPath $logonSync -AtLogon
-Register-SimpleTask -TaskName "kabu-bridge-logon-trade" -CmdPath $logonTrade -AtLogon
+# バッチ／定期タスクの正は Ensure-KabuSyncAutomation.ps1（wait-ready・Daily 06:45）
+$ensure = Join-Path $PSScriptRoot "Ensure-KabuSyncAutomation.ps1"
+if (-not (Test-Path -LiteralPath $ensure)) {
+  $ensure = Join-Path $SetupDir "Ensure-KabuSyncAutomation.ps1"
+}
+if (Test-Path -LiteralPath $ensure) {
+  & $ensure -BridgeRoot $BridgeRoot -SetupDir $SetupDir `
+    -LogonDelaySeconds $BridgeDelaySeconds -IntervalMinutes $IntervalMinutes
+} else {
+  Write-Warning "Ensure-KabuSyncAutomation.ps1 not found — writing legacy cmds only"
+  $syncCmd = Join-Path $SetupDir "run-sync.cmd"
+  Write-CmdFile $syncCmd @(
+    "@echo off",
+    ("cd /d " + $BridgeRoot),
+    ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
+  )
+  Register-SimpleTask -TaskName "kabu-bridge-sync" -CmdPath $syncCmd -EveryMin $IntervalMinutes
+}
 
 Write-Host "AUTOSTART_OK"

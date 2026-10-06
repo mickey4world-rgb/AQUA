@@ -9,8 +9,11 @@
 |---------|------|
 | `npm run probe` | トークン＋余力確認 |
 | `npm run health` | ステーション到達／トークン可否を AQUA へ報告（失敗時も送る・外出確認用） |
+| `npm run wait-ready` | OTP／緑マークまでトークンをリトライ（既定最大90分）。ログオン自動化用 |
 | `npm run sync` | 余力・保有 → AQUA |
 | `npm run trade` | 買い/売りインテント → **既定 dry-run** / LIVE 時 sendorder |
+
+`KABU_FETCH_TIMEOUT_MS`（既定12000）で API ハングを打ち切り。GUI緑でも token 失敗が続くときは株ステーション再起動。
 
 ## 安全装置
 
