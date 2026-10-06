@@ -166,10 +166,10 @@ az rest --method put `
 if ($LASTEXITCODE -ne 0) { throw "jobSchedule put failed" }
 
 Write-Host ""
-Write-Host ("DONE: weekday {0:d2}:{1:d2} JST start → {2}" -f $StartHour, $StartMinute, $VmName)
+Write-Host ("DONE: weekday {0:d2}:{1:d2} JST start -> {2}" -f $StartHour, $StartMinute, $VmName)
 Write-Host "Stop remains Auto-shutdown 16:30 JST (deallocate)."
 Write-Host ("nextRun should show the next weekday {0:d2}:{1:d2} Asia/Tokyo." -f $StartHour, $StartMinute)
-# 旧 05:00 / 06:30 スケジュールが残ると二重起動するので無効化
+# Disable old schedules so the VM does not double-start
 $disableFile = Join-Path $env:TEMP "aa-sch-disable.json"
 '{"properties":{"isEnabled":false}}' | Set-Content $disableFile -Encoding utf8
 foreach ($oldName in @("weekday-0500-jst-start", "weekday-0630-jst-start")) {
@@ -181,4 +181,4 @@ foreach ($oldName in @("weekday-0500-jst-start", "weekday-0630-jst-start")) {
     --headers "Content-Type=application/json" `
     -o none 2>$null
 }
-Write-Host "旧 05:00/06:30 schedule は無効化を試行済み（無ければ無視でOK）。"
+Write-Host "Tried to disable old 05:00/06:30 schedules (ignore if missing)."
