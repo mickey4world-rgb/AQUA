@@ -18,6 +18,15 @@ export function stockBuySignalPriority(advice: {
   if (advice.action === "buy" && advice.trend === "bullish") {
     priority = Math.max(priority, 1000 + Math.max(0, advice.dipScore ?? 0));
   }
+  // hold+強気+安値（Path A 活性化）は buy+強気より少し低く
+  if (
+    advice.action === "hold" &&
+    advice.trend === "bullish" &&
+    (advice.rsi14 ?? 100) <= 40 &&
+    (advice.nearWeekLow || advice.nearMonthLow || advice.dipBuyEligible)
+  ) {
+    priority = Math.max(priority, 850 + Math.max(0, advice.dipScore ?? 0));
+  }
   // #8 部分解禁（下降+売られすぎ+安値）はトレンド買いより少し低く、安値枠より高く
   if (isBearishDipBounceBuy(advice)) {
     priority = Math.max(priority, 500 + Math.max(0, advice.dipScore ?? 0));

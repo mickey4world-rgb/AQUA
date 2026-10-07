@@ -60,7 +60,7 @@ export const SOLUNA_TRADE_RULES: SolunaTradeRule[] = [
     id: 4,
     category: "risk",
     title: "買付冷却",
-    summary: "直前の買いから約2時間は新規買いしない（利確監視は継続）",
+    summary: "直前の買いから約75分は新規買いしない（利確監視は継続）",
   },
   {
     id: 5,
@@ -85,7 +85,7 @@ export const SOLUNA_TRADE_RULES: SolunaTradeRule[] = [
     category: "buy",
     title: "強気スコアで買い",
     summary:
-      "板・約定・多期間トレンドのスコアが閾値以上、かつ強気バイアスの銘柄を買う（防御/ニュースで閾値調整）。条件達成銘柄は互いに除外しない",
+      "板・約定・多期間トレンドのスコアが閾値以上、かつ強気バイアスの銘柄を買う（防御加算は控えめ／閑散時は閾値緩和）。条件達成銘柄は互いに除外しない",
   },
   {
     id: 9,

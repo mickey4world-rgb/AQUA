@@ -12,7 +12,7 @@ import { STOCK_TRADE_RULES } from "./stock-trade-rules";
 import { analyzeStock } from "./server/stock-analysis";
 import type { StockWatch } from "./types/stock";
 
-assert.equal(STOCK_DIP_BUY_SHARE_OF_WATCHES, 0.5);
+assert.equal(STOCK_DIP_BUY_SHARE_OF_WATCHES, 0.65);
 assert.equal(maxDipBuysForWatchCount(4), 2);
 assert.equal(maxDipBuysForWatchCount(3), 1);
 assert.equal(maxDipBuysForWatchCount(6), 3);
@@ -25,7 +25,7 @@ assert.equal(maxDipBuysForWatchCount(4, 3), 3);
 assert.ok(STOCK_TRADE_RULES.some((r) => r.id === 44));
 assert.ok(STOCK_TRADE_RULES.some((r) => r.id === 46));
 assert.ok(
-  STOCK_TRADE_RULES.find((r) => r.id === 44)?.summary.includes("約 50%"),
+  STOCK_TRADE_RULES.find((r) => r.id === 44)?.summary.includes("約 65%"),
 );
 assert.ok(
   STOCK_TRADE_RULES.find((r) => r.id === 44)?.summary.includes("約 75%"),

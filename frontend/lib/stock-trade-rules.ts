@@ -140,7 +140,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 8,
     category: "buy",
     title: "AI買い + 強気／押し目部分解禁",
-    summary: `ウォッチAIが buy かつ（強気、または下降でも RSI≤${STOCK_RSI_OVERSOLD}＋週/月安値）のとき買いインテント。安値ゾーン買い(#44)とは別枠で並走`,
+    summary: `ウォッチAIが buy＋強気、下降でも RSI≤${STOCK_RSI_OVERSOLD}＋週/月安値、または hold＋強気＋安値付近のとき買いインテント。安値ゾーン買い(#44)とは別枠で並走`,
   },
   {
     id: 44,

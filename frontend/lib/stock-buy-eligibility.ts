@@ -21,7 +21,7 @@ export function isBearishDipBounceBuy(advice: {
   return true;
 }
 
-/** Path A: 従来の buy+強気、または #8 部分解禁 */
+/** Path A: buy+強気、#8 部分解禁、または hold+強気+安値（AIが慎重な日の活性化） */
 export function isTrendPathBuyEligible(advice: {
   action?: string;
   trend?: string;
@@ -30,9 +30,17 @@ export function isTrendPathBuyEligible(advice: {
   nearMonthLow?: boolean;
   dipBuyEligible?: boolean;
 }): boolean {
-  if (advice.action !== "buy") return false;
-  if (advice.trend === "bullish") return true;
-  return isBearishDipBounceBuy(advice);
+  if (advice.action === "buy" && advice.trend === "bullish") return true;
+  if (isBearishDipBounceBuy(advice)) return true;
+  if (
+    advice.action === "hold" &&
+    advice.trend === "bullish" &&
+    (advice.rsi14 ?? 100) <= 40 &&
+    (advice.nearWeekLow || advice.nearMonthLow || advice.dipBuyEligible)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**

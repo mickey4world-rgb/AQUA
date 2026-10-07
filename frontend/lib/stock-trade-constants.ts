@@ -102,7 +102,8 @@ export const STOCK_VOLUME_SPIKE_MULT = 2.5;
 
 /** RSI 過熱 */
 export const STOCK_RSI_OVERBOUGHT = 70;
-export const STOCK_RSI_OVERSOLD = 30;
+/** #8 部分解禁の売られすぎ判定（旧 30 → 押し目買いが増えにくい） */
+export const STOCK_RSI_OVERSOLD = 35;
 
 /**
  * 安値ゾーン買い（週次・月次の押し目拾い）。
@@ -113,17 +114,17 @@ export const STOCK_RSI_OVERSOLD = 30;
 export const STOCK_DIP_WEEK_LOOKBACK = 5;
 /** 月次安値の参照日数（営業日） */
 export const STOCK_DIP_MONTH_LOOKBACK = 20;
-/** 週次安値からの許容乖離（この以内ならゾーン内） */
-export const STOCK_DIP_NEAR_WEEK_PCT = 0.02;
+/** 週次安値からの許容乖離（旧 2% → 候補が消えにくく） */
+export const STOCK_DIP_NEAR_WEEK_PCT = 0.035;
 /** 月次安値からの許容乖離 */
-export const STOCK_DIP_NEAR_MONTH_PCT = 0.03;
-/** 安値買いを許可する RSI 上限（過熱し始めた反発は従来条件へ譲る） */
-export const STOCK_DIP_MAX_RSI = 45;
+export const STOCK_DIP_NEAR_MONTH_PCT = 0.045;
+/** 安値買いを許可する RSI 上限（旧 45 は候補がほぼ消える日が多かった） */
+export const STOCK_DIP_MAX_RSI = 52;
 /**
  * 安値ゾーン買いの枠 = floor(当日ウォッチ数 × この割合)。
  * 例: 4銘柄 → 安値最大2・残り2は従来#8のみ。件数そのものに固定しない。
  */
-export const STOCK_DIP_BUY_SHARE_OF_WATCHES = 0.5;
+export const STOCK_DIP_BUY_SHARE_OF_WATCHES = 0.65;
 
 /**
  * 安値候補がウォッチの半分以上いる「混み日」は枠を広げる。
