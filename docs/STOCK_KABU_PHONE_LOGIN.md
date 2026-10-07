@@ -76,13 +76,23 @@ tailscale status
 powershell -File C:\kabu-setup\Install-TailscaleForPhoneAccess.ps1
 ```
 
-### 2.3 携帯側
+### 2.3 自宅 PC 側（公開 IP なし）
+
+公開 IP を削除したため、**インターネット直の RDP は不可**。自宅 PC も Tailscale 経由にする。
+
+1. Tailscale をインストール（winget: `Tailscale.Tailscale`）
+2. **VM と同じ Tailscale アカウント**でログイン（ホスト名例: `pc-aqua-home`）
+3. デスクトップの `KabuVM-Tailscale.rdp`、または Remote Desktop で PC 名 **`vm-kabu-aqua`**
+4. 資格情報は VM の Windows ユーザー（例: `aquaadmin`）。AQUA の PIN とは別
+5. 接続確認: `tailscale status` に `vm-kabu-aqua` が Online と出ること（VM 起動中のみ）
+
+### 2.4 携帯側
 
 1. Tailscale アプリを入れ、同じアカウントでログイン
 2. **Windows App**（旧 Remote Desktop）を入れ、PC 名に Tailscale の MagicDNS 名または 100.x アドレスを登録
 3. 資格情報は VM の Windows ユーザー（例: `aquaadmin`）。AQUA の PIN とは別
 
-### 2.4 AQUA 確認 PIN
+### 2.5 AQUA 確認 PIN
 
 1. 携帯ブラウザで https://www.aquacore.net/costs/kabu-check
 2. AQUA ログイン後、6〜12 桁の確認 PIN を初回設定
