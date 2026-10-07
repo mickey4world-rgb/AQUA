@@ -29,14 +29,20 @@ export function computeMonthlyTargetYenFromOpening(openingBalanceYen: number): n
   const opening = Math.max(0, openingBalanceYen);
   return Math.max(MIN_MONTHLY_TARGET_YEN, Math.round(opening * MONTHLY_TARGET_RATE));
 }
-export const BUY_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+/** 静かな相場でも再エントリーしやすく（旧 2h） */
+export const BUY_COOLDOWN_MS = 75 * 60 * 1000;
 export const MAX_DAILY_BUY_YEN = 20_000;
-export const MAX_SPREAD_BPS = 12;
-export const BULLISH_SCORE = 28;
-export const STRONG_BULLISH_SCORE = 55;
+export const MAX_SPREAD_BPS = 14;
+/** 旧 28。IV 低位でも買いが絶えないよう基準を下げる */
+export const BULLISH_SCORE = 22;
+export const STRONG_BULLISH_SCORE = 52;
 export const MIN_CASH_RATIO = 0.28;
 export const MAX_SINGLE_ASSET_RATIO = 0.42;
 export const MAX_CRYPTO_RATIO = 0.72;
+/** 防御モード時の買い閾値加算（旧 +12 が静かな月を殺しすぎた） */
+export const DEFENSE_BUY_THRESHOLD_BUMP = 5;
+/** 閑散相場（全銘柄 |score| が基準未満）のとき閾値を下げる */
+export const QUIET_MARKET_BUY_THRESHOLD_RELIEF = 6;
 
 export const TRADEABLE_PRODUCTS = ["BTC_JPY", "ETH_JPY", "XRP_JPY", "XLM_JPY"] as const;
 export type TradeableProduct = (typeof TRADEABLE_PRODUCTS)[number];

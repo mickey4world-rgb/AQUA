@@ -42,6 +42,7 @@ import {
   ASSET_PRINCIPAL_YEN,
   BUY_COOLDOWN_MS,
   BULLISH_SCORE,
+  DEFENSE_BUY_THRESHOLD_BUMP,
   HARD_STOP_LOSS_RATE,
   HARD_TAKE_PROFIT_RATE,
   LONG_TERM_RECOVERY_HORIZON_MS,
@@ -55,6 +56,7 @@ import {
   MIN_MONTHLY_TARGET_YEN,
   MONTHLY_TARGET_RATE,
   NO_STOP_LOSS_BELOW_CASH_YEN,
+  QUIET_MARKET_BUY_THRESHOLD_RELIEF,
   SLEEP_MODE_RATE,
   SOFT_STOP_LOSS_RATE,
   SOFT_TAKE_PROFIT_RATE,
@@ -289,7 +291,9 @@ export async function fetchMarketPulse(
   score += (buyPressure - 0.5) * 80;
   score += imbalance * 35;
   if (spreadBps > MAX_SPREAD_BPS) score -= Math.min(25, (spreadBps - MAX_SPREAD_BPS) * 2);
-  if (volatilityPct > 0.012) score -= 8;
+  // 適度な値動きは活性化（旧: >1.2% で一律減点 → 動いた日ほど買いづらい逆効果）
+  if (volatilityPct >= 0.004 && volatilityPct <= 0.03) score += 6;
+  else if (volatilityPct > 0.05) score -= 10;
   // 多期間トレンドを当日スコアに合成（短期約定よりやや控えめ）
   if (horizon) score += horizon.score * 0.7;
   score = Math.round(Math.max(-100, Math.min(100, score)));
@@ -995,12 +999,17 @@ function decideTrade(
   }
 
   let buyThreshold = BULLISH_SCORE;
-  if (battleMode === "defense") buyThreshold += 12;
-  if (newsSentiment === "negative") buyThreshold += 10;
+  if (battleMode === "defense") buyThreshold += DEFENSE_BUY_THRESHOLD_BUMP;
+  if (newsSentiment === "negative") buyThreshold += 6;
   if (newsSentiment === "positive") buyThreshold -= 6;
   if (battleMode === "attack") buyThreshold -= 5;
   // 反省メモ: 追いかけ買い抑制 → 買い閾値を上げる
-  if (bias.avoidChaseBuys) buyThreshold += 10;
+  if (bias.avoidChaseBuys) buyThreshold += 8;
+  // 閑散: 全銘柄が基準未満なら閾値を下げてエントリー機会を作る
+  const maxAbsScore = pulses.reduce((m, p) => Math.max(m, Math.abs(p.score)), 0);
+  if (maxAbsScore < BULLISH_SCORE) {
+    buyThreshold = Math.max(12, buyThreshold - QUIET_MARKET_BUY_THRESHOLD_RELIEF);
+  }
 
   const qualified = pulses
     .filter((p) => {

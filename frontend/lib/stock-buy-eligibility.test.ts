@@ -26,6 +26,15 @@ assert.ok(
   }),
 );
 assert.ok(
+  isBearishDipBounceBuy({
+    action: "buy",
+    trend: "bearish",
+    rsi14: 33,
+    nearWeekLow: true,
+  }),
+  "RSI 35 以下なら #8 部分解禁",
+);
+assert.ok(
   !isBearishDipBounceBuy({
     action: "buy",
     trend: "bearish",
@@ -43,6 +52,15 @@ assert.ok(
     rsi14: 28,
     nearMonthLow: true,
   }),
+);
+assert.ok(
+  isTrendPathBuyEligible({
+    action: "hold",
+    trend: "bullish",
+    rsi14: 38,
+    nearWeekLow: true,
+  }),
+  "hold+強気+安値でも Path A",
 );
 assert.ok(
   !isTrendPathBuyEligible({ action: "hold", trend: "bearish", rsi14: 25 }),
