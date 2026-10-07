@@ -54,7 +54,7 @@ Remove-Variable adminPassText, adminPass, BSTR -ErrorAction SilentlyContinue
 5. `scripts/Install-KabuHost.ps1`（Node + bridge + `.env` ACL + ゲストFW）
 6. `C:\kabu-bridge\.env` を埋める（`KABU_ALLOW_LIVE_ORDERS=0`）
 7. `npm run probe` → `sync` → `trade`（dry-run）
-8. 平日 16:30 JST 自動停止を確認。朝起動・無人ログオンは `Start-Stop-Notes.md`
+8. 平日 16:00 JST 自動停止を確認。朝起動・無人ログオンは `Start-Stop-Notes.md`（公開IPなし・Tailscale）
 9. 無人化する場合（推奨順）:
    - `scripts/Configure-KabuSessionKeepAlive.ps1`（スクセ無効・tscon bat）
    - `scripts/Enable-KabuAutoLogon.ps1`（Sysinternals・パスワードはGUIのみ）
@@ -66,8 +66,9 @@ Remove-Variable adminPassText, adminPass, BSTR -ErrorAction SilentlyContinue
 | 項目 | 設定 |
 |------|------|
 | サイズ | `Standard_B2s` |
-| ディスク | Standard SSD 128GB |
-| 停止 | 毎日 16:30 JST Auto-shutdown（deallocate） |
+| ディスク | Standard HDD・新規は 64GB（既存は縮小不可のため HDD 化） |
+| 公開IP | なし（Tailscale） |
+| 停止 | 毎日 16:00 JST Auto-shutdown（deallocate） |
 | 起動 | **平日 05:00 JST** Automation（`Deploy-WeekdayVmStart.ps1`） |
 | Bastion / Spot | **含めない** |
 

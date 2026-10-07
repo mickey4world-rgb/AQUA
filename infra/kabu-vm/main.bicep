@@ -17,11 +17,24 @@ param vmSize string = 'Standard_B2s'
 @description('CIDR allowed to RDP. Empty = no inbound RDP rule (use JIT later). Example: 203.0.113.10/32')
 param rdpAllowedCidr string = ''
 
-@description('Auto-shutdown local time HHmm')
-param autoShutdownTime string = '1630'
+@description('Auto-shutdown local time HHmm (JST market close buffer)')
+param autoShutdownTime string = '1600'
 
 @description('Windows timezone id for auto-shutdown')
 param autoShutdownTimezone string = 'Tokyo Standard Time'
+
+@description('OS disk GiB. Azure cannot shrink existing disks; this applies on create.')
+param osDiskSizeGb int = 64
+
+@description('OS disk SKU. Standard_LRS (HDD) is cheaper while stopped; SSD only if GUI I/O needs it.')
+@allowed([
+  'Standard_LRS'
+  'StandardSSD_LRS'
+])
+param osDiskSku string = 'Standard_LRS'
+
+@description('Attach a public IP. Default false — Tailscale/private access only (cost).')
+param createPublicIp bool = false
 
 @description('Cost / ownership tags')
 param tags object = {
@@ -125,7 +138,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
   }
 }
 
-resource pip 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
+resource pip 'Microsoft.Network/publicIPAddresses@2023-09-01' = if (createPublicIp) {
   name: pipName
   location: location
   tags: tags
@@ -145,15 +158,21 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
     ipConfigurations: [
       {
         name: 'ipconfig1'
-        properties: {
-          subnet: {
-            id: vnet.properties.subnets[0].id
-          }
-          privateIPAllocationMethod: 'Dynamic'
-          publicIPAddress: {
-            id: pip.id
-          }
-        }
+        properties: union(
+          {
+            subnet: {
+              id: vnet.properties.subnets[0].id
+            }
+            privateIPAllocationMethod: 'Dynamic'
+          },
+          createPublicIp
+            ? {
+                publicIPAddress: {
+                  id: pip!.id
+                }
+              }
+            : {}
+        )
       }
     ]
     networkSecurityGroup: {
@@ -190,9 +209,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         name: osDiskName
         createOption: 'FromImage'
         managedDisk: {
-          storageAccountType: 'StandardSSD_LRS'
+          storageAccountType: osDiskSku
         }
-        diskSizeGB: 128
+        diskSizeGB: osDiskSizeGb
       }
     }
     networkProfile: {
@@ -205,7 +224,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
   }
 }
 
-// Market-hours cost control: stop daily (deallocate) at 16:30 JST by default
+// Market-hours cost control: stop daily (deallocate) at 16:00 JST by default
 resource shutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = {
   name: 'shutdown-computevm-${vmName}'
   location: location
@@ -224,8 +243,8 @@ resource shutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = {
 }
 
 output vmId string = vm.id
-output publicIpAddress string = pip.properties.ipAddress
+output publicIpAddress string = createPublicIp ? pip!.properties.ipAddress : 'none (Tailscale / private only)'
 output rdpHint string = empty(rdpAllowedCidr)
-  ? 'No RDP allow rule. Enable JIT or redeploy with rdpAllowedCidr=/32'
-  : 'RDP allowed from ${rdpAllowedCidr} only. Kabu ports remain denied from Internet.'
+  ? 'No public RDP. Use Tailscale. Optional: redeploy with rdpAllowedCidr=/32 and createPublicIp=true'
+  : 'RDP CIDR rule present, but prefer Tailscale. Kabu ports remain denied from Internet.'
 output nextSteps string = 'Install kabuステーション on VM, run scripts/Install-KabuHost.ps1, configure C:\\kabu-bridge\\.env'

@@ -77,10 +77,10 @@ bridge: `npm run health` はトークン失敗時も AQUA に報告する（外�
 | 項目 | 方針 | 概算イメージ |
 |------|------|----------------|
 | VM サイズ | **Standard_B2s**（2 vCPU / 4 GiB）— kabu GUI 用。1 GiB 級は不可 | 常時なら月数千円台〜 |
-| 起動時間 | **平日 08:00–16:30 JST のみ**（約 8.5h×21日 ≒ 180h/月） | 常時の **約 1/4** |
-| OS ディスク | **Standard SSD 128GB**（Premium は初期不要） | ディスクは停止中も課金 |
-| 公開IP | Standard SKU・静的（必要最小） | 小額 |
-| Bastion | **初期は使わない**（月額が大きい） | 代わりに JIT + IP制限 |
+| 起動時間 | **平日 07:00–16:00 JST**（約 9h×21日 ≒ 190h/月） | 常時の **約 1/4** |
+| OS ディスク | **Standard HDD（Standard_LRS）**。新規は **64GB** 想定。既存は Azure が縮小不可のため HDD 化でコスト削減 | ディスクは停止中も課金 |
+| 公開IP | **付けない**（Tailscale 経由）。旧静的 PIP は削除済み | 常時課金を避ける |
+| Bastion | **使わない**（月額が大きい） | Tailscale |
 | Spot | **使わない**（取引中に奪取されうる） | — |
 | Automation | Start/Stop 用（従量・軽微） | 小額 |
 
@@ -101,7 +101,7 @@ bridge: `npm run health` はトークン失敗時も AQUA に報告する（外�
 | 監査 | bridge の dry-run / submitted を Cosmos に残す。注文報告後に監査AIが良い点・反省を記録し、同因が月内2回以上で条件候補に昇格 |
 | 週末ユニバース | GHA `stocks-weekly-universe.yml`（土曜 10:00 JST）→ `/api/stocks/cron/weekly-universe`。利確しやすさ＋**Works News Search 適合**で採点。アクティブ目標8・入れ替え最大3。SWA に `STOCK_AUTO_TRADE_USER_ID` が必要 |
 | VM 起動 | Automation `aa-kabu-aqua` 平日 **07:00 JST** Start（`Deploy-WeekdayVmStart.ps1`） |
-| VM 停止 | Auto-shutdown **16:30 JST** deallocate（土日も停止） |
+| VM 停止 | Auto-shutdown **16:00 JST** deallocate（土日も停止） |
 | 送信 | VM → インターネットは HTTPS（AQUA）と Windows Update 程度に限定（NSG Outbound は段階的に絞れる） |
 | ゲストOS | Install スクリプトで **Windows Firewall が 18080/81 inbound を Block**（NSG の二重化） |
 

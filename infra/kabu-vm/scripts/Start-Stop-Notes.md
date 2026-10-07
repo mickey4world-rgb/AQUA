@@ -1,6 +1,6 @@
 # VM Start / Stop + 無人ログオン（市場時間）メモ
 
-Azure の **Auto-shutdown**（Bicep で 16:30 JST）は「止める」だけ。  
+Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。  
 「朝起動」と「デスクトップまでログオン」は別途必要。kabuステーションは **対話セッション上の GUI** が生きていないと API が動かない。
 
 ## 判断（必要可否）
@@ -92,7 +92,8 @@ Portal → VM → **開始**。慣れるまでこれで十分。
 
 - Runbook: `Start-KabuVm`（Managed Identity で Start-AzVM）
 - スケジュール: **月–金 07:00 JST**（勤務先から遠隔 OTP する前提）
-- 停止: 既存 Auto-shutdown **毎日 16:30 JST**（deallocate）に任せる
+- 停止: 既存 Auto-shutdown **毎日 16:00 JST**（deallocate）に任せる
+- 公開IPなし: RDP は **Tailscale** 経由（`vm-kabu-aqua`）
 
 ```powershell
 pwsh infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1
