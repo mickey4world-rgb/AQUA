@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1
 #   # 既定 07:00 JST（勤務先から遠隔 OTP する前提。旧 05:00 は無効化すること）
 #
-# 停止は既存 Auto-shutdown 16:30 JST（deallocate）に任せる。
+# 停止は既存 Auto-shutdown 16:00 JST（deallocate）に任せる。
 # ※ 起動時刻を遅らせても「緑なのに sync 不可」は直らない。OTP後 wait-ready / 再起動が本丸。
 
 param(
@@ -167,7 +167,7 @@ if ($LASTEXITCODE -ne 0) { throw "jobSchedule put failed" }
 
 Write-Host ""
 Write-Host ("DONE: weekday {0:d2}:{1:d2} JST start -> {2}" -f $StartHour, $StartMinute, $VmName)
-Write-Host "Stop remains Auto-shutdown 16:30 JST (deallocate)."
+Write-Host "Stop remains Auto-shutdown 16:00 JST (deallocate)."
 Write-Host ("nextRun should show the next weekday {0:d2}:{1:d2} Asia/Tokyo." -f $StartHour, $StartMinute)
 # Disable old schedules so the VM does not double-start
 $disableFile = Join-Path $env:TEMP "aa-sch-disable.json"
