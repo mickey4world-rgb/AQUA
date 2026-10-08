@@ -23,7 +23,17 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 | ログオン後 ~3分 | `kabu-bridge-logon-sync` | **wait-ready（最大90分・OTP待ち）** → probe → health → sync |
 | ログオン後 ~4分 | `kabu-bridge-logon-trade` | wait-ready → trade |
 | 07:05〜 5分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | health+sync / trade（Daily 起点・Parallel） |
-| 12:32（昼休み明け） | `kabu-bridge-lunch-reopen` | wait-ready→sync→trade（後場の半死対策） |
+| 12:32（昼休み明け） | `kabu-bridge-lunch-reopen` | preflight→wait-ready→sync→trade（後場の半死対策） |
+| 毎回 sync/trade 前 | `run-preflight.cmd` | Disc→console(tscon) + API半死なら kabuStation 自動再起動 |
+| 5分ごと | `kabu-bridge-console-keepalive` | RDP×切断後のデスクトップ死亡を自動回収 |
+
+### 朝から sync しないときの本命クラス
+
+手動で 8時・10時・11時・12:30 にステーション再起動が要る日は、だいたい次のどれか（または複合）:
+
+1. **RDP を × で閉じた** → デスクトップ描画停止 → API 死亡。必ず `4 Disconnect-RDP-KeepDesktop`
+2. **GUI緑なのに API 半死** → preflight がプロセス再起動を試す（OTP 再入力が要る場合は health が赤のまま）
+3. **OTP 前に sync だけ失敗** → wait-ready が拾うまで正常。緑にしたら `3 Sync-Now`
 | 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | wait-ready(5分)→probe+health+sync（`trade` 引数で発注も） |
 | 外出先ログイン | Tailscale → Windows App → 株ステーション OTP | 公開 RDP なし。手順 `docs/STOCK_KABU_PHONE_LOGIN.md` |
 | 緑マーク確認 | 携帯 → `https://www.aquacore.net/costs/kabu-check` | AQUAログイン＋確認PIN。トークン成功＝API緑相当 |

@@ -34,7 +34,9 @@ Copy-Item $ensureSrc (Join-Path $SetupDir "Ensure-KabuSyncAutomation.ps1") -Forc
 foreach ($scriptName in @(
   "Ensure-KabuSyncAutomation.ps1",
   "Configure-KabuDesktopShortcuts.ps1",
-  "Configure-KabuSessionKeepAlive.ps1"
+  "Configure-KabuSessionKeepAlive.ps1",
+  "Keep-KabuConsoleSession.ps1",
+  "Recover-KabuApiIfNeeded.ps1"
 )) {
   $p = Join-Path $src.FullName ("infra\kabu-vm\scripts\" + $scriptName)
   if (Test-Path -LiteralPath $p) {
