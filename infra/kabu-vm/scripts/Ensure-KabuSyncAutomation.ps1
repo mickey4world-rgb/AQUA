@@ -162,8 +162,9 @@ foreach ($helper in @(
   "Recover-KabuApiIfNeeded.ps1"
 )) {
   $srcHelper = Join-Path $PSScriptRoot $helper
-  if (Test-Path -LiteralPath $srcHelper) {
-    Copy-Item $srcHelper (Join-Path $SetupDir $helper) -Force
+  $dstHelper = Join-Path $SetupDir $helper
+  if ((Test-Path -LiteralPath $srcHelper) -and ($srcHelper -ne $dstHelper)) {
+    Copy-Item $srcHelper $dstHelper -Force
   }
 }
 
