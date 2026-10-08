@@ -106,13 +106,13 @@ powershell -File C:\kabu-setup\Install-TailscaleForPhoneAccess.ps1
 3. Windows App で `vm-kabu-aqua` に接続
 4. 株ステーションで **パスコード／OTP** を入力 → **API アイコン緑**を目視
 5. **GUI 緑の直後**、デスクトップ／スタートの **`3 Sync-Now`** を実行
-6. 切るときは **× を使わない**。デスクトップ／スタートの **`4 Disconnect-RDP-KeepDesktop`**（tscon）
+6. 切るときは **必ず `4 Disconnect-RDP-KeepDesktop`**（×禁止）。×だと朝から sync が死に、何度も手動再起動が必要になる
 7. `/costs/kabu-check` を開き、大きな **緑** と「余力・保有の同期」が新しいことを確認
 
-Server Manager はログオン時に出ないよう無効化済み。デスクトップにあった Server Manager ショートカットは削除する。
+VM 側は 5分ごとに **Disc→console 回収**と **API半死時のステーション自動再起動**を試す。  
+それでも token が取れないときは OTP 再入力が必要なので、kabu-check が赤のままなら再度 Windows App でログイン。
 
-注意: **GUI の緑 ≠ 自動で sync 済み**。トークンが取れない半死状態だと緑のまま AQUA が赤のまま残ります。  
-そのときは **株ステーションを再起動 → 再ログイン → Sync-Now.cmd**。
+注意: **GUI の緑 ≠ sync 済み**。半死のときは自動再起動後も OTP が要ることがある。
 
 ---
 

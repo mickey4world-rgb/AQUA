@@ -78,14 +78,23 @@ function Reg-Task {
   Write-Host ("TASK_OK " + $Name)
 }
 
+# Preflight: keep console session alive + recover half-dead API before sync/trade
+Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
+  "@echo off",
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -SetupDir `"" + $SetupDir + "`""),
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`"")
+)
+
 Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
   "@echo off",
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
   ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
   "@echo off",
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
@@ -93,6 +102,7 @@ Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
 $lunchLog = Join-Path $SetupDir "lunch-reopen.log"
 Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
   "@echo off",
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("echo ===== LUNCH REOPEN =====>> `"" + $lunchLog + "`""),
   ("set KABU_WAIT_READY_MINUTES=3"),
@@ -146,6 +156,17 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   'type "%LOG%" | more'
 )
 
+# Copy recover helpers next to cmds (Update-BridgeOnVm also copies from repo)
+foreach ($helper in @(
+  "Keep-KabuConsoleSession.ps1",
+  "Recover-KabuApiIfNeeded.ps1"
+)) {
+  $srcHelper = Join-Path $PSScriptRoot $helper
+  if (Test-Path -LiteralPath $srcHelper) {
+    Copy-Item $srcHelper (Join-Path $SetupDir $helper) -Force
+  }
+}
+
 Reg-Task -Name "kabu-bridge-sync" -Cmd (Join-Path $SetupDir "run-sync.cmd") `
   -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
 Reg-Task -Name "kabu-bridge-trade" -Cmd (Join-Path $SetupDir "run-trade.cmd") `
@@ -153,6 +174,12 @@ Reg-Task -Name "kabu-bridge-trade" -Cmd (Join-Path $SetupDir "run-trade.cmd") `
 Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") `
   -Logon $false -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 15 `
   -ExtraDailyAts @($LunchSyncTime)
+Write-Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") @(
+  "@echo off",
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -SetupDir `"" + $SetupDir + "`"")
+)
+Reg-Task -Name "kabu-bridge-console-keepalive" -Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") `
+  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 2
 Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") `
   -Logon $true -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 120
 Reg-Task -Name "kabu-bridge-logon-trade" -Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") `
