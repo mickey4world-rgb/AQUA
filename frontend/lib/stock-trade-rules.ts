@@ -282,7 +282,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 30,
     category: "mode",
     title: "寄り・引けの時間帯制限",
-    summary: `寄り付き直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は sessionOpenGuess=false（流動性・値動き荒れ回避）`,
+    summary: `寄り付き直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は発注窓のみ閉じる（UIのザラ場中表示は 15:00 まで維持。市場外と偽らない）`,
   },
   {
     id: 31,
