@@ -2,21 +2,21 @@
 <#
 .SYNOPSIS
   Ensure kabu-bridge sync/trade batch files + Scheduled Tasks exist (aquaadmin).
-  Also copies Sync-Now.cmd for manual runs.
 
-  改善点（朝緑でも sync できない問題）:
-  - ログオン後は wait-ready（OTP/緑まで最大90分リトライ）してから sync
-  - 定期タスクは 07:05 起点の Daily + 15分繰り返し（VM 07:00 起動・OTP 直後に合わせる）
-  - ExecutionTimeLimit 短縮 + Parallel（ハング1本で IgnoreNew 全滅を防ぐ）
-  - fetch タイムアウトは bridge 側 kabu.mjs でも実施
+  Reliability (sync died mid-session / UI lied "市場外"):
+  - wait-ready after logon (OTP)
+  - Daily 07:05 + every 5 min for ~9h (was 15 min — too sparse after lunch)
+  - Explicit lunch reopen at 12:32 (after 11:30-12:30 break)
+  - Parallel + short ExecutionTimeLimit (hung job must not block forever)
 #>
 param(
   [string]$BridgeRoot = "C:\kabu-bridge",
   [string]$SetupDir = "C:\kabu-setup",
   [string]$TargetUser = "aquaadmin",
   [int]$LogonDelaySeconds = 180,
-  [int]$IntervalMinutes = 15,
-  [string]$DailyStartTime = "07:05"
+  [int]$IntervalMinutes = 5,
+  [string]$DailyStartTime = "07:05",
+  [string]$LunchSyncTime = "12:32"
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +47,8 @@ function Reg-Task {
     [bool]$Logon,
     [bool]$DailyRepeat,
     [int]$EveryMin,
-    [int]$TimeLimitMinutes = 20
+    [int]$TimeLimitMinutes = 20,
+    [string[]]$ExtraDailyAts = @()
   )
   Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
   $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument ("/c `"" + $Cmd + "`"")
@@ -56,7 +57,6 @@ function Reg-Task {
     $triggers += New-ScheduledTaskTrigger -AtLogOn -User $TargetUser
   }
   if ($DailyRepeat -and $EveryMin -gt 0) {
-    # 深夜 Once@00:02 は deallocate 明けに取りこぼしやすい → 朝 Daily 起点
     $daily = New-ScheduledTaskTrigger -Daily -At $DailyStartTime
     $rep = (New-ScheduledTaskTrigger -Once -At $DailyStartTime `
         -RepetitionInterval (New-TimeSpan -Minutes $EveryMin) `
@@ -64,8 +64,12 @@ function Reg-Task {
     $daily.Repetition = $rep
     $triggers += $daily
   }
+  foreach ($at in $ExtraDailyAts) {
+    if ($at -and $at.Trim().Length -gt 0) {
+      $triggers += New-ScheduledTaskTrigger -Daily -At $at
+    }
+  }
   $principal = New-ScheduledTaskPrincipal -UserId $TargetUser -LogonType Interactive -RunLevel Highest
-  # Parallel: ハングした1本が IgnoreNew で後続を殺さない。短いタイムアウトで回収。
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -StartWhenAvailable -MultipleInstances Parallel `
     -ExecutionTimeLimit (New-TimeSpan -Minutes $TimeLimitMinutes)
@@ -85,7 +89,18 @@ Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
   ("cd /d " + $BridgeRoot),
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
-# ログオン後: OTP待ち（最大90分）→ 成功したら即 sync。朝の緑マーク後に橋渡しする本丸。
+# Lunch reopen: wait-ready briefly then sync+trade (station often half-dead after break)
+$lunchLog = Join-Path $SetupDir "lunch-reopen.log"
+Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
+  "@echo off",
+  ("cd /d " + $BridgeRoot),
+  ("echo ===== LUNCH REOPEN =====>> `"" + $lunchLog + "`""),
+  ("set KABU_WAIT_READY_MINUTES=3"),
+  ("`"" + $npmCmd + "`" run wait-ready >> `"" + $lunchLog + "`" 2>&1"),
+  ("`"" + $npmCmd + "`" run health >> `"" + $lunchLog + "`" 2>&1"),
+  ("`"" + $npmCmd + "`" run sync >> `"" + $lunchLog + "`" 2>&1"),
+  ("`"" + $npmCmd + "`" run trade >> `"" + $lunchLog + "`" 2>&1")
+)
 Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
   "@echo off",
   ("timeout /t " + $LogonDelaySeconds + " /nobreak >nul"),
@@ -107,7 +122,6 @@ Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 
-# Manual helper (double-clickable). Single-quoted so PowerShell does not treat %LOG% as modulo.
 Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   '@echo off',
   'setlocal',
@@ -133,10 +147,12 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
 )
 
 Reg-Task -Name "kabu-bridge-sync" -Cmd (Join-Path $SetupDir "run-sync.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 15
+  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
 Reg-Task -Name "kabu-bridge-trade" -Cmd (Join-Path $SetupDir "run-trade.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 15
-# wait-ready 最大90分 + sync → タイムリミット 120分
+  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
+Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") `
+  -Logon $false -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 15 `
+  -ExtraDailyAts @($LunchSyncTime)
 Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") `
   -Logon $true -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 120
 Reg-Task -Name "kabu-bridge-logon-trade" -Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") `
@@ -146,4 +162,4 @@ Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue | ForE
   $i = $_ | Get-ScheduledTaskInfo
   Write-Host ("TASK " + $_.TaskName + " " + $_.State + " last=" + $i.LastRunTime)
 }
-Write-Host "ENSURE_SYNC_AUTOMATION_OK dailyStart=$DailyStartTime interval=${IntervalMinutes}m"
+Write-Host "ENSURE_SYNC_AUTOMATION_OK dailyStart=$DailyStartTime interval=${IntervalMinutes}m lunch=$LunchSyncTime"
