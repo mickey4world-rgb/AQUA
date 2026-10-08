@@ -22,8 +22,6 @@ import {
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
   STOCK_PRINCIPAL_YEN,
-  STOCK_SESSION_CLOSE_BLACKOUT_MIN,
-  STOCK_SESSION_OPEN_BLACKOUT_MIN,
   STOCK_SMALL_DIP_ALLOW_ONE_LOT,
   STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
   STOCK_SMALL_TRADE_YEN,
@@ -92,40 +90,12 @@ function roundDownToLot(qty: number): number {
   return Math.floor(qty / STOCK_LOT_SIZE) * STOCK_LOT_SIZE;
 }
 
-function jstMinsOfDay(now = new Date()): { weekday: string; mins: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Tokyo",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-  return { weekday, mins: hour * 60 + minute };
-}
-
-/**
- * 東証の粗い取引可能時間。
- * 寄り付き直後・大引け間際のブラックアウトを除外（#30）。
- * 祝日は未考慮 — bridge 側でも再チェック。
- */
-export function isRoughJpEquitySession(now = new Date()): boolean {
-  const { weekday, mins } = jstMinsOfDay(now);
-  if (weekday === "Sat" || weekday === "Sun") return false;
-
-  const open = 9 * 60;
-  const amEnd = 11 * 60 + 30;
-  const pmStart = 12 * 60 + 30;
-  const close = 15 * 60;
-  const openOk =
-    mins >= open + STOCK_SESSION_OPEN_BLACKOUT_MIN && mins <= amEnd;
-  const pmOk =
-    mins >= pmStart &&
-    mins <= close - STOCK_SESSION_CLOSE_BLACKOUT_MIN;
-  return openOk || pmOk;
-}
+/** 発注窓（ブラックアウト込み）。UI の市場外判定には使わない。 */
+export {
+  isJpEquityTradeWindow as isRoughJpEquitySession,
+  isJpEquityMarketHours,
+  isJpEquityTradeWindow,
+} from "@/lib/stock-jp-session";
 
 /**
  * Phase C2 検証: 日本株・現物の売り＋買いシミュレーション。

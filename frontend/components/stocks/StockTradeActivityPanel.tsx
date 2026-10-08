@@ -249,7 +249,7 @@ export default function StockTradeActivityPanel({ activity }: Props) {
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-400">
           <span className="rounded-full border border-white/10 px-2 py-0.5">
-            {d.sessionOpenNow ? "おおよそ場中" : "場外寄り"}
+            {d.sessionOpenNow ? "ザラ場中" : "ザラ場外"}
           </span>
           <span className="rounded-full border border-white/10 px-2 py-0.5">
             アクティブ監視 {d.activeWatchCount}

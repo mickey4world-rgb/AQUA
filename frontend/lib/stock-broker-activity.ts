@@ -3,7 +3,7 @@
  */
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
 import type { StockBrokerSnapshot } from "@/lib/types/stock-broker";
-import { STOCK_SESSION_CLOSE_BLACKOUT_MIN, STOCK_SESSION_OPEN_BLACKOUT_MIN } from "@/lib/stock-trade-constants";
+import { isJpEquityMarketHours } from "@/lib/stock-jp-session";
 
 /** bridge が見送り時に書く点検レコード */
 export const STOCK_IDLE_CHECK_SYMBOL = "_CHECK_";
@@ -260,21 +260,6 @@ function hoursSince(iso: string | null | undefined): number | null {
   return (Date.now() - t) / 3_600_000;
 }
 
-function isRoughJpEquitySession(now = new Date()): boolean {
-  const { hour, minute, weekday } = jstParts(now);
-  if (weekday === "Sat" || weekday === "Sun") return false;
-  const mins = hour * 60 + minute;
-  const open = 9 * 60;
-  const amEnd = 11 * 60 + 30;
-  const pmStart = 12 * 60 + 30;
-  const close = 15 * 60;
-  const openOk =
-    mins >= open + STOCK_SESSION_OPEN_BLACKOUT_MIN && mins <= amEnd;
-  const pmOk =
-    mins >= pmStart &&
-    mins <= close - STOCK_SESSION_CLOSE_BLACKOUT_MIN;
-  return openOk || pmOk;
-}
 
 export function buildStockIdleDiagnosis(input: {
   snapshot: StockBrokerSnapshot | null;
@@ -295,7 +280,7 @@ export function buildStockIdleDiagnosis(input: {
       : null;
   const lastSyncedAt = snapshot?.syncedAt ?? null;
   const syncAgeHours = hoursSince(lastSyncedAt);
-  const sessionOpenNow = isRoughJpEquitySession();
+  const sessionOpenNow = isJpEquityMarketHours();
   const reasons: string[] = [];
 
   if (!snapshot) {
@@ -334,7 +319,11 @@ export function buildStockIdleDiagnosis(input: {
 
   if (!sessionOpenNow) {
     reasons.push(
-      "いまはおおよその現物ザラ場外です（平日 9:00–11:30 / 12:30–15:00 JST 付近）。場外でも判定は走りますが、LIVE 発注は場中向けです。",
+      "いまは現物ザラ場外です（平日 9:00–11:30 / 12:30–15:00 JST）。場外でも判定は走りますが、LIVE 発注は場中向けです。",
+    );
+  } else if (syncAgeHours != null && syncAgeHours > 0.75) {
+    reasons.push(
+      `ザラ場中なのに最終同期から約 ${Math.round(syncAgeHours * 60)} 分経過。sync 停止疑い（市場外ではありません）。`,
     );
   }
 

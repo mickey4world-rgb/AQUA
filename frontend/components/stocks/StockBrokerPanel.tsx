@@ -362,7 +362,7 @@ export default function StockBrokerPanel({
               Azure VM · {data.vmStatus.label}
             </span>
             <span className="text-[11px] text-slate-400">
-              {data.vmStatus.sessionOpenNow ? "おおよそ場中" : "場外寄り"}
+              {data.vmStatus.sessionOpenNow ? "ザラ場中" : "ザラ場外"}
               {data.vmStatus.kabuPort != null
                 ? ` · API :${data.vmStatus.kabuPort}`
                 : ""}
