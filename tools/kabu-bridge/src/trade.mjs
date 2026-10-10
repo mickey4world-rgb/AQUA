@@ -3,9 +3,11 @@
  *
  * 安全装置:
  * - KABU_ALLOW_LIVE_ORDERS=1 が無い限り絶対に sendorder しない
+ * - LIVE は sessionOpenGuess（発注窓）が true のときだけ sendorder
  * - ホワイトリスト KABU_SYMBOL_WHITELIST（カンマ区切り）。空なら全JP候補
  * - KABU_MAX_QTY_PER_ORDER（既定 100）
  * - 信用は実装しない
+ * - intents=0 でも buySkips 要約を点検レコードに残す（運用オラクル）
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -101,6 +103,17 @@ async function sendOrder(baseUrl, token, orderBody) {
   return { ok: res.ok, status: res.status, body };
 }
 
+function summarizeBuySkips(buySkips, limit = 5) {
+  if (!Array.isArray(buySkips) || buySkips.length === 0) return "";
+  return buySkips
+    .slice(0, limit)
+    .map((s) => {
+      const why = Array.isArray(s.reasons) ? s.reasons[0] : "";
+      return `${s.symbol}:${why}`;
+    })
+    .join(" | ");
+}
+
 console.log(
   `[kabu-bridge] trade start live=${allowLive ? "YES" : "NO (dry-run)"} maxQty=${maxQty}`,
 );
@@ -114,18 +127,24 @@ if (allowLive && !tradePassword) {
 
 const intentPayload = await fetchIntents();
 const intents = Array.isArray(intentPayload.intents) ? intentPayload.intents : [];
+const buySkips = Array.isArray(intentPayload.buySkips) ? intentPayload.buySkips : [];
+const sessionOpen = Boolean(intentPayload.sessionOpenGuess);
+const skipSummary = summarizeBuySkips(buySkips);
 console.log(
-  `[kabu-bridge] intents=${intents.length} sessionGuess=${intentPayload.sessionOpenGuess} policy=${intentPayload.policy ?? "?"}`,
+  `[kabu-bridge] intents=${intents.length} sessionGuess=${sessionOpen} buySkips=${buySkips.length} policy=${intentPayload.policy ?? "?"}`,
 );
+if (skipSummary) {
+  console.log(`[kabu-bridge] buySkipsTop ${skipSummary}`);
+}
+
+const jstStamp = new Date().toLocaleString("sv-SE", {
+  timeZone: "Asia/Tokyo",
+  hour12: false,
+});
+const hourKey = jstStamp.slice(0, 13).replace(" ", "T");
 
 if (intents.length === 0) {
   console.log("[kabu-bridge] nothing to do — report idle check");
-  const jstStamp = new Date().toLocaleString("sv-SE", {
-    timeZone: "Asia/Tokyo",
-    hour12: false,
-  });
-  // 同じ時間帯（分を落としたキー）は上書きし、時間帯チャートに点検が残る
-  const hourKey = jstStamp.slice(0, 13).replace(" ", "T"); // YYYY-MM-DDTHH
   await reportOrder({
     id: `idle-${config.aquaUserId}-${hourKey}`,
     userId: config.aquaUserId,
@@ -136,10 +155,47 @@ if (intents.length === 0) {
     qty: 0,
     status: "skipped",
     dryRun: !allowLive,
-    reason: intentPayload.sessionOpenGuess
+    reason: sessionOpen
       ? "条件未達・見送り（点検）"
       : "場外または条件未達・見送り（点検）",
-    message: `intents=0 sessionGuess=${intentPayload.sessionOpenGuess} policy=${intentPayload.policy ?? "?"}`,
+    message: [
+      `intents=0 sessionGuess=${sessionOpen} policy=${intentPayload.policy ?? "?"}`,
+      skipSummary ? `buySkips=${skipSummary}` : "buySkips=none",
+    ].join("; "),
+  });
+  process.exit(0);
+}
+
+// LIVE は発注窓のみ。窓外は dry-run 記録だけ（誤発注・場外拒否のノイズ防止）
+if (allowLive && !sessionOpen) {
+  console.log("[kabu-bridge] LIVE gated: outside trade window — report skip, no sendorder");
+  for (const intent of intents) {
+    await reportOrder({
+      userId: config.aquaUserId,
+      intentId: intent.id,
+      side: intent.side,
+      symbol: intent.symbol,
+      exchange: intent.exchange,
+      qty: intent.qty,
+      status: "skipped",
+      dryRun: false,
+      reason: "場外・ブラックアウトのため LIVE 見送り",
+      ruleIds: intent.ruleIds,
+      message: `sessionOpenGuess=false; ${intent.reason ?? ""}`.slice(0, 300),
+    });
+  }
+  await reportOrder({
+    id: `idle-${config.aquaUserId}-${hourKey}`,
+    userId: config.aquaUserId,
+    intentId: `idle-${hourKey}`,
+    side: "buy",
+    symbol: "_CHECK_",
+    exchange: 1,
+    qty: 0,
+    status: "skipped",
+    dryRun: false,
+    reason: "場外・ブラックアウト（点検）",
+    message: `intents=${intents.length} held; LIVE gated; ${skipSummary || "buySkips=none"}`,
   });
   process.exit(0);
 }

@@ -171,6 +171,21 @@ Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
   ("cd /d " + $BridgeRoot),
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
+# Atomic tick: sync then trade so LIVE never runs on a silently dead station
+$tickLog = Join-Path $SetupDir "market-tick.log"
+Write-Cmd (Join-Path $SetupDir "run-market-tick.cmd") @(
+  "@echo off",
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
+  ("cd /d " + $BridgeRoot),
+  ("echo ===== MARKET TICK %DATE% %TIME% =====>> `"" + $tickLog + "`""),
+  ("`"" + $npmCmd + "`" run health >> `"" + $tickLog + "`" 2>&1"),
+  ("`"" + $npmCmd + "`" run sync >> `"" + $tickLog + "`" 2>&1"),
+  ("if errorlevel 1 ("),
+  ("  echo SYNC_FAIL skip trade>> `"" + $tickLog + "`""),
+  ("  exit /b 1"),
+  (")"),
+  ("`"" + $npmCmd + "`" run trade >> `"" + $tickLog + "`" 2>&1")
+)
 # Lunch reopen: wait-ready briefly then sync+trade (station often half-dead after break)
 $lunchLog = Join-Path $SetupDir "lunch-reopen.log"
 Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
@@ -225,7 +240,12 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   ('call "' + $npmCmd + '" run probe >> "%LOG%" 2>&1'),
   ('call "' + $npmCmd + '" run health >> "%LOG%" 2>&1'),
   ('call "' + $npmCmd + '" run sync >> "%LOG%" 2>&1'),
-  ('if /I "%~1"=="trade" call "' + $npmCmd + '" run trade >> "%LOG%" 2>&1'),
+  'if errorlevel 1 (',
+  '  echo SYNC_FAILED>> "%LOG%"',
+  '  type "%LOG%" | more',
+  '  exit /b 1',
+  ')',
+  ('call "' + $npmCmd + '" run trade >> "%LOG%" 2>&1'),
   'echo done. see %LOG%',
   'type "%LOG%" | more'
 )
@@ -251,10 +271,11 @@ if (Test-Path -LiteralPath $keepPs1) {
 }
 
 
-Reg-Task -Name "kabu-bridge-sync" -Cmd (Join-Path $SetupDir "run-sync.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
-Reg-Task -Name "kabu-bridge-trade" -Cmd (Join-Path $SetupDir "run-trade.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
+# Primary path: one atomic tick (sync then trade). Old separate sync/trade tasks removed to avoid races.
+Reg-Task -Name "kabu-bridge-market-tick" -Cmd (Join-Path $SetupDir "run-market-tick.cmd") `
+  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 15
+Unregister-ScheduledTask -TaskName "kabu-bridge-sync" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "kabu-bridge-trade" -Confirm:$false -ErrorAction SilentlyContinue
 Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") `
   -Logon $false -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 15 `
   -ExtraDailyAts @($LunchSyncTime)
