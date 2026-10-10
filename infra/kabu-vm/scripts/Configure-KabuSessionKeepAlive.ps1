@@ -76,14 +76,14 @@ $disconnectBat = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.bat"
 Write-Host "==> Write $disconnectBat (wrapper -> $disconnectPs1)"
 @"
 @echo off
-REM Do not use tscon %sessionname% here — Explorer launches a new console and it fails silently.
+REM Do not use tscon %sessionname% here - Explorer launches a new console and it fails silently.
 REM PowerShell resolves Active/Disc session id (EN+JP) and falls back to a SYSTEM one-shot.
 echo Detaching RDP session to console (keep desktop active for kabu sync)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$disconnectPs1" -SetupDir "$SetupDir"
 set ERR=%ERRORLEVEL%
 if not "%ERR%"=="0" (
-  echo FAILED exit=%ERR% — see %SetupDir%\disconnect-rdp.log
-  echo After X close, SYSTEM watchdog still recovers Disc-^>console within ~1 minute.
+  echo FAILED exit=%ERR% - see %SetupDir%\disconnect-rdp.log
+  echo After X close, SYSTEM watchdog still recovers Disc-to-console within ~1 minute.
   pause
 )
 exit /b %ERR%
