@@ -15,6 +15,16 @@ export async function reportBridgeHealth(config, status) {
     kabuBaseUrl: config.kabuBaseUrl,
     kabuPort: Number(new URL(config.kabuBaseUrl).port) || undefined,
     reportedAt: new Date().toISOString(),
+    recoveryStatus:
+      typeof status.recoveryStatus === "string" && status.recoveryStatus.trim()
+        ? status.recoveryStatus.trim().slice(0, 40)
+        : undefined,
+    recoveryAction:
+      typeof status.recoveryAction === "string" && status.recoveryAction.trim()
+        ? status.recoveryAction.trim().slice(0, 80)
+        : undefined,
+    recoveryAt:
+      typeof status.recoveryAt === "string" ? status.recoveryAt : undefined,
   };
 
   const res = await fetch(`${config.aquaBridgeUrl}/api/stocks/broker/health`, {

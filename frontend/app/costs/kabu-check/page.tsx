@@ -274,6 +274,12 @@ export default function KabuCheckPage() {
               </div>
             )}
 
+            {check.items.find((i) => i.id === "recovery")?.ok === false && (
+              <div className="rounded-2xl border border-rose-400/35 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-50">
+                自動回復でもトークンが戻りません。OTP 再入力が必要です（ステーション再起動の連打はしません）。
+              </div>
+            )}
+
             {!check.needsInteractiveLogin && check.greenMark === true && (
               <div
                 className={`rounded-2xl border px-4 py-3 text-[13px] ${
@@ -283,8 +289,8 @@ export default function KabuCheckPage() {
                 }`}
               >
                 {check.autoTradeReady
-                  ? "自動売買準備OK。追加 OTP 不要。場中は market-tick（sync→trade）が 5 分ごとに続きます。×切断も SYSTEM が約1分で回収します。"
-                  : "緑は確認済みですが、自動売買準備は未完了です（LIVEオフ／同期古い／場中ティック停止のいずれか）。下の項目を確認してください。"}
+                  ? "自動売買準備OK。追加 OTP 不要。SYSTEM が毎分判断・回復し、market-tick が 5 分ごとに続きます。"
+                  : "緑は確認済みですが、自動売買準備は未完了です（LIVEオフ／同期古い／場中ティック停止のいずれか）。下の項目とメール通知を確認してください。"}
               </div>
             )}
 

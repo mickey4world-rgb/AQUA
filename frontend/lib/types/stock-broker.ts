@@ -33,6 +33,14 @@ export interface StockBrokerBridgeMeta {
   lastError?: string | null;
   /** ヘルス報告時刻（失敗時も更新。sync 成功時は syncedAt と近い） */
   healthReportedAt?: string;
+  /**
+   * VM 自動判断の結果。
+   * ok / soft_ok / restarted_ok / needs_otp / cooldown_skip / unknown
+   */
+  recoveryStatus?: string;
+  /** 最後に取った自動回復アクション（soft_wait / station_restart / …） */
+  recoveryAction?: string;
+  recoveryAt?: string;
 }
 
 export interface StockBrokerSnapshot {

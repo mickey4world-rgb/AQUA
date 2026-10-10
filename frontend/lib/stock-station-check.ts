@@ -157,6 +157,36 @@ export function buildStockStationCheck(input: {
             ? `dry-run · API :${meta?.kabuPort ?? "?"}（実発注されない）`
             : "未報告",
     },
+    {
+      id: "recovery",
+      label: "自動判断・回復",
+      ok:
+        meta?.recoveryStatus === "needs_otp"
+          ? false
+          : meta?.recoveryStatus === "ok" ||
+              meta?.recoveryStatus === "soft_ok" ||
+              meta?.recoveryStatus === "restarted_ok"
+            ? true
+            : meta?.recoveryStatus
+              ? null
+              : null,
+      detail: (() => {
+        const st = meta?.recoveryStatus;
+        const act = meta?.recoveryAction;
+        if (!st) return "まだ自動判断の報告がありません（VM 起動後に埋まります）";
+        if (st === "needs_otp") {
+          return `要OTP: 自動回復ではトークン復帰不可（action=${act ?? "?"}）。携帯から再ログイン`;
+        }
+        if (st === "soft_ok") {
+          return `自動回復成功（殺さず待機/console回収） action=${act ?? "soft_wait"}`;
+        }
+        if (st === "restarted_ok") {
+          return `ステーション再起動後に復帰 action=${act ?? "station_restart"}`;
+        }
+        if (st === "ok") return "判断OK（トークン有効）";
+        return `status=${st}${act ? ` action=${act}` : ""}`;
+      })(),
+    },
   ];
 
   const vmOk = vm.state === "running" || vm.state === "idle_ok";
@@ -176,6 +206,9 @@ export function buildStockStationCheck(input: {
     summary = marketHours
       ? "自動売買準備OK: 緑・同期・LIVE・場中ティック正常"
       : "自動売買準備OK（場外待機）: 緑・同期・LIVE。次のザラ場でティック継続";
+  } else if (meta?.recoveryStatus === "needs_otp") {
+    summary =
+      "自動回復でも OTP が必要です。携帯からステーションに再ログインしてください";
   } else if (criticalOk) {
     summary =
       allowLive === false

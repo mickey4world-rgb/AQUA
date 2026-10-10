@@ -6,6 +6,7 @@
     "sync": "node src/sync.mjs",
     "probe": "node src/probe.mjs",
     "health": "node src/health.mjs",
+    "report-recovery": "node src/report-recovery.mjs",
     "trade": "node src/trade.mjs",
     "wait-ready": "node src/wait-ready.mjs"
   },

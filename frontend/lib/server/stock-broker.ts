@@ -58,6 +58,17 @@ export async function upsertStockBrokerSnapshot(
         }))
     : [];
 
+  // Successful sync implies token OK — clear stale needs_otp without wiping other meta.
+  const existing = await getStockBrokerSnapshot(userId);
+  const mergedMeta = payload.bridgeMeta
+    ? normalizeBridgeMeta({
+        ...payload.bridgeMeta,
+        recoveryStatus: payload.bridgeMeta.recoveryStatus ?? "ok",
+        recoveryAction: payload.bridgeMeta.recoveryAction ?? "sync",
+        recoveryAt: payload.bridgeMeta.recoveryAt ?? now,
+      })
+    : existing?.bridgeMeta;
+
   const doc: StockBrokerSnapshot = {
     id: snapshotId(userId),
     userId,
@@ -71,9 +82,7 @@ export async function upsertStockBrokerSnapshot(
     },
     holdings,
     rawPositionCount: payload.rawPositionCount ?? holdings.length,
-    bridgeMeta: payload.bridgeMeta
-      ? normalizeBridgeMeta(payload.bridgeMeta)
-      : undefined,
+    bridgeMeta: mergedMeta,
     updatedAt: now,
   };
 
@@ -107,6 +116,16 @@ function normalizeBridgeMeta(
       typeof meta.healthReportedAt === "string"
         ? meta.healthReportedAt
         : undefined,
+    recoveryStatus:
+      typeof meta.recoveryStatus === "string"
+        ? meta.recoveryStatus.slice(0, 40)
+        : undefined,
+    recoveryAction:
+      typeof meta.recoveryAction === "string"
+        ? meta.recoveryAction.slice(0, 80)
+        : undefined,
+    recoveryAt:
+      typeof meta.recoveryAt === "string" ? meta.recoveryAt : undefined,
   };
 }
 
@@ -123,6 +142,9 @@ export async function upsertStockBrokerHealth(input: {
   kabuBaseUrl?: string;
   kabuPort?: number;
   reportedAt?: string;
+  recoveryStatus?: string;
+  recoveryAction?: string;
+  recoveryAt?: string;
 }): Promise<StockBrokerSnapshot> {
   const now = new Date().toISOString();
   const userId = input.userId.trim();
@@ -139,6 +161,11 @@ export async function upsertStockBrokerHealth(input: {
     stationTokenOk: input.stationTokenOk,
     lastError: input.lastError ?? null,
     healthReportedAt: reportedAt,
+    recoveryStatus:
+      input.recoveryStatus ?? existing?.bridgeMeta?.recoveryStatus,
+    recoveryAction:
+      input.recoveryAction ?? existing?.bridgeMeta?.recoveryAction,
+    recoveryAt: input.recoveryAt ?? existing?.bridgeMeta?.recoveryAt,
   });
 
   const doc: StockBrokerSnapshot = {

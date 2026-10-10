@@ -279,13 +279,20 @@ Unregister-ScheduledTask -TaskName "kabu-bridge-trade" -Confirm:$false -ErrorAct
 Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") `
   -Logon $false -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 15 `
   -ExtraDailyAts @($LunchSyncTime)
+# Auto-judge loop (SYSTEM): Disc->console then OTP-safe recovery ladder; report to AQUA
+Write-Cmd (Join-Path $SetupDir "run-auto-judge.cmd") @(
+  "@echo off",
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -Mode RecoverDisc -SetupDir `"" + $SetupDir + "`" -TargetUser `"" + $TargetUser + "`""),
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`"")
+)
+# Back-compat name used by older docs
 Write-Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") @(
   "@echo off",
-  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -Mode RecoverDisc -SetupDir `"" + $SetupDir + "`" -TargetUser `"" + $TargetUser + "`"")
+  ("call `"" + (Join-Path $SetupDir "run-auto-judge.cmd") + "`"")
 )
-# SYSTEM every 1 min + on RemoteDisconnect — X close must auto-recover without the Disconnect bat
+# SYSTEM every 1 min + on RemoteDisconnect — judgment+recovery without office babysitting
 Reg-SystemConsoleKeepalive -Name "kabu-bridge-console-keepalive" `
-  -Cmd (Join-Path $SetupDir "run-console-keepalive.cmd")
+  -Cmd (Join-Path $SetupDir "run-auto-judge.cmd")
 Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") `
   -Logon $true -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 120
 Reg-Task -Name "kabu-bridge-logon-trade" -Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") `
