@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $syncCmd)) {
   throw ("Missing " + $syncCmd + " - run Ensure-KabuSyncAutomation.ps1 first")
 }
 if (-not (Test-Path -LiteralPath $disconnectBat) -and -not (Test-Path -LiteralPath $disconnectPs1)) {
-  throw ("Missing Disconnect-Rdp-KeepDesktop — run Configure-KabuSessionKeepAlive.ps1 first")
+  throw ("Missing Disconnect-Rdp-KeepDesktop - run Configure-KabuSessionKeepAlive.ps1 first")
 }
 $disconnectTarget = $disconnectBat
 $disconnectArgs = ""
