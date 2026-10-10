@@ -16,7 +16,10 @@ import { formatSettlementDiary } from "@/lib/server/soluna-settlement";
 import { buildDisneyGuildNoticeForNote } from "@/lib/server/disney-note-guild-notice";
 import {
   formatSolunaNewsHeadlineWithJa,
+  formatSolunaNewsHeadlineWithJaInline,
   formatSolunaNewsSummaryWithJa,
+  formatSolunaNewsSummaryWithJaInline,
+  solunaBriefingHasMissingJapanese,
 } from "@/lib/soluna-news-display";
 import { stripNbspArtifacts } from "@/lib/server/soluna-note-debate-quality";
 
@@ -246,16 +249,24 @@ function newsNarrationBlock(input: {
   briefing: SolunaNewsBriefing;
   battle: SolunaBattleResult;
 }): string {
-  const lines = input.briefing.items.slice(0, 3).map((item, i) => {
+  // 注目度の高い順（大ボス候補が先頭に来る）
+  const ranked = [...input.briefing.items].sort(
+    (a, b) => (b.attentionScore ?? 0) - (a.attentionScore ?? 0),
+  );
+  const lines = ranked.slice(0, 3).map((item, i) => {
     const headline = formatSolunaNewsHeadlineWithJa(item);
     const sum = formatSolunaNewsSummaryWithJa(item).trim();
     const sumShort =
       sum.length > 160 ? `${sum.slice(0, 160)}…` : sum;
-    return `${i + 1}. ${headline}${sumShort ? `\n　→ ${sumShort}` : ""}`;
+    const heat =
+      typeof item.attentionScore === "number"
+        ? ` 〔注目度 ${item.attentionScore}〕`
+        : "";
+    return `${i + 1}. ${headline}${heat}${sumShort ? `\n　→ ${sumShort}` : ""}`;
   });
   const plain = (input.battle.newsPlain || "").trim();
   return `## きょうのニュース（ナレーション・事実）
-ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。英語の見出しがあるときは英語のあとに日本語訳を添えます。
+ギルド受付の子が、朝いちばんにホワイトボードへ貼った速報です。難しい言い回しは抜きで、まずは事実だけ。英語の見出しがあるときは、必ずその直後に日本語訳を添えます（英語だけは禁止）。
 
 ${lines.join("\n\n") || plain || input.briefing.summary}
 
@@ -384,10 +395,10 @@ function resolveNoteMatches(input: {
       role: isBoss ? "boss" : index === 0 ? "trash" : "mid",
       monsterName: isBoss
         ? input.battle.bossName
-        : `Lv.${item.monster?.rank ?? 2} ${item.monster?.name ?? formatSolunaNewsHeadlineWithJa(item).split("\n")[0]}`,
+        : `Lv.${item.monster?.rank ?? 2} ${item.monster?.name ?? formatSolunaNewsHeadlineWithJaInline(item)}`,
       rank: item.monster?.rank ?? (isBoss ? input.battle.bossRank : 2),
-      newsTitle: formatSolunaNewsHeadlineWithJa(item).split("\n")[0] || item.title,
-      newsPlain: formatSolunaNewsSummaryWithJa(item) || item.summary,
+      newsTitle: formatSolunaNewsHeadlineWithJaInline(item) || item.title,
+      newsPlain: formatSolunaNewsSummaryWithJaInline(item) || item.summary,
       outcome: isBoss ? input.battle.outcome : "victory",
     };
   });
@@ -480,6 +491,12 @@ export function composeDailyNote(input: {
   hashtags: string[];
   priceYen: number;
 } {
+  if (solunaBriefingHasMissingJapanese(input.briefing.items)) {
+    throw new Error(
+      "英語ニュースに日本語訳が無いため Note 原稿を作れません（ensureSolunaItemsJapanese 必須）",
+    );
+  }
+
   const dateLabel = jstDateLabel(new Date(input.battle.createdAt));
   const boss = `Lv.${input.battle.bossRank} ${input.battle.bossName}`;
   const escaped = input.battle.outcome === "escape";

@@ -10,7 +10,11 @@ import {
 } from "@/lib/server/soluna-system-store";
 import { translateBatchWithLlm } from "@/lib/server/works-news-search-translate";
 import { enrichBriefingWithMonsters, formatEncounterForPrompt, monsterizeNewsItem } from "@/lib/soluna-monsters";
-import { solunaNewsNeedsJapanese } from "@/lib/soluna-news-display";
+import { withEstimatedAttention } from "@/lib/soluna-attention";
+import {
+  solunaBriefingHasMissingJapanese,
+  solunaNewsNeedsJapanese,
+} from "@/lib/soluna-news-display";
 import type { SolunaNewsBriefing, SolunaNewsItem } from "@/lib/types/soluna";
 
 const NEWS_TIMEOUT_MS = 25_000;
@@ -48,7 +52,13 @@ JSON 形式:
       "attentionScore": 82
     }
   ]
-}`;
+}
+
+attentionScore（0〜100）の付け方（厳守）:
+- 80以上: 今日多くの人が話題にしそう／市場・政策・大手企業に即効がある本丸ニュース
+- 50〜79: 業界内では重要だが一般読者には中くらい
+- 49以下: ニッチ・社内向け・豆知識級（大ボスにしない）
+- 全部を 70 前後に揃えない。必ず差をつけること。`;
   return { system, userPrompt };
 }
 
@@ -300,6 +310,19 @@ export async function fetchGlobalNewsBriefing(options?: {
   }
 
   items = await ensureSolunaItemsJapanese(items);
+  if (solunaBriefingHasMissingJapanese(items)) {
+    console.warn("[soluna-news] JP translate incomplete — retry once");
+    items = await ensureSolunaItemsJapanese(items);
+  }
+  if (solunaBriefingHasMissingJapanese(items)) {
+    return {
+      ok: false,
+      reason:
+        "英語ニュースの日本語訳を付与できませんでした。Note に英字だけの見出しを出さないため中断します。",
+    };
+  }
+  // 注目度欠落（RSS 等）を埋め、大ボス／Note 先頭がニッチに流れないよう並べ替え
+  items = withEstimatedAttention(items);
 
   const briefing: SolunaNewsBriefing = {
     id: docId,
