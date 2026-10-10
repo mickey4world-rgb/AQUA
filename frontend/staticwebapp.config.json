@@ -29,6 +29,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/api/stocks/cron/ops-watch",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/stocks/*",
       "allowedRoles": ["authenticated"]
     },

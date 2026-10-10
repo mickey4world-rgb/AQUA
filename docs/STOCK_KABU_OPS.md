@@ -2,24 +2,38 @@
 
 ## ユーザー可见の不変条件
 
+**仕事場からは OTP（と aquacore 閲覧）以外ほぼできない。** その前提で:
+
 **平日、朝に OTP を1回入れたあと、場中は人手のステーション再起動なしに:**
 
 1. 余力・保有の **sync** が続く  
 2. **market-tick**（sync→trade）が約5分ごとに回り、条件を満たせば **LIVE 発注**が Cosmos / Costs に残る  
-3. 止まっているときは `/costs/kabu-check` が **自動売買準備OK ではない** と理由付きで示す  
+3. 同期が死んだら **VM が自動判断→OTP不要な回復を優先→必要なら aquacore/メールで OTP 要求**  
+4. 止まっているときは `/costs/kabu-check` が **自動売買準備OK ではない** と理由付きで示す  
 
 「タスクが登録されている」「API 200」だけでは成功にしない。
+
+## 検討メモ（何が足りなかったか）
+
+不足の本丸はスクリプトの本数ではなく、**閉ループ（検知→判断→回復→結果を aquacore に出す）** だった。
+
+| 失敗クラス | 旧 | 新 |
+|------------|----|----|
+| ×切断で Disc | 「4 を使え」運用依存 | SYSTEM 毎分 + RemoteDisconnect で console 回収 |
+| API 半死 | すぐステーション Kill（＝また OTP） | **梯子**: soft wait → cooldown 付き1回だけ再起動 → それでもダメなら `needs_otp` を AQUA へ |
+| 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ） |
+| sync 死なのに trade | 分離タスク | atomic market-tick（sync 失敗なら trade しない） |
 
 ## 信頼性マトリクス
 
 | 層 | あるもの | ないもの（残リスク） |
 |----|----------|----------------------|
-| 収集 | kabuStation localhost → bridge sync → AQUA Cosmos | ステーション自体のクラッシュは Recover が再起動。OTP 再要求時は人手 |
-| 発注 | intents API → buySkips 診断 → LIVE は発注窓のみ sendorder | AI 条件未達の日は intents=0（点検に buySkips が残る＝正常な見送り） |
-| セッション | SYSTEM RemoteDisconnect + 毎分 Disc→console | 極端な Azure ホスト障害 |
-| 同日内リトライ | market-tick 5分 / lunch 12:32 / Sync-Now | なし（意図的に連続リトライ） |
-| 朝・可见検知 | kabu-check: 緑 / 同期 / ティック / LIVE | 携帯通知プッシュは未実装（画面確認） |
-| オラクル | `Verify-KabuOpsOnVm.ps1` / `market-tick.log` / idle `_CHECK_` + buySkips | |
+| 収集 | kabuStation → bridge sync → Cosmos | 証券側メンテ |
+| 判断・回復 | SYSTEM `run-auto-judge` 毎分（Disc回収＋梯子） | Azure ホスト全滅 |
+| 発注 | market-tick / LIVE は発注窓のみ / buySkips | 条件未達の日は intents=0（正常な見送り） |
+| 同日内リトライ | soft 再試行・cooldown 後の1回再起動・5分 tick | Kill 連打は禁止（OTP 地獄） |
+| 朝・可见検知 | kabu-check 自動判断項目 + メール ops-watch | プッシュ通知アプリは未実装 |
+| オラクル | `Verify-KabuOpsOnVm.ps1` / `api-recover.log` / `recoveryStatus` | |
 
 ## 平日オペ（Mickey）
 
@@ -57,3 +71,13 @@ az vm run-command invoke -g rg-personal-apps-prod -n vm-kabu-aqua `
 ```
 
 成功マーカー: `KEEP_SELFTEST_OK` / `TASK_OK_SYSTEM` / `TASK_OK kabu-bridge-market-tick` / `UPDATE_BRIDGE_OK`
+
+## 自動判断の見方（aquacore）
+
+`bridgeMeta.recoveryStatus`:
+
+| 値 | 意味 | 仕事場でやること |
+|----|------|------------------|
+| `ok` / `soft_ok` / `restarted_ok` | 自動側で復帰 | 何もしない（ページ確認のみ） |
+| `needs_otp` | 再起動してもトークン不可 | Tailscale で OTP のみ |
+| （無し） | まだ報告前 | VM 起動直後は待って再読込 |

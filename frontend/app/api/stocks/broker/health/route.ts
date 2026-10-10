@@ -41,6 +41,9 @@ export async function POST(request: Request) {
     kabuBaseUrl?: string;
     kabuPort?: number;
     reportedAt?: string;
+    recoveryStatus?: string;
+    recoveryAction?: string;
+    recoveryAt?: string;
   }>(raw);
 
   if (!body || typeof body.userId !== "string" || !body.userId.trim()) {
@@ -63,6 +66,16 @@ export async function POST(request: Request) {
       kabuPort: typeof body.kabuPort === "number" ? body.kabuPort : undefined,
       reportedAt:
         typeof body.reportedAt === "string" ? body.reportedAt : undefined,
+      recoveryStatus:
+        typeof body.recoveryStatus === "string"
+          ? body.recoveryStatus
+          : undefined,
+      recoveryAction:
+        typeof body.recoveryAction === "string"
+          ? body.recoveryAction
+          : undefined,
+      recoveryAt:
+        typeof body.recoveryAt === "string" ? body.recoveryAt : undefined,
     });
     return Response.json({
       ok: true,

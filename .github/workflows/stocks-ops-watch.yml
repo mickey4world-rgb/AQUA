@@ -1,0 +1,40 @@
+name: Stocks Ops Watch (market hours)
+
+# AQUA-side closed loop: detect needs_otp / stale tick and email Mickey.
+# Recovery actions run on the VM SYSTEM auto-judge task.
+on:
+  schedule:
+    # JST 9:00-15:00 weekdays ~= UTC 00:00-06:00 Mon-Fri
+    - cron: "*/15 0-6 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  ops_watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST ops-watch
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          STOCK_AUTO_TRADE_USER_ID: ${{ vars.STOCK_AUTO_TRADE_USER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOLUNA_CRON_SECRET:-}" ]; then
+            echo "SOLUNA_CRON_SECRET not set"
+            exit 1
+          fi
+          if [ -z "${STOCK_AUTO_TRADE_USER_ID:-}" ]; then
+            echo "STOCK_AUTO_TRADE_USER_ID var not set"
+            exit 1
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          BODY=$(jq -nc --arg u "$STOCK_AUTO_TRADE_USER_ID" '{userId:$u}')
+          echo "POST $BASE/api/stocks/cron/ops-watch"
+          RESP=$(curl -sfS -X POST \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data "$BODY" \
+            "${BASE%/}/api/stocks/cron/ops-watch" \
+            --max-time 60)
+          echo "$RESP" | jq .
+          echo "$RESP" | jq -e '.ok == true' >/dev/null
