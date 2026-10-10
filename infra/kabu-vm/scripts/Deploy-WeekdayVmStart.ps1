@@ -70,8 +70,8 @@ Set-AzContext -SubscriptionId '$subId' | Out-Null
 `$tz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time')
 `$jst = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, `$tz)
 `$dayKey = `$jst.ToString('yyyy-MM-dd')
-`$holidays = [System.Collections.Generic.HashSet[string]]::new()
-@(
+`$holidays = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach (`$d in @(
   '2026-01-01','2026-01-02','2026-01-12','2026-02-11','2026-02-23','2026-03-20',
   '2026-04-29','2026-05-04','2026-05-05','2026-05-06','2026-07-20','2026-08-11',
   '2026-09-21','2026-09-22','2026-09-23','2026-10-12','2026-11-03','2026-11-23','2026-12-31',
@@ -79,7 +79,7 @@ Set-AzContext -SubscriptionId '$subId' | Out-Null
   '2027-03-21','2027-03-22','2027-04-29','2027-05-03','2027-05-04','2027-05-05',
   '2027-07-19','2027-08-11','2027-09-20','2027-09-23','2027-10-11','2027-11-03',
   '2027-11-23','2027-12-31'
-) | ForEach-Object { [void]`$holidays.Add(`$_) }
+)) { [void]`$holidays.Add(`$d) }
 
 if (`$jst.DayOfWeek -eq 'Saturday' -or `$jst.DayOfWeek -eq 'Sunday') {
   Write-Output ("SKIP weekend JST=" + `$dayKey)
@@ -129,8 +129,9 @@ az automation runbook publish `
   -o none
 
 # 次の東証営業日 StartHour:StartMinute JST（土日祝スキップ）
-$holidaySet = [System.Collections.Generic.HashSet[string]]::new()
-@(
+# Windows PowerShell 5.1: prefer New-Object over ::new() for HashSet
+$holidaySet = New-Object "System.Collections.Generic.HashSet[string]"
+$holidayDays = @(
   "2026-01-01","2026-01-02","2026-01-12","2026-02-11","2026-02-23","2026-03-20",
   "2026-04-29","2026-05-04","2026-05-05","2026-05-06","2026-07-20","2026-08-11",
   "2026-09-21","2026-09-22","2026-09-23","2026-10-12","2026-11-03","2026-11-23","2026-12-31",
@@ -138,7 +139,8 @@ $holidaySet = [System.Collections.Generic.HashSet[string]]::new()
   "2027-03-21","2027-03-22","2027-04-29","2027-05-03","2027-05-04","2027-05-05",
   "2027-07-19","2027-08-11","2027-09-20","2027-09-23","2027-10-11","2027-11-03",
   "2027-11-23","2027-12-31"
-) | ForEach-Object { [void]$holidaySet.Add($_) }
+)
+foreach ($d in $holidayDays) { [void]$holidaySet.Add($d) }
 
 $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
 $nowLocal = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
