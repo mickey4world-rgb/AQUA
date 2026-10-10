@@ -78,6 +78,79 @@ function Reg-Task {
   Write-Host ("TASK_OK " + $Name)
 }
 
+# SYSTEM + RemoteDisconnect: X close must not depend on Interactive tasks inside a frozen Disc session.
+function Reg-SystemConsoleKeepalive {
+  param(
+    [string]$Name,
+    [string]$Cmd
+  )
+  Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
+  $cmdAttr = $Cmd.Replace("&", "&amp;").Replace('"', "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>SYSTEM: Disc/切断 RDP -&gt; console so kabu sync survives Windows App X close</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <SessionStateChangeTrigger>
+      <Enabled>true</Enabled>
+      <StateChange>RemoteDisconnect</StateChange>
+    </SessionStateChangeTrigger>
+    <SessionStateChangeTrigger>
+      <Enabled>true</Enabled>
+      <StateChange>ConsoleDisconnect</StateChange>
+    </SessionStateChangeTrigger>
+    <CalendarTrigger>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2024-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>cmd.exe</Command>
+      <Arguments>/c "$cmdAttr"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+  Register-ScheduledTask -TaskName $Name -Xml $xml -Force | Out-Null
+  Write-Host ("TASK_OK_SYSTEM " + $Name + " RemoteDisconnect+PT1M")
+}
+
+
 # Preflight: keep console session alive + recover half-dead API before sync/trade
 Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
   "@echo off",
@@ -139,6 +212,7 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   ('set SETUP=' + $SetupDir),
   'set LOG=%SETUP%\manual-sync.log',
   'echo ===== %DATE% %TIME% Sync-Now =====>> "%LOG%"',
+  ('call "' + (Join-Path $SetupDir "run-preflight.cmd") + '" >> "%LOG%" 2>&1'),
   'cd /d "%BRIDGE%"',
   'set KABU_WAIT_READY_MINUTES=5',
   ('call "' + $npmCmd + '" run wait-ready >> "%LOG%" 2>&1'),
@@ -159,7 +233,8 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
 # Copy recover helpers next to cmds (Update-BridgeOnVm also copies from repo)
 foreach ($helper in @(
   "Keep-KabuConsoleSession.ps1",
-  "Recover-KabuApiIfNeeded.ps1"
+  "Recover-KabuApiIfNeeded.ps1",
+  "Disconnect-Rdp-KeepDesktop.ps1"
 )) {
   $srcHelper = Join-Path $PSScriptRoot $helper
   $dstHelper = Join-Path $SetupDir $helper
@@ -167,6 +242,14 @@ foreach ($helper in @(
     Copy-Item $srcHelper $dstHelper -Force
   }
 }
+
+$keepPs1 = Join-Path $SetupDir "Keep-KabuConsoleSession.ps1"
+if (Test-Path -LiteralPath $keepPs1) {
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $keepPs1 -SelfTest
+  if ($LASTEXITCODE -ne 0) { throw "Keep-KabuConsoleSession -SelfTest failed" }
+  Write-Host "KEEP_SELFTEST_OK"
+}
+
 
 Reg-Task -Name "kabu-bridge-sync" -Cmd (Join-Path $SetupDir "run-sync.cmd") `
   -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 12
@@ -177,10 +260,11 @@ Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-r
   -ExtraDailyAts @($LunchSyncTime)
 Write-Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") @(
   "@echo off",
-  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -SetupDir `"" + $SetupDir + "`"")
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -Mode RecoverDisc -SetupDir `"" + $SetupDir + "`" -TargetUser `"" + $TargetUser + "`"")
 )
-Reg-Task -Name "kabu-bridge-console-keepalive" -Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 2
+# SYSTEM every 1 min + on RemoteDisconnect — X close must auto-recover without the Disconnect bat
+Reg-SystemConsoleKeepalive -Name "kabu-bridge-console-keepalive" `
+  -Cmd (Join-Path $SetupDir "run-console-keepalive.cmd")
 Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") `
   -Logon $true -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 120
 Reg-Task -Name "kabu-bridge-logon-trade" -Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") `

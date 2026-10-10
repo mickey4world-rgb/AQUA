@@ -57,28 +57,42 @@ New-ItemProperty -Path $ts -Name "MaxConnectionTime" -PropertyType DWord -Value 
 # Do not end session when time limits are reached
 New-ItemProperty -Path $ts -Name "fResetBroken" -PropertyType DWord -Value 0 -Force | Out-Null
 
+# Prefer PowerShell disconnect (session-id + JP/EN + SYSTEM fallback).
+# %sessionname% in a double-clicked bat is unreliable and often "does nothing".
+foreach ($helper in @(
+  "Keep-KabuConsoleSession.ps1",
+  "Disconnect-Rdp-KeepDesktop.ps1"
+)) {
+  $srcHelper = Join-Path $PSScriptRoot $helper
+  $dstHelper = Join-Path $SetupDir $helper
+  if ((Test-Path -LiteralPath $srcHelper) -and ($srcHelper -ne $dstHelper)) {
+    Copy-Item $srcHelper $dstHelper -Force
+    Write-Host ("COPY_OK " + $helper)
+  }
+}
+
+$disconnectPs1 = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.ps1"
 $disconnectBat = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.bat"
-Write-Host "==> Write $disconnectBat"
+Write-Host "==> Write $disconnectBat (wrapper -> $disconnectPs1)"
 @"
 @echo off
-REM Azure 落とし穴対策: RDP の × で閉じるとデスクトップ描画が止まり、
-REM kabuステーション / クリック系が止まることがある。
-REM この bat を管理者で実行すると、セッションを console に戻したまま RDP だけ切る。
-echo Detaching RDP session to console (keep desktop active)...
-for /f "tokens=*" %%i in ('qwinsta ^| findstr /i active') do echo %%i
-tscon %sessionname% /dest:console
-if errorlevel 1 (
-  echo FAILED. Run as the logged-on user from an elevated cmd, or:
-  echo   query session
-  echo   tscon ^<session-id^> /dest:console
+REM Do not use tscon %sessionname% here — Explorer launches a new console and it fails silently.
+REM PowerShell resolves Active/Disc session id (EN+JP) and falls back to a SYSTEM one-shot.
+echo Detaching RDP session to console (keep desktop active for kabu sync)...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$disconnectPs1" -SetupDir "$SetupDir"
+set ERR=%ERRORLEVEL%
+if not "%ERR%"=="0" (
+  echo FAILED exit=%ERR% — see %SetupDir%\disconnect-rdp.log
+  echo After X close, SYSTEM watchdog still recovers Disc-^>console within ~1 minute.
   pause
 )
+exit /b %ERR%
 "@ | Set-Content -Path $disconnectBat -Encoding ASCII
 
 Write-Host @"
 
 ==> Session keep-alive done
-1. RDP を切るときは × ではなく: $disconnectBat
-2. AutoLogon（再起動後にデスクトップまで）は Enable-KabuAutoLogon.ps1
-3. kabu / bridge の起動は Configure-KabuAutostart.ps1
+1. Preferred disconnect: $disconnectBat (or desktop shortcut 4)
+2. X close is recovered by SYSTEM task kabu-bridge-console-keepalive (~1 min)
+3. AutoLogon: Enable-KabuAutoLogon.ps1 / kabu start: Configure-KabuAutostart.ps1
 "@

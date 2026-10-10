@@ -12,12 +12,21 @@ $ErrorActionPreference = "Stop"
 
 $syncCmd = Join-Path $SetupDir "Sync-Now.cmd"
 $disconnectBat = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.bat"
+$disconnectPs1 = Join-Path $SetupDir "Disconnect-Rdp-KeepDesktop.ps1"
 if (-not (Test-Path -LiteralPath $syncCmd)) {
   throw ("Missing " + $syncCmd + " - run Ensure-KabuSyncAutomation.ps1 first")
 }
-if (-not (Test-Path -LiteralPath $disconnectBat)) {
-  throw ("Missing " + $disconnectBat + " - run Configure-KabuSessionKeepAlive.ps1 first")
+if (-not (Test-Path -LiteralPath $disconnectBat) -and -not (Test-Path -LiteralPath $disconnectPs1)) {
+  throw ("Missing Disconnect-Rdp-KeepDesktop — run Configure-KabuSessionKeepAlive.ps1 first")
 }
+$disconnectTarget = $disconnectBat
+$disconnectArgs = ""
+$disconnectWorkDir = $SetupDir
+if (Test-Path -LiteralPath $disconnectPs1) {
+  $disconnectTarget = "powershell.exe"
+  $disconnectArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$disconnectPs1`" -SetupDir `"$SetupDir`""
+}
+
 
 $userProfile = "C:\Users\$TargetUser"
 $desktop = Join-Path $userProfile "Desktop"
@@ -27,13 +36,28 @@ New-Item -ItemType Directory -Force -Path $desktop, $startMenu | Out-Null
 
 $w = New-Object -ComObject WScript.Shell
 
-function New-Lnk([string]$Path, [string]$Target, [string]$WorkDir, [string]$Desc) {
+function Set-LnkRunAsAdmin([string]$Path) {
+  try {
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -gt 0x15) {
+      $bytes[0x15] = $bytes[0x15] -bor 0x20
+      [System.IO.File]::WriteAllBytes($Path, $bytes)
+      Write-Host ("LNK_RUNAS " + $Path)
+    }
+  } catch {
+    Write-Host ("LNK_RUNAS_SKIP " + $_.Exception.Message)
+  }
+}
+
+function New-Lnk([string]$Path, [string]$Target, [string]$WorkDir, [string]$Desc, [string]$Arguments = "", [bool]$RunAsAdmin = $false) {
   $lnk = $w.CreateShortcut($Path)
   $lnk.TargetPath = $Target
+  if ($Arguments) { $lnk.Arguments = $Arguments }
   $lnk.WorkingDirectory = $WorkDir
   $lnk.WindowStyle = 1
   $lnk.Description = $Desc
   $lnk.Save()
+  if ($RunAsAdmin) { Set-LnkRunAsAdmin $Path }
   Write-Host ("LNK_OK " + $Path)
 }
 
@@ -41,20 +65,24 @@ $names = @(
   @{
     File = "3 Sync-Now.lnk"
     Target = $syncCmd
+    Args = ""
     WorkDir = $SetupDir
     Desc = "After OTP/green: sync cash and holdings to AQUA"
+    RunAs = $false
   },
   @{
     File = "4 Disconnect-RDP-KeepDesktop.lnk"
-    Target = $disconnectBat
-    WorkDir = $SetupDir
-    Desc = "Do not close RDP with X. tscon keeps desktop alive"
+    Target = $disconnectTarget
+    Args = $disconnectArgs
+    WorkDir = $disconnectWorkDir
+    Desc = "tscon Active/Disc to console. X is also auto-recovered by SYSTEM within ~1 min"
+    RunAs = $true
   }
 )
 
 foreach ($n in $names) {
   foreach ($dir in @($desktop, $startMenu)) {
-    New-Lnk (Join-Path $dir $n.File) $n.Target $n.WorkDir $n.Desc
+    New-Lnk (Join-Path $dir $n.File) $n.Target $n.WorkDir $n.Desc $n.Args $n.RunAs
   }
 }
 
