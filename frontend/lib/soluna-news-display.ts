@@ -28,7 +28,8 @@ export function solunaNewsSecondaryTitle(
 
 /**
  * Note／討伐ログ用: 英語があるときは英語を先に、直後に日本語訳。
- * 依頼: 「英語の記載は後ろに日本語訳」
+ * 依頼: 「英語の記載は必ずその場所に日本語訳」
+ * 単一行が必要な UI は format…Inline を使う。
  */
 export function formatSolunaNewsHeadlineWithJa(
   item: Pick<SolunaNewsItem, "title" | "titleJa">,
@@ -38,6 +39,7 @@ export function formatSolunaNewsHeadlineWithJa(
   if (looksPrimarilyEnglish(raw) && ja && ja !== raw) {
     return `${raw}\n　（日本語: ${ja}）`;
   }
+  // 英語なのに訳が無い場合は原文のみ（公開前に ensure / oracle で止める）
   if (ja) return ja;
   return raw;
 }
@@ -54,9 +56,30 @@ export function formatSolunaNewsSummaryWithJa(
   return ja || raw;
 }
 
+/** バトルログ・1行表示用（改行なし） */
+export function formatSolunaNewsHeadlineWithJaInline(
+  item: Pick<SolunaNewsItem, "title" | "titleJa">,
+): string {
+  return formatSolunaNewsHeadlineWithJa(item).replace(/\n\s*/g, " ");
+}
+
+export function formatSolunaNewsSummaryWithJaInline(
+  item: Pick<SolunaNewsItem, "summary" | "summaryJa">,
+): string {
+  return formatSolunaNewsSummaryWithJa(item).replace(/\n\s*/g, " ");
+}
+
 export function solunaNewsNeedsJapanese(
   item: Pick<SolunaNewsItem, "title" | "summary" | "titleJa" | "summaryJa">,
 ): boolean {
-  if (item.titleJa?.trim() && item.summaryJa?.trim()) return false;
-  return looksPrimarilyEnglish(item.title) || looksPrimarilyEnglish(item.summary);
+  if (looksPrimarilyEnglish(item.title) && !item.titleJa?.trim()) return true;
+  if (looksPrimarilyEnglish(item.summary) && !item.summaryJa?.trim()) return true;
+  return false;
+}
+
+/** Note 公開前オラクル: 英語記事に訳欠落／※訳未取得が残っていないか */
+export function solunaBriefingHasMissingJapanese(
+  items: Array<Pick<SolunaNewsItem, "title" | "summary" | "titleJa" | "summaryJa">>,
+): boolean {
+  return items.some((item) => solunaNewsNeedsJapanese(item));
 }

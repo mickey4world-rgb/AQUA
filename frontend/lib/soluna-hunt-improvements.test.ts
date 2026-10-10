@@ -8,7 +8,11 @@ import {
   solunaNewsPrimarySummary,
   solunaNewsSecondaryTitle,
   solunaNewsNeedsJapanese,
+  formatSolunaNewsHeadlineWithJa,
+  formatSolunaNewsHeadlineWithJaInline,
+  solunaBriefingHasMissingJapanese,
 } from "./soluna-news-display";
+import { estimateSolunaAttentionScore, withEstimatedAttention } from "./soluna-attention";
 import type { SolunaNewsBriefing } from "./types/soluna";
 import { mapDigestToSolunaSeedItems } from "./server/works-news-search";
 import type { NewsSearchDigest } from "./types/works-news-search";
@@ -151,6 +155,73 @@ import type { NewsSearchDigest } from "./types/works-news-search";
   assert.equal(seeds[0]?.attentionScore, 95);
   assert.equal(seeds[0]?.titleJa, "巨大モデル発表が業界を揺るがす");
   assert.equal(seeds[0]?.title, "Huge model launch shocks industry");
+}
+
+{
+  const bilingual = formatSolunaNewsHeadlineWithJa({
+    title: "OpenAI releases new model",
+    titleJa: "OpenAIが新モデルを発表",
+  });
+  assert.ok(bilingual.includes("OpenAI releases new model"));
+  assert.ok(bilingual.includes("日本語:"));
+  assert.ok(bilingual.includes("OpenAIが新モデルを発表"));
+  const inline = formatSolunaNewsHeadlineWithJaInline({
+    title: "OpenAI releases new model",
+    titleJa: "OpenAIが新モデルを発表",
+  });
+  assert.ok(!inline.includes("\n"));
+  assert.ok(inline.includes("（日本語:"));
+}
+
+{
+  assert.equal(
+    solunaBriefingHasMissingJapanese([
+      {
+        title: "English only headline here",
+        summary: "English only summary text here for readers.",
+      },
+    ]),
+    true,
+  );
+  assert.equal(
+    solunaBriefingHasMissingJapanese([
+      {
+        title: "English only headline here",
+        summary: "English only summary text here for readers.",
+        titleJa: "英語だけの見出し",
+        summaryJa: "英語だけの要約",
+      },
+    ]),
+    false,
+  );
+}
+
+{
+  const ranked = withEstimatedAttention([
+    {
+      title: "Quiet niche note",
+      summary: "A small internal tip few people will care about today.",
+      keyword: "AI 最新動向",
+      sourceUrl: "https://example.com/x",
+      publishedAt: new Date().toISOString(),
+    },
+    {
+      title: "Fed signals rate path as markets surge",
+      summary: "The Federal Reserve hinted at policy as equities rallied hard.",
+      keyword: "世界経済",
+      sourceUrl: "https://www.reuters.com/markets/fed",
+      publishedAt: new Date().toISOString(),
+    },
+  ]);
+  assert.ok((ranked[0]?.attentionScore ?? 0) > (ranked[1]?.attentionScore ?? 0));
+  assert.ok(
+    estimateSolunaAttentionScore({
+      title: "Fed signals rate path",
+      summary: "Markets surge on Fed remarks.",
+      sourceUrl: "https://www.bloomberg.com/news/x",
+      publishedAt: new Date().toISOString(),
+    }) >= 70,
+  );
 }
 
 console.log("soluna-hunt-improvements.test.ts: ok");
