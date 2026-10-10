@@ -32,6 +32,7 @@ const briefing = {
       source: "Reuters",
       publishedAt: "2026-10-03T00:00:00.000Z",
       keyword: "AI責任",
+      attentionScore: 40,
       monster: { name: "責任逃れの影狼", rank: 2, species: "shadow", speciesLabel: "影狼", weakness: "法の線引き" },
     },
     {
@@ -44,6 +45,7 @@ const briefing = {
       source: "Reuters",
       publishedAt: "2026-10-03T00:00:00.000Z",
       keyword: "金利",
+      attentionScore: 92,
       monster: { name: "金利の蒼竜", rank: 5, species: "dragon", speciesLabel: "竜", weakness: "次の会合" },
     },
   ],
@@ -108,8 +110,13 @@ const note = composeDailyNote({
 assert.ok(note.freeBody.includes("Markets Rally After Fed Signal"));
 assert.ok(note.freeBody.includes("（日本語: FRBの示唆で市場が上昇）"));
 assert.ok(!note.freeBody.includes("原題:"));
-assert.ok(note.freeBody.includes("日本語訳を添え"));
-assert.ok(note.freeBody.includes("注目度"));
+assert.ok(note.freeBody.includes("必ずその直後に日本語訳を添え"));
+assert.ok(note.freeBody.includes("〔注目度 92〕"));
+// 注目度が高い Markets が先頭（AI 責任は 40）
+assert.ok(
+  note.freeBody.indexOf("Markets Rally After Fed Signal") <
+    note.freeBody.indexOf("AI liability debate"),
+);
 
 // 無料: 気になる点と白熱状況が読めることを明言
 assert.ok(note.freeBody.includes("各試合ごとの「気になる点」"));
