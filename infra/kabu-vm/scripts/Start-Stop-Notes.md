@@ -22,10 +22,11 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 |------------|-----------------|------|
 | ログオン後 ~3分 | `kabu-bridge-logon-sync` | **wait-ready（最大90分・OTP待ち）** → probe → health → sync |
 | ログオン後 ~4分 | `kabu-bridge-logon-trade` | wait-ready → trade |
-| 07:05〜 5分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | health+sync / trade（Daily 起点・Parallel） |
+| 07:05〜 5分ごと | `kabu-bridge-market-tick` | **atomic** preflight→health→sync→trade（sync失敗時は trade しない） |
 | 12:32（昼休み明け） | `kabu-bridge-lunch-reopen` | preflight→wait-ready→sync→trade（後場の半死対策） |
-| 毎回 sync/trade 前 | `run-preflight.cmd` | Disc→console(tscon) + API半死なら kabuStation 自動再起動 |
+| 毎回 tick 前 | `run-preflight.cmd` | Disc→console(tscon) + API半死なら kabuStation 自動再起動 |
 | RemoteDisconnect + 毎分 | `kabu-bridge-console-keepalive`（**SYSTEM**） | ×切断でも Disc/切断→console。運用纪律に依存しない |
+| 運用オラクル | `docs/STOCK_KABU_OPS.md` / `Verify-KabuOpsOnVm.ps1` / kabu-check **自動売買準備OK** | |
 
 ### 朝から sync しないときの本命クラス
 

@@ -37,7 +37,8 @@ foreach ($scriptName in @(
   "Configure-KabuSessionKeepAlive.ps1",
   "Keep-KabuConsoleSession.ps1",
   "Disconnect-Rdp-KeepDesktop.ps1",
-  "Recover-KabuApiIfNeeded.ps1"
+  "Recover-KabuApiIfNeeded.ps1",
+  "Verify-KabuOpsOnVm.ps1"
 )) {
   $p = Join-Path $src.FullName ("infra\kabu-vm\scripts\" + $scriptName)
   if (Test-Path -LiteralPath $p) {

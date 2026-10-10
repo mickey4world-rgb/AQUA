@@ -53,8 +53,22 @@ export type StockIdleDiagnosis = {
   lastSyncedAt: string | null;
   syncAgeHours: number | null;
   allowLiveOrders: boolean | null;
+  /** 直近点検に埋め込まれた buySkips 要約（あれば） */
+  lastBuySkipsSummary: string | null;
   reasons: string[];
 };
+
+/** idle/_CHECK_ の message から buySkips=... を抜き出す */
+export function extractBuySkipsSummary(
+  message: string | null | undefined,
+): string | null {
+  if (!message) return null;
+  const m = message.match(/buySkips=([^;]+)/i);
+  if (!m) return null;
+  const v = m[1].trim();
+  if (!v || v === "none") return null;
+  return v;
+}
 
 export type StockBrokerActivity = {
   today: StockActivityDaySummary;
@@ -271,13 +285,13 @@ export function buildStockIdleDiagnosis(input: {
   const cashYen = Math.round(snapshot?.cash.stockAccountWallet ?? 0);
   const holdingsCount = snapshot?.holdings.filter((h) => h.qty > 0).length ?? 0;
   const tradeOrders = orders.filter(isTradeLike);
-  const lastOrderAt =
-    orders.length > 0
-      ? [...orders].sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        )[0].createdAt
-      : null;
+  const sortedOrders = [...orders].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  const lastOrderAt = sortedOrders.length > 0 ? sortedOrders[0].createdAt : null;
+  const lastCheck = sortedOrders.find(isCheckOrder);
+  const lastBuySkipsSummary = extractBuySkipsSummary(lastCheck?.message);
   const lastSyncedAt = snapshot?.syncedAt ?? null;
   const syncAgeHours = hoursSince(lastSyncedAt);
   const sessionOpenNow = isJpEquityMarketHours();
@@ -307,23 +321,27 @@ export function buildStockIdleDiagnosis(input: {
 
   if (cashYen > 0 && holdingsCount === 0 && activeWatchCount > 0) {
     reasons.push(
-      `現金約 ${cashYen.toLocaleString("ja-JP")} 円はありますが、直近は買い条件未達です（#8強気or押し目 / #44安値枠 / #45監視メモ。詳細は intents の buySkips）。`,
+      lastBuySkipsSummary
+        ? `現金約 ${cashYen.toLocaleString("ja-JP")} 円あり。直近見送り: ${lastBuySkipsSummary}`
+        : `現金約 ${cashYen.toLocaleString("ja-JP")} 円はありますが、直近は買い条件未達です（#8強気or押し目 / #44安値枠 / #45監視メモ）。`,
     );
+  } else if (lastBuySkipsSummary && tradeOrders.length === 0) {
+    reasons.push(`直近の買い見送り: ${lastBuySkipsSummary}`);
   }
 
   if (tradeOrders.length === 0) {
     reasons.push(
-      "Cosmos 上の発注ログ（dry-run / LIVE）が 0 件です。bridge の trade は「候補なし」のとき従来は記録せず終了していました（今後は点検レコードを残します）。",
+      "Cosmos 上の発注ログ（dry-run / LIVE）が 0 件です。点検レコード（_CHECK_）は条件未達の証拠として残ります。",
     );
   }
 
   if (!sessionOpenNow) {
     reasons.push(
-      "いまは現物ザラ場外です（平日 9:00–11:30 / 12:30–15:00 JST）。場外でも判定は走りますが、LIVE 発注は場中向けです。",
+      "いまは現物ザラ場外です（平日 9:00–11:30 / 12:30–15:00 JST）。場外でも判定は走りますが、LIVE 発注は発注窓のみです。",
     );
   } else if (syncAgeHours != null && syncAgeHours > 0.75) {
     reasons.push(
-      `ザラ場中なのに最終同期から約 ${Math.round(syncAgeHours * 60)} 分経過。sync 停止疑い（市場外ではありません）。`,
+      `ザラ場中なのに最終同期から約 ${Math.round(syncAgeHours * 60)} 分経過。market-tick 停止疑い（市場外ではありません）。`,
     );
   }
 
@@ -334,7 +352,7 @@ export function buildStockIdleDiagnosis(input: {
   }
 
   if (reasons.length === 0 && tradeOrders.length === 0) {
-    reasons.push("条件未達のため見送り中です。15分ごとの trade で再判定します。");
+    reasons.push("条件未達のため見送り中です。5分ごとの market-tick で再判定します。");
   }
 
   return {
@@ -347,6 +365,7 @@ export function buildStockIdleDiagnosis(input: {
     lastSyncedAt,
     syncAgeHours,
     allowLiveOrders,
+    lastBuySkipsSummary,
     reasons,
   };
 }

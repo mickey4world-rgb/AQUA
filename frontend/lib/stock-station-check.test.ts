@@ -23,14 +23,34 @@ const now = new Date("2026-10-06T01:00:00Z");
     },
     updatedAt: now.toISOString(),
   };
-  const view = buildStockStationCheck({ snapshot: snap, orders: [], now });
+  const view = buildStockStationCheck({
+    snapshot: snap,
+    orders: [
+      {
+        id: "c1",
+        userId: "u",
+        intentId: "idle",
+        side: "buy",
+        symbol: "_CHECK_",
+        exchange: 1,
+        qty: 0,
+        status: "skipped",
+        dryRun: false,
+        reason: "点検",
+        createdAt: new Date(now.getTime() - 4 * 60_000).toISOString(),
+      },
+    ],
+    now,
+  });
   assert.equal(view.overallOk, true);
   assert.equal(view.greenMark, true);
   assert.equal(view.needsInteractiveLogin, false);
+  assert.equal(view.autoTradeReady, true);
   assert.equal(
     view.items.find((i) => i.id === "green-mark")?.ok,
     true,
   );
+  assert.equal(view.items.find((i) => i.id === "live")?.ok, true);
 }
 
 {

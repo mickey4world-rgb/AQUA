@@ -256,8 +256,8 @@ export default function KabuCheckPage() {
                     アイコンが緑になるまで待つ
                   </li>
                   <li>
-                    切断は×ではなくサインアウトせず接続を切る（または
-                    tscon）。セッションを殺さない
+                    切るときは「4 Disconnect」推奨。×でも SYSTEM が約1分で
+                    Disc→console 回収します
                   </li>
                   <li>
                     この画面の「緑マーク再確認」— 緑になれば完了
@@ -275,9 +275,16 @@ export default function KabuCheckPage() {
             )}
 
             {!check.needsInteractiveLogin && check.greenMark === true && (
-              <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-[13px] text-emerald-50">
-                緑マーク確認済みです。追加の OTP 入力は不要です。市場時間中はこのまま
-                sync/trade が回ります。
+              <div
+                className={`rounded-2xl border px-4 py-3 text-[13px] ${
+                  check.autoTradeReady
+                    ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-50"
+                    : "border-amber-400/30 bg-amber-500/10 text-amber-50"
+                }`}
+              >
+                {check.autoTradeReady
+                  ? "自動売買準備OK。追加 OTP 不要。場中は market-tick（sync→trade）が 5 分ごとに続きます。×切断も SYSTEM が約1分で回収します。"
+                  : "緑は確認済みですが、自動売買準備は未完了です（LIVEオフ／同期古い／場中ティック停止のいずれか）。下の項目を確認してください。"}
               </div>
             )}
 
