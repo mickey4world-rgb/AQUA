@@ -37,11 +37,15 @@
 
 ## 平日オペ（Mickey）
 
+**東証現物の営業日のみ** VM が 07:00 起動（土日祝・年末年始はランブックが Start スキップ。例: 2026-10-12 スポーツの日）。
+
 1. 07:00 VM 自動起動 → AutoLogon → ステーション起動待ち  
-2. 勤務先から Tailscale → OTP → GUI 緑  
+2. 勤務先から Tailscale → **OTP 1回** → GUI 緑  
 3. `3 Sync-Now`（sync→trade）または待つ（logon wait-ready + market-tick）  
 4. `/costs/kabu-check` で **自動売買準備OK**  
 5. 切断: `4 Disconnect` 推奨（×でも約1分で自動回収）  
+6. 以降は aquacore 確認のみ。再ログインは `needs_otp` のときだけ  
+
 
 ## 月曜に赤のとき（手順）
 

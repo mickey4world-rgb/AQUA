@@ -104,8 +104,10 @@ Portal → VM → **開始**。慣れるまでこれで十分。
 
 - Runbook: `Start-KabuVm`（Managed Identity で Start-AzVM）
 - スケジュール: **月–金 07:00 JST**（勤務先から遠隔 OTP する前提）
+- **祝日スキップ**: ランブックが東証現物休場（例: 2026-10-12 スポーツの日）は Start しない
 - 停止: 既存 Auto-shutdown **毎日 16:00 JST**（deallocate）に任せる
 - 公開IPなし: RDP は **Tailscale** 経由（`vm-kabu-aqua`）
+- 次の実運用: **火曜から** OTP 1回 → 自動売買（月曜祝日は VM 起動なし）
 
 ```powershell
 pwsh infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1

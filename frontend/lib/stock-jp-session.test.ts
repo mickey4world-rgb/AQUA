@@ -4,6 +4,7 @@ import {
   isJpEquityTradeWindow,
   jstSessionClock,
 } from "./stock-jp-session";
+import { isJpEquityExchangeHoliday } from "./stock-jp-holidays";
 
 function atJst(isoUtc: string) {
   return new Date(isoUtc);
@@ -41,5 +42,11 @@ assert.equal(isJpEquityMarketHours(thu1230), true, "pm open");
 assert.equal(isJpEquityMarketHours(thu0910), true);
 assert.equal(isJpEquityTradeWindow(thu0910), false);
 assert.equal(isJpEquityTradeWindow(thu0920), true);
+
+// 2026-10-12 Mon スポーツの日 — 東証現物休場（平日でも市場外）
+const sportsDay1015 = atJst("2026-10-12T01:15:00.000Z"); // 10:15 JST
+assert.equal(isJpEquityExchangeHoliday(sportsDay1015), true, "Sports Day holiday");
+assert.equal(isJpEquityMarketHours(sportsDay1015), false, "Sports Day not market hours");
+assert.equal(isJpEquityTradeWindow(sportsDay1015), false, "Sports Day no trade window");
 
 console.log("stock-jp-session.test.ts: ok");

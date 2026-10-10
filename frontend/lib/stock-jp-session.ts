@@ -11,6 +11,7 @@ import {
   STOCK_SESSION_CLOSE_BLACKOUT_MIN,
   STOCK_SESSION_OPEN_BLACKOUT_MIN,
 } from "@/lib/stock-trade-constants";
+import { isJpEquityExchangeHoliday } from "@/lib/stock-jp-holidays";
 
 export type JpSessionClock = {
   weekday: string;
@@ -55,6 +56,7 @@ export const JP_EQUITY_CLOSE_MINS = 15 * 60;
 export function isJpEquityMarketHours(now = new Date()): boolean {
   const clock = jstSessionClock(now);
   if (!isWeekday(clock)) return false;
+  if (isJpEquityExchangeHoliday(now)) return false;
   const { mins } = clock;
   const am = mins >= OPEN && mins < AM_END;
   // 後場は 15:00 ちょうどまで場中（15:00 以降は場外）
@@ -69,6 +71,7 @@ export function isJpEquityMarketHours(now = new Date()): boolean {
 export function isJpEquityTradeWindow(now = new Date()): boolean {
   const clock = jstSessionClock(now);
   if (!isWeekday(clock)) return false;
+  if (isJpEquityExchangeHoliday(now)) return false;
   const { mins } = clock;
   const openOk =
     mins >= OPEN + STOCK_SESSION_OPEN_BLACKOUT_MIN && mins <= AM_END;

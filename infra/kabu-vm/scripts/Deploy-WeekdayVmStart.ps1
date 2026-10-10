@@ -1,8 +1,11 @@
-# Azure Automation: 平日朝に vm-kabu-aqua を起動
+# Azure Automation: 東証現物の営業日朝だけ vm-kabu-aqua を起動
 #
 # 適用:
 #   powershell -ExecutionPolicy Bypass -File infra/kabu-vm/scripts/Deploy-WeekdayVmStart.ps1
 #   # 既定 07:00 JST（勤務先から遠隔 OTP する前提。旧 05:00 は無効化すること）
+#
+# スケジュールは月〜金だが、ランブック内で祝日・年末年始は Start しない
+# （例: 2026-10-12 スポーツの日 = 現物休場）。
 #
 # 停止は既存 Auto-shutdown 16:00 JST（deallocate）に任せる。
 # ※ 起動時刻を遅らせても「緑なのに sync 不可」は直らない。OTP後 wait-ready / 再起動が本丸。
@@ -54,6 +57,7 @@ az role assignment create `
   -o none 2>$null
 
 $subId = az account show --query id -o tsv
+# Keep in sync with frontend/lib/stock-jp-holidays.ts (TSE cash closed)
 $runbookBody = @"
 param(
   [string]`$ResourceGroup = '$ResourceGroup',
@@ -62,11 +66,35 @@ param(
 Disable-AzContextAutosave -Scope Process | Out-Null
 Connect-AzAccount -Identity | Out-Null
 Set-AzContext -SubscriptionId '$subId' | Out-Null
+
+`$tz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time')
+`$jst = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, `$tz)
+`$dayKey = `$jst.ToString('yyyy-MM-dd')
+`$holidays = [System.Collections.Generic.HashSet[string]]::new()
+@(
+  '2026-01-01','2026-01-02','2026-01-12','2026-02-11','2026-02-23','2026-03-20',
+  '2026-04-29','2026-05-04','2026-05-05','2026-05-06','2026-07-20','2026-08-11',
+  '2026-09-21','2026-09-22','2026-09-23','2026-10-12','2026-11-03','2026-11-23','2026-12-31',
+  '2027-01-01','2027-01-02','2027-01-03','2027-01-11','2027-02-11','2027-02-23',
+  '2027-03-21','2027-03-22','2027-04-29','2027-05-03','2027-05-04','2027-05-05',
+  '2027-07-19','2027-08-11','2027-09-20','2027-09-23','2027-10-11','2027-11-03',
+  '2027-11-23','2027-12-31'
+) | ForEach-Object { [void]`$holidays.Add(`$_) }
+
+if (`$jst.DayOfWeek -eq 'Saturday' -or `$jst.DayOfWeek -eq 'Sunday') {
+  Write-Output ("SKIP weekend JST=" + `$dayKey)
+  return
+}
+if (`$holidays.Contains(`$dayKey)) {
+  Write-Output ("SKIP TSE holiday JST=" + `$dayKey + " (cash equities closed; no kabu VM start)")
+  return
+}
+
 `$vm = Get-AzVM -ResourceGroupName `$ResourceGroup -Name `$VmName -Status
 `$power = (`$vm.Statuses | Where-Object { `$_.Code -like 'PowerState/*' }).Code
 Write-Output ("Power before: " + `$power)
 if (`$power -eq 'PowerState/running') {
-  Write-Output 'Already running — skip start'
+  Write-Output 'Already running - skip start'
   return
 }
 Start-AzVM -ResourceGroupName `$ResourceGroup -Name `$VmName
@@ -100,24 +128,39 @@ az automation runbook publish `
   -n $RunbookName `
   -o none
 
-# 次の平日 StartHour:StartMinute JST
+# 次の東証営業日 StartHour:StartMinute JST（土日祝スキップ）
+$holidaySet = [System.Collections.Generic.HashSet[string]]::new()
+@(
+  "2026-01-01","2026-01-02","2026-01-12","2026-02-11","2026-02-23","2026-03-20",
+  "2026-04-29","2026-05-04","2026-05-05","2026-05-06","2026-07-20","2026-08-11",
+  "2026-09-21","2026-09-22","2026-09-23","2026-10-12","2026-11-03","2026-11-23","2026-12-31",
+  "2027-01-01","2027-01-02","2027-01-03","2027-01-11","2027-02-11","2027-02-23",
+  "2027-03-21","2027-03-22","2027-04-29","2027-05-03","2027-05-04","2027-05-05",
+  "2027-07-19","2027-08-11","2027-09-20","2027-09-23","2027-10-11","2027-11-03",
+  "2027-11-23","2027-12-31"
+) | ForEach-Object { [void]$holidaySet.Add($_) }
+
 $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
 $nowLocal = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
 $candidate = Get-Date -Year $nowLocal.Year -Month $nowLocal.Month -Day $nowLocal.Day `
   -Hour $StartHour -Minute $StartMinute -Second 0
 if ($candidate -le $nowLocal) { $candidate = $candidate.AddDays(1) }
-while ($candidate.DayOfWeek -eq "Saturday" -or $candidate.DayOfWeek -eq "Sunday") {
+while (
+  $candidate.DayOfWeek -eq "Saturday" -or
+  $candidate.DayOfWeek -eq "Sunday" -or
+  $holidaySet.Contains($candidate.ToString("yyyy-MM-dd"))
+) {
   $candidate = $candidate.AddDays(1)
 }
 $startTimeIso = $candidate.ToString("yyyy-MM-dd") + ("T{0:d2}:{1:d2}:00+09:00" -f $StartHour, $StartMinute)
-Write-Host "Schedule startTime=$startTimeIso name=$ScheduleName"
+Write-Host "Schedule startTime=$startTimeIso name=$ScheduleName (next TSE cash session)"
 
 $base = "https://management.azure.com/subscriptions/$subId/resourceGroups/$ResourceGroup/providers/Microsoft.Automation/automationAccounts/$AutomationAccount"
 $api = "2022-08-08"
 $schFile = Join-Path $env:TEMP "aa-sch.json"
 $jsFile = Join-Path $env:TEMP "aa-js.json"
 
-$desc = "Weekday {0:d2}:{1:d2} JST start for $VmName" -f $StartHour, $StartMinute
+$desc = "TSE cash session {0:d2}:{1:d2} JST start for $VmName (skips JP holidays in runbook)" -f $StartHour, $StartMinute
 @{
   name = $ScheduleName
   properties = @{
@@ -166,9 +209,10 @@ az rest --method put `
 if ($LASTEXITCODE -ne 0) { throw "jobSchedule put failed" }
 
 Write-Host ""
-Write-Host ("DONE: weekday {0:d2}:{1:d2} JST start -> {2}" -f $StartHour, $StartMinute, $VmName)
+Write-Host ("DONE: TSE-session {0:d2}:{1:d2} JST start -> {2}" -f $StartHour, $StartMinute, $VmName)
 Write-Host "Stop remains Auto-shutdown 16:00 JST (deallocate)."
-Write-Host ("nextRun should show the next weekday {0:d2}:{1:d2} Asia/Tokyo." -f $StartHour, $StartMinute)
+Write-Host ("Schedule still Mon-Fri, but runbook SKIPS JP equity holidays (e.g. 2026-10-12 Sports Day).")
+Write-Host ("Displayed next cash session start anchor: {0}" -f $startTimeIso)
 # Disable old schedules so the VM does not double-start
 $disableFile = Join-Path $env:TEMP "aa-sch-disable.json"
 '{"properties":{"isEnabled":false}}' | Set-Content $disableFile -Encoding utf8
