@@ -106,10 +106,13 @@ powershell -File C:\kabu-setup\Install-TailscaleForPhoneAccess.ps1
 3. Windows App で `vm-kabu-aqua` に接続
 4. 株ステーションで **パスコード／OTP** を入力 → **API アイコン緑**を目視
 5. **GUI 緑の直後**、デスクトップ／スタートの **`3 Sync-Now`** を実行
-6. 切るときは **必ず `4 Disconnect-RDP-KeepDesktop`**（×禁止）。×だと朝から sync が死に、何度も手動再起動が必要になる
+6. 切るときは **`4 Disconnect-RDP-KeepDesktop`** が即時で安全。**×で閉じても可** — VM の SYSTEM が RemoteDisconnect／毎分で Disc→console に戻し、自動 sync を継続する（約1分以内）
 7. `/costs/kabu-check` を開き、大きな **緑** と「余力・保有の同期」が新しいことを確認
 
-VM 側は 5分ごとに **Disc→console 回収**と **API半死時のステーション自動再起動**を試す。  
+VM 側:
+- **SYSTEM** `kabu-bridge-console-keepalive` … ×切断直後＋毎分、Disc/切断→console（日本語 Windows 対応）
+- sync/trade 前 preflight … API 半死ならステーション自動再起動
+
 それでも token が取れないときは OTP 再入力が必要なので、kabu-check が赤のままなら再度 Windows App でログイン。
 
 注意: **GUI の緑 ≠ sync 済み**。半死のときは自動再起動後も OTP が要ることがある。
@@ -135,7 +138,7 @@ VM 側は 5分ごとに **Disc→console 回収**と **API半死時のステー�
 | GUI は緑だが AQUA が緑でない | `wait-ready.log` / `health.log` / `Sync-Now.cmd`。緑でも token 失敗が続くなら **ステーション再起動** |
 | 11時まで sync しない | 旧タスクのハング（IgnoreNew）か API 半死。再起動＋`Ensure-KabuSyncAutomation.ps1` 再適用 |
 | AQUA が緑でない・HTTP 失敗 | 株ステーション未起動・ポート 18080/18081 の取り違え |
-| 切断後に API が死ぬ | RDP の×切断をやめ、セッション維持（SessionKeepAlive / tscon） |
+| 切断後に API が死ぬ | `C:\kabu-setup\console-keepalive.log`（SYSTEM Disc→console）。1分超えて赤なら OTP 再ログイン。`4 Disconnect` は即時用 |
 
 ### 「起動時刻を遅らせれば直る？」
 

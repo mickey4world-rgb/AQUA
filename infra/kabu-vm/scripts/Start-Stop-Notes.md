@@ -25,13 +25,13 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 | 07:05〜 5分ごと | `kabu-bridge-sync` / `kabu-bridge-trade` | health+sync / trade（Daily 起点・Parallel） |
 | 12:32（昼休み明け） | `kabu-bridge-lunch-reopen` | preflight→wait-ready→sync→trade（後場の半死対策） |
 | 毎回 sync/trade 前 | `run-preflight.cmd` | Disc→console(tscon) + API半死なら kabuStation 自動再起動 |
-| 5分ごと | `kabu-bridge-console-keepalive` | RDP×切断後のデスクトップ死亡を自動回収 |
+| RemoteDisconnect + 毎分 | `kabu-bridge-console-keepalive`（**SYSTEM**） | ×切断でも Disc/切断→console。運用纪律に依存しない |
 
 ### 朝から sync しないときの本命クラス
 
 手動で 8時・10時・11時・12:30 にステーション再起動が要る日は、だいたい次のどれか（または複合）:
 
-1. **RDP を × で閉じた** → デスクトップ描画停止 → API 死亡。必ず `4 Disconnect-RDP-KeepDesktop`
+1. **RDP を × で閉じた** → デスクトップ描画停止 → API 死亡。**SYSTEM が RemoteDisconnect／毎分で console 回収**（旧: Interactive keepalive は Disc 凍結内で無力。旧 Disconnect bat の `%sessionname%` は無反応になりがち）
 2. **GUI緑なのに API 半死** → preflight がプロセス再起動を試す（OTP 再入力が要る場合は health が赤のまま）
 3. **OTP 前に sync だけ失敗** → wait-ready が拾うまで正常。緑にしたら `3 Sync-Now`
 | 手動ワンショット | `C:\kabu-setup\Sync-Now.cmd` | wait-ready(5分)→probe+health+sync（`trade` 引数で発注も） |
@@ -45,7 +45,7 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 **失敗時の見方**:
 - `token failed: HTTP 401` → `.env` の `KABU_API_PASSWORD` 不一致
 - GUI 緑なのに token タイムアウト／接続失敗 → **株ステーションを再起動**してから `Sync-Now.cmd`
-- RDP の × 切断後に全滅 → `Disconnect-Rdp-KeepDesktop.bat`（tscon）を使う
+- RDP の × 切断後に全滅 → SYSTEM keepalive が ~1 分以内に Disc→console。即座に切るなら `4 Disconnect`（PowerShell／session-id）。ログ: `console-keepalive.log` / `disconnect-rdp.log`
 
 ### 朝の失敗パターン（実例）
 
@@ -56,12 +56,12 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 | A. OTP前の失敗連打 | AutoLogon直後は未ログイン。旧タスクは即死するだけなら害は小さい | 一部（無駄失敗が減る） |
 | B. APIハング＋IgnoreNew | token fetch が固まると 15分タスクが後続全部スキップ | **直らない**（タイムアウト＋Parallel で対処） |
 | C. 緑でも API 半死 | GUI緑アイコンでも `/kabusapi/token` が応答しないことがある | **直らない**（ステーション再起動） |
-| D. RDP×切断 | 携帯 Windows App を×で閉じるとデスクトップ描画が死に APIも死ぬ | **直らない**（tscon） |
+| D. RDP×切断 | 携帯 Windows App を×で閉じるとデスクトップ描画が死に APIも死ぬ | **SYSTEM RemoteDisconnect + 毎分 tscon**（運用の×禁止に依存しない） |
 | E. 定期トリガー取りこぼし | 旧「Once@00:02繰り返し」は deallocate 明けに弱い | 一部（Daily 06:45 起点へ変更） |
 
-**6:30起動は「OTP直前に寄せる」改善にはなるが、B/C/D の本丸ではない。**  
-本丸は wait-ready・fetch タイムアウト・タスク Parallel・緑でもダメなら再起動。
-| RDP×ではなく tscon | **必須** | Azure では切断でデスクトップ描画が止まり GUI/API が死ぬことが多い |
+**6:30起動は「OTP直前に寄せる」改善にはなるが、B/C の本丸ではない。D は SYSTEM keepalive が本丸。**  
+本丸は wait-ready・fetch タイムアウト・タスク Parallel・緑でもダメなら再起動・**×後の Disc→console**。
+| ×でも sync 継続（SYSTEM tscon） | **必須（自動）** | Interactive keepalive / `%sessionname%` bat は失敗クラス。JP `切断` も拾う |
 | スクセ／スリープ無効 | **必須** | ロックで同様に止まる |
 | セッション時間制限なし | **必須**（Windows Server） | 切断・アイドルで強制サインアウトされうる |
 
@@ -87,7 +87,7 @@ Azure の **Auto-shutdown**（Bicep で 16:00 JST）は「止める」だけ。
 
 ### 運用ルール（落とし穴）
 
-1. RDP を終わるときは **ウィンドウの × を使わない**。`C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat` を実行する（`tscon %sessionname% /dest:console`）。
+1. 切るときは `4 Disconnect`（即時）。**×でも SYSTEM が ~1 分で Disc→console**。旧 `%sessionname%` bat は使わない。
 2. AutoLogon 有効後、**一度再起動**して無人でデスクトップ＋kabu が来ることを確認する。
 3. bridge ログは `C:\kabu-setup\*.log`。
 
@@ -125,7 +125,7 @@ VM 無人化適用後の朝の確認:
 
 1. Portal で VM が **実行中**（AutoLogon 済みなら aquaadmin が console Active）
 2. RDP で入り、kabuステーション **API アイコン緑**（検証 18081）を目視
-3. 切るときは × ではなく `C:\kabu-setup\Disconnect-Rdp-KeepDesktop.bat`
+3. 切るときは `4 Disconnect`（即時）。×でも SYSTEM が ~1 分で Disc→console（`console-keepalive.log`）
 4. `.env`: `KABU_ALLOW_LIVE_ORDERS=1`・`KABU_TRADE_PASSWORD` 設定済みであること
 5. コスト画面に **日本株ウォッチ** があること（無いと intents=0）
 6. `C:\kabu-setup\sync.log` / `trade.log` にエラーが無いこと
