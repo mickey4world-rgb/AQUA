@@ -99,7 +99,7 @@ export async function runDailyAutonomousJobs(options?: {
     console.warn("[soluna-jobs] refuse jobs without today live briefing:", gate.reason);
     return buildJobsState();
   }
-  const briefing = gate.briefing;
+  let briefing = gate.briefing;
   const battle = hunter.battles[hunter.battles.length - 1] ?? null;
   if (!battle || battle.briefingId !== briefing.id) {
     return buildJobsState();
@@ -111,6 +111,22 @@ export async function runDailyAutonomousJobs(options?: {
       return buildJobsState();
     }
   }
+
+  // 旧 ingest（訳なし RSS）で討伐済みの日も、Note 前に同じ契約で直す
+  const { finalizeSolunaNewsItems } = await import("@/lib/server/soluna-news");
+  const { saveBriefing } = await import("@/lib/server/soluna-system-store");
+  const finalized = await finalizeSolunaNewsItems(briefing.items);
+  if (!finalized.ok) {
+    throw new Error(finalized.reason);
+  }
+  briefing = {
+    ...briefing,
+    items: finalized.items,
+    summary:
+      briefing.summary?.trim() ||
+      finalized.items.map((item) => item.titleJa || item.title).join(" / "),
+  };
+  await saveBriefing(briefing);
 
   const messages =
     options?.messages ??

@@ -169,6 +169,38 @@ async function ensureSolunaItemsJapanese(
   });
 }
 
+/**
+ * 永続化／Note 前の共通仕上げ: 訳付与 → 訳欠落の英字行を落とす → 注目度並べ替え。
+ * GHA RSS ingest が SWA の fetchGlobalNewsBriefing を迂回しても、ここで同じ契約を通す。
+ */
+export async function finalizeSolunaNewsItems(
+  items: SolunaNewsItem[],
+): Promise<
+  | { ok: true; items: SolunaNewsItem[]; droppedEnglish: number }
+  | { ok: false; reason: string }
+> {
+  let next = await ensureSolunaItemsJapanese(items);
+  if (solunaBriefingHasMissingJapanese(next)) {
+    console.warn("[soluna-news] JP translate incomplete — retry once");
+    next = await ensureSolunaItemsJapanese(next);
+  }
+  const kept = next.filter((item) => !solunaNewsNeedsJapanese(item));
+  const droppedEnglish = next.length - kept.length;
+  if (kept.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "英語ニュースの日本語訳を付与できませんでした。Note に英字だけの見出しを出さないため中断します。",
+    };
+  }
+  if (droppedEnglish > 0) {
+    console.warn(
+      `[soluna-news] dropped ${droppedEnglish} EN item(s) without Japanese (JA items kept)`,
+    );
+  }
+  return { ok: true, items: withEstimatedAttention(kept), droppedEnglish };
+}
+
 async function fetchNewsFromGrounding(
   keywords: string[],
 ): Promise<{ ok: true; text: string; model: string } | { ok: false; reason: string }> {
@@ -309,20 +341,11 @@ export async function fetchGlobalNewsBriefing(options?: {
     return { ok: false, reason: "ニュース項目を抽出できませんでした。" };
   }
 
-  items = await ensureSolunaItemsJapanese(items);
-  if (solunaBriefingHasMissingJapanese(items)) {
-    console.warn("[soluna-news] JP translate incomplete — retry once");
-    items = await ensureSolunaItemsJapanese(items);
+  const finalized = await finalizeSolunaNewsItems(items);
+  if (!finalized.ok) {
+    return { ok: false, reason: finalized.reason };
   }
-  if (solunaBriefingHasMissingJapanese(items)) {
-    return {
-      ok: false,
-      reason:
-        "英語ニュースの日本語訳を付与できませんでした。Note に英字だけの見出しを出さないため中断します。",
-    };
-  }
-  // 注目度欠落（RSS 等）を埋め、大ボス／Note 先頭がニッチに流れないよう並べ替え
-  items = withEstimatedAttention(items);
+  items = finalized.items;
 
   const briefing: SolunaNewsBriefing = {
     id: docId,

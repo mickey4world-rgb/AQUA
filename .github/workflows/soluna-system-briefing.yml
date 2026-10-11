@@ -46,24 +46,35 @@ jobs:
           echo "status HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
           COMPLETE=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('complete') else 'false')" 2>/dev/null || echo "false")
+          JOBS_NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('jobsNeedsRun') else 'false')" 2>/dev/null || echo "false")
+          NOTE_READY=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('noteReady') else 'false')" 2>/dev/null || echo "false")
           BOINC_NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('boincNeedsRun') else 'false')" 2>/dev/null || echo "false")
           BOINC_MIN=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print(int(d.get('boincMinutes') or 0))" 2>/dev/null || echo "0")
           BOINC_BID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print(d.get('boincBriefingId') or d.get('todayBriefingId') or '')" 2>/dev/null || echo "")
           echo "complete=${COMPLETE}" >> "$GITHUB_OUTPUT"
+          echo "jobs_needs_run=${JOBS_NEEDS}" >> "$GITHUB_OUTPUT"
+          echo "note_ready=${NOTE_READY}" >> "$GITHUB_OUTPUT"
           echo "boinc_needs_run=${BOINC_NEEDS}" >> "$GITHUB_OUTPUT"
           echo "pending_boinc_minutes=${BOINC_MIN}" >> "$GITHUB_OUTPUT"
           echo "pending_boinc_briefing_id=${BOINC_BID}" >> "$GITHUB_OUTPUT"
           FORCE_INPUT="${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}"
-          if [ "${COMPLETE}" != "true" ] || [ "${FORCE_INPUT}" = "true" ]; then
+          # battle complete だけ見てスキップすると Note/jobs 失敗後に永久未公開になる
+          if [ "${FORCE_INPUT}" = "true" ] || [ "${COMPLETE}" != "true" ]; then
             echo "run_pipeline=true" >> "$GITHUB_OUTPUT"
+            echo "run_jobs_only=false" >> "$GITHUB_OUTPUT"
+          elif [ "${JOBS_NEEDS}" = "true" ]; then
+            echo "run_pipeline=false" >> "$GITHUB_OUTPUT"
+            echo "run_jobs_only=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::討伐は完了済みだが Note/jobs 未完了のため jobs のみ再実行します"
           else
             echo "run_pipeline=false" >> "$GITHUB_OUTPUT"
+            echo "run_jobs_only=false" >> "$GITHUB_OUTPUT"
           fi
           echo "force=${FORCE_INPUT}" >> "$GITHUB_OUTPUT"
 
       # 完了スキップ時は checkout / npm ci 不要（1日11枠の無駄を削減）
       - uses: actions/checkout@v4
-        if: steps.status.outputs.run_pipeline == 'true' || steps.status.outputs.boinc_needs_run == 'true'
+        if: steps.status.outputs.run_pipeline == 'true' || steps.status.outputs.run_jobs_only == 'true' || steps.status.outputs.boinc_needs_run == 'true'
 
       - name: Setup Node.js
         if: steps.status.outputs.run_pipeline == 'true'
@@ -170,7 +181,7 @@ jobs:
           fi
 
       - name: Run autonomous jobs (Note / BOINC / assets)
-        if: steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success'
+        if: (steps.status.outputs.run_pipeline == 'true' && steps.live_gate.outcome == 'success') || steps.status.outputs.run_jobs_only == 'true'
         id: jobs
         env:
           SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
@@ -191,10 +202,36 @@ jobs:
           echo ""
           echo "jobs HTTP ${HTTP_CODE}"
           test "${HTTP_CODE}" -ge 200 && test "${HTTP_CODE}" -lt 300
-          BRIEFING_ID=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status2.json')); print(d.get('todayBriefingId',''))" 2>/dev/null || echo "")
+          BRIEFING_ID=$(python3 -c "
+          import json, os
+          for path in ('/tmp/soluna-status2.json', '/tmp/soluna-status.json'):
+            if os.path.exists(path):
+              d=json.load(open(path)); print(d.get('todayBriefingId','')); break
+          else:
+            print('')
+          " 2>/dev/null || echo "")
           BOINC=$(python3 -c "import json; d=json.load(open('/tmp/soluna-jobs.json')); print(d.get('boincMinutes',0))" 2>/dev/null || echo "0")
+          NOTE_PUB=$(python3 -c "import json; d=json.load(open('/tmp/soluna-jobs.json')); print('true' if d.get('notePublished') else 'false')" 2>/dev/null || echo "false")
           echo "briefing_id=${BRIEFING_ID}" >> "$GITHUB_OUTPUT"
           echo "boinc_minutes=${BOINC}" >> "$GITHUB_OUTPUT"
+          echo "note_published=${NOTE_PUB}" >> "$GITHUB_OUTPUT"
+          # 原稿未作成のまま 2xx は認めない（ok:true + note 無しの劣化成功を防ぐ）
+          if [ "${NOTE_PUB}" != "true" ]; then
+            NOTE_ERR=$(python3 -c "import json; d=json.load(open('/tmp/soluna-jobs.json')); print(d.get('noteError') or d.get('error') or '')" 2>/dev/null || echo "")
+            # NOTE_COOKIE 未設定でアプリ内原稿のみの日は noteError があっても article は保存済み → status.noteReady
+            STATUS_CODE=$(curl -sS --max-time 30 -o /tmp/soluna-status-after-jobs.json -w "%{http_code}" \
+              -X POST "${BASE%/}/api/soluna/cron/system-briefing" \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              -d '{"step":"status"}')
+            cat /tmp/soluna-status-after-jobs.json
+            echo ""
+            NOTE_READY=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status-after-jobs.json')); print('true' if d.get('noteReady') else 'false')" 2>/dev/null || echo "false")
+            if [ "${NOTE_READY}" != "true" ]; then
+              echo "::error::Note/jobs 未完了（published=${NOTE_PUB} noteReady=${NOTE_READY} err=${NOTE_ERR} statusHTTP=${STATUS_CODE}）"
+              exit 1
+            fi
+          fi
 
       - name: Resolve BOINC run inputs
         id: boinc_inputs
