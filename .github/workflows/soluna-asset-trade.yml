@@ -27,8 +27,11 @@ jobs:
           echo ""
           echo "status HTTP ${STATUS_CODE}"
           NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('needsBriefing') else 'false')" 2>/dev/null || echo "false")
+          JOBS_NEEDS=$(python3 -c "import json; d=json.load(open('/tmp/soluna-status.json')); print('true' if d.get('jobsNeedsRun') else 'false')" 2>/dev/null || echo "false")
           if [ "${NEEDS}" = "true" ]; then
             echo "::warning::本日の討伐が未完了。Soluna System Briefing ワークフローで補完されます。"
+          elif [ "${JOBS_NEEDS}" = "true" ]; then
+            echo "::warning::討伐は完了済みだが Note/jobs 未完了。System Briefing の jobs 再実行枠で補完されます。"
           fi
 
       - name: Run background asset trade tick

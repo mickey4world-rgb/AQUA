@@ -74,12 +74,29 @@ export async function POST(request: Request) {
     ) {
       return Response.json({ ok: false, step: "ingest", error: "Invalid briefing payload." }, { status: 400 });
     }
-    await saveBriefing(ingestBriefing);
+    // GHA RSS は SWA fetch を迂回するため、ここで JA＋注目度を強制（英字だけの ingest 禁止）
+    const { finalizeSolunaNewsItems } = await import("@/lib/server/soluna-news");
+    const finalized = await finalizeSolunaNewsItems(ingestBriefing.items);
+    if (!finalized.ok) {
+      return Response.json(
+        { ok: false, step: "ingest", error: finalized.reason },
+        { status: 422 },
+      );
+    }
+    const briefing: SolunaNewsBriefing = {
+      ...ingestBriefing,
+      items: finalized.items,
+      summary:
+        ingestBriefing.summary?.trim() ||
+        finalized.items.map((item) => item.titleJa || item.title).join(" / "),
+    };
+    await saveBriefing(briefing);
     return Response.json({
       ok: true,
       step: "ingest",
-      briefingId: ingestBriefing.id,
-      summary: ingestBriefing.summary,
+      briefingId: briefing.id,
+      summary: briefing.summary,
+      droppedEnglish: finalized.droppedEnglish,
     });
   }
 
@@ -123,17 +140,28 @@ export async function POST(request: Request) {
   }
 
   if (step === "jobs") {
-    const { runDailyAutonomousJobs } = await import("@/lib/server/soluna-jobs");
-    const jobs = await runDailyAutonomousJobs({ force });
-    return Response.json({
-      ok: true,
-      step: "jobs",
-      notePublished: jobs.latestNote?.published ?? false,
-      noteUrl: jobs.latestNote?.noteUrl ?? null,
-      noteError: jobs.latestNote?.error ?? null,
-      boincMinutes: jobs.latestBoinc?.minutes ?? 0,
-      medalUnits: jobs.assets?.medalUnits ?? 0,
-    });
+    try {
+      const { runDailyAutonomousJobs } = await import("@/lib/server/soluna-jobs");
+      const jobs = await runDailyAutonomousJobs({ force });
+      return Response.json({
+        ok: true,
+        step: "jobs",
+        notePublished: jobs.latestNote?.published ?? false,
+        noteUrl: jobs.latestNote?.noteUrl ?? null,
+        noteError: jobs.latestNote?.error ?? null,
+        boincMinutes: jobs.latestBoinc?.minutes ?? 0,
+        medalUnits: jobs.assets?.medalUnits ?? 0,
+      });
+    } catch (error) {
+      // compose 例外などを 500 HTML にせず、status.jobsNeedsRun で再試行できるようにする
+      const message =
+        error instanceof Error ? error.message : "jobs 実行に失敗しました";
+      console.error("[soluna-cron] jobs threw:", message);
+      return Response.json(
+        { ok: false, step: "jobs", error: message, notePublished: false },
+        { status: 422 },
+      );
+    }
   }
 
   if (step === "ensure") {
@@ -143,14 +171,21 @@ export async function POST(request: Request) {
   }
 
   if (step === "status") {
-    const { getDailyBriefingStatus, getBriefingById, getLatestBoincRun } = await import(
-      "@/lib/server/soluna-system-store"
-    );
+    const {
+      getDailyBriefingStatus,
+      getBriefingById,
+      getLatestBoincRun,
+      getLatestNoteArticle,
+    } = await import("@/lib/server/soluna-system-store");
     const { assertTodayLiveBriefing } = await import("@/lib/server/soluna-news");
+    const { planSolunaDailyPipeline, solunaNoteCoversBriefing } = await import(
+      "@/lib/soluna-daily-pipeline"
+    );
     const status = await getDailyBriefingStatus();
-    const [todayBriefing, latestBoinc] = await Promise.all([
+    const [todayBriefing, latestBoinc, latestNote] = await Promise.all([
       getBriefingById(status.todayBriefingId),
       getLatestBoincRun(),
+      getLatestNoteArticle(),
     ]);
     const liveGate = assertTodayLiveBriefing(todayBriefing);
     const boincForToday =
@@ -163,6 +198,13 @@ export async function POST(request: Request) {
           boincForToday.status === "error" ||
           !boincForToday.result),
     );
+    // battle complete だけ見てスキップすると Note 500 後に永久未公開になる
+    const noteReady = solunaNoteCoversBriefing(latestNote, status.todayBriefingId);
+    const jobsNeedsRun = status.hasBattle && !noteReady;
+    const plan = planSolunaDailyPipeline({
+      battleComplete: status.complete,
+      jobsNeedsRun,
+    });
     return Response.json({
       ok: true,
       step: "status",
@@ -172,6 +214,13 @@ export async function POST(request: Request) {
       liveNewsReason: liveGate.ok ? null : liveGate.reason,
       briefingSource: todayBriefing?.source ?? null,
       briefingSummary: todayBriefing?.summary?.slice(0, 160) ?? null,
+      noteReady,
+      notePublished: Boolean(latestNote?.published && noteReady),
+      noteUrl: noteReady ? latestNote?.noteUrl ?? null : null,
+      noteError: noteReady ? latestNote?.error ?? null : null,
+      jobsNeedsRun,
+      runFullPipeline: plan.runFullPipeline,
+      runJobsOnly: plan.runJobsOnly,
       boincNeedsRun,
       boincStatus: boincForToday?.status ?? null,
       boincMinutes: boincForToday?.minutes ?? 0,

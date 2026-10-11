@@ -13,6 +13,7 @@ import {
   solunaBriefingHasMissingJapanese,
 } from "./soluna-news-display";
 import { estimateSolunaAttentionScore, withEstimatedAttention } from "./soluna-attention";
+import { planSolunaDailyPipeline } from "./soluna-daily-pipeline";
 import type { SolunaNewsBriefing } from "./types/soluna";
 import { mapDigestToSolunaSeedItems } from "./server/works-news-search";
 import type { NewsSearchDigest } from "./types/works-news-search";
@@ -222,6 +223,16 @@ import type { NewsSearchDigest } from "./types/works-news-search";
       publishedAt: new Date().toISOString(),
     }) >= 70,
   );
+}
+
+// battle complete + Note 未作成 → jobs のみ（永久スキップ禁止）
+{
+  const plan = planSolunaDailyPipeline({
+    battleComplete: true,
+    jobsNeedsRun: true,
+  });
+  assert.equal(plan.runFullPipeline, false);
+  assert.equal(plan.runJobsOnly, true);
 }
 
 console.log("soluna-hunt-improvements.test.ts: ok");
