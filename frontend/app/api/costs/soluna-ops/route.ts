@@ -26,7 +26,8 @@ export async function GET(request: Request) {
         const report = await getSolunaOpsAnalyticsReport(month);
         return Response.json(report, {
           headers: {
-            "Cache-Control": "private, max-age=600, stale-while-revalidate=3600",
+            // ブラウザが Note/BOINC 更新を長く隠さない（サーバー側 fresh TTL は 20 分）
+            "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
             "X-Costs-Source": "soluna-ops-cache",
           },
         });

@@ -61,6 +61,6 @@ export function costsAzureCacheKey(month: string): string {
 }
 
 export function costsSolunaOpsCacheKey(month: string): string {
-  // v3: 実現損益ベースの折れ線（古いクライアントキャッシュを捨てる）
-  return `soluna-ops:v3:${month}`;
+  // v4: Note/BOINC 台帳更新が古キャッシュに隠れる問題のあと、クライアントも捨てる
+  return `soluna-ops:v4:${month}`;
 }

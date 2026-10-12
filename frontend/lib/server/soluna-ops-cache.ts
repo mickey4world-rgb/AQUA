@@ -99,8 +99,7 @@ export async function readSolunaOpsCache(
   month: string,
   allowStale = false,
 ): Promise<SolunaOpsAnalyticsReport | null> {
-  const freshMemory = readMemorySolunaOpsCache(month, false);
-  if (freshMemory) return freshMemory;
+  // Cosmos を優先（SWA 多インスタンスで古い memory が新しい実績を隠すのを防ぐ）
   const cosmos = await readCosmosSolunaOpsCache(month, allowStale);
   if (cosmos) return cosmos;
   return readMemorySolunaOpsCache(month, allowStale);

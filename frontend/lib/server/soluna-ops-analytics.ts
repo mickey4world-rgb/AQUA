@@ -496,7 +496,10 @@ function currentUtcMonth(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** コスト画面用: キャッシュ優先で返す（外部 API は叩かない） */
+/**
+ * コスト画面用: 新鮮なキャッシュのみ採用。古いスナップショットは台帳から再構築する。
+ * （再発: allowStale で最大24h Note/BOINC が止まったまま見える）
+ */
 export async function getSolunaOpsAnalyticsReport(
   month: string,
 ): Promise<SolunaOpsAnalyticsReport> {
@@ -504,12 +507,27 @@ export async function getSolunaOpsAnalyticsReport(
     "@/lib/server/soluna-ops-cache"
   );
 
-  const cached = await readSolunaOpsCache(month, true);
-  // 折れ線必須。旧キャッシュに equityPerformance が無い場合は再構築する
+  const cached = await readSolunaOpsCache(month, false);
   if (cached?.assets?.equityPerformance?.points?.length) {
     return cached;
   }
 
+  const report = await buildSolunaOpsAnalyticsReport(month, {
+    refreshLivePrices: false,
+    includeLiveNoteStats: false,
+  });
+  await writeCosmosSolunaOpsCache(month, report);
+  return report;
+}
+
+/**
+ * Note / BOINC 直後用: 外部 API なしで台帳だけ反映してキャッシュを更新する。
+ * asset-trade の warm（公開板・Note PV）より軽く、SWA 45s でも回しやすい。
+ */
+export async function refreshSolunaOpsAnalyticsFromLedger(
+  month = currentUtcMonth(),
+): Promise<SolunaOpsAnalyticsReport> {
+  const { writeCosmosSolunaOpsCache } = await import("@/lib/server/soluna-ops-cache");
   const report = await buildSolunaOpsAnalyticsReport(month, {
     refreshLivePrices: false,
     includeLiveNoteStats: false,
