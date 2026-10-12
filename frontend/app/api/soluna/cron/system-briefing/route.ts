@@ -143,6 +143,14 @@ export async function POST(request: Request) {
     try {
       const { runDailyAutonomousJobs } = await import("@/lib/server/soluna-jobs");
       const jobs = await runDailyAutonomousJobs({ force });
+      try {
+        const { refreshSolunaOpsAnalyticsFromLedger } = await import(
+          "@/lib/server/soluna-ops-analytics"
+        );
+        await refreshSolunaOpsAnalyticsFromLedger();
+      } catch (warmError) {
+        console.warn("[soluna-cron] soluna-ops ledger refresh failed", warmError);
+      }
       return Response.json({
         ok: true,
         step: "jobs",

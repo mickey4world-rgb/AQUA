@@ -151,6 +151,16 @@ export async function POST(request: Request) {
     }
   }
 
+  // コスト画面の Note・BOINC タブが古いスナップショットのまま残らないようにする
+  try {
+    const { refreshSolunaOpsAnalyticsFromLedger } = await import(
+      "@/lib/server/soluna-ops-analytics"
+    );
+    await refreshSolunaOpsAnalyticsFromLedger();
+  } catch (warmError) {
+    console.warn("[boinc-report] soluna-ops ledger refresh failed", warmError);
+  }
+
   return Response.json({
     ok: true,
     briefingId: body.briefingId,
