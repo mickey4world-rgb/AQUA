@@ -27,10 +27,13 @@ foreach ($need in $required) {
     Write-Host ("TASK_HAVE " + $need + " state=" + $t.State + " user=" + $prin)
   }
 }
-Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue | ForEach-Object {
-  $i = $_ | Get-ScheduledTaskInfo  $u = $_.Principal.UserId
-  Write-Host ("TASK " + $_.TaskName + " state=" + $_.State + " user=" + $u + " last=" + $i.LastRunTime + " result=" + $i.LastTaskResult)
-}
+@(Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue) |
+  Where-Object { $_ -and $_.TaskName } |
+  ForEach-Object {
+    $i = $_ | Get-ScheduledTaskInfo
+    $u = $_.Principal.UserId
+    Write-Host ("TASK " + $_.TaskName + " state=" + $_.State + " user=" + $u + " last=" + $i.LastRunTime + " result=" + $i.LastTaskResult)
+  }
 
 Write-Host "-- files --"
 foreach ($p in @(
