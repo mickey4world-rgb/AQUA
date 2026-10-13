@@ -367,6 +367,28 @@ if (Test-Path -LiteralPath $keepPs1) {
   Write-Host "KEEP_SELFTEST_OK"
 }
 
+# SYSTEM market-tick / recover must read bridge secrets after Disconnect migration
+function Grant-SystemBridgeAccess {
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  try {
+    icacls $Path /grant "*S-1-5-18:(R)" /C | Out-Null
+    Write-Host ("ACL_SYSTEM_R " + $Path)
+  } catch {
+    Write-Host ("ACL_SYSTEM_SKIP " + $Path + " " + $_.Exception.Message)
+  }
+}
+Grant-SystemBridgeAccess -Path $BridgeRoot
+Grant-SystemBridgeAccess -Path (Join-Path $BridgeRoot ".env")
+Grant-SystemBridgeAccess -Path $SetupDir
+# Ensure SYSTEM can traverse + execute npm scripts under bridge
+try {
+  icacls $BridgeRoot /grant "*S-1-5-18:(OI)(CI)(RX)" /T /C | Out-Null
+  Write-Host "ACL_SYSTEM_RX_BRIDGE_OK"
+} catch {
+  Write-Host ("ACL_SYSTEM_RX_SKIP " + $_.Exception.Message)
+}
+
 
 # Primary path: SYSTEM atomic tick (sync then trade). Interactive-only died after Disconnect.
 Reg-SystemMarketTick -Name "kabu-bridge-market-tick" -Cmd (Join-Path $SetupDir "run-market-tick.cmd") `
@@ -396,8 +418,16 @@ Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-afte
 Reg-Task -Name "kabu-bridge-logon-trade" -Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") `
   -Logon $true -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 120
 
-Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue | ForEach-Object {
-  $i = $_ | Get-ScheduledTaskInfo
-  Write-Host ("TASK " + $_.TaskName + " " + $_.State + " last=" + $i.LastRunTime)
+@(Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue) |
+  Where-Object { $_ -and $_.TaskName } |
+  ForEach-Object {
+    $i = $_ | Get-ScheduledTaskInfo
+    Write-Host ("TASK " + $_.TaskName + " " + $_.State + " last=" + $i.LastRunTime + " user=" + $_.Principal.UserId)
+  }
+$tick = Get-ScheduledTask -TaskName "kabu-bridge-market-tick" -ErrorAction SilentlyContinue
+if (-not $tick) { throw "kabu-bridge-market-tick missing after register" }
+$tickUser = [string]$tick.Principal.UserId
+if ($tickUser -notmatch "SYSTEM|S-1-5-18") {
+  throw ("kabu-bridge-market-tick must be SYSTEM, got: " + $tickUser)
 }
-Write-Host "ENSURE_SYNC_AUTOMATION_OK dailyStart=$DailyStartTime interval=${IntervalMinutes}m lunch=$LunchSyncTime"
+Write-Host "ENSURE_SYNC_AUTOMATION_OK dailyStart=$DailyStartTime interval=${IntervalMinutes}m lunch=$LunchSyncTime systemTick=OK"
