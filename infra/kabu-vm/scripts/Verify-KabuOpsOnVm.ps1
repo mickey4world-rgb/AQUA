@@ -18,13 +18,19 @@ $required = @(
   "kabu-bridge-logon-sync",
   "kabu-bridge-logon-trade"
 )
+$verifyFailed = $false
 foreach ($need in $required) {
   $t = Get-ScheduledTask -TaskName $need -ErrorAction SilentlyContinue
   if (-not $t) {
     Write-Host ("TASK_MISSING " + $need)
+    $verifyFailed = $true
   } else {
     $prin = ($t.Principal.UserId)
     Write-Host ("TASK_HAVE " + $need + " state=" + $t.State + " user=" + $prin)
+    if ($need -eq "kabu-bridge-market-tick" -and ([string]$prin -notmatch "SYSTEM|S-1-5-18")) {
+      Write-Host "TASK_BAD_PRINCIPAL market-tick must be SYSTEM"
+      $verifyFailed = $true
+    }
   }
 }
 @(Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue) |
@@ -86,6 +92,30 @@ $keep = Join-Path $SetupDir "Keep-KabuConsoleSession.ps1"
 if (Test-Path $keep) {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $keep -SelfTest
   Write-Host ("KEEP_SELFTEST_EXIT=" + $LASTEXITCODE)
+  if ($LASTEXITCODE -ne 0) { $verifyFailed = $true }
 }
 
+Write-Host "-- SYSTEM ACL / dry-run tick --"
+if (Test-Path $envPath) {
+  $acl = (icacls $envPath) -join " "
+  Write-Host ("ENV_ACL=" + $acl)
+  if ($acl -notmatch "SYSTEM|S-1-5-18") {
+    Write-Host "ENV_ACL_WARN SYSTEM may not read .env"
+  }
+}
+# Prove the SYSTEM task can start (station may be offline → sync fail is OK; missing task is not)
+try {
+  Start-ScheduledTask -TaskName "kabu-bridge-market-tick" -ErrorAction Stop
+  Start-Sleep -Seconds 8
+  $info = Get-ScheduledTaskInfo -TaskName "kabu-bridge-market-tick"
+  Write-Host ("TICK_DRYRUN last=" + $info.LastRunTime + " result=" + $info.LastTaskResult + " state=" + (Get-ScheduledTask -TaskName "kabu-bridge-market-tick").State)
+} catch {
+  Write-Host ("TICK_DRYRUN_FAIL " + $_.Exception.Message)
+  $verifyFailed = $true
+}
+
+if ($verifyFailed) {
+  Write-Host "VERIFY_KABU_OPS_FAIL"
+  exit 1
+}
 Write-Host "VERIFY_KABU_OPS_OK"
