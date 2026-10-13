@@ -164,12 +164,15 @@ function Reg-SystemMarketTick {
   )
   Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
   $cmdAttr = $Cmd.Replace("&", "&amp;").Replace('"', "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")
+  # Avoid `$at:00` scope parse (PowerShell treats `at:00` as a drive-qualified variable)
+  $startBoundary = "2024-01-01T{0}:00" -f $StartAt
   $extraTriggers = ""
   foreach ($at in $ExtraDailyAts) {
     if (-not $at -or $at.Trim().Length -eq 0) { continue }
+    $extraBoundary = "2024-01-01T{0}:00" -f $at.Trim()
     $extraTriggers += @"
     <CalendarTrigger>
-      <StartBoundary>2024-01-01T$at:00</StartBoundary>
+      <StartBoundary>$extraBoundary</StartBoundary>
       <Enabled>true</Enabled>
       <ScheduleByDay>
         <DaysInterval>1</DaysInterval>
@@ -191,7 +194,7 @@ function Reg-SystemMarketTick {
         <Duration>$Duration</Duration>
         <StopAtDurationEnd>true</StopAtDurationEnd>
       </Repetition>
-      <StartBoundary>2024-01-01T${StartAt}:00</StartBoundary>
+      <StartBoundary>$startBoundary</StartBoundary>
       <Enabled>true</Enabled>
       <ScheduleByDay>
         <DaysInterval>1</DaysInterval>
