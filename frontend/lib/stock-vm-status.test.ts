@@ -80,6 +80,20 @@ function order(createdAt: string): StockBrokerOrderRecord {
   assert.equal(s.state, "running");
 }
 
+// 15:24 は後場中（15:30 クローズ）。sync 枯れを「市場外」と偽らない
+{
+  const now = new Date("2026-10-08T06:24:00Z"); // 15:24 JST
+  const syncedAt = new Date(now.getTime() - 65 * 60_000).toISOString(); // 14:19
+  const s = buildStockVmRuntimeStatus({
+    snapshot: snap(syncedAt),
+    orders: [],
+    now,
+  });
+  assert.equal(s.sessionOpenNow, true, "15:24 is still TSE afternoon");
+  assert.equal(s.state, "stale");
+  assert.ok(!s.label.includes("市場外"));
+}
+
 // 週末で半日以内 → 待機OK
 {
   const now = new Date("2026-10-04T03:00:00Z"); // 土 12:00 JST

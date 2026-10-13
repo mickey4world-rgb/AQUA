@@ -4,8 +4,10 @@
  * marketHours = ザラ場そのもの（UI / VM 稼働オラクル用）
  * tradeWindow = 発注してよい粗い窓（寄り直後・大引け前ブラックアウト除外）
  *
- * 過去の失敗: tradeWindow を UI の「市場外」に流用し、後場 14:45 以降を
- * 「待機（市場外）」と誤表示 → sync 2時間枯れを正常扱いにした。
+ * 過去の失敗:
+ * - tradeWindow を UI の「市場外」に流用し、後場ブラックアウト帯を
+ *   「待機（市場外）」と誤表示 → sync 枯れを正常扱いにした。
+ * - 大引けを 15:00 のまま放置（2024-11 以降は 15:30）→ 15:00–15:30 を市場外と偽った。
  */
 import {
   STOCK_SESSION_CLOSE_BLACKOUT_MIN,
@@ -46,8 +48,11 @@ function isWeekday(clock: JpSessionClock): boolean {
 const OPEN = 9 * 60;
 const AM_END = 11 * 60 + 30;
 const PM_START = 12 * 60 + 30;
-/** 東証後場終了（大引け） */
-export const JP_EQUITY_CLOSE_MINS = 15 * 60;
+/**
+ * 東証現物の後場終了（大引け）。
+ * 2024-11-05 以降は 15:30（クロージング・オークション含む通常ザラ場終了）。
+ */
+export const JP_EQUITY_CLOSE_MINS = 15 * 60 + 30;
 
 /**
  * ザラ場時間帯か（前場・後場）。ブラックアウトなし。
@@ -59,7 +64,7 @@ export function isJpEquityMarketHours(now = new Date()): boolean {
   if (isJpEquityExchangeHoliday(now)) return false;
   const { mins } = clock;
   const am = mins >= OPEN && mins < AM_END;
-  // 後場は 15:00 ちょうどまで場中（15:00 以降は場外）
+  // 後場は 15:30 ちょうどまで場中（15:30 超は場外）
   const pm = mins >= PM_START && mins <= JP_EQUITY_CLOSE_MINS;
   return am || pm;
 }

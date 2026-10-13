@@ -7,7 +7,7 @@
 **平日、朝に OTP を1回入れたあと、場中は人手のステーション再起動なしに:**
 
 1. 余力・保有の **sync** が続く  
-2. **market-tick**（sync→trade）が約5分ごとに回り、条件を満たせば **LIVE 発注**が Cosmos / Costs に残る  
+2. **market-tick**（SYSTEM・sync→trade）が約5分ごとに回り、条件を満たせば **LIVE 発注**が Cosmos / Costs に残る（後場は **15:30** まで）  
 3. 同期が死んだら **VM が自動判断→OTP不要な回復を優先→必要なら aquacore/メールで OTP 要求**  
 4. 止まっているときは `/costs/kabu-check` が **自動売買準備OK ではない** と理由付きで示す  
 
@@ -23,6 +23,8 @@
 | API 半死 | すぐステーション Kill（＝また OTP） | **梯子**: soft wait → cooldown 付き1回だけ再起動 → それでもダメなら `needs_otp` を AQUA へ |
 | 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ） |
 | sync 死なのに trade | 分離タスク | atomic market-tick（sync 失敗なら trade しない） |
+| Disconnect 後 sync 停止 | Interactive タスク依存 | **SYSTEM market-tick** + token OK 時の AQUA sync 枯れ回復 |
+| 15:00 以降を市場外表示 | 旧大引け 15:00 | 大引け **15:30**（2024-11 以降） |
 
 ## 信頼性マトリクス
 
@@ -74,7 +76,7 @@ az vm run-command invoke -g rg-personal-apps-prod -n vm-kabu-aqua `
   --scripts "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/mickey4world-rgb/AQUA/main/infra/kabu-vm/scripts/Update-BridgeOnVm.ps1' -OutFile 'C:\kabu-setup\Update-BridgeOnVm.ps1' -UseBasicParsing; powershell -File C:\kabu-setup\Update-BridgeOnVm.ps1"
 ```
 
-成功マーカー: `KEEP_SELFTEST_OK` / `TASK_OK_SYSTEM` / `TASK_OK kabu-bridge-market-tick` / `UPDATE_BRIDGE_OK`
+成功マーカー: `KEEP_SELFTEST_OK` / `TASK_OK_SYSTEM`（console-keepalive + **market-tick**） / `UPDATE_BRIDGE_OK`
 
 ## 自動判断の見方（aquacore）
 
