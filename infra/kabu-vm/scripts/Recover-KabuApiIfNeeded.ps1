@@ -111,10 +111,59 @@ function Find-KabuExe {
   return $null
 }
 
+function Test-IsJpMarketHoursRough {
+  # TSE cash: weekdays 09:00-11:30 / 12:30-15:30 JST (2024-11+). Holiday skip is best-effort elsewhere.
+  try {
+    $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
+  } catch {
+    $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Asia/Tokyo")
+  }
+  $jst = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
+  if ($jst.DayOfWeek -eq [DayOfWeek]::Saturday -or $jst.DayOfWeek -eq [DayOfWeek]::Sunday) {
+    return $false
+  }
+  $mins = ($jst.Hour * 60) + $jst.Minute
+  $am = ($mins -ge (9 * 60) -and $mins -lt (11 * 60 + 30))
+  $pm = ($mins -ge (12 * 60 + 30) -and $mins -le (15 * 60 + 30))
+  return ($am -or $pm)
+}
+
+function Ensure-AquaSyncIfStale {
+  # Failure class: token OK but Interactive market-tick dead → AQUA sync ages out while UI API looks fine.
+  if (-not (Test-IsJpMarketHoursRough)) {
+    Log "AQUA_SYNC_SKIP off_hours"
+    return
+  }
+  $marker = Join-Path $SetupDir "last-aqua-sync.ok"
+  $staleMin = 7
+  if (Test-Path -LiteralPath $marker) {
+    try {
+      $age = ((Get-Date) - (Get-Item -LiteralPath $marker).LastWriteTime).TotalMinutes
+      if ($age -lt $staleMin) {
+        Log ("AQUA_SYNC_FRESH ageMin=" + [int]$age)
+        return
+      }
+    } catch { }
+  }
+  Push-Location $BridgeRoot
+  try {
+    & $npmCmd run sync >> $log 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      (Get-Date).ToString("o") | Set-Content -Path $marker -Encoding ASCII
+      Log "AQUA_SYNC_OK stale-heal"
+    } else {
+      Log ("AQUA_SYNC_FAIL exit=" + $LASTEXITCODE)
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 # --- Ladder ---
 if (Test-TokenOk) {
   Log "JUDGE=ok TOKEN_OK"
   Write-State "ok"
+  Ensure-AquaSyncIfStale
   Report-Recovery "ok" "none" $true $true $null
   exit 0
 }
@@ -124,6 +173,7 @@ Start-Sleep -Seconds $SoftRetrySeconds
 if (Test-TokenOk) {
   Log "JUDGE=soft_ok after wait (likely Disc->console / API settle)"
   Write-State "soft_ok"
+  Ensure-AquaSyncIfStale
   Report-Recovery "soft_ok" "soft_wait" $true $true $null
   exit 0
 }
@@ -177,6 +227,7 @@ try {
   if ($LASTEXITCODE -eq 0) {
     Log "JUDGE=restarted_ok"
     Write-State "restarted_ok"
+    Ensure-AquaSyncIfStale
     Report-Recovery "restarted_ok" "station_restart" $true $true $null
     exit 0
   }

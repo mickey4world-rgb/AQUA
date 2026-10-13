@@ -5,8 +5,9 @@
 
   Reliability (sync died mid-session / UI lied "市場外"):
   - wait-ready after logon (OTP)
-  - Daily 07:05 + every 5 min for ~9h (was 15 min — too sparse after lunch)
+  - Daily 07:00 + every 5 min for ~10h (covers 15:30 close)
   - Explicit lunch reopen at 12:32 (after 11:30-12:30 break)
+  - SYSTEM market-tick (Interactive-only died after Disconnect / Disc)
   - Parallel + short ExecutionTimeLimit (hung job must not block forever)
 #>
 param(
@@ -15,7 +16,7 @@ param(
   [string]$TargetUser = "aquaadmin",
   [int]$LogonDelaySeconds = 180,
   [int]$IntervalMinutes = 5,
-  [string]$DailyStartTime = "07:05",
+  [string]$DailyStartTime = "07:00",
   [string]$LunchSyncTime = "12:32"
 )
 
@@ -150,6 +151,91 @@ function Reg-SystemConsoleKeepalive {
   Write-Host ("TASK_OK_SYSTEM " + $Name + " RemoteDisconnect+PT1M")
 }
 
+# SYSTEM market-tick: does not depend on Interactive session after 04 Disconnect / RDP X.
+# kabuStation API is localhost; once OTP session is console-alive, SYSTEM can sync/trade.
+function Reg-SystemMarketTick {
+  param(
+    [string]$Name,
+    [string]$Cmd,
+    [string]$StartAt = "07:00",
+    [int]$EveryMin = 5,
+    [string]$Duration = "PT10H",
+    [string[]]$ExtraDailyAts = @()
+  )
+  Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
+  $cmdAttr = $Cmd.Replace("&", "&amp;").Replace('"', "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")
+  $extraTriggers = ""
+  foreach ($at in $ExtraDailyAts) {
+    if (-not $at -or $at.Trim().Length -eq 0) { continue }
+    $extraTriggers += @"
+    <CalendarTrigger>
+      <StartBoundary>2024-01-01T$at:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+"@
+  }
+  $interval = ("PT{0}M" -f $EveryMin)
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>SYSTEM market-tick sync then trade — survives Disconnect / Disc (TSE to 15:30)</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <Repetition>
+        <Interval>$interval</Interval>
+        <Duration>$Duration</Duration>
+        <StopAtDurationEnd>true</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2024-01-01T${StartAt}:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+$extraTriggers
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>cmd.exe</Command>
+      <Arguments>/c "$cmdAttr"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+  Register-ScheduledTask -TaskName $Name -Xml $xml -Force | Out-Null
+  Write-Host ("TASK_OK_SYSTEM " + $Name + " PT${EveryMin}M@$StartAt+$Duration")
+}
+
 
 # Preflight: keep console session alive + recover half-dead API before sync/trade
 Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
@@ -199,23 +285,31 @@ Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
   ("`"" + $npmCmd + "`" run sync >> `"" + $lunchLog + "`" 2>&1"),
   ("`"" + $npmCmd + "`" run trade >> `"" + $lunchLog + "`" 2>&1")
 )
+# After AutoLogon: wait for OTP window, then same path as Sync-Now (preflight required).
+# Old version skipped preflight → Disc/half-dead API never healed; Sync-Now worked, this did not.
 Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
   "@echo off",
   ("timeout /t " + $LogonDelaySeconds + " /nobreak >nul"),
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("set KABU_WAIT_READY_MINUTES=90"),
   ("`"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
   ("`"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
   ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
+  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
+  ("if errorlevel 1 exit /b 1"),
+  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   "@echo off",
   ("timeout /t " + ($LogonDelaySeconds + 60) + " /nobreak >nul"),
+  ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("set KABU_WAIT_READY_MINUTES=90"),
   ("`"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
+  ("if errorlevel 1 exit /b 1"),
+  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
@@ -271,14 +365,15 @@ if (Test-Path -LiteralPath $keepPs1) {
 }
 
 
-# Primary path: one atomic tick (sync then trade). Old separate sync/trade tasks removed to avoid races.
-Reg-Task -Name "kabu-bridge-market-tick" -Cmd (Join-Path $SetupDir "run-market-tick.cmd") `
-  -Logon $false -DailyRepeat $true -EveryMin $IntervalMinutes -TimeLimitMinutes 15
+# Primary path: SYSTEM atomic tick (sync then trade). Interactive-only died after Disconnect.
+Reg-SystemMarketTick -Name "kabu-bridge-market-tick" -Cmd (Join-Path $SetupDir "run-market-tick.cmd") `
+  -StartAt $DailyStartTime -EveryMin $IntervalMinutes -Duration "PT10H" `
+  -ExtraDailyAts @($LunchSyncTime)
+# Remove legacy Interactive-only duplicates that raced / silently failed after Disc
 Unregister-ScheduledTask -TaskName "kabu-bridge-sync" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "kabu-bridge-trade" -Confirm:$false -ErrorAction SilentlyContinue
-Reg-Task -Name "kabu-bridge-lunch-reopen" -Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") `
-  -Logon $false -DailyRepeat $false -EveryMin 0 -TimeLimitMinutes 15 `
-  -ExtraDailyAts @($LunchSyncTime)
+Unregister-ScheduledTask -TaskName "kabu-bridge-lunch-reopen" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "kabu-bridge-market-tick-user" -Confirm:$false -ErrorAction SilentlyContinue
 # Auto-judge loop (SYSTEM): Disc->console then OTP-safe recovery ladder; report to AQUA
 Write-Cmd (Join-Path $SetupDir "run-auto-judge.cmd") @(
   "@echo off",

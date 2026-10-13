@@ -12,9 +12,23 @@ Write-Host "=== KABU OPS VERIFY ==="
 Write-Host ("NOW_JST=" + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
 
 Write-Host "-- tasks --"
+$required = @(
+  "kabu-bridge-market-tick",
+  "kabu-bridge-console-keepalive",
+  "kabu-bridge-logon-sync",
+  "kabu-bridge-logon-trade"
+)
+foreach ($need in $required) {
+  $t = Get-ScheduledTask -TaskName $need -ErrorAction SilentlyContinue
+  if (-not $t) {
+    Write-Host ("TASK_MISSING " + $need)
+  } else {
+    $prin = ($t.Principal.UserId)
+    Write-Host ("TASK_HAVE " + $need + " state=" + $t.State + " user=" + $prin)
+  }
+}
 Get-ScheduledTask -TaskName "kabu-bridge-*" -ErrorAction SilentlyContinue | ForEach-Object {
-  $i = $_ | Get-ScheduledTaskInfo
-  $u = $_.Principal.UserId
+  $i = $_ | Get-ScheduledTaskInfo  $u = $_.Principal.UserId
   Write-Host ("TASK " + $_.TaskName + " state=" + $_.State + " user=" + $u + " last=" + $i.LastRunTime + " result=" + $i.LastTaskResult)
 }
 

@@ -195,7 +195,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 16,
     category: "mode",
     title: "取引時間ゲート",
-    summary: `東証セッション（9:00–11:30 / 12:30–15:00 JST）。寄り直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は禁止（#30）`,
+    summary: `東証セッション（9:00–11:30 / 12:30–15:30 JST）。寄り直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は禁止（#30）`,
   },
   {
     id: 17,
@@ -282,7 +282,7 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 30,
     category: "mode",
     title: "寄り・引けの時間帯制限",
-    summary: `寄り付き直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は発注窓のみ閉じる（UIのザラ場中表示は 15:00 まで維持。市場外と偽らない）`,
+    summary: `寄り付き直後 ${STOCK_SESSION_OPEN_BLACKOUT_MIN} 分・大引け前 ${STOCK_SESSION_CLOSE_BLACKOUT_MIN} 分は発注窓のみ閉じる（UIのザラ場中表示は 15:30 まで維持。市場外と偽らない）`,
   },
   {
     id: 31,

@@ -337,7 +337,7 @@ export function buildStockIdleDiagnosis(input: {
 
   if (!sessionOpenNow) {
     reasons.push(
-      "いまは現物ザラ場外です（平日 9:00–11:30 / 12:30–15:00 JST）。場外でも判定は走りますが、LIVE 発注は発注窓のみです。",
+      "いまは現物ザラ場外です（平日 9:00–11:30 / 12:30–15:30 JST）。場外でも判定は走りますが、LIVE 発注は発注窓のみです。",
     );
   } else if (syncAgeHours != null && syncAgeHours > 0.75) {
     reasons.push(
