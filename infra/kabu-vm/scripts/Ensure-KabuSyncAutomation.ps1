@@ -273,7 +273,11 @@ Write-Cmd (Join-Path $SetupDir "run-market-tick.cmd") @(
   ("  echo SYNC_FAIL skip trade>> `"" + $tickLog + "`""),
   ("  exit /b 1"),
   (")"),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $tickLog + "`" 2>&1")
+  ("echo %DATE% %TIME%> `"" + (Join-Path $SetupDir "last-aqua-sync.ok") + "`""),
+  ("echo SYNC_OK>> `"" + $tickLog + "`""),
+  ("`"" + $npmCmd + "`" run trade >> `"" + $tickLog + "`" 2>&1"),
+  ("echo TRADE_DONE>> `"" + $tickLog + "`""),
+  ("exit /b 0")
 )
 # Lunch reopen: wait-ready briefly then sync+trade (station often half-dead after break)
 $lunchLog = Join-Path $SetupDir "lunch-reopen.log"
@@ -317,6 +321,7 @@ Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 
+# Never pipe to `more` — it waits for Space and looks like automation is hung.
 Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   '@echo off',
   'setlocal',
@@ -331,7 +336,9 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   'if errorlevel 1 (',
   '  echo WAIT_READY_FAILED - restart kabuStation if GUI green but API stuck>> "%LOG%"',
   '  echo WAIT_READY_FAILED. Restart kabuStation if GUI is green but API stuck.',
-  '  type "%LOG%" | more',
+  '  echo --- last log lines ---',
+  '  powershell.exe -NoProfile -Command "Get-Content -LiteralPath ''%LOG%'' -Tail 40 -ErrorAction SilentlyContinue"',
+  '  echo full log: %LOG%',
   '  exit /b 1',
   ')',
   ('call "' + $npmCmd + '" run probe >> "%LOG%" 2>&1'),
@@ -339,12 +346,16 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   ('call "' + $npmCmd + '" run sync >> "%LOG%" 2>&1'),
   'if errorlevel 1 (',
   '  echo SYNC_FAILED>> "%LOG%"',
-  '  type "%LOG%" | more',
+  '  echo SYNC_FAILED',
+  '  echo --- last log lines ---',
+  '  powershell.exe -NoProfile -Command "Get-Content -LiteralPath ''%LOG%'' -Tail 40 -ErrorAction SilentlyContinue"',
+  '  echo full log: %LOG%',
   '  exit /b 1',
   ')',
   ('call "' + $npmCmd + '" run trade >> "%LOG%" 2>&1'),
-  'echo done. see %LOG%',
-  'type "%LOG%" | more'
+  'echo SYNC_OK done. log=%LOG%',
+  'powershell.exe -NoProfile -Command "Get-Content -LiteralPath ''%LOG%'' -Tail 20 -ErrorAction SilentlyContinue"',
+  'exit /b 0'
 )
 
 # Copy recover helpers next to cmds (Update-BridgeOnVm also copies from repo)
