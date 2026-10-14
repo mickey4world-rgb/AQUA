@@ -129,7 +129,7 @@ function Test-IsJpMarketHoursRough {
 }
 
 function Ensure-AquaSyncIfStale {
-  # Failure class: token OK but Interactive market-tick dead → AQUA sync ages out while UI API looks fine.
+  # Failure class: token OK but Interactive market-tick dead => AQUA sync ages out while UI API looks fine.
   if (-not (Test-IsJpMarketHoursRough)) {
     Log "AQUA_SYNC_SKIP off_hours"
     return
@@ -168,7 +168,7 @@ if (Test-TokenOk) {
   exit 0
 }
 
-Log "JUDGE=token_fail — soft wait (no kill; OTP-safe)"
+Log "JUDGE=token_fail soft wait (no kill; OTP-safe)"
 Start-Sleep -Seconds $SoftRetrySeconds
 if (Test-TokenOk) {
   Log "JUDGE=soft_ok after wait (likely Disc->console / API settle)"
@@ -195,9 +195,9 @@ if ($killAgeMin -ne $null -and $killAgeMin -lt $KillCooldownMinutes) {
 }
 
 if (-not $alive) {
-  Log "JUDGE=process_missing — start station once"
+  Log "JUDGE=process_missing start station once"
 } else {
-  Log "JUDGE=half_dead — one restart after cooldown cleared"
+  Log "JUDGE=half_dead one restart after cooldown cleared"
 }
 
 Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match "kabu|Kabu" } | ForEach-Object {
@@ -235,7 +235,7 @@ try {
   Pop-Location
 }
 
-Log "JUDGE=needs_otp station restarted but token still failing — remote OTP required"
+Log "JUDGE=needs_otp station restarted but token still failing; remote OTP required"
 Write-State "needs_otp"
 Report-Recovery "needs_otp" "restart_needs_otp" $false $true "RECOVER_NEEDS_OTP"
 exit 3
