@@ -24,6 +24,9 @@
 | 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ） |
 | sync 死なのに trade | 分離タスク | atomic market-tick（sync 失敗なら trade しない） |
 | Disconnect 後 sync 停止 | Interactive タスク依存 | **SYSTEM market-tick** + token OK 時の AQUA sync 枯れ回復 |
+| tick が health で終わり sync しない | `npm.cmd` を `call` なしで起動 | 全 run-*.cmd で `call npm.cmd`（Sync-Now と同じ） |
+| Sync-Now が Space 待ち | `type \| more` | 末尾は PowerShell Tail（`more`/`pause` 禁止） |
+| 07:00 タスクが場後に動く | VM TZ=UTC | Tokyo Standard Time + StartBoundary `+09:00` |
 | 15:00 以降を市場外表示 | 旧大引け 15:00 | 大引け **15:30**（2024-11 以降） |
 
 ## 信頼性マトリクス
