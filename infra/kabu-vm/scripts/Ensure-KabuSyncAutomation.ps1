@@ -165,11 +165,12 @@ function Reg-SystemMarketTick {
   Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
   $cmdAttr = $Cmd.Replace("&", "&amp;").Replace('"', "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")
   # Avoid `$at:00` scope parse (PowerShell treats `at:00` as a drive-qualified variable)
-  $startBoundary = "2024-01-01T{0}:00" -f $StartAt
+  # Explicit +09:00 so schedule stays JST even if someone flips VM TZ back to UTC
+  $startBoundary = "2024-01-01T{0}:00+09:00" -f $StartAt
   $extraTriggers = ""
   foreach ($at in $ExtraDailyAts) {
     if (-not $at -or $at.Trim().Length -eq 0) { continue }
-    $extraBoundary = "2024-01-01T{0}:00" -f $at.Trim()
+    $extraBoundary = "2024-01-01T{0}:00+09:00" -f $at.Trim()
     $extraTriggers += @"
     <CalendarTrigger>
       <StartBoundary>$extraBoundary</StartBoundary>
@@ -247,18 +248,20 @@ Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
   ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`"")
 )
 
+# CRITICAL: npm.cmd must be invoked with `call`. Without it, cmd.exe never returns
+# after the first npm and market-tick stops at health — Sync-Now worked only because it used call.
 Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
   "@echo off",
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
+  ("call `"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade.cmd") @(
   "@echo off",
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
+  ("call `"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 # Atomic tick: sync then trade so LIVE never runs on a silently dead station
 $tickLog = Join-Path $SetupDir "market-tick.log"
@@ -267,15 +270,15 @@ Write-Cmd (Join-Path $SetupDir "run-market-tick.cmd") @(
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("echo ===== MARKET TICK %DATE% %TIME% =====>> `"" + $tickLog + "`""),
-  ("`"" + $npmCmd + "`" run health >> `"" + $tickLog + "`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $tickLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run health >> `"" + $tickLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run sync >> `"" + $tickLog + "`" 2>&1"),
   ("if errorlevel 1 ("),
   ("  echo SYNC_FAIL skip trade>> `"" + $tickLog + "`""),
   ("  exit /b 1"),
   (")"),
   ("echo %DATE% %TIME%> `"" + (Join-Path $SetupDir "last-aqua-sync.ok") + "`""),
   ("echo SYNC_OK>> `"" + $tickLog + "`""),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $tickLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run trade >> `"" + $tickLog + "`" 2>&1"),
   ("echo TRADE_DONE>> `"" + $tickLog + "`""),
   ("exit /b 0")
 )
@@ -287,10 +290,10 @@ Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
   ("cd /d " + $BridgeRoot),
   ("echo ===== LUNCH REOPEN =====>> `"" + $lunchLog + "`""),
   ("set KABU_WAIT_READY_MINUTES=3"),
-  ("`"" + $npmCmd + "`" run wait-ready >> `"" + $lunchLog + "`" 2>&1"),
-  ("`"" + $npmCmd + "`" run health >> `"" + $lunchLog + "`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $lunchLog + "`" 2>&1"),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $lunchLog + "`" 2>&1")
+  ("call `"" + $npmCmd + "`" run wait-ready >> `"" + $lunchLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run health >> `"" + $lunchLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run sync >> `"" + $lunchLog + "`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run trade >> `"" + $lunchLog + "`" 2>&1")
 )
 # After AutoLogon: wait for OTP window, then same path as Sync-Now (preflight required).
 # Old version skipped preflight → Disc/half-dead API never healed; Sync-Now worked, this did not.
@@ -300,13 +303,13 @@ Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("set KABU_WAIT_READY_MINUTES=90"),
-  ("`"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
-  ("`"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
-  ("`"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run probe >> `"" + $SetupDir + "\probe.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run health >> `"" + $SetupDir + "\health.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
+  ("call `"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   "@echo off",
@@ -314,11 +317,11 @@ Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
   ("cd /d " + $BridgeRoot),
   ("set KABU_WAIT_READY_MINUTES=90"),
-  ("`"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run wait-ready >> `"" + $SetupDir + "\wait-ready.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
-  ("`"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
+  ("call `"" + $npmCmd + "`" run sync >> `"" + $SetupDir + "\sync.log`" 2>&1"),
   ("if errorlevel 1 exit /b 1"),
-  ("`"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
+  ("call `"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 
 # Never pipe to `more` — it waits for Space and looks like automation is hung.
@@ -376,6 +379,14 @@ if (Test-Path -LiteralPath $keepPs1) {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $keepPs1 -SelfTest
   if ($LASTEXITCODE -ne 0) { throw "Keep-KabuConsoleSession -SelfTest failed" }
   Write-Host "KEEP_SELFTEST_OK"
+}
+
+# VM image defaults to UTC → Daily 07:00 fires at 16:00 JST (after close). Force Tokyo.
+try {
+  tzutil /s "Tokyo Standard Time"
+  Write-Host ("TZ_SET " + [TimeZoneInfo]::Local.Id + " now=" + (Get-Date).ToString("o"))
+} catch {
+  Write-Host ("TZ_SET_FAIL " + $_.Exception.Message)
 }
 
 # SYSTEM market-tick / recover must read bridge secrets after Disconnect migration

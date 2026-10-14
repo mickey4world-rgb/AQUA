@@ -8,8 +8,15 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+$verifyFailed = $false
 Write-Host "=== KABU OPS VERIFY ==="
-Write-Host ("NOW_JST=" + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
+Write-Host ("TZ=" + [TimeZoneInfo]::Local.Id)
+Write-Host ("NOW_LOCAL=" + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
+Write-Host ("NOW_UTC=" + [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+if ([TimeZoneInfo]::Local.Id -notmatch "Tokyo") {
+  Write-Host "TZ_BAD expected Tokyo Standard Time (07:00 schedule must be JST)"
+  $verifyFailed = $true
+}
 
 Write-Host "-- tasks --"
 $required = @(
@@ -18,7 +25,6 @@ $required = @(
   "kabu-bridge-logon-sync",
   "kabu-bridge-logon-trade"
 )
-$verifyFailed = $false
 foreach ($need in $required) {
   $t = Get-ScheduledTask -TaskName $need -ErrorAction SilentlyContinue
   if (-not $t) {
@@ -54,6 +60,26 @@ foreach ($p in @(
   "Sync-Now.cmd"
 )) {
   Write-Host ("FILE " + $p + "=" + (Test-Path (Join-Path $SetupDir $p)))
+}
+
+$tickCmd = Join-Path $SetupDir "run-market-tick.cmd"
+$syncNow = Join-Path $SetupDir "Sync-Now.cmd"
+if (Test-Path $tickCmd) {
+  $tickText = Get-Content $tickCmd -Raw
+  if ($tickText -notmatch '(?m)^call .*npm\.cmd.*run sync') {
+    Write-Host "TICK_CMD_BAD npm sync must use call (otherwise batch exits after health)"
+    $verifyFailed = $true
+  } else {
+    Write-Host "TICK_CMD_CALL_OK"
+  }
+}
+if (Test-Path $syncNow) {
+  if (Select-String -Path $syncNow -Pattern "\| more" -Quiet) {
+    Write-Host "SYNCNOW_BAD still pipes to more (Space-key hang)"
+    $verifyFailed = $true
+  } else {
+    Write-Host "SYNCNOW_NO_MORE_OK"
+  }
 }
 
 Write-Host "-- bridge --"
