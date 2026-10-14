@@ -3,9 +3,9 @@
 .SYNOPSIS
   Ensure kabu-bridge sync/trade batch files + Scheduled Tasks exist (aquaadmin).
 
-  Reliability (sync died mid-session / UI lied "市場外"):
+  Reliability (sync died mid-session / UI lied "outside market"):
   - wait-ready after logon (OTP)
-  - Daily 07:00 + every 5 min for ~10h (covers 15:30 close)
+  - Daily 07:00 JST + every 5 min for ~10h (covers 15:30 close)
   - Explicit lunch reopen at 12:32 (after 11:30-12:30 break)
   - SYSTEM market-tick (Interactive-only died after Disconnect / Disc)
   - Parallel + short ExecutionTimeLimit (hung job must not block forever)
@@ -22,6 +22,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path $SetupDir | Out-Null
+
+# VM image defaults to UTC; Daily 07:00 would fire at 16:00 JST. Force Tokyo first.
+& tzutil.exe /s "Tokyo Standard Time"
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ("TZ_SET_FAIL exit=" + $LASTEXITCODE)
+} else {
+  Write-Host ("TZ_SET " + [TimeZoneInfo]::Local.Id + " now=" + (Get-Date).ToString("o"))
+}
 
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if ($npm) {
@@ -91,7 +99,7 @@ function Reg-SystemConsoleKeepalive {
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>SYSTEM: Disc/切断 RDP -&gt; console so kabu sync survives Windows App X close</Description>
+    <Description>SYSTEM: Disc/disconnect RDP -&gt; console so kabu sync survives Windows App X close</Description>
   </RegistrationInfo>
   <Triggers>
     <SessionStateChangeTrigger>
@@ -186,7 +194,7 @@ function Reg-SystemMarketTick {
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>SYSTEM market-tick sync then trade — survives Disconnect / Disc (TSE to 15:30)</Description>
+    <Description>SYSTEM market-tick sync then trade; survives Disconnect / Disc (TSE to 15:30)</Description>
   </RegistrationInfo>
   <Triggers>
     <CalendarTrigger>
@@ -249,7 +257,7 @@ Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
 )
 
 # CRITICAL: npm.cmd must be invoked with `call`. Without it, cmd.exe never returns
-# after the first npm and market-tick stops at health — Sync-Now worked only because it used call.
+# after the first npm and market-tick stops at health. Sync-Now worked only because it used call.
 Write-Cmd (Join-Path $SetupDir "run-sync.cmd") @(
   "@echo off",
   ("call `"" + (Join-Path $SetupDir "run-preflight.cmd") + "`""),
@@ -296,7 +304,7 @@ Write-Cmd (Join-Path $SetupDir "run-lunch-reopen.cmd") @(
   ("call `"" + $npmCmd + "`" run trade >> `"" + $lunchLog + "`" 2>&1")
 )
 # After AutoLogon: wait for OTP window, then same path as Sync-Now (preflight required).
-# Old version skipped preflight → Disc/half-dead API never healed; Sync-Now worked, this did not.
+# Old version skipped preflight => Disc/half-dead API never healed; Sync-Now worked, this did not.
 Write-Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") @(
   "@echo off",
   ("timeout /t " + $LogonDelaySeconds + " /nobreak >nul"),
@@ -324,7 +332,7 @@ Write-Cmd (Join-Path $SetupDir "run-trade-after-logon.cmd") @(
   ("call `"" + $npmCmd + "`" run trade >> `"" + $SetupDir + "\trade.log`" 2>&1")
 )
 
-# Never pipe to `more` — it waits for Space and looks like automation is hung.
+# Never pipe to `more` - it waits for Space and looks like automation is hung.
 Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
   '@echo off',
   'setlocal',
@@ -381,14 +389,6 @@ if (Test-Path -LiteralPath $keepPs1) {
   Write-Host "KEEP_SELFTEST_OK"
 }
 
-# VM image defaults to UTC → Daily 07:00 fires at 16:00 JST (after close). Force Tokyo.
-try {
-  tzutil /s "Tokyo Standard Time"
-  Write-Host ("TZ_SET " + [TimeZoneInfo]::Local.Id + " now=" + (Get-Date).ToString("o"))
-} catch {
-  Write-Host ("TZ_SET_FAIL " + $_.Exception.Message)
-}
-
 # SYSTEM market-tick / recover must read bridge secrets after Disconnect migration
 function Grant-SystemBridgeAccess {
   param([string]$Path)
@@ -432,7 +432,7 @@ Write-Cmd (Join-Path $SetupDir "run-console-keepalive.cmd") @(
   "@echo off",
   ("call `"" + (Join-Path $SetupDir "run-auto-judge.cmd") + "`"")
 )
-# SYSTEM every 1 min + on RemoteDisconnect — judgment+recovery without office babysitting
+# SYSTEM every 1 min + on RemoteDisconnect - judgment+recovery without office babysitting
 Reg-SystemConsoleKeepalive -Name "kabu-bridge-console-keepalive" `
   -Cmd (Join-Path $SetupDir "run-auto-judge.cmd")
 Reg-Task -Name "kabu-bridge-logon-sync" -Cmd (Join-Path $SetupDir "run-sync-after-logon.cmd") `
