@@ -1,12 +1,12 @@
 #Requires -Version 5.1
-# ASCII-only. Judgment ladder after OTP: prefer recoveries that do NOT demand OTP again.
-# Killing kabuStation every tick was the failure class (office remote cannot re-OTP forever).
+# ASCII-only.
+# OTP-safe judgment only. NEVER kill or restart kabuStation from automation.
+# Killing forces remote OTP again and was the failure class (green station destroyed).
+# Allowed actions: soft wait, report needs_otp to AQUA, heal stale AQUA sync when token OK.
 param(
   [string]$BridgeRoot = "C:\kabu-bridge",
   [string]$SetupDir = "C:\kabu-setup",
-  [int]$WaitReadyMinutes = 2,
-  [int]$SoftRetrySeconds = 25,
-  [int]$KillCooldownMinutes = 45
+  [int]$SoftRetrySeconds = 25
 )
 
 $ErrorActionPreference = "Continue"
@@ -31,13 +31,14 @@ function Read-State {
   }
 }
 
-function Write-State([string]$status, [bool]$killed = $false) {
+function Write-State([string]$status) {
   $prev = Read-State
   $obj = [ordered]@{
     lastStatus = $status
-    lastOkAt   = if ($status -eq "ok" -or $status -eq "soft_ok" -or $status -eq "restarted_ok") { (Get-Date).ToString("o") } else { $prev.lastOkAt }
-    lastKillAt = if ($killed) { (Get-Date).ToString("o") } else { $prev.lastKillAt }
+    lastOkAt   = if ($status -eq "ok" -or $status -eq "soft_ok") { (Get-Date).ToString("o") } else { $prev.lastOkAt }
+    lastKillAt = $prev.lastKillAt
     updatedAt  = (Get-Date).ToString("o")
+    neverKill  = $true
   }
   ($obj | ConvertTo-Json -Compress) | Set-Content -Path $statePath -Encoding ASCII
 }
@@ -94,25 +95,7 @@ function Test-ProcessAlive {
   return [bool](Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match "kabu|Kabu" })
 }
 
-function Find-KabuExe {
-  $candidates = @(
-    "${env:ProgramFiles}\kabuStation\kabuStation.exe",
-    "${env:ProgramFiles(x86)}\kabuStation\kabuStation.exe",
-    "${env:LOCALAPPDATA}\kabuStation\kabuStation.exe"
-  )
-  foreach ($c in $candidates) {
-    if ($c -and (Test-Path -LiteralPath $c)) { return $c }
-  }
-  $hit = Get-ChildItem -Path "$env:ProgramFiles","${env:ProgramFiles(x86)}","$env:LOCALAPPDATA" `
-    -Filter "*kabu*.exe" -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match "kabuStation|KabuStation" } |
-    Select-Object -First 1
-  if ($hit) { return $hit.FullName }
-  return $null
-}
-
 function Test-IsJpMarketHoursRough {
-  # TSE cash: weekdays 09:00-11:30 / 12:30-15:30 JST (2024-11+). Holiday skip is best-effort elsewhere.
   try {
     $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
   } catch {
@@ -129,7 +112,6 @@ function Test-IsJpMarketHoursRough {
 }
 
 function Ensure-AquaSyncIfStale {
-  # Failure class: token OK but Interactive market-tick dead => AQUA sync ages out while UI API looks fine.
   if (-not (Test-IsJpMarketHoursRough)) {
     Log "AQUA_SYNC_SKIP off_hours"
     return
@@ -159,7 +141,7 @@ function Ensure-AquaSyncIfStale {
   }
 }
 
-# --- Ladder ---
+# --- Ladder (no kill / no restart) ---
 if (Test-TokenOk) {
   Log "JUDGE=ok TOKEN_OK"
   Write-State "ok"
@@ -179,63 +161,14 @@ if (Test-TokenOk) {
 }
 
 $alive = Test-ProcessAlive
-$state = Read-State
-$killAgeMin = $null
-if ($state.lastKillAt) {
-  try { $killAgeMin = ((Get-Date) - [datetime]$state.lastKillAt).TotalMinutes } catch { $killAgeMin = $null }
-}
-
-# Cooldown: do not thrash restart (forces OTP from office)
-if ($killAgeMin -ne $null -and $killAgeMin -lt $KillCooldownMinutes) {
-  $msg = "cooldown skip kill; lastKillAgeMin=" + [int]$killAgeMin + " processAlive=" + $alive
-  Log ("JUDGE=needs_otp " + $msg)
+if (-not $alive) {
+  Log "JUDGE=needs_otp process_missing (will NOT auto-start; OTP required)"
   Write-State "needs_otp"
-  Report-Recovery "needs_otp" "cooldown_no_kill" $false $alive $msg
+  Report-Recovery "needs_otp" "process_missing_no_start" $false $false "PROCESS_MISSING"
   exit 3
 }
 
-if (-not $alive) {
-  Log "JUDGE=process_missing start station once"
-} else {
-  Log "JUDGE=half_dead one restart after cooldown cleared"
-}
-
-Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match "kabu|Kabu" } | ForEach-Object {
-  Log ("KILL " + $_.ProcessName + " pid=" + $_.Id)
-  Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-}
-Start-Sleep -Seconds 3
-Write-State "restarting" $true
-
-$exe = Find-KabuExe
-if (-not $exe) {
-  Log "JUDGE=needs_otp KABU_EXE_NOT_FOUND"
-  Write-State "needs_otp"
-  Report-Recovery "needs_otp" "exe_missing" $false $false "KABU_EXE_NOT_FOUND"
-  exit 2
-}
-
-Log ("START " + $exe)
-Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent)
-Start-Sleep -Seconds 15
-
-$env:KABU_WAIT_READY_MINUTES = [string]$WaitReadyMinutes
-$env:KABU_WAIT_READY_INTERVAL_SEC = "15"
-Push-Location $BridgeRoot
-try {
-  & $npmCmd run wait-ready >> $log 2>&1
-  if ($LASTEXITCODE -eq 0) {
-    Log "JUDGE=restarted_ok"
-    Write-State "restarted_ok"
-    Ensure-AquaSyncIfStale
-    Report-Recovery "restarted_ok" "station_restart" $true $true $null
-    exit 0
-  }
-} finally {
-  Pop-Location
-}
-
-Log "JUDGE=needs_otp station restarted but token still failing; remote OTP required"
+Log "JUDGE=needs_otp process_alive_but_token_fail (will NOT kill; leave green station alone)"
 Write-State "needs_otp"
-Report-Recovery "needs_otp" "restart_needs_otp" $false $true "RECOVER_NEEDS_OTP"
+Report-Recovery "needs_otp" "token_fail_no_kill" $false $true "TOKEN_FAIL_NO_KILL"
 exit 3
