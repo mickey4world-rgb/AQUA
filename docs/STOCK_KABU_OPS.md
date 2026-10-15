@@ -8,19 +8,21 @@
 
 1. 余力・保有の **sync** が続く  
 2. **market-tick**（SYSTEM・sync→trade）が約5分ごとに回り、条件を満たせば **LIVE 発注**が Cosmos / Costs に残る（後場は **15:30** まで）  
-3. 同期が死んだら **VM が自動判断→OTP不要な回復を優先→必要なら aquacore/メールで OTP 要求**  
+3. 同期が死んだら **Disc→console と soft wait のみ**（ステーション再起動はしない）→ だめなら aquacore/メールで OTP 要求  
 4. 止まっているときは `/costs/kabu-check` が **自動売買準備OK ではない** と理由付きで示す  
 
-「タスクが登録されている」「API 200」だけでは成功にしない。
+「タスクが登録されている」「API 200」だけでは成功にしない。**緑のステーションを Kill しない。**
 
 ## 検討メモ（何が足りなかったか）
 
-不足の本丸はスクリプトの本数ではなく、**閉ループ（検知→判断→回復→結果を aquacore に出す）** だった。
+不足の本丸はスクリプトの本数ではなく、**閉ループ（検知→判断→OTP不要な回復→結果を aquacore に出す）** だった。  
+「半死だから Kill→再起動」は **OTP 地獄**であり対策ではない（2026-10-15 再発で確定）。
 
 | 失敗クラス | 旧 | 新 |
 |------------|----|----|
 | ×切断で Disc | 「4 を使え」運用依存 | SYSTEM 毎分 + RemoteDisconnect で console 回収 |
-| API 半死 | すぐステーション Kill（＝また OTP） | **梯子**: soft wait → cooldown 付き1回だけ再起動 → それでもダメなら `needs_otp` を AQUA へ |
+| API 半死 / token 一瞬失敗 | Kill→再起動（＝また OTP） | **Kill 禁止**。soft wait → だめなら `needs_otp` 報告のみ。人手で OTP |
+| health が AQUA 報告失敗で exit 1 | Recover が緑を「死」と誤判定 | health の exit は **stationTokenOk のみ** |
 | 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ） |
 | sync 死なのに trade | 分離タスク | atomic market-tick（sync 失敗なら trade しない） |
 | Disconnect 後 sync 停止 | Interactive タスク依存 | **SYSTEM market-tick** + token OK 時の AQUA sync 枯れ回復 |
@@ -34,9 +36,9 @@
 | 層 | あるもの | ないもの（残リスク） |
 |----|----------|----------------------|
 | 収集 | kabuStation → bridge sync → Cosmos | 証券側メンテ |
-| 判断・回復 | SYSTEM `run-auto-judge` 毎分（Disc回収＋梯子） | Azure ホスト全滅 |
+| 判断・回復 | SYSTEM `run-auto-judge` 毎分（Disc回収＋soft wait＋報告） | Azure ホスト全滅 |
 | 発注 | market-tick / LIVE は発注窓のみ / buySkips | 条件未達の日は intents=0（正常な見送り） |
-| 同日内リトライ | soft 再試行・cooldown 後の1回再起動・5分 tick | Kill 連打は禁止（OTP 地獄） |
+| 同日内リトライ | soft 再試行・5分 tick | **ステーション Kill/再起動は禁止**（OTP 地獄） |
 | 朝・可见検知 | kabu-check 自動判断項目 + メール ops-watch | プッシュ通知アプリは未実装 |
 | オラクル | `Verify-KabuOpsOnVm.ps1` / `api-recover.log` / `recoveryStatus` | |
 

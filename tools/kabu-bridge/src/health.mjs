@@ -43,9 +43,19 @@ if (!stationReachable) {
   }
 }
 
-const ok = await reportBridgeHealth(config, {
-  stationReachable,
-  stationTokenOk,
-  lastError,
-});
-process.exit(ok && stationTokenOk ? 0 : 1);
+// Report to AQUA is best-effort. Exit code must reflect station token only.
+// Coupling exit to report success made Recover treat green stations as dead
+// (and formerly kill them → OTP hell).
+try {
+  await reportBridgeHealth(config, {
+    stationReachable,
+    stationTokenOk,
+    lastError,
+  });
+} catch (err) {
+  console.error(
+    "[kabu-bridge] health report threw",
+    err instanceof Error ? err.message : err,
+  );
+}
+process.exit(stationTokenOk ? 0 : 1);

@@ -82,6 +82,17 @@ if (Test-Path $syncNow) {
   }
 }
 
+$recover = Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1"
+if (Test-Path $recover) {
+  $recText = Get-Content $recover -Raw
+  if ($recText -match "Stop-Process" -or $recText -match "Start-Process\s+-FilePath") {
+    Write-Host "RECOVER_BAD must never kill/restart kabuStation (OTP hell)"
+    $verifyFailed = $true
+  } else {
+    Write-Host "RECOVER_NO_KILL_OK"
+  }
+}
+
 Write-Host "-- bridge --"
 Write-Host ("BRIDGE_PKG=" + (Test-Path (Join-Path $BridgeRoot "package.json")))
 Write-Host ("WAIT_READY=" + (Test-Path (Join-Path $BridgeRoot "src\wait-ready.mjs")))
