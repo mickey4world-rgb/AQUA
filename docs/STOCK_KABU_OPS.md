@@ -30,7 +30,9 @@
 | Sync-Now が Space 待ち | `type \| more` | 末尾は PowerShell Tail（`more`/`pause` 禁止） |
 | 07:00 タスクが場後に動く | VM TZ=UTC | Tokyo Standard Time + StartBoundary `+09:00` |
 | 15:00 以降を市場外表示 | 旧大引け 15:00 | 大引け **15:30**（2024-11 以降） |
-| LIVE 買いが全部 rejected 100204 | `FundType=AA`（信用代用） | 現物買は `FundType=02`（保護預り）。信用口座なしで AA は証券拒否 |
+| LIVE 買いが全部 rejected 100204 | `FundType=AA`（信用代用） | 現物買は `FundType=02`（保護預り）。AA は `KABU_ALLOW_CREDIT_FUND=1` 無しでは無視 |
+| token 一瞬失敗で trade プロセス落ち | 未 catch の throw | token 失敗は `_CHECK_` 記録して exit（次 tick で再試行） |
+| 高値銘柄が安値判定なのに単元不足 | 第1層建玉上限 ≈18.75万円 | 単元コストが上限超の銘柄は設計上見送り（残余リスク） |
 
 ## 信頼性マトリクス
 

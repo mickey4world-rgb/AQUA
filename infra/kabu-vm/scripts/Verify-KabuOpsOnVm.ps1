@@ -93,6 +93,20 @@ if (Test-Path $recover) {
   }
 }
 
+$tradeJs = Join-Path $BridgeRoot "src\trade.mjs"
+if (Test-Path $tradeJs) {
+  $tradeText = Get-Content $tradeJs -Raw
+  if ($tradeText -match 'KABU_FUND_TYPE \?\? "AA"' -or $tradeText -match 'FundType: isSell \? "  " : "AA"') {
+    Write-Host "TRADE_FUNDTYPE_BAD default must not be AA (100204)"
+    $verifyFailed = $true
+  } elseif ($tradeText -match 'KABU_FUND_TYPE \?\? "02"' -or $tradeText -match 'resolveBuyFundType') {
+    Write-Host "TRADE_FUNDTYPE_02_OK"
+  } else {
+    Write-Host "TRADE_FUNDTYPE_UNKNOWN review trade.mjs FundType"
+    $verifyFailed = $true
+  }
+}
+
 Write-Host "-- bridge --"
 Write-Host ("BRIDGE_PKG=" + (Test-Path (Join-Path $BridgeRoot "package.json")))
 Write-Host ("WAIT_READY=" + (Test-Path (Join-Path $BridgeRoot "src\wait-ready.mjs")))
