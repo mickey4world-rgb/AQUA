@@ -70,12 +70,24 @@ async function reportOrder(payload) {
   return body;
 }
 
+function resolveBuyFundType() {
+  // Official: no credit account → "02" (保護). "AA" (信用代用) → 100204.
+  // Never default to AA; require explicit opt-in if credit substitute is intended.
+  const raw = (process.env.KABU_FUND_TYPE ?? "02").trim() || "02";
+  if (raw === "AA" && process.env.KABU_ALLOW_CREDIT_FUND?.trim() !== "1") {
+    console.warn(
+      "[kabu-bridge] KABU_FUND_TYPE=AA ignored without KABU_ALLOW_CREDIT_FUND=1; using 02",
+    );
+    return "02";
+  }
+  return raw;
+}
+
 function buildCashOrder(intent) {
   const qty = Math.min(intent.qty, maxQty);
   const isSell = intent.side === "sell";
-  // FundType: cash BUY must be "02" (保護預り). "AA" = 信用代用 → kabu 100204
-  // when the account has no credit agreement (2026-10-16: all LIVE buys rejected).
-  const buyFundType = (process.env.KABU_FUND_TYPE ?? "02").trim() || "02";
+  const buyFundType = resolveBuyFundType();
+  const buyDelivType = Number(process.env.KABU_DELIV_TYPE ?? 2) || 2;
   return {
     Password: tradePassword,
     Symbol: String(intent.symbol),
@@ -83,7 +95,7 @@ function buildCashOrder(intent) {
     SecurityType: 1,
     Side: isSell ? "1" : "2",
     CashMargin: 1,
-    DelivType: isSell ? 0 : 2,
+    DelivType: isSell ? 0 : buyDelivType,
     FundType: isSell ? "  " : buyFundType,
     AccountType: Number(process.env.KABU_ACCOUNT_TYPE ?? 4) || 4,
     Qty: qty,
@@ -93,7 +105,22 @@ function buildCashOrder(intent) {
   };
 }
 
+function orderShapeForLog(orderBody) {
+  return {
+    Symbol: orderBody.Symbol,
+    Side: orderBody.Side,
+    CashMargin: orderBody.CashMargin,
+    DelivType: orderBody.DelivType,
+    FundType: orderBody.FundType,
+    AccountType: orderBody.AccountType,
+    Qty: orderBody.Qty,
+    Exchange: orderBody.Exchange,
+    FrontOrderType: orderBody.FrontOrderType,
+  };
+}
+
 async function sendOrder(baseUrl, token, orderBody) {
+  const timeoutMs = Number(process.env.KABU_FETCH_TIMEOUT_MS ?? 12_000);
   const res = await fetch(`${baseUrl}/kabusapi/sendorder`, {
     method: "POST",
     headers: {
@@ -101,6 +128,7 @@ async function sendOrder(baseUrl, token, orderBody) {
       "X-API-KEY": token,
     },
     body: JSON.stringify(orderBody),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const body = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, body };
@@ -205,7 +233,26 @@ if (allowLive && !sessionOpen) {
 
 let token = null;
 if (allowLive) {
-  token = await fetchKabuToken(config.kabuBaseUrl, config.apiPassword);
+  try {
+    token = await fetchKabuToken(config.kabuBaseUrl, config.apiPassword);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[kabu-bridge] token failed — skip LIVE sendorder:", msg);
+    await reportOrder({
+      id: `idle-${config.aquaUserId}-${hourKey}`,
+      userId: config.aquaUserId,
+      intentId: `idle-${hourKey}`,
+      side: "buy",
+      symbol: "_CHECK_",
+      exchange: 1,
+      qty: 0,
+      status: "skipped",
+      dryRun: false,
+      reason: "kabu token 取得失敗のため LIVE 見送り",
+      message: `intents=${intents.length}; ${msg}`.slice(0, 300),
+    });
+    process.exit(1);
+  }
 }
 
 for (const intent of intents) {
@@ -258,7 +305,9 @@ for (const intent of intents) {
     continue;
   }
 
-  console.log(`[LIVE] ${sideLabel} ${intent.symbol} x${qty} ${ruleLabel}`);
+  console.log(
+    `[LIVE] ${sideLabel} ${intent.symbol} x${qty} ${ruleLabel} shape=${JSON.stringify(orderShapeForLog(orderBody))}`,
+  );
   const result = await sendOrder(config.kabuBaseUrl, token, orderBody);
   const orderId =
     result.body?.OrderId ?? result.body?.orderId ?? result.body?.Result ?? undefined;
