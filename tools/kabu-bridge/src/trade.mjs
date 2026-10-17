@@ -73,6 +73,9 @@ async function reportOrder(payload) {
 function buildCashOrder(intent) {
   const qty = Math.min(intent.qty, maxQty);
   const isSell = intent.side === "sell";
+  // FundType: cash BUY must be "02" (保護預り). "AA" = 信用代用 → kabu 100204
+  // when the account has no credit agreement (2026-10-16: all LIVE buys rejected).
+  const buyFundType = (process.env.KABU_FUND_TYPE ?? "02").trim() || "02";
   return {
     Password: tradePassword,
     Symbol: String(intent.symbol),
@@ -81,7 +84,7 @@ function buildCashOrder(intent) {
     Side: isSell ? "1" : "2",
     CashMargin: 1,
     DelivType: isSell ? 0 : 2,
-    FundType: isSell ? "  " : "AA",
+    FundType: isSell ? "  " : buyFundType,
     AccountType: Number(process.env.KABU_ACCOUNT_TYPE ?? 4) || 4,
     Qty: qty,
     FrontOrderType: 10,
