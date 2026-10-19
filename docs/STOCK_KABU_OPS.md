@@ -11,7 +11,13 @@
 3. 同期が死んだら **Disc→console と soft wait のみ**（ステーション再起動はしない）→ だめなら aquacore/メールで OTP 要求  
 4. 止まっているときは `/costs/kabu-check` が **自動売買準備OK ではない** と理由付きで示す  
 
-「タスクが登録されている」「API 200」だけでは成功にしない。**緑のステーションを Kill しない。**
+「タスクが登録されている」「API 200」「Verify 緑」「intents>0」「rejected をログした」だけでは成功にしない。  
+**成功は LIVE `submitted`（できれば約定）が残ること。** 緑のステーションを Kill しない。
+
+### 反省（2026-10・約15日ゼロ約定）
+
+層を直すたびに「次の層の代理指標」で完了扱いにした。経路は動いていた日もあるが、発注ボディ（AA→100204、Exchange=1→100378）と成功定義の誤りで **受理ゼロ**が続いた。  
+以後の完了条件: 場中 OTP 済みで `submitted` か、提出ゼロなら **層名付きブロッカー**（needs_otp / tick死 / intents=0 / Code=…）を明示。
 
 ## 検討メモ（何が足りなかったか）
 
@@ -23,7 +29,8 @@
 | ×切断で Disc | 「4 を使え」運用依存 | SYSTEM 毎分 + RemoteDisconnect で console 回収 |
 | API 半死 / token 一瞬失敗 | Kill→再起動（＝また OTP） | **Kill 禁止**。soft wait → だめなら `needs_otp` 報告のみ。人手で OTP |
 | health が AQUA 報告失敗で exit 1 | Recover が緑を「死」と誤判定 | health の exit は **stationTokenOk のみ** |
-| 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ） |
+| 仕事場で気づけない | kabu-check を自分で開くのみ | 場中 GHA `ops-watch` がメール（要OTP / ティック枯れ / **準備OKなのに LIVE受理ゼロ・拒否連発**） |
+| ボディ毒が再発 | 手動で .env を直すのみ | 毎 tick 前 `Heal-CashOrderEnv`（Exchange=1 / FundType=AA / 旧 storm 掃除） |
 | sync 死なのに trade | 分離タスク | atomic market-tick（sync 失敗なら trade しない） |
 | Disconnect 後 sync 停止 | Interactive タスク依存 | **SYSTEM market-tick** + token OK 時の AQUA sync 枯れ回復 |
 | tick が health で終わり sync しない | `npm.cmd` を `call` なしで起動 | 全 run-*.cmd で `call npm.cmd`（Sync-Now と同じ） |

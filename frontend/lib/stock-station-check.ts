@@ -187,6 +187,40 @@ export function buildStockStationCheck(input: {
         return `status=${st}${act ? ` action=${act}` : ""}`;
       })(),
     },
+    (() => {
+      const day = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(now);
+      const today = input.orders.filter((o) => {
+        if (!o.symbol || o.symbol === "_CHECK_") return false;
+        const d = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Tokyo",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(o.createdAt));
+        return d === day;
+      });
+      const submitted = today.filter((o) => o.status === "submitted").length;
+      const rejected = today.filter((o) => o.status === "rejected").length;
+      return {
+        id: "live-today",
+        label: "本日 LIVE 受理",
+        ok: submitted > 0 ? true : marketHours && rejected >= 2 ? false : null,
+        detail:
+          submitted > 0
+            ? `本日 submitted=${submitted}` +
+              (rejected > 0 ? ` / rejected=${rejected}` : "")
+            : rejected > 0
+              ? `本日 submitted=0 / rejected=${rejected}（ボディ・余力・同意書を疑う）`
+              : marketHours
+                ? "本日まだ実銘柄の LIVE 受理なし（準備OKだけでは未完了）"
+                : "場外 — 本日の LIVE 実績はザラ場で判定",
+      } satisfies StationCheckItem;
+    })(),
   ];
 
   const vmOk = vm.state === "running" || vm.state === "idle_ok";

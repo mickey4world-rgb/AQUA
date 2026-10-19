@@ -254,6 +254,7 @@ Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
   "@echo off",
   ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -SetupDir `"" + $SetupDir + "`""),
   ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`""),
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Heal-CashOrderEnv.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`" >> `"" + $SetupDir + "\heal-order.log`" 2>&1"),
   ("cd /d " + $BridgeRoot),
   ("call `"" + $npmCmd + "`" run assert-order-shape >> `"" + $SetupDir + "\trade-shape.log`" 2>&1"),
   ("if errorlevel 1 ("),
@@ -379,7 +380,8 @@ Write-Cmd (Join-Path $SetupDir "Sync-Now.cmd") @(
 foreach ($helper in @(
   "Keep-KabuConsoleSession.ps1",
   "Recover-KabuApiIfNeeded.ps1",
-  "Disconnect-Rdp-KeepDesktop.ps1"
+  "Disconnect-Rdp-KeepDesktop.ps1",
+  "Heal-CashOrderEnv.ps1"
 )) {
   $srcHelper = Join-Path $PSScriptRoot $helper
   $dstHelper = Join-Path $SetupDir $helper
