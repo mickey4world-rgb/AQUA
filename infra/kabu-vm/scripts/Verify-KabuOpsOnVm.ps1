@@ -51,6 +51,7 @@ Write-Host "-- files --"
 foreach ($p in @(
   "Keep-KabuConsoleSession.ps1",
   "Recover-KabuApiIfNeeded.ps1",
+  "Heal-CashOrderEnv.ps1",
   "Disconnect-Rdp-KeepDesktop.ps1",
   "Disconnect-Rdp-KeepDesktop.bat",
   "run-preflight.cmd",
@@ -119,6 +120,16 @@ if (Test-Path $tradeJs) {
   }
   if ($tradeText -match 'Number\(intent\.exchange\) \|\| 1' -and $tradeText -notmatch 'normalizeCashExchange') {
     Write-Host "TRADE_EXCHANGE_BAD default 1 causes 100378"
+    $verifyFailed = $true
+  }
+}
+$preflight = Join-Path $SetupDir "run-preflight.cmd"
+if (Test-Path $preflight) {
+  $pf = Get-Content $preflight -Raw
+  if ($pf -match "Heal-CashOrderEnv" -and $pf -match "assert-order-shape") {
+    Write-Host "TRADE_PREFLIGHT_HEAL_OK"
+  } else {
+    Write-Host "TRADE_PREFLIGHT_HEAL_BAD missing Heal-CashOrderEnv or assert-order-shape"
     $verifyFailed = $true
   }
 }

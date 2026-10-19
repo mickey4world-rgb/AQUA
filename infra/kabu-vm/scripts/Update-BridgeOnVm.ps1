@@ -38,6 +38,7 @@ foreach ($scriptName in @(
   "Keep-KabuConsoleSession.ps1",
   "Disconnect-Rdp-KeepDesktop.ps1",
   "Recover-KabuApiIfNeeded.ps1",
+  "Heal-CashOrderEnv.ps1",
   "Verify-KabuOpsOnVm.ps1"
 )) {
   $p = Join-Path $src.FullName ("infra\kabu-vm\scripts\" + $scriptName)

@@ -4,8 +4,9 @@ name: Stocks Ops Watch (market hours)
 # Recovery actions run on the VM SYSTEM auto-judge task.
 on:
   schedule:
-    # JST 9:00-15:00 weekdays ~= UTC 00:00-06:00 Mon-Fri
-    - cron: "*/15 0-6 * * 1-5"
+    # JST 9:00-15:30 weekdays ~= UTC 00:00-06:xx Mon-Fri
+    # 10分間隔: 準備OKでも submitted=0 / reject連発を早く検知（15日ゼロ約定の反省）
+    - cron: "*/10 0-6 * * 1-5"
   workflow_dispatch:
 
 jobs:
