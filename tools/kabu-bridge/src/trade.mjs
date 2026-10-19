@@ -13,6 +13,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchKabuToken, loadConfig } from "./kabu.mjs";
+import {
+  assertCashOrderShape,
+  normalizeCashExchange,
+  applyKnownRejectFixes,
+} from "./cash-order-shape.mjs";
 
 const SETUP_DIR = process.env.KABU_SETUP_DIR?.trim() || "C:\\kabu-setup";
 const LEARN_PATH = join(SETUP_DIR, "order-defaults.json");
@@ -34,6 +39,19 @@ function loadDotEnv() {
 }
 
 loadDotEnv();
+
+// .env poison: KABU_EXCHANGE=1 still produces 100378 even after remap helpers.
+if (String(process.env.KABU_EXCHANGE ?? "").trim() === "1") {
+  console.warn("[kabu-bridge] KABU_EXCHANGE=1 is banned for cash; overriding to 27");
+  process.env.KABU_EXCHANGE = "27";
+}
+if (
+  String(process.env.KABU_FUND_TYPE ?? "").trim() === "AA" &&
+  process.env.KABU_ALLOW_CREDIT_FUND?.trim() !== "1"
+) {
+  console.warn("[kabu-bridge] KABU_FUND_TYPE=AA without credit opt-in; overriding to 02");
+  process.env.KABU_FUND_TYPE = "02";
+}
 
 const config = loadConfig();
 const allowLive = process.env.KABU_ALLOW_LIVE_ORDERS?.trim() === "1";
@@ -93,16 +111,39 @@ function saveJson(path, obj) {
 }
 
 function loadLearnedDefaults() {
-  return loadJson(LEARN_PATH, { exchange: null, fundType: null, updatedAt: null });
+  const raw = loadJson(LEARN_PATH, { exchange: null, fundType: null, updatedAt: null });
+  // Poisoned learn (Exchange=1 / FundType=AA) must not stick across days.
+  let dirty = false;
+  if (Number(raw.exchange) === 1) {
+    raw.exchange = 27;
+    dirty = true;
+  }
+  if (String(raw.fundType) === "AA" && process.env.KABU_ALLOW_CREDIT_FUND?.trim() !== "1") {
+    raw.fundType = "02";
+    dirty = true;
+  }
+  if (dirty) {
+    saveJson(LEARN_PATH, { ...raw, updatedAt: new Date().toISOString(), healed: true });
+  }
+  return raw;
 }
 
 function rememberDefault(patch) {
   const cur = loadLearnedDefaults();
-  saveJson(LEARN_PATH, {
+  const next = {
     ...cur,
     ...patch,
     updatedAt: new Date().toISOString(),
-  });
+  };
+  if (Number(next.exchange) === 1) next.exchange = 27;
+  if (String(next.fundType) === "AA" && process.env.KABU_ALLOW_CREDIT_FUND?.trim() !== "1") {
+    next.fundType = "02";
+  }
+  if (next.accountType != null) {
+    const a = Number(next.accountType);
+    if (a !== 2 && a !== 4) delete next.accountType;
+  }
+  saveJson(LEARN_PATH, next);
 }
 
 function jstDayKey() {
@@ -147,22 +188,21 @@ function resolveBuyFundType() {
 
 /**
  * Cash buy/sell: Exchange 1 (東証) banned since 2026-02-28 → 100378.
- * Use 27 (東証+) by default; 9 (SOR) is also valid for market/limit.
+ * preferred=1 (bad .env / learned) must still resolve to 27 — see normalizeCashExchange.
  */
 function resolveCashExchange(intentExchange) {
   const learned = loadLearnedDefaults().exchange;
   const envEx = Number(process.env.KABU_EXCHANGE ?? 0) || 0;
-  const raw = Number(intentExchange) || 0;
   const preferred = envEx || learned || 27;
-  if (raw === 1 || raw === 0) return preferred;
-  return raw;
+  return normalizeCashExchange(intentExchange, preferred);
 }
 
 function buildCashOrder(intent) {
   const qty = Math.min(intent.qty, maxQty);
   const isSell = intent.side === "sell";
   const buyFundType = resolveBuyFundType();
-  const buyDelivType = Number(process.env.KABU_DELIV_TYPE ?? 2) || 2;
+  let buyDelivType = Number(process.env.KABU_DELIV_TYPE ?? 2) || 2;
+  if (buyDelivType !== 2 && buyDelivType !== 3) buyDelivType = 2;
   return {
     Password: tradePassword,
     Symbol: String(intent.symbol),
@@ -172,7 +212,12 @@ function buildCashOrder(intent) {
     CashMargin: 1,
     DelivType: isSell ? 0 : buyDelivType,
     FundType: isSell ? "  " : buyFundType,
-    AccountType: Number(process.env.KABU_ACCOUNT_TYPE ?? 4) || 4,
+    AccountType: (() => {
+      const learnedAcct = Number(loadLearnedDefaults().accountType) || 0;
+      const envAcct = Number(process.env.KABU_ACCOUNT_TYPE ?? 0) || 0;
+      const a = envAcct || learnedAcct || 4;
+      return a === 2 || a === 4 ? a : 4;
+    })(),
     Qty: qty,
     FrontOrderType: 10,
     Price: 0,
@@ -180,35 +225,8 @@ function buildCashOrder(intent) {
   };
 }
 
-/**
- * On reject: apply known remediations once and retry.
- * 100378 → Exchange 1 banned for cash → 27 (東証+) then 9 (SOR)
- * 100204 → FundType AA → 02
- */
 function applyRejectFix(orderBody, code) {
-  const fixes = [];
-  const c = Number(code);
-  if (c === 100378) {
-    if (orderBody.Exchange === 1) {
-      fixes.push("Exchange 1->27 (100378: cash cannot use TSE=1)");
-      orderBody.Exchange = 27;
-      rememberDefault({ exchange: 27 });
-      return fixes;
-    }
-    if (orderBody.Exchange === 27) {
-      fixes.push("Exchange 27->9 (100378 retry SOR)");
-      orderBody.Exchange = 9;
-      rememberDefault({ exchange: 9 });
-      return fixes;
-    }
-  }
-  if (c === 100204 && String(orderBody.FundType) === "AA") {
-    fixes.push("FundType AA->02 (100204 no credit)");
-    orderBody.FundType = "02";
-    rememberDefault({ fundType: "02" });
-    return fixes;
-  }
-  return fixes;
+  return applyKnownRejectFixes(orderBody, code, rememberDefault);
 }
 
 function orderShapeForLog(orderBody) {
@@ -254,6 +272,36 @@ function summarizeBuySkips(buySkips, limit = 5) {
 console.log(
   `[kabu-bridge] trade start live=${allowLive ? "YES" : "NO (dry-run)"} maxQty=${maxQty}`,
 );
+
+// Boot oracle: sample cash shapes must be legal before any intent loop.
+{
+  const probeBuy = buildCashOrder({
+    side: "buy",
+    symbol: "1301",
+    exchange: 1,
+    qty: 100,
+  });
+  const probeSell = buildCashOrder({
+    side: "sell",
+    symbol: "1301",
+    exchange: 1,
+    qty: 100,
+  });
+  const allowCredit = process.env.KABU_ALLOW_CREDIT_FUND?.trim() === "1";
+  for (const [label, body] of [
+    ["buy", probeBuy],
+    ["sell", probeSell],
+  ]) {
+    const check = assertCashOrderShape(body, { allowCreditFund: allowCredit });
+    if (!check.ok) {
+      console.error(`[kabu-bridge] TRADE_SHAPE_BAD ${label}: ${check.errors.join("; ")}`);
+      process.exit(1);
+    }
+  }
+  console.log(
+    `[kabu-bridge] TRADE_SHAPE_OK exch=${probeBuy.Exchange} fund=${JSON.stringify(probeBuy.FundType)} deliv=${probeBuy.DelivType}`,
+  );
+}
 
 if (allowLive && !tradePassword) {
   console.error(
@@ -413,7 +461,10 @@ for (const intent of intents) {
 
   if (
     shouldStormSkip(String(intent.symbol), 100378) ||
-    shouldStormSkip(String(intent.symbol), 100204)
+    shouldStormSkip(String(intent.symbol), 100204) ||
+    shouldStormSkip(String(intent.symbol), 100001) ||
+    shouldStormSkip(String(intent.symbol), 100031) ||
+    shouldStormSkip(String(intent.symbol), 32)
   ) {
     console.warn(
       `[LIVE] storm-skip ${intent.symbol} (same reject code 3+ today; waiting for next-day / manual review)`,
@@ -430,6 +481,29 @@ for (const intent of intents) {
       reason: "同一拒否が続き自動停止（見直し待ち）",
       ruleIds: intent.ruleIds,
       message: "reject-storm skip; see C:\\kabu-setup\\reject-storm.json",
+    });
+    continue;
+  }
+
+  const shapeCheck = assertCashOrderShape(orderBody, {
+    allowCreditFund: process.env.KABU_ALLOW_CREDIT_FUND?.trim() === "1",
+  });
+  if (!shapeCheck.ok) {
+    console.error(
+      `[LIVE] TRADE_SHAPE_BAD refuse sendorder ${intent.symbol}: ${shapeCheck.errors.join("; ")}`,
+    );
+    await reportOrder({
+      userId: config.aquaUserId,
+      intentId: intent.id,
+      side: intent.side,
+      symbol: intent.symbol,
+      exchange: orderBody.Exchange,
+      qty,
+      status: "rejected",
+      dryRun: false,
+      reason: "発注形が現物不変条件を満たさない（API前に拒否）",
+      ruleIds: intent.ruleIds,
+      message: shapeCheck.errors.join("; ").slice(0, 300),
     });
     continue;
   }

@@ -253,7 +253,13 @@ $extraTriggers
 Write-Cmd (Join-Path $SetupDir "run-preflight.cmd") @(
   "@echo off",
   ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Keep-KabuConsoleSession.ps1") + "`" -SetupDir `"" + $SetupDir + "`""),
-  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`"")
+  ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + (Join-Path $SetupDir "Recover-KabuApiIfNeeded.ps1") + "`" -BridgeRoot `"" + $BridgeRoot + "`" -SetupDir `"" + $SetupDir + "`""),
+  ("cd /d " + $BridgeRoot),
+  ("call `"" + $npmCmd + "`" run assert-order-shape >> `"" + $SetupDir + "\trade-shape.log`" 2>&1"),
+  ("if errorlevel 1 ("),
+  ("  echo TRADE_SHAPE_BAD>> `"" + $SetupDir + "\trade-shape.log`""),
+  ("  exit /b 1"),
+  (")")
 )
 
 # CRITICAL: npm.cmd must be invoked with `call`. Without it, cmd.exe never returns

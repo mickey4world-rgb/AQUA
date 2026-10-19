@@ -94,6 +94,12 @@ if (Test-Path $recover) {
 }
 
 $tradeJs = Join-Path $BridgeRoot "src\trade.mjs"
+$shapeJs = Join-Path $BridgeRoot "src\cash-order-shape.mjs"
+$assertJs = Join-Path $BridgeRoot "src\assert-order-shape.mjs"
+if (-not (Test-Path $shapeJs)) {
+  Write-Host "TRADE_SHAPE_MODULE_BAD missing cash-order-shape.mjs"
+  $verifyFailed = $true
+}
 if (Test-Path $tradeJs) {
   $tradeText = Get-Content $tradeJs -Raw
   if ($tradeText -match 'KABU_FUND_TYPE \?\? "AA"' -or $tradeText -match 'FundType: isSell \? "  " : "AA"') {
@@ -105,15 +111,52 @@ if (Test-Path $tradeJs) {
     Write-Host "TRADE_FUNDTYPE_UNKNOWN review trade.mjs FundType"
     $verifyFailed = $true
   }
-  if ($tradeText -match 'resolveCashExchange' -and $tradeText -match 'applyRejectFix') {
+  if ($tradeText -match 'normalizeCashExchange' -and $tradeText -match 'assertCashOrderShape' -and $tradeText -match 'applyKnownRejectFixes') {
     Write-Host "TRADE_AUTOREVIEW_OK"
   } else {
-    Write-Host "TRADE_AUTOREVIEW_BAD missing Exchange remap / reject autofix"
+    Write-Host "TRADE_AUTOREVIEW_BAD missing shape assert / Exchange remap / reject autofix"
     $verifyFailed = $true
   }
-  if ($tradeText -match 'Number\(intent\.exchange\) \|\| 1' -and $tradeText -notmatch 'resolveCashExchange') {
+  if ($tradeText -match 'Number\(intent\.exchange\) \|\| 1' -and $tradeText -notmatch 'normalizeCashExchange') {
     Write-Host "TRADE_EXCHANGE_BAD default 1 causes 100378"
     $verifyFailed = $true
+  }
+}
+if (Test-Path $assertJs) {
+  Push-Location $BridgeRoot
+  try {
+    $assertOut = & node.exe ".\src\assert-order-shape.mjs" 2>&1 | Out-String
+    Write-Host $assertOut.Trim()
+    if ($LASTEXITCODE -ne 0 -or $assertOut -notmatch "TRADE_SHAPE_OK") {
+      Write-Host "TRADE_SHAPE_BAD assert-order-shape failed"
+      $verifyFailed = $true
+    }
+  } finally {
+    Pop-Location
+  }
+} else {
+  Write-Host "TRADE_SHAPE_BAD missing assert-order-shape.mjs"
+  $verifyFailed = $true
+}
+# Heal poisoned .env that would recreate 100378/100204 even with good code
+$envPath = Join-Path $BridgeRoot ".env"
+if (Test-Path $envPath) {
+  $envLines = Get-Content $envPath
+  $envDirty = $false
+  $envNew = foreach ($line in $envLines) {
+    if ($line -match '^\s*KABU_EXCHANGE\s*=\s*1\s*$') {
+      $envDirty = $true
+      "KABU_EXCHANGE=27"
+    } elseif ($line -match '^\s*KABU_FUND_TYPE\s*=\s*AA\s*$') {
+      $envDirty = $true
+      "KABU_FUND_TYPE=02"
+    } else {
+      $line
+    }
+  }
+  if ($envDirty) {
+    Set-Content -Path $envPath -Value $envNew -Encoding UTF8
+    Write-Host "TRADE_ENV_HEALED KABU_EXCHANGE/FUND_TYPE poison cleared"
   }
 }
 
@@ -136,6 +179,7 @@ foreach ($log in @(
   "api-recover.log",
   "sync.log",
   "trade.log",
+  "trade-shape.log",
   "market-tick.log",
   "health.log"
 )) {
