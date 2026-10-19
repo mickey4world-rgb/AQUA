@@ -31,7 +31,8 @@
 | 07:00 タスクが場後に動く | VM TZ=UTC | Tokyo Standard Time + StartBoundary `+09:00` |
 | 15:00 以降を市場外表示 | 旧大引け 15:00 | 大引け **15:30**（2024-11 以降） |
 | LIVE 買いが全部 rejected 100204 | `FundType=AA`（信用代用） | 現物買は `FundType=02`（保護預り）。AA は `KABU_ALLOW_CREDIT_FUND=1` 無しでは無視 |
-| LIVE 全部 rejected 100378 | `Exchange=1`（東証） | 2026-02以降現物は **27(東証+) or 9(SOR)**。拒否時 autofix 再試行＋学習 |
+| LIVE 全部 rejected 100378 | `Exchange=1`（東証）または `.env`/`order-defaults` に 1 が残存 | 現物は **27/9のみ**。`normalizeCashExchange`＋発注前 `assertCashOrderShape`＋`npm run assert-order-shape`。拒否時 autofix＋学習毒の自動治癒 |
+| 1コード直して翌日別コード全拒否 | 横展開せず単項目パッチ | `cash-order-shape.mjs` に全現物フィールド不変条件。拒否コード辞書で DelivType/FundType も autofix |
 | token 一瞬失敗で trade プロセス落ち | 未 catch の throw | token 失敗は `_CHECK_` 記録して exit（次 tick で再試行） |
 | 高値銘柄が安値判定なのに単元不足 | 第1層建玉上限（損切り8%換算） | 1取引損失上限を 2.5万円に緩和（建玉≈31万円・単価〜約3,125円）。それ超は残余リスク |
 
