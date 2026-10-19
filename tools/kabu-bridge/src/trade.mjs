@@ -9,10 +9,14 @@
  * - 信用は実装しない
  * - intents=0 でも buySkips 要約を点検レコードに残す（運用オラクル）
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchKabuToken, loadConfig } from "./kabu.mjs";
+
+const SETUP_DIR = process.env.KABU_SETUP_DIR?.trim() || "C:\\kabu-setup";
+const LEARN_PATH = join(SETUP_DIR, "order-defaults.json");
+const REJECT_STORM_PATH = join(SETUP_DIR, "reject-storm.json");
 
 function loadDotEnv() {
   const dir = dirname(fileURLToPath(import.meta.url));
@@ -70,16 +74,87 @@ async function reportOrder(payload) {
   return body;
 }
 
+function loadJson(path, fallback) {
+  try {
+    if (!existsSync(path)) return fallback;
+    return { ...fallback, ...JSON.parse(readFileSync(path, "utf8")) };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveJson(path, obj) {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(obj, null, 2), "utf8");
+  } catch (err) {
+    console.warn("[trade] saveJson failed", path, err instanceof Error ? err.message : err);
+  }
+}
+
+function loadLearnedDefaults() {
+  return loadJson(LEARN_PATH, { exchange: null, fundType: null, updatedAt: null });
+}
+
+function rememberDefault(patch) {
+  const cur = loadLearnedDefaults();
+  saveJson(LEARN_PATH, {
+    ...cur,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function jstDayKey() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+}
+
+/** Same symbol+code rejected too many times today after autofix → stop hammering. */
+function shouldStormSkip(symbol, code) {
+  const st = loadJson(REJECT_STORM_PATH, { day: null, counts: {} });
+  const day = jstDayKey();
+  if (st.day !== day) return false;
+  const key = `${symbol}:${code}`;
+  return (st.counts[key] ?? 0) >= 3;
+}
+
+function bumpStorm(symbol, code) {
+  const day = jstDayKey();
+  const st = loadJson(REJECT_STORM_PATH, { day: null, counts: {} });
+  if (st.day !== day) {
+    st.day = day;
+    st.counts = {};
+  }
+  const key = `${symbol}:${code}`;
+  st.counts[key] = (st.counts[key] ?? 0) + 1;
+  saveJson(REJECT_STORM_PATH, st);
+  return st.counts[key];
+}
+
 function resolveBuyFundType() {
   // Official: no credit account → "02" (保護). "AA" (信用代用) → 100204.
-  // Never default to AA; require explicit opt-in if credit substitute is intended.
-  const raw = (process.env.KABU_FUND_TYPE ?? "02").trim() || "02";
+  const learned = loadLearnedDefaults().fundType;
+  const raw =
+    (process.env.KABU_FUND_TYPE ?? learned ?? "02").toString().trim() || "02";
   if (raw === "AA" && process.env.KABU_ALLOW_CREDIT_FUND?.trim() !== "1") {
     console.warn(
       "[kabu-bridge] KABU_FUND_TYPE=AA ignored without KABU_ALLOW_CREDIT_FUND=1; using 02",
     );
     return "02";
   }
+  return raw;
+}
+
+/**
+ * Cash buy/sell: Exchange 1 (東証) banned since 2026-02-28 → 100378.
+ * Use 27 (東証+) by default; 9 (SOR) is also valid for market/limit.
+ */
+function resolveCashExchange(intentExchange) {
+  const learned = loadLearnedDefaults().exchange;
+  const envEx = Number(process.env.KABU_EXCHANGE ?? 0) || 0;
+  const raw = Number(intentExchange) || 0;
+  const preferred = envEx || learned || 27;
+  if (raw === 1 || raw === 0) return preferred;
   return raw;
 }
 
@@ -91,7 +166,7 @@ function buildCashOrder(intent) {
   return {
     Password: tradePassword,
     Symbol: String(intent.symbol),
-    Exchange: Number(intent.exchange) || 1,
+    Exchange: resolveCashExchange(intent.exchange),
     SecurityType: 1,
     Side: isSell ? "1" : "2",
     CashMargin: 1,
@@ -103,6 +178,37 @@ function buildCashOrder(intent) {
     Price: 0,
     ExpireDay: 0,
   };
+}
+
+/**
+ * On reject: apply known remediations once and retry.
+ * 100378 → Exchange 1 banned for cash → 27 (東証+) then 9 (SOR)
+ * 100204 → FundType AA → 02
+ */
+function applyRejectFix(orderBody, code) {
+  const fixes = [];
+  const c = Number(code);
+  if (c === 100378) {
+    if (orderBody.Exchange === 1) {
+      fixes.push("Exchange 1->27 (100378: cash cannot use TSE=1)");
+      orderBody.Exchange = 27;
+      rememberDefault({ exchange: 27 });
+      return fixes;
+    }
+    if (orderBody.Exchange === 27) {
+      fixes.push("Exchange 27->9 (100378 retry SOR)");
+      orderBody.Exchange = 9;
+      rememberDefault({ exchange: 9 });
+      return fixes;
+    }
+  }
+  if (c === 100204 && String(orderBody.FundType) === "AA") {
+    fixes.push("FundType AA->02 (100204 no credit)");
+    orderBody.FundType = "02";
+    rememberDefault({ fundType: "02" });
+    return fixes;
+  }
+  return fixes;
 }
 
 function orderShapeForLog(orderBody) {
@@ -305,12 +411,59 @@ for (const intent of intents) {
     continue;
   }
 
-  console.log(
-    `[LIVE] ${sideLabel} ${intent.symbol} x${qty} ${ruleLabel} shape=${JSON.stringify(orderShapeForLog(orderBody))}`,
-  );
-  const result = await sendOrder(config.kabuBaseUrl, token, orderBody);
+  if (
+    shouldStormSkip(String(intent.symbol), 100378) ||
+    shouldStormSkip(String(intent.symbol), 100204)
+  ) {
+    console.warn(
+      `[LIVE] storm-skip ${intent.symbol} (same reject code 3+ today; waiting for next-day / manual review)`,
+    );
+    await reportOrder({
+      userId: config.aquaUserId,
+      intentId: intent.id,
+      side: intent.side,
+      symbol: intent.symbol,
+      exchange: orderBody.Exchange,
+      qty,
+      status: "skipped",
+      dryRun: false,
+      reason: "同一拒否が続き自動停止（見直し待ち）",
+      ruleIds: intent.ruleIds,
+      message: "reject-storm skip; see C:\\kabu-setup\\reject-storm.json",
+    });
+    continue;
+  }
+
+  let result = null;
+  const appliedFixes = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    console.log(
+      `[LIVE] ${sideLabel} ${intent.symbol} x${qty} try=${attempt + 1} ${ruleLabel} shape=${JSON.stringify(orderShapeForLog(orderBody))}`,
+    );
+    result = await sendOrder(config.kabuBaseUrl, token, orderBody);
+    if (result.ok) break;
+    const code = result.body?.Code ?? result.status;
+    if (shouldStormSkip(String(intent.symbol), code)) {
+      console.warn(
+        `[LIVE] storm-skip ${intent.symbol} code=${code} (already rejected 3+ today after review)`,
+      );
+      break;
+    }
+    const fixes = applyRejectFix(orderBody, code);
+    if (fixes.length === 0) {
+      console.error("[LIVE] rejected (no autofix)", result.status, result.body);
+      break;
+    }
+    appliedFixes.push(...fixes);
+    console.warn(`[LIVE] autofix then retry: ${fixes.join("; ")}`);
+  }
+
   const orderId =
-    result.body?.OrderId ?? result.body?.orderId ?? result.body?.Result ?? undefined;
+    result?.body?.OrderId ?? result?.body?.orderId ?? result?.body?.Result ?? undefined;
+  const ok = Boolean(result?.ok);
+  const code = result?.body?.Code ?? result?.status;
+  if (!ok && code != null) bumpStorm(String(intent.symbol), code);
+
   await reportOrder({
     userId: config.aquaUserId,
     intentId: intent.id,
@@ -318,19 +471,22 @@ for (const intent of intents) {
     symbol: intent.symbol,
     exchange: orderBody.Exchange,
     qty,
-    status: result.ok ? "submitted" : "rejected",
+    status: ok ? "submitted" : "rejected",
     dryRun: false,
     reason: intent.reason,
     ruleIds: intent.ruleIds,
     kabuOrderId: orderId != null ? String(orderId) : undefined,
-    kabuResultCode: result.body?.Code ?? result.status,
-    message: result.ok
-      ? "sendorder accepted"
-      : JSON.stringify(result.body).slice(0, 300),
+    kabuResultCode: code,
+    message: ok
+      ? appliedFixes.length
+        ? `sendorder accepted after autofix: ${appliedFixes.join("; ")}`
+        : "sendorder accepted"
+      : [
+          JSON.stringify(result?.body ?? {}).slice(0, 220),
+          appliedFixes.length ? `autofix=${appliedFixes.join("|")}` : "autofix=none",
+        ].join("; "),
   });
-  if (!result.ok) {
-    console.error("[LIVE] rejected", result.status, result.body);
-  } else {
+  if (ok) {
     console.log("[LIVE] submitted", orderId ?? result.body);
   }
 }

@@ -224,7 +224,8 @@ export async function buildStockBrokerTradeIntents(
         side: "sell",
         symbol: h.symbol,
         symbolName: h.symbolName || h.symbol,
-        exchange: h.exchange || 1,
+        // Cash sendorder cannot use Exchange=1 since 2026-02 (100378). Prefer TSE+.
+        exchange: h.exchange && h.exchange !== 1 ? h.exchange : 27,
         qty,
         frontOrderType: 10,
         reason: `第3層メインブレーカー: 通算損失上限到達のため全決済 — 累計実現 ${guardrails.cumulativeRealizedPnlYen.toLocaleString("ja-JP")}円`,
@@ -512,7 +513,8 @@ export async function buildStockBrokerTradeIntents(
       symbol,
       watchTicker: watch.ticker,
       symbolName: name,
-      exchange: holding?.exchange || 1,
+      exchange:
+        holding?.exchange && holding.exchange !== 1 ? holding.exchange : 27,
       qty,
       frontOrderType: 10,
       reason:
@@ -582,7 +584,8 @@ export async function buildStockBrokerTradeIntents(
           symbol,
           watchTicker: watch.ticker,
           symbolName: holding.symbolName || watch.name || advice.companyName,
-          exchange: holding.exchange || 1,
+          exchange:
+            holding.exchange && holding.exchange !== 1 ? holding.exchange : 27,
           qty,
           frontOrderType: 10,
           reason: hardStop

@@ -105,6 +105,16 @@ if (Test-Path $tradeJs) {
     Write-Host "TRADE_FUNDTYPE_UNKNOWN review trade.mjs FundType"
     $verifyFailed = $true
   }
+  if ($tradeText -match 'resolveCashExchange' -and $tradeText -match 'applyRejectFix') {
+    Write-Host "TRADE_AUTOREVIEW_OK"
+  } else {
+    Write-Host "TRADE_AUTOREVIEW_BAD missing Exchange remap / reject autofix"
+    $verifyFailed = $true
+  }
+  if ($tradeText -match 'Number\(intent\.exchange\) \|\| 1' -and $tradeText -notmatch 'resolveCashExchange') {
+    Write-Host "TRADE_EXCHANGE_BAD default 1 causes 100378"
+    $verifyFailed = $true
+  }
 }
 
 Write-Host "-- bridge --"
