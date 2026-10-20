@@ -208,9 +208,10 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     trend === "bullish" &&
     rsi14 < STOCK_RSI_OVERBOUGHT
   ) {
-    action = "buy";
+    // 自動ナンピンは含み損を拡大しやすい → hold（長期回復待ち）。買い増しは人手判断。
+    action = "hold";
     reasons.push(
-      `購入価格比 ${profitPct.toFixed(1)}% ですが上昇トレンドのため、ナンピン（追加買い）を検討できます。`,
+      `購入価格比 ${profitPct.toFixed(1)}% の含み損だが上昇トレンド。自動ナンピンはせず保有継続（損切りは1年超のみ）。`,
     );
   } else if (
     volSpike >= STOCK_VOLUME_SPIKE_MULT &&

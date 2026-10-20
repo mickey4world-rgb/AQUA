@@ -19,6 +19,11 @@ export const STOCK_STOP_LOSS_AFTER_YEAR_HARD_RATE = -0.25;
 /** 1年超後の軟損切り率 */
 export const STOCK_STOP_LOSS_AFTER_YEAR_SOFT_RATE = -0.15;
 
+/**
+ * 利確に必要な最低含み益率（ざらつき・手数料で実質赤字の「微プラス売り」を防ぐ）。
+ */
+export const STOCK_MIN_TAKE_PROFIT_RATE = 0.005;
+
 export type StockSellDecision = {
   sell: true;
   kind: "take-profit" | "stop-loss";
@@ -79,8 +84,8 @@ export function decideStockSellIntent(input: {
   const withinYear =
     holdMs == null || holdMs < STOCK_STOP_LOSS_MIN_HOLD_MS;
 
-  // --- 利確: プラス圏のみ ---
-  if (changeRate > 0) {
+  // --- 利確: 実質プラス圏のみ（微プラスの即売りで手数料負けしない）---
+  if (changeRate >= STOCK_MIN_TAKE_PROFIT_RATE) {
     const hitTarget =
       input.targetPrice > 0 && px >= input.targetPrice;
     const earlyTp =
