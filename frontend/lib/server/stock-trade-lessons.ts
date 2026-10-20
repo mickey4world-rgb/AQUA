@@ -376,25 +376,31 @@ export async function getStockTradingHalt(
   };
 }
 
-/** 第3層到達時に売買権限を停止（手動解除まで継続） */
+/** @deprecated 損失で売買停止しない契約。互換のため残すが新規呼び出し禁止。 */
 export async function engageStockTradingHalt(
   userId: string,
   reason: string,
 ): Promise<StockTradingHaltState> {
+  // 旧第3層停止は廃止。誤って呼ばれても halt を立てず、既存 halt を解除する。
+  return clearStockTradingHalt(userId, `engage-noop:${reason}`);
+}
+
+/** 旧メインブレーカー停止を解除（利益優先・売買継続） */
+export async function clearStockTradingHalt(
+  userId: string,
+  note?: string,
+): Promise<StockTradingHaltState> {
   const ledger = await loadLedger(userId);
-  if (ledger.tradingHalted) {
-    return {
-      halted: true,
-      haltedAt: ledger.tradingHaltedAt,
-      reason: ledger.tradingHaltReason,
-    };
+  if (!ledger.tradingHalted) {
+    return { halted: false };
   }
-  const haltedAt = new Date().toISOString();
   await saveLedger({
     ...ledger,
-    tradingHalted: true,
-    tradingHaltedAt: haltedAt,
-    tradingHaltReason: reason,
+    tradingHalted: false,
+    tradingHaltedAt: undefined,
+    tradingHaltReason: note
+      ? `cleared:${note}`
+      : "cleared:profit-first-no-halt",
   });
-  return { halted: true, haltedAt, reason };
+  return { halted: false };
 }

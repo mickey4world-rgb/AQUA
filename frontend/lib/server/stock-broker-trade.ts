@@ -38,7 +38,10 @@ import {
   evaluateStockGuardrails,
   maxNotionalForPerTradeLoss,
 } from "@/lib/stock-guardrails";
-import { getStockTradeLessonBias } from "@/lib/server/stock-trade-lessons";
+import {
+  clearStockTradingHalt,
+  getStockTradeLessonBias,
+} from "@/lib/server/stock-trade-lessons";
 import { decideStockSellIntent } from "@/lib/stock-sell-policy";
 import type {
   StockBrokerBuySkip,
@@ -154,6 +157,8 @@ export async function buildStockBrokerTradeIntents(
 
   // 日次・月次・通算の損失額は監視のみ。売買停止・全決済には使わない（ユーザー契約）。
   void todayRealizedLossYen;
+  // 旧メインブレーカーで止めていた権限を必ず解除
+  await clearStockTradingHalt(userId, "profit-first-resume").catch(() => undefined);
 
   const guardrails = evaluateStockGuardrails({
     orders: recentOrders,
