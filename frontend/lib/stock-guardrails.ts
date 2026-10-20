@@ -26,9 +26,15 @@ export type StockGuardrailStatus = {
   monthlyLossYen: number;
   /** 通算の実現損失額（正の数・累計がマイナスのとき） */
   cumulativeLossYen: number;
-  /** 第2層: 当月の新規売買停止（硬損切り・第3層決済は例外） */
+  /**
+   * 第2層監視フラグ（月次損失が上限以上）。
+   * 自動売買の停止には使わない（警告表示のみ）。
+   */
   monthlyHalt: boolean;
-  /** 第3層: メインブレーカー */
+  /**
+   * 第3層監視フラグ（通算損失が上限以上）。
+   * 全決済・権限停止には使わない（警告表示のみ）。
+   */
   mainBreaker: boolean;
   notes: string[];
 };
@@ -81,12 +87,12 @@ export function evaluateStockGuardrails(input: {
   const notes: string[] = [];
   if (monthlyHalt) {
     notes.push(
-      `第2層: 当月実現損失 ${monthlyLossYen.toLocaleString("ja-JP")}円 ≥ ${STOCK_MONTHLY_MAX_LOSS_YEN.toLocaleString("ja-JP")}円 → 当月の自動売買停止`,
+      `第2層監視: 当月実現損失 ${monthlyLossYen.toLocaleString("ja-JP")}円 ≥ ${STOCK_MONTHLY_MAX_LOSS_YEN.toLocaleString("ja-JP")}円（売買は継続・利確優先）`,
     );
   }
   if (mainBreaker) {
     notes.push(
-      `第3層: 通算実現損失 ${cumulativeLossYen.toLocaleString("ja-JP")}円 ≥ ${STOCK_CUMULATIVE_MAX_LOSS_YEN.toLocaleString("ja-JP")}円 → 全決済＋売買権限停止`,
+      `第3層監視: 通算実現損失 ${cumulativeLossYen.toLocaleString("ja-JP")}円 ≥ ${STOCK_CUMULATIVE_MAX_LOSS_YEN.toLocaleString("ja-JP")}円（全決済・停止はしない）`,
     );
   }
 

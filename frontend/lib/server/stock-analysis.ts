@@ -164,39 +164,30 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
   const hardStopPct = STOCK_HARD_STOP_LOSS_RATE * 100;
   const softStopPct = STOCK_SOFT_STOP_LOSS_RATE * 100;
 
-  // --- 優先: 第1層/硬損切り → 目標利確 ---
+  // --- 利確優先。含み損の即売りはしない（損切りは保有1年超・planner側）---
   const qtyForLoss = Math.max(watch.shares || 0, 100);
-  if (
-    isPerTradeLossBreached({
-      buyPrice: watch.buyPrice,
-      currentPrice,
-      qty: qtyForLoss,
-    })
-  ) {
+  const layer1Breached = isPerTradeLossBreached({
+    buyPrice: watch.buyPrice,
+    currentPrice,
+    qty: qtyForLoss,
+  });
+  if (currentPrice >= watch.targetPrice && profitPct > 0) {
     action = "sell";
     reasons.push(
-      `第1層/ハード損切り: 含み損が上限到達、または取得比 ${profitPct.toFixed(1)}% ≤ ${hardStopPct}%。`,
-    );
-  } else if (currentPrice >= watch.targetPrice) {
-    action = "sell";
-    reasons.push(
-      `目標株価 ${targetLabel} に到達しました。利確（売り）を検討してください。`,
+      `目標株価 ${targetLabel} に到達（含み益）。利確を検討してください。`,
     );
   } else if (macdSnap.cross === "dead" && profitPct > 0) {
     action = "sell";
     reasons.push("MACDデッドクロスかつ含み益のため、利確寄りで売り検討です。");
-  } else if (distanceToTargetPct <= 5) {
+  } else if (distanceToTargetPct <= 5 && profitPct > 0) {
     action = "sell";
     reasons.push(
-      `目標株価まであと ${distanceToTargetPct.toFixed(1)}% です。売り時を検討してください。`,
+      `目標株価まであと ${distanceToTargetPct.toFixed(1)}%（含み益）。売り時を検討してください。`,
     );
-  } else if (
-    profitPct / 100 <= STOCK_SOFT_STOP_LOSS_RATE &&
-    trend === "bearish"
-  ) {
-    action = "sell";
+  } else if (layer1Breached || profitPct / 100 <= softStopPct / 100) {
+    action = "hold";
     reasons.push(
-      `購入価格比 ${profitPct.toFixed(1)}%（ソフト損切 ${softStopPct}%付近）で下降トレンドです。`,
+      `含み損 ${profitPct.toFixed(1)}% を監視中（即損切りしない。保有1年超の深い含み損のみ例外。参考閾値 ${hardStopPct}%/${softStopPct}%）。`,
     );
   } else if (rsi14 >= STOCK_RSI_OVERBOUGHT && trend === "bullish") {
     action = "watch";

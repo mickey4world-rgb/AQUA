@@ -596,26 +596,25 @@ export default function StockBrokerPanel({
         </div>
       )}
 
-      {data?.guardrails?.mainBreaker || data?.guardrails?.tradingHalted ? (
-        <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-50">
-          <p className="font-semibold">第3層メインブレーカー作動中</p>
-          <p className="mt-1 text-[12px] text-rose-100/90">
-            通算損失上限に達したため売買権限を停止し、保有の全決済を優先します。再開は手動解除が必要です。
+      {data?.guardrails?.mainBreaker ||
+      data?.guardrails?.monthlyHalt ||
+      data?.guardrails?.tradingHalted ? (
+        <div className="mt-3 rounded-xl border border-amber-400/35 bg-amber-500/12 px-3 py-2 text-sm text-amber-50">
+          <p className="font-semibold">損失監視（売買は継続）</p>
+          <p className="mt-1 text-[12px] text-amber-100/85">
+            月次上限{" "}
+            {formatYen(data.guardrails.layers?.monthlyMaxLossYen ?? 450_000)}
+            ・通算上限{" "}
+            {formatYen(
+              data.guardrails.layers?.cumulativeMaxLossYen ?? 800_000,
+            )}
+            。損切りは保有1年超のみ。利確優先で自動売買は止めません。
           </p>
           {(data.guardrails.notes ?? []).map((n) => (
-            <p key={n} className="mt-1 text-[11px] text-rose-100/80">
+            <p key={n} className="mt-1 text-[11px] text-amber-100/80">
               {n}
             </p>
           ))}
-        </div>
-      ) : data?.guardrails?.monthlyHalt ? (
-        <div className="mt-3 rounded-xl border border-amber-400/35 bg-amber-500/12 px-3 py-2 text-sm text-amber-50">
-          <p className="font-semibold">第2層: 当月の自動売買を停止中</p>
-          <p className="mt-1 text-[12px] text-amber-100/85">
-            当月実現損失が上限（
-            {formatYen(data.guardrails.layers?.monthlyMaxLossYen ?? 45_000)}
-            ）に達しました。硬損切り以外の新規売買は見送ります。
-          </p>
         </div>
       ) : null}
 
