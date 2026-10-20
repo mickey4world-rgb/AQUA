@@ -58,6 +58,7 @@ assert.equal(
 );
 
 {
+  // 旧 4.5万では止まっていたが、月次上限は 45万（監視のみ）
   const g = evaluateStockGuardrails({
     orders: [
       order({ realizedPnlYen: -20_000, createdAt: "2026-10-01T01:00:00Z" }),
@@ -65,20 +66,33 @@ assert.equal(
     ],
     nowIso: "2026-10-03T01:00:00Z",
   });
-  assert.equal(g.monthlyHalt, true);
+  assert.equal(g.monthlyHalt, false);
   assert.equal(g.mainBreaker, false);
 }
 
 {
   const g = evaluateStockGuardrails({
     orders: [
-      order({ realizedPnlYen: -120_000, createdAt: "2026-08-01T01:00:00Z" }),
-      order({ realizedPnlYen: -90_000, createdAt: "2026-09-01T01:00:00Z" }),
+      order({ realizedPnlYen: -300_000, createdAt: "2026-10-01T01:00:00Z" }),
+      order({ realizedPnlYen: -200_000, createdAt: "2026-10-02T01:00:00Z" }),
+    ],
+    nowIso: "2026-10-03T01:00:00Z",
+  });
+  assert.equal(g.monthlyHalt, true);
+  assert.equal(g.monthlyMaxLossYen, 450_000);
+}
+
+{
+  const g = evaluateStockGuardrails({
+    orders: [
+      order({ realizedPnlYen: -500_000, createdAt: "2026-08-01T01:00:00Z" }),
+      order({ realizedPnlYen: -400_000, createdAt: "2026-09-01T01:00:00Z" }),
     ],
     nowIso: "2026-10-03T01:00:00Z",
   });
   assert.equal(g.mainBreaker, true);
-  assert.ok(g.cumulativeLossYen >= 200_000);
+  assert.ok(g.cumulativeLossYen >= 800_000);
+  assert.equal(g.cumulativeMaxLossYen, 800_000);
 }
 
 console.log("stock-guardrails.test.ts: ok");

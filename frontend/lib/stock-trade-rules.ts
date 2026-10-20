@@ -251,20 +251,20 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 25,
     category: "sell",
-    title: "ハード損切り",
-    summary: `取得単価から ${pct(STOCK_HARD_STOP_LOSS_RATE)} 以下で強制売り検討（日次損失CB中でも例外として継続）`,
+    title: "ハード損切り（1年超のみ）",
+    summary: `仮想通貨と同型。保有1年未満は損切り禁止。1年超かつ取得比おおむね -25% 以下のみ例外的に損切り。旧「即 -8% 売り」は廃止（建玉サイジング参考値 ${pct(STOCK_HARD_STOP_LOSS_RATE)} は残置）`,
   },
   {
     id: 26,
     category: "sell",
-    title: "ソフト損切り",
-    summary: `取得単価から ${pct(STOCK_SOFT_STOP_LOSS_RATE)} 付近かつ下降トレンドなら売り検討（硬損切りの手前）`,
+    title: "ソフト損切り（1年超のみ）",
+    summary: `保有1年超かつ深い含み損（目安 ${pct(STOCK_SOFT_STOP_LOSS_RATE)} 超の下落継続）のみ。プラス圏の利確とは別`,
   },
   {
     id: 27,
     category: "risk",
-    title: "1日最大損失（サーキットブレーカー）",
-    summary: `当日の実現損失合計が ${yen(STOCK_DAILY_MAX_LOSS_YEN)} 以上なら新規買い停止。硬損切り売りのみ例外`,
+    title: "1日最大損失（監視のみ）",
+    summary: `当日の実現損失合計 ${yen(STOCK_DAILY_MAX_LOSS_YEN)} は監視ログ用。到達しても新規売買は止めない（利益優先）`,
   },
   {
     id: 28,
@@ -344,20 +344,27 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 39,
     category: "risk",
-    title: "第1層: 1取引あたり最大損失",
-    summary: `1トレードの想定損失を ${yen(STOCK_PER_TRADE_MAX_LOSS_YEN)}（元本の約 ${((STOCK_PER_TRADE_MAX_LOSS_YEN / STOCK_PRINCIPAL_YEN) * 100).toFixed(2)}%）までに制限。含み損がこの額または ${pct(STOCK_HARD_STOP_LOSS_RATE)} に達したら強制売り検討。建玉も損切り到達時の損失がこの額を超えないよう縮小`,
+    title: "第1層: 1取引あたり建玉上限",
+    summary: `想定損失 ${yen(STOCK_PER_TRADE_MAX_LOSS_YEN)} を超えないよう建玉サイズを制限（サイジング）。即時損切りトリガには使わない`,
   },
   {
     id: 40,
     category: "risk",
-    title: "第2層: 1ヶ月の最大許容損失",
-    summary: `当月の実現損失合計が ${yen(STOCK_MONTHLY_MAX_LOSS_YEN)}（元本の約 ${((STOCK_MONTHLY_MAX_LOSS_YEN / STOCK_PRINCIPAL_YEN) * 100).toFixed(2)}%）以上なら当月の自動売買を停止。連敗・暴落相場での出血を止める`,
+    title: "第2層: 1ヶ月の損失監視",
+    summary: `当月の実現損失合計が ${yen(STOCK_MONTHLY_MAX_LOSS_YEN)}（45万円）以上なら警告表示のみ。自動売買は停止しない`,
   },
   {
     id: 41,
     category: "risk",
-    title: "第3層: 通算最大許容損失（メインブレーカー）",
-    summary: `通算の実現損失が ${yen(STOCK_CUMULATIVE_MAX_LOSS_YEN)} に達したら保有を全決済し、AIの売買権限を停止（手動解除まで）。アプリ全体の最終ブレーカー`,
+    title: "第3層: 通算損失監視",
+    summary: `通算の実現損失が ${yen(STOCK_CUMULATIVE_MAX_LOSS_YEN)} 以上なら警告表示のみ。全決済・権限停止はしない`,
+  },
+  {
+    id: 47,
+    category: "sell",
+    title: "利確優先・短期損切り禁止",
+    summary:
+      "プラス圏のみ利確可。買ってすぐの赤字売りは禁止。損切りは保有1年超かつ深い含み損のみ（仮想通貨 Soluna と同契約）",
   },
 ];
 

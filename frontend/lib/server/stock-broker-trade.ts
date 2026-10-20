@@ -3,14 +3,12 @@ import { COSMOS_CONTAINERS } from "@/lib/server/cosmos";
 import { CosmosClient, type Container } from "@azure/cosmos";
 import { analyzeStock } from "@/lib/server/stock-analysis";
 import { getStockBrokerSnapshot } from "@/lib/server/stock-broker";
-import { getStockMarketRegime } from "@/lib/server/stock-market-regime";
 import { listStockWatches } from "@/lib/server/stock-watches";
 import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
 import { scoreStockNewsAffinity } from "@/lib/stock-news-affinity";
 import { stockJpUniverseByCode } from "@/lib/stock-jp-universe";
 import { displayTicker } from "@/lib/stock-utils";
 import {
-  STOCK_DAILY_MAX_LOSS_YEN,
   STOCK_LOT_SIZE,
   STOCK_MAX_ACTIVE_JP_WATCHES,
   STOCK_MAX_DAILY_BUY_YEN,
@@ -38,14 +36,10 @@ import {
 } from "@/lib/stock-buy-priority";
 import {
   evaluateStockGuardrails,
-  isPerTradeLossBreached,
   maxNotionalForPerTradeLoss,
 } from "@/lib/stock-guardrails";
-import {
-  engageStockTradingHalt,
-  getStockTradeLessonBias,
-  getStockTradingHalt,
-} from "@/lib/server/stock-trade-lessons";
+import { getStockTradeLessonBias } from "@/lib/server/stock-trade-lessons";
+import { decideStockSellIntent } from "@/lib/stock-sell-policy";
 import type {
   StockBrokerBuySkip,
   StockBrokerOrderRecord,
@@ -158,25 +152,13 @@ export async function buildStockBrokerTradeIntents(
     })
     .reduce((sum, o) => sum + Math.abs(Number(o.realizedPnlYen) || 0), 0);
 
-  const dailyLossCircuit =
-    todayRealizedLossYen >= STOCK_DAILY_MAX_LOSS_YEN;
+  // 日次・月次・通算の損失額は監視のみ。売買停止・全決済には使わない（ユーザー契約）。
+  void todayRealizedLossYen;
 
-  const haltState = await getStockTradingHalt(userId).catch(() => ({
-    halted: false,
-  }));
   const guardrails = evaluateStockGuardrails({
     orders: recentOrders,
-    tradingHalted: haltState.halted,
+    tradingHalted: false,
   });
-
-  // 第3層: 通算損失到達 → 権限停止を永続化し、保有は全決済インテントへ
-  if (guardrails.mainBreaker && !haltState.halted) {
-    await engageStockTradingHalt(
-      userId,
-      guardrails.notes.find((n) => n.includes("第3層")) ??
-        "通算最大許容損失に到達",
-    ).catch(() => undefined);
-  }
 
   let remainingDailyBuy = Math.max(0, STOCK_MAX_DAILY_BUY_YEN - todayBuyYen);
   let remainingCash = Math.max(0, cash - minCashKeep);
@@ -189,13 +171,9 @@ export async function buildStockBrokerTradeIntents(
   const preferEarlierTakeProfit = Boolean(lessonBias?.preferEarlierTakeProfit);
   const avoidChaseBuys = Boolean(lessonBias?.avoidChaseBuys);
 
-  const regime = await getStockMarketRegime().catch(() => null);
   const newsDigest = await getLatestWorksNewsDigest().catch(() => null);
-  const blockNewBuys =
-    guardrails.mainBreaker ||
-    guardrails.monthlyHalt ||
-    dailyLossCircuit ||
-    Boolean(regime?.blockBuys);
+  // 損失サーキット・月次停止・メインブレーカーで買いを止めない（利益優先）
+  const blockNewBuys = false;
 
   const buySkips: StockBrokerBuySkip[] = [];
   const noteBuySkip = (
@@ -211,31 +189,6 @@ export async function buildStockBrokerTradeIntents(
     }
     buySkips.push({ symbol, symbolName, reasons: [reason], meta });
   };
-
-  // 第3層発動中: 分析を待たず保有を全決済（成行相当・frontOrderType 10）
-  if (guardrails.mainBreaker) {
-    for (const h of snapshot.holdings) {
-      if (h.qty < STOCK_LOT_SIZE) continue;
-      const qty = Math.min(roundDownToLot(h.qty), STOCK_MAX_QTY_PER_ORDER);
-      if (qty < STOCK_LOT_SIZE) continue;
-      intents.push({
-        id: intentIdFor(userId, h.symbol, "sell", day),
-        userId,
-        side: "sell",
-        symbol: h.symbol,
-        symbolName: h.symbolName || h.symbol,
-        // Cash sendorder cannot use Exchange=1 since 2026-02 (100378). Prefer TSE+.
-        exchange: h.exchange && h.exchange !== 1 ? h.exchange : 27,
-        qty,
-        frontOrderType: 10,
-        reason: `第3層メインブレーカー: 通算損失上限到達のため全決済 — 累計実現 ${guardrails.cumulativeRealizedPnlYen.toLocaleString("ja-JP")}円`,
-        ruleIds: [1, 13, 14, 15, 41],
-        createdAt: new Date().toISOString(),
-        expiresAt,
-      });
-    }
-    return { intents, buySkips };
-  }
 
   // News Search 適合が高い銘柄の買いを先に枠消化する
   const newsFitByCode = new Map<
@@ -328,19 +281,7 @@ export async function buildStockBrokerTradeIntents(
     };
 
     if (blockNewBuys) {
-      noteBuySkip(
-        symbol,
-        name,
-        regime?.blockReason ??
-          (guardrails.mainBreaker
-            ? "第3層停止中"
-            : guardrails.monthlyHalt
-              ? "月次損失停止"
-              : dailyLossCircuit
-                ? "日次損失サーキット"
-                : "新規買い停止中"),
-        meta,
-      );
+      noteBuySkip(symbol, name, "新規買い停止中", meta);
       return false;
     }
     const gate = canBuyRow(input.row);
@@ -537,68 +478,53 @@ export async function buildStockBrokerTradeIntents(
   for (const row of analyzed) {
     const { watch, advice, symbol, holding, price } = row;
 
-    const hardStop =
-      holding != null &&
-      isPerTradeLossBreached({
-        buyPrice: watch.buyPrice > 0 ? watch.buyPrice : advice.buyPrice,
-        currentPrice: advice.currentPrice,
-        qty: holding.qty,
+    // --- 売り: 利確のみ短期可。損切りは保有1年超のみ（仮想通貨と同型）---
+    if (holding && holding.qty >= STOCK_LOT_SIZE) {
+      const buyPx =
+        watch.buyPrice > 0
+          ? watch.buyPrice
+          : advice.buyPrice > 0
+            ? advice.buyPrice
+            : holding.price;
+      const sellDecision = decideStockSellIntent({
+        symbol,
+        buyPrice: buyPx,
+        currentPrice: advice.currentPrice > 0 ? advice.currentPrice : price,
+        adviceAction: advice.action,
+        targetPrice: watch.targetPrice,
+        preferEarlierTakeProfit,
+        orders: recentOrders,
       });
-
-    // --- 売り ---
-    const softSell =
-      advice.action === "sell" ||
-      hardStop ||
-      (preferEarlierTakeProfit &&
-        watch.targetPrice > 0 &&
-        advice.currentPrice >= watch.targetPrice * 0.95);
-
-    const haltNonStopSells =
-      (guardrails.monthlyHalt || dailyLossCircuit) && !hardStop;
-    if (softSell && holding && !haltNonStopSells) {
-      const hitTarget =
-        watch.targetPrice > 0 && advice.currentPrice >= watch.targetPrice;
-      const watchQty =
-        typeof watch.shares === "number" && watch.shares > 0
-          ? watch.shares
-          : holding.qty;
-      const qty = Math.min(
-        holding.qty,
-        watchQty,
-        STOCK_MAX_QTY_PER_ORDER,
-      );
-      if (qty > 0) {
-        const ruleIds = [
-          ...(hitTarget
-            ? [1, 11, 12, 13, 14, 15, 19, 20, 23, 26]
-            : hardStop
-              ? [1, 13, 14, 15, 23, 25, 39]
-              : [1, 12, 13, 14, 15, 19, 20, 23]),
-        ];
-        if (preferEarlierTakeProfit) ruleIds.push(24);
-        if (advice.macdCross === "dead") ruleIds.push(28);
-        intents.push({
-          id: intentIdFor(userId, symbol, "sell", day),
-          userId,
-          side: "sell",
-          symbol,
-          watchTicker: watch.ticker,
-          symbolName: holding.symbolName || watch.name || advice.companyName,
-          exchange:
-            holding.exchange && holding.exchange !== 1 ? holding.exchange : 27,
-          qty,
-          frontOrderType: 10,
-          reason: hardStop
-            ? `第1層/硬損切り: 取得比 ${advice.profitPct.toFixed(1)}% または含み損上限 — ${advice.summary.slice(0, 80)}`
-            : hitTarget
-              ? `硬利確寄り: 目標到達 + AI売り — ${advice.summary.slice(0, 100)}`
-              : `AI売り検討: ${advice.summary.slice(0, 120)}`,
-          ruleIds,
-          watchId: watch.id,
-          adviceAction: advice.action,
-          createdAt: new Date().toISOString(),
-          expiresAt,
-        });
+      if (sellDecision) {
+        const watchQty =
+          typeof watch.shares === "number" && watch.shares > 0
+            ? watch.shares
+            : holding.qty;
+        const qty = Math.min(holding.qty, watchQty, STOCK_MAX_QTY_PER_ORDER);
+        if (qty >= STOCK_LOT_SIZE) {
+          const ruleIds = [...sellDecision.ruleIds];
+          if (advice.macdCross === "dead") ruleIds.push(28);
+          intents.push({
+            id: intentIdFor(userId, symbol, "sell", day),
+            userId,
+            side: "sell",
+            symbol,
+            watchTicker: watch.ticker,
+            symbolName: holding.symbolName || watch.name || advice.companyName,
+            exchange:
+              holding.exchange && holding.exchange !== 1
+                ? holding.exchange
+                : 27,
+            qty,
+            frontOrderType: 10,
+            reason: `${sellDecision.reason} — ${advice.summary.slice(0, 100)}`,
+            ruleIds,
+            watchId: watch.id,
+            adviceAction: advice.action,
+            createdAt: new Date().toISOString(),
+            expiresAt,
+          });
+        }
       }
     }
 
@@ -633,7 +559,7 @@ export async function buildStockBrokerTradeIntents(
 
   // --- 買い Path B: 安値ゾーン（週次/月次）。従来未約定の中からスコア順 ---
   // 候補が多い日は枠を約75%に拡大。監視メモは #45（コアは slack 緩和）。
-  if (!blockNewBuys) {
+  {
     const watchBase =
       activeWatches.length > 0 ? activeWatches.length : analyzed.length;
     const dipEligibleRows = analyzed.filter(
@@ -672,17 +598,6 @@ export async function buildStockBrokerTradeIntents(
     for (const row of dipCandidates) {
       if (tryPushBuy({ row, mode: "dip" })) {
         boughtSymbols.add(row.symbol);
-      }
-    }
-  } else {
-    for (const row of analyzed) {
-      if (row.advice.dipBuyEligible) {
-        noteBuySkip(
-          row.symbol,
-          row.watch.name || row.advice.companyName || row.symbol,
-          regime?.blockReason ?? "新規買い停止中のため安値枠も見送り",
-          { dipBuyEligible: true, dipScore: row.advice.dipScore ?? 0 },
-        );
       }
     }
   }
