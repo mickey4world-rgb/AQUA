@@ -7,7 +7,10 @@ export interface StockBrokerHolding {
   symbolName: string;
   exchange: number;
   qty: number;
+  /** 時価（kabusapi CurrentPrice） */
   price: number;
+  /** 平均取得価額（kabusapi Price）。損益判定はこちらを優先 */
+  averagePrice?: number;
   side?: string;
   accountType?: number;
 }

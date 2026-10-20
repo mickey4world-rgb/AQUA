@@ -485,16 +485,25 @@ export async function buildStockBrokerTradeIntents(
 
     // --- 売り: 利確のみ短期可。損切りは保有1年超のみ（仮想通貨と同型）---
     if (holding && holding.qty >= STOCK_LOT_SIZE) {
+      // 取得単価: 証券の平均取得価額を最優先（ウォッチメモの古い buyPrice で偽プラス売りしない）
       const buyPx =
-        watch.buyPrice > 0
-          ? watch.buyPrice
-          : advice.buyPrice > 0
-            ? advice.buyPrice
-            : holding.price;
+        holding.averagePrice && holding.averagePrice > 0
+          ? holding.averagePrice
+          : watch.buyPrice > 0
+            ? watch.buyPrice
+            : advice.buyPrice > 0
+              ? advice.buyPrice
+              : 0;
+      const markPx =
+        advice.currentPrice > 0
+          ? advice.currentPrice
+          : holding.price > 0
+            ? holding.price
+            : price;
       const sellDecision = decideStockSellIntent({
         symbol,
         buyPrice: buyPx,
-        currentPrice: advice.currentPrice > 0 ? advice.currentPrice : price,
+        currentPrice: markPx,
         adviceAction: advice.action,
         targetPrice: watch.targetPrice,
         preferEarlierTakeProfit,

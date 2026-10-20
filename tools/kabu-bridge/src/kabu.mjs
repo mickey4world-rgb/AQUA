@@ -67,12 +67,14 @@ export async function kabuGet(baseUrl, token, path) {
 /** 保有・余力を AQUA 用の正規化形に変換（証券ブランド名は載せない） */
 export function normalizeSnapshot(userId, cash, positions, bridgeMeta) {
   const positionList = Array.isArray(positions) ? positions : [];
+  // kabusapi: Price = 平均取得価額, CurrentPrice = 時価。取り違えると偽の含み益売りになる。
   const holdings = positionList.map((p) => ({
     symbol: String(p.Symbol ?? ""),
     symbolName: String(p.SymbolName ?? ""),
     exchange: Number(p.Exchange ?? 0),
     qty: Number(p.LeavesQty ?? p.HoldingsQty ?? 0),
-    price: Number(p.Price ?? p.CurrentPrice ?? 0),
+    price: Number(p.CurrentPrice ?? 0),
+    averagePrice: Number(p.Price ?? 0) || undefined,
     side: p.Side != null ? String(p.Side) : undefined,
     accountType: p.AccountType != null ? Number(p.AccountType) : undefined,
   }));

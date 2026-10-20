@@ -64,6 +64,22 @@ const now = Date.parse("2026-10-20T06:00:00.000Z");
 }
 
 {
+  // 微プラス（手数料負け級）は売らない
+  const boughtAt = new Date(now - 10 * 60_000).toISOString();
+  const d = decideStockSellIntent({
+    symbol: "7203",
+    buyPrice: 1000,
+    currentPrice: 1002,
+    adviceAction: "sell",
+    targetPrice: 1200,
+    preferEarlierTakeProfit: false,
+    orders: [buyOrder("7203", boughtAt)],
+    nowMs: now,
+  });
+  assert.equal(d, null, "sub-0.5% green must not take-profit");
+}
+
+{
   // 1年超・深い含み損のみ損切り
   const boughtAt = new Date(now - STOCK_STOP_LOSS_MIN_HOLD_MS - 86_400_000).toISOString();
   const d = decideStockSellIntent({

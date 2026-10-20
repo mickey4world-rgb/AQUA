@@ -52,6 +52,10 @@ export async function upsertStockBrokerSnapshot(
           exchange: Number(h.exchange) || 0,
           qty: Number(h.qty) || 0,
           price: Number(h.price) || 0,
+          averagePrice:
+            typeof h.averagePrice === "number" && h.averagePrice > 0
+              ? h.averagePrice
+              : undefined,
           side: h.side ? String(h.side) : undefined,
           accountType:
             typeof h.accountType === "number" ? h.accountType : undefined,
