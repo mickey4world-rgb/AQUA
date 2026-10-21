@@ -10,6 +10,7 @@ import {
 import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-universe-review";
 import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
+import { enrichBrokerOrdersForRealizedPnl } from "@/lib/stock-realized-pnl";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
 import { buildStockStationCheck } from "@/lib/stock-station-check";
 import { buildStockVmRuntimeStatus } from "@/lib/stock-vm-status";
@@ -48,20 +49,21 @@ export async function GET(request: Request) {
         getLatestWeeklyUniverseReview(auth.userId).catch(() => null),
       ]);
 
-    const ordersForChart = recentOrders.map((o) => {
-      if (o.side !== "sell" || o.realizedPnlYen != null) return o;
-      const watch = watches.find(
-        (w) =>
-          (w.market ?? "us") === "jp" &&
-          displayTicker(w.ticker, "jp") === o.symbol,
-      );
-      const px =
-        snapshot?.holdings.find((h) => h.symbol === o.symbol)?.price ?? 0;
-      const cost = watch?.buyPrice ?? 0;
-      if (cost > 0 && px > 0) {
-        return { ...o, realizedPnlYen: (px - cost) * o.qty };
+    const costBySymbol = new Map<string, number>();
+    for (const h of snapshot?.holdings ?? []) {
+      if (h.averagePrice && h.averagePrice > 0) {
+        costBySymbol.set(h.symbol, h.averagePrice);
       }
-      return o;
+    }
+    for (const w of watches) {
+      if ((w.market ?? "us") !== "jp" || !(w.buyPrice > 0)) continue;
+      const code = displayTicker(w.ticker, "jp");
+      if (!costBySymbol.has(code)) costBySymbol.set(code, w.buyPrice);
+    }
+
+    // 売り報告に realizedPnlYen が無い過去ログも理由文・単価から復元（昨日の赤字が見えるように）
+    const ordersForChart = enrichBrokerOrdersForRealizedPnl(recentOrders, {
+      costBySymbol,
     });
 
     const equityPerformance = buildStockEquityPerformance({
@@ -86,6 +88,24 @@ export async function GET(request: Request) {
       orders: ordersForChart,
       tradingHalted: halt.halted,
     });
+
+    const jstMonth = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit",
+    }).format(new Date());
+    const monthTradeOrders = ordersForChart
+      .filter((o) => {
+        if (o.symbol === "_CHECK_") return false;
+        if (o.status !== "submitted" && o.status !== "dry_run") return false;
+        const key = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Tokyo",
+          year: "numeric",
+          month: "2-digit",
+        }).format(new Date(o.createdAt));
+        return key === jstMonth;
+      })
+      .slice(0, 80);
 
     const holdingQty = new Map<string, number>();
     for (const h of snapshot?.holdings ?? []) {
@@ -148,7 +168,7 @@ export async function GET(request: Request) {
 
     const activeWatchCount = jpWatches.filter((w) => w.isActive).length;
     const activity = buildStockBrokerActivity({
-      orders: recentOrders,
+      orders: ordersForChart,
       snapshot,
       activeWatchCount,
       allowLiveOrders,
@@ -170,7 +190,8 @@ export async function GET(request: Request) {
     const payload = {
       connected: Boolean(snapshot),
       snapshot,
-      recentOrders: recentOrders.slice(0, 15),
+      recentOrders: ordersForChart.slice(0, 15),
+      monthTrades: monthTradeOrders,
       tradeRules,
       tradeLessons: lessons,
       lessonNotes: bias?.notes ?? [],

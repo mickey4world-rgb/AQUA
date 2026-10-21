@@ -43,6 +43,7 @@ import {
   getStockTradeLessonBias,
 } from "@/lib/server/stock-trade-lessons";
 import { decideStockSellIntent } from "@/lib/stock-sell-policy";
+import { formatSellRealizedForecast } from "@/lib/stock-realized-pnl";
 import type {
   StockBrokerBuySkip,
   StockBrokerOrderRecord,
@@ -518,6 +519,12 @@ export async function buildStockBrokerTradeIntents(
         if (qty >= STOCK_LOT_SIZE) {
           const ruleIds = [...sellDecision.ruleIds];
           if (advice.macdCross === "dead") ruleIds.push(28);
+          const expectedRealizedPnlYen = Math.round((markPx - buyPx) * qty);
+          const forecast = formatSellRealizedForecast({
+            costPriceYen: buyPx,
+            markPriceYen: markPx,
+            qty,
+          });
           intents.push({
             id: intentIdFor(userId, symbol, "sell", day),
             userId,
@@ -531,10 +538,13 @@ export async function buildStockBrokerTradeIntents(
                 : 27,
             qty,
             frontOrderType: 10,
-            reason: `${sellDecision.reason} — ${advice.summary.slice(0, 100)}`,
+            reason: `${sellDecision.reason} ${forecast} — ${advice.summary.slice(0, 100)}`,
             ruleIds,
             watchId: watch.id,
             adviceAction: advice.action,
+            refPriceYen: markPx,
+            costPriceYen: buyPx,
+            expectedRealizedPnlYen,
             createdAt: new Date().toISOString(),
             expiresAt,
           });
@@ -656,6 +666,8 @@ export async function recordBrokerOrder(
     reason: input.reason,
     ruleIds: input.ruleIds,
     realizedPnlYen: input.realizedPnlYen,
+    priceYen: input.priceYen,
+    costPriceYen: input.costPriceYen,
     kabuOrderId: input.kabuOrderId,
     kabuResultCode: input.kabuResultCode,
     message: input.message,

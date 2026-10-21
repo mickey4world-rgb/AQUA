@@ -19,6 +19,8 @@ type OrderReportBody = {
   reason?: string;
   ruleIds?: number[];
   realizedPnlYen?: number;
+  priceYen?: number;
+  costPriceYen?: number;
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;
@@ -80,6 +82,14 @@ export async function POST(request: Request) {
       realizedPnlYen:
         typeof body.realizedPnlYen === "number"
           ? body.realizedPnlYen
+          : undefined,
+      priceYen:
+        typeof body.priceYen === "number" && body.priceYen > 0
+          ? body.priceYen
+          : undefined,
+      costPriceYen:
+        typeof body.costPriceYen === "number" && body.costPriceYen > 0
+          ? body.costPriceYen
           : undefined,
       kabuOrderId:
         typeof body.kabuOrderId === "string" ? body.kabuOrderId : undefined,

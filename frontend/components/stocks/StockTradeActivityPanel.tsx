@@ -225,7 +225,16 @@ export default function StockTradeActivityPanel({ activity }: Props) {
           JST。仮想通貨の Asset Trade と同じく、今日／前日の件数と時間帯を表示します。
           今月 売買 {activity.monthTradeCount} 件 · 買{" "}
           {formatYen(activity.monthBuyYen)} · 売{" "}
-          {formatYen(activity.monthSellYen)}
+          {formatYen(activity.monthSellYen)} · 実現{" "}
+          <span
+            className={
+              activity.monthRealizedPnlYen >= 0
+                ? "text-emerald-300"
+                : "text-rose-300"
+            }
+          >
+            {signedYen(activity.monthRealizedPnlYen)}
+          </span>
         </p>
       </div>
 

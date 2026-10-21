@@ -82,6 +82,8 @@ type StatusResponse = {
   connected: boolean;
   snapshot: StockBrokerSnapshot | null;
   recentOrders?: StockBrokerOrderRecord[];
+  /** 今月の売買（実現損益付き・仮想通貨の取引明細と同型） */
+  monthTrades?: StockBrokerOrderRecord[];
   tradeRules?: ApiRule[];
   tradeLessons?: StockAuditLessonView[];
   lessonNotes?: string[];
@@ -689,6 +691,94 @@ export default function StockBrokerPanel({
         </div>
       )}
 
+      {(data?.monthTrades?.length ?? 0) > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            今月の取引明細
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            仮想通貨タブと同じく、売りには実現損益を表示します。未計上は発注時に損益を保存していなかった過去ログです。
+          </p>
+          <div className="mt-2 overflow-x-auto rounded-xl border border-white/10">
+            <table className="min-w-full text-left text-[12px]">
+              <thead className="bg-white/[0.03] text-slate-500">
+                <tr className="border-b border-white/10">
+                  <th className="px-3 py-2 font-medium">日時</th>
+                  <th className="px-3 py-2 font-medium">銘柄</th>
+                  <th className="px-3 py-2 font-medium">売買</th>
+                  <th className="px-3 py-2 font-medium">数量</th>
+                  <th className="px-3 py-2 font-medium">単価</th>
+                  <th className="px-3 py-2 font-medium">理由</th>
+                  <th className="px-3 py-2 font-medium">実現損益</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-slate-200">
+                {(data?.monthTrades ?? []).map((t) => {
+                  const notional =
+                    typeof t.priceYen === "number" && t.priceYen > 0
+                      ? t.priceYen * t.qty
+                      : null;
+                  return (
+                    <tr key={t.id}>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {formatSyncedAt(t.createdAt)}
+                      </td>
+                      <td className="px-3 py-2 font-mono">{t.symbol}</td>
+                      <td
+                        className={`px-3 py-2 font-semibold ${
+                          t.side === "buy" ? "text-sky-300" : "text-rose-300"
+                        }`}
+                      >
+                        {t.side === "buy" ? "買" : "売"}
+                        {t.status === "dry_run" ? (
+                          <span className="ml-1 text-[10px] font-normal text-amber-200">
+                            dry
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2">{t.qty.toLocaleString("ja-JP")}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {typeof t.priceYen === "number" && t.priceYen > 0
+                          ? formatYen(t.priceYen)
+                          : "—"}
+                        {notional != null && (
+                          <span className="ml-1 text-[10px] text-slate-500">
+                            ({formatYen(notional)})
+                          </span>
+                        )}
+                      </td>
+                      <td className="max-w-[16rem] truncate px-3 py-2 text-slate-400">
+                        {formatStockTradeReasonWithRules(t.reason, t.ruleIds) ||
+                          t.reason ||
+                          "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {t.side !== "sell" ? (
+                          <span className="text-slate-500">—</span>
+                        ) : typeof t.realizedPnlYen === "number" ? (
+                          <span
+                            className={
+                              t.realizedPnlYen >= 0
+                                ? "text-emerald-300"
+                                : "text-rose-300"
+                            }
+                          >
+                            {t.realizedPnlYen >= 0 ? "+" : ""}
+                            {formatYen(t.realizedPnlYen)}
+                          </span>
+                        ) : (
+                          <span className="text-amber-200/90">未計上</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {data?.snapshot && (
         <div className="mt-4 space-y-4">
           {syncStale && (
@@ -809,6 +899,18 @@ export default function StockBrokerPanel({
                   >
                     {statusLabel(o.status)}
                   </p>
+                  {o.side === "sell" && typeof o.realizedPnlYen === "number" && (
+                    <p
+                      className={
+                        o.realizedPnlYen >= 0
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                      }
+                    >
+                      実現 {o.realizedPnlYen >= 0 ? "+" : ""}
+                      {formatYen(o.realizedPnlYen)}
+                    </p>
+                  )}
                   <p>{formatSyncedAt(o.createdAt)}</p>
                 </div>
               </li>
