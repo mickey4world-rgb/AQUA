@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchKabuToken, loadConfig } from "./kabu.mjs";
+import { fetchKabuToken, kabuGet, loadConfig } from "./kabu.mjs";
 import {
   assertCashOrderShape,
   normalizeCashExchange,
@@ -269,6 +269,33 @@ function summarizeBuySkips(buySkips, limit = 5) {
     .join(" | ");
 }
 
+/**
+ * 売り実現損益・単価を注文報告へ載せる（Costs の実現損益グラフ／表用）。
+ * intent の見込み値を優先し、無ければ保有の平均取得×時価で補完。
+ */
+function pnlFieldsForIntent(intent, qty, positionsBySymbol) {
+  const pos = positionsBySymbol?.get(String(intent.symbol));
+  const cost =
+    Number(intent.costPriceYen) ||
+    Number(pos?.Price) ||
+    0;
+  const mark =
+    Number(intent.refPriceYen) ||
+    Number(pos?.CurrentPrice) ||
+    0;
+  const out = {};
+  if (mark > 0) out.priceYen = mark;
+  if (intent.side === "sell") {
+    if (cost > 0) out.costPriceYen = cost;
+    if (typeof intent.expectedRealizedPnlYen === "number") {
+      out.realizedPnlYen = Math.round(intent.expectedRealizedPnlYen);
+    } else if (cost > 0 && mark > 0 && qty > 0) {
+      out.realizedPnlYen = Math.round((mark - cost) * qty);
+    }
+  }
+  return out;
+}
+
 console.log(
   `[kabu-bridge] trade start live=${allowLive ? "YES" : "NO (dry-run)"} maxQty=${maxQty}`,
 );
@@ -386,6 +413,8 @@ if (allowLive && !sessionOpen) {
 }
 
 let token = null;
+/** @type {Map<string, any>} */
+let positionsBySymbol = new Map();
 if (allowLive) {
   try {
     token = await fetchKabuToken(config.kabuBaseUrl, config.apiPassword);
@@ -406,6 +435,20 @@ if (allowLive) {
       message: `intents=${intents.length}; ${msg}`.slice(0, 300),
     });
     process.exit(1);
+  }
+  try {
+    const positions = await kabuGet(config.kabuBaseUrl, token, "/kabusapi/positions");
+    const list = Array.isArray(positions) ? positions : [];
+    positionsBySymbol = new Map(
+      list
+        .filter((p) => p?.Symbol != null)
+        .map((p) => [String(p.Symbol), p]),
+    );
+  } catch (err) {
+    console.warn(
+      "[kabu-bridge] positions fetch failed (PnL estimate may use intent only)",
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
@@ -455,6 +498,7 @@ for (const intent of intents) {
       reason: intent.reason,
       ruleIds: intent.ruleIds,
       message: "KABU_ALLOW_LIVE_ORDERS 未設定のため未発注",
+      ...pnlFieldsForIntent(intent, qty, positionsBySymbol),
     });
     continue;
   }
@@ -559,9 +603,17 @@ for (const intent of intents) {
           JSON.stringify(result?.body ?? {}).slice(0, 220),
           appliedFixes.length ? `autofix=${appliedFixes.join("|")}` : "autofix=none",
         ].join("; "),
+    ...(ok ? pnlFieldsForIntent(intent, qty, positionsBySymbol) : {}),
   });
   if (ok) {
-    console.log("[LIVE] submitted", orderId ?? result.body);
+    const pnl = pnlFieldsForIntent(intent, qty, positionsBySymbol);
+    console.log(
+      "[LIVE] submitted",
+      orderId ?? result.body,
+      intent.side === "sell" && pnl.realizedPnlYen != null
+        ? `realizedPnlYen=${pnl.realizedPnlYen}`
+        : "",
+    );
   }
 }
 

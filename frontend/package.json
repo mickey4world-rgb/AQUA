@@ -15,6 +15,7 @@
     "test:stock-vm-status": "npx --yes tsx lib/stock-vm-status.test.ts",
     "test:stock-buy-priority": "npx --yes tsx lib/stock-buy-priority.test.ts",
     "test:stock-buy-eligibility": "npx --yes tsx lib/stock-buy-eligibility.test.ts",
+    "test:stock-realized-pnl": "npx --yes tsx lib/stock-realized-pnl.test.ts",
     "test:stock-weekly-changes": "npx --yes tsx lib/stock-weekly-change-labels.test.ts",
     "seed:users": "node scripts/seed-users.mjs",
     "setup:token-usage": "node scripts/setup-token-usage.mjs",

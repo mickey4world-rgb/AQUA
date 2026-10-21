@@ -97,7 +97,9 @@ export function buildStockEquityPerformance(input: {
 
   for (const o of trades) {
     const date = jstDateKey(o.createdAt);
-    const sizeJpy = Math.max(0, o.qty) * 1000; // 単価不明時の軽量マーカー用
+    const px = typeof o.priceYen === "number" && o.priceYen > 0 ? o.priceYen : 0;
+    const sizeJpy =
+      px > 0 ? Math.round(Math.max(0, o.qty) * px) : Math.max(0, o.qty) * 1000;
     const realized =
       o.side === "sell" ? Number(o.realizedPnlYen ?? 0) || 0 : 0;
     if (o.side === "sell") cumPnl += realized;

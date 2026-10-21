@@ -26,6 +26,12 @@ export interface StockBrokerTradeIntent {
   ruleIds?: number[];
   watchId?: string;
   adviceAction?: string;
+  /** 参照時価（円）。売り実現損益の計算用 */
+  refPriceYen?: number;
+  /** 取得単価（円）。売り時 */
+  costPriceYen?: number;
+  /** 売り時の実現見込み（円）。bridge が注文報告へ転記 */
+  expectedRealizedPnlYen?: number;
   createdAt: string;
   /** 有効期限（この時刻以降は bridge が無視） */
   expiresAt: string;
@@ -57,8 +63,12 @@ export interface StockBrokerOrderRecord {
   dryRun: boolean;
   reason: string;
   ruleIds?: number[];
-  /** 売り時の実現損益概算（円）。グラフ用 */
+  /** 売り時の実現損益概算（円）。グラフ・取引表用 */
   realizedPnlYen?: number;
+  /** 約定／参照単価（円）。買い＝取得、売り＝売却見積 */
+  priceYen?: number;
+  /** 売り時の取得単価（円） */
+  costPriceYen?: number;
   kabuOrderId?: string;
   kabuResultCode?: number | string;
   message?: string;
