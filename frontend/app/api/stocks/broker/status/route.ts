@@ -11,6 +11,7 @@ import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-univers
 import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { enrichBrokerOrdersForRealizedPnl } from "@/lib/stock-realized-pnl";
+import { mergeStockBrokerOrdersWithStatementFills } from "@/lib/stock-broker-statement-fills";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
 import { buildStockStationCheck } from "@/lib/stock-station-check";
 import { buildStockVmRuntimeStatus } from "@/lib/stock-vm-status";
@@ -61,8 +62,13 @@ export async function GET(request: Request) {
       if (!costBySymbol.has(code)) costBySymbol.set(code, w.buyPrice);
     }
 
-    // 売り報告に realizedPnlYen が無い過去ログも理由文・単価から復元（昨日の赤字が見えるように）
-    const ordersForChart = enrichBrokerOrdersForRealizedPnl(recentOrders, {
+    // 証券約定明細で bridge 未保存の LIVE を補完（特に 10/20 短期赤字売り）
+    const withStatement = mergeStockBrokerOrdersWithStatementFills(
+      recentOrders,
+      auth.userId,
+    );
+    // 売り報告に realizedPnlYen が無い過去ログも理由文・単価から復元
+    const ordersForChart = enrichBrokerOrdersForRealizedPnl(withStatement, {
       costBySymbol,
     });
 

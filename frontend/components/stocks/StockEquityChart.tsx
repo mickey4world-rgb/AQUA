@@ -128,7 +128,8 @@ export default function StockEquityChart({ perf }: Props) {
         </p>
         <p className="mt-1 text-[11px] text-slate-500">
           売りで確定した損益だけを積み上げます（保有の時価は含めません）。破線は月次目標（元本の
-          2%）、点は売買。
+          2%）、点は売買。証券明細で補完した約定（例: 10/20
+          の短期売り損）も含みます。
         </p>
       </div>
 
