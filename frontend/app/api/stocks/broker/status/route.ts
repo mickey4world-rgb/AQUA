@@ -12,6 +12,10 @@ import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { enrichBrokerOrdersForRealizedPnl } from "@/lib/stock-realized-pnl";
 import { mergeStockBrokerOrdersWithStatementFills } from "@/lib/stock-broker-statement-fills";
+import {
+  buildStockPortfolioOverview,
+  buildStockProductProjections,
+} from "@/lib/stock-portfolio-overview";
 import { evaluateStockGuardrails } from "@/lib/stock-guardrails";
 import { buildStockStationCheck } from "@/lib/stock-station-check";
 import { buildStockVmRuntimeStatus } from "@/lib/stock-vm-status";
@@ -76,6 +80,18 @@ export async function GET(request: Request) {
       orders: ordersForChart,
       principalYen: STOCK_PRINCIPAL_YEN,
       monthlyTargetYen: STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+    });
+
+    const portfolioOverview = buildStockPortfolioOverview({
+      snapshot,
+      equity: equityPerformance,
+      principalYen: STOCK_PRINCIPAL_YEN,
+      monthlyTargetYen: STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+    });
+    const productProjections = buildStockProductProjections({
+      snapshot,
+      watches,
+      orders: ordersForChart,
     });
 
     const tradeRules = [
@@ -202,6 +218,8 @@ export async function GET(request: Request) {
       tradeLessons: lessons,
       lessonNotes: bias?.notes ?? [],
       equityPerformance,
+      portfolioOverview,
+      productProjections,
       tradeCandidates,
       activity,
       vmStatus,

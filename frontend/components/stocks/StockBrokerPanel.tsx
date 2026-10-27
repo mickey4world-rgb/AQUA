@@ -11,7 +11,12 @@ import {
 } from "@/lib/stock-trade-rules";
 import StockTradeRulesPanel from "@/components/stocks/StockTradeRulesPanel";
 import StockEquityChart from "@/components/stocks/StockEquityChart";
+import StockPortfolioOverviewPanel from "@/components/stocks/StockPortfolioOverviewPanel";
 import StockTradeActivityPanel from "@/components/stocks/StockTradeActivityPanel";
+import type {
+  StockPortfolioOverview,
+  StockProductProjection,
+} from "@/lib/stock-portfolio-overview";
 import StockAuditLessonsPanel, {
   type StockAuditLessonView,
 } from "@/components/stocks/StockAuditLessonsPanel";
@@ -88,6 +93,8 @@ type StatusResponse = {
   tradeLessons?: StockAuditLessonView[];
   lessonNotes?: string[];
   equityPerformance?: StockEquityPerformance;
+  portfolioOverview?: StockPortfolioOverview;
+  productProjections?: StockProductProjection[];
   tradeCandidates?: TradeCandidate[];
   activity?: StockBrokerActivity;
   liveMode?: LiveMode;
@@ -684,6 +691,13 @@ export default function StockBrokerPanel({
             をログイン ID に合わせて再 sync してください。
           </div>
         )}
+
+      {data?.portfolioOverview && (
+        <StockPortfolioOverviewPanel
+          overview={data.portfolioOverview}
+          products={data.productProjections ?? []}
+        />
+      )}
 
       {data?.equityPerformance && (
         <div className="mt-4">

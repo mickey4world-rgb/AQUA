@@ -17,6 +17,7 @@
     "test:stock-buy-eligibility": "npx --yes tsx lib/stock-buy-eligibility.test.ts",
     "test:stock-realized-pnl": "npx --yes tsx lib/stock-realized-pnl.test.ts",
     "test:stock-statement-fills": "npx --yes tsx lib/stock-broker-statement-fills.test.ts",
+    "test:stock-portfolio-overview": "npx --yes tsx lib/stock-portfolio-overview.test.ts",
     "test:stock-weekly-changes": "npx --yes tsx lib/stock-weekly-change-labels.test.ts",
     "seed:users": "node scripts/seed-users.mjs",
     "setup:token-usage": "node scripts/setup-token-usage.mjs",
