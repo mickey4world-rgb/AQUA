@@ -218,13 +218,17 @@ export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
   })[0]!;
 }
 
-/** 大ボス以外からランク低めを最大 max 体（小物〜中ボス） */
+/** 大ボス以外から、次点の高注目を最大 max 体（Note の残り材料と同順） */
 export function pickTrashMobs(briefing: SolunaNewsBriefing, max = 2): SolunaNewsItem[] {
   const enriched = enrichBriefingWithMonsters(briefing);
   const boss = pickBoss(enriched);
   return enriched.items
     .filter((item) => item.title !== boss.title)
-    .sort((a, b) => (a.monster?.rank ?? 1) - (b.monster?.rank ?? 1))
+    .sort((a, b) => {
+      const att = (b.attentionScore ?? 0) - (a.attentionScore ?? 0);
+      if (att !== 0) return att;
+      return (b.monster?.rank ?? 1) - (a.monster?.rank ?? 1);
+    })
     .slice(0, max);
 }
 

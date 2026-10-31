@@ -156,6 +156,10 @@ import type { NewsSearchDigest } from "./types/works-news-search";
   assert.equal(seeds[0]?.attentionScore, 95);
   assert.equal(seeds[0]?.titleJa, "巨大モデル発表が業界を揺るがす");
   assert.equal(seeds[0]?.title, "Huge model launch shocks industry");
+  assert.ok(
+    seeds.length <= 3,
+    "討伐材料は最大3件（旧: カテゴリごと3件の積み上げ禁止）",
+  );
 }
 
 {

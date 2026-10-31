@@ -35,6 +35,7 @@ import {
   type NewsSearchItem,
 } from "@/lib/types/works-news-search";
 import { sortNewsItemsByAttention } from "@/lib/works-news-search-sort";
+import { selectSolunaHuntSeedItems } from "@/lib/soluna-hunt-materials";
 
 const MIN_PER_CATEGORY = 5;
 const TARGET_PER_CATEGORY = 6;
@@ -555,7 +556,10 @@ export async function markWorksNewsSolunaSynced(digest: NewsSearchDigest): Promi
   await saveWorksNewsDigest(next);
 }
 
-/** Soluna 討伐向けに AI／経済の上位を抽出（注目度順・英語は日本語訳を付与） */
+/**
+ * Soluna 討伐／Note 向け材料。
+ * 全カテゴリから注目度順に最大3件。うち2件は注目度≥80を優先（WORKS と同じスコア）。
+ */
 export function mapDigestToSolunaSeedItems(digest: NewsSearchDigest): Array<{
   keyword: string;
   title: string;
@@ -566,35 +570,27 @@ export function mapDigestToSolunaSeedItems(digest: NewsSearchDigest): Array<{
   sourceUrl?: string;
   publishedAt?: string;
 }> {
-  const takeTop = (items: NewsSearchItem[], keyword: string, limit: number) =>
-    [...items]
-      .sort((a, b) => (b.attentionScore ?? 0) - (a.attentionScore ?? 0))
-      .slice(0, limit)
-      .map((item) => {
-        const titleJa = item.titleJa?.trim() || undefined;
-        const summaryJa =
-          item.summaryJa?.trim() ||
-          (item.explanation?.trim() ? item.explanation.trim().slice(0, 160) : undefined);
-        const english =
-          looksPrimarilyEnglish(item.title) ||
-          looksPrimarilyEnglish(item.summary || "");
-        return {
-          keyword,
-          // 英語記事は原文を title/summary に残し、titleJa/summaryJa で日本語を載せる
-          title: item.title,
-          summary: item.explanation || item.summary,
-          titleJa: english ? titleJa : titleJa && titleJa !== item.title ? titleJa : undefined,
-          summaryJa: english ? summaryJa : undefined,
-          attentionScore: item.attentionScore,
-          sourceUrl: item.sources.find((s) => s.url)?.url,
-          publishedAt: item.publishedAt,
-        };
-      });
-
-  return [
-    ...takeTop(digest.categories.ai, "AI 最新動向", 3),
-    ...takeTop(digest.categories.economy, "世界経済", 3),
-  ];
+  return selectSolunaHuntSeedItems(digest).map((seed) => {
+    const english =
+      looksPrimarilyEnglish(seed.title) ||
+      looksPrimarilyEnglish(seed.summary || "");
+    const titleJa = seed.titleJa?.trim() || undefined;
+    const summaryJa = seed.summaryJa?.trim() || undefined;
+    return {
+      keyword: seed.keyword,
+      title: seed.title,
+      summary: seed.summary,
+      titleJa: english
+        ? titleJa
+        : titleJa && titleJa !== seed.title
+          ? titleJa
+          : undefined,
+      summaryJa: english ? summaryJa : undefined,
+      attentionScore: seed.attentionScore,
+      sourceUrl: seed.sourceUrl,
+      publishedAt: seed.publishedAt,
+    };
+  });
 }
 
 export async function chatWorksNewsSearch(options: {

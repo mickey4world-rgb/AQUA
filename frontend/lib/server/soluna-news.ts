@@ -12,6 +12,11 @@ import { translateBatchWithLlm } from "@/lib/server/works-news-search-translate"
 import { enrichBriefingWithMonsters, formatEncounterForPrompt, monsterizeNewsItem } from "@/lib/soluna-monsters";
 import { withEstimatedAttention } from "@/lib/soluna-attention";
 import {
+  digestHighAttentionCount,
+  solunaHuntMaterialsMeetContract,
+  SOLUNA_HUNT_SLOT_COUNT,
+} from "@/lib/soluna-hunt-materials";
+import {
   solunaBriefingHasMissingJapanese,
   solunaNewsNeedsJapanese,
 } from "@/lib/soluna-news-display";
@@ -268,8 +273,18 @@ export async function fetchGlobalNewsBriefing(options?: {
     const digest = await getLatestWorksNewsDigest();
     if (digest && digest.id.endsWith(jstDateString())) {
       const seeds = mapDigestToSolunaSeedItems(digest);
+      const digestHigh = digestHighAttentionCount(digest);
+      const contract = solunaHuntMaterialsMeetContract(seeds, digestHigh);
+      if (!contract.ok) {
+        console.warn(
+          "[soluna-news] hunt materials contract:",
+          contract.reason,
+          `high=${contract.highCount}/${digestHigh}`,
+        );
+      }
       const mapped = seeds
         .filter((seed) => seed.title && seed.summary)
+        .slice(0, SOLUNA_HUNT_SLOT_COUNT)
         .map((seed) =>
           monsterizeNewsItem({
             title: seed.title,
@@ -282,10 +297,21 @@ export async function fetchGlobalNewsBriefing(options?: {
             attentionScore: seed.attentionScore,
           }),
         );
-      if (itemsLookGrounded(mapped) || mapped.length >= 2) {
+      // WORKS に高注目が2件以上ある日は契約を満たす材料のみ採用（低注目だけの討伐を禁止）
+      const preferWorks =
+        mapped.length >= 2 &&
+        (digestHigh < 2 || contract.highCount >= 2);
+      if ((itemsLookGrounded(mapped) || mapped.length >= 2) && preferWorks) {
         items = mapped;
         source = "works-news-search";
-        summary = digest.summary || mapped.map((item) => item.title).join(" / ");
+        summary =
+          digest.summary ||
+          mapped
+            .map(
+              (item) =>
+                `${item.titleJa || item.title}〔${item.attentionScore ?? "?"}〕`,
+            )
+            .join(" / ");
         await markWorksNewsSolunaSynced(digest).catch((error) => {
           console.warn("[soluna-news] mark solunaSynced failed", error);
         });
@@ -345,7 +371,11 @@ export async function fetchGlobalNewsBriefing(options?: {
   if (!finalized.ok) {
     return { ok: false, reason: finalized.reason };
   }
-  items = finalized.items;
+  // Note／討伐は最大3件。注目度順を維持したまま切り詰める
+  items = finalized.items
+    .slice()
+    .sort((a, b) => (b.attentionScore ?? 0) - (a.attentionScore ?? 0))
+    .slice(0, 3);
 
   const briefing: SolunaNewsBriefing = {
     id: docId,
