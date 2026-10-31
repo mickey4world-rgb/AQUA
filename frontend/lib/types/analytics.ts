@@ -214,11 +214,44 @@ export interface SecurityAnalyticsReport {
     reasons: string[];
     actions: Array<{ priority: "now" | "today" | "week"; title: string; detail: string }>;
     aiStatus: "ok" | "failed";
+    aiModel: string | null;
     aiReason: string | null;
-    incompleteSources: string[];
-    emailStatus: "sent" | "skipped-ok" | "failed";
-    emailError: string | null;
+    counts: Record<"critical" | "high" | "medium" | "low" | "unknown", number>;
+    issues: Array<{
+      source: "npm-audit" | "dependabot" | "code-scanning" | "secret-scanning";
+      severity: "critical" | "high" | "medium" | "low" | "unknown";
+      title: string;
+      packageName: string | null;
+      reason: string;
+      ageHours: number | null;
+      overdue: boolean;
+      url: string | null;
+    }>;
+    collections: Array<{
+      source: string;
+      ok: boolean;
+      count: number;
+      error: string | null;
+      optional: boolean;
+    }>;
+    events: {
+      total: number;
+      high: number;
+      autoBlocked: number;
+      topTargets: Array<{ label: string; count: number }>;
+    } | null;
+    openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+    modelSelection: {
+      selected: string | null;
+      resolvedVersion: string | null;
+      previous: string | null;
+      switchedAt: string | null;
+      checkedAt: string;
+      probes: Array<{ model: string; ok: boolean; latencyMs: number; resolvedVersion?: string | null; reason?: string | null }>;
+    } | null;
   } | null;
+  /** 直近の診断レベル推移（古い順。取得失敗は null） */
+  triageHistory: Array<{ dateJst: string; level: "ok" | "warn" | "critical"; aiStatus: "ok" | "failed" }> | null;
   /** 現在有効な自動ブロック（取得失敗は null） */
   activeAutoBlocks: Array<{
     blockedUntil: string;

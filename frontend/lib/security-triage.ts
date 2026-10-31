@@ -26,6 +26,8 @@ export interface TriageCollection {
   ok: boolean;
   count: number;
   error?: string | null;
+  /** 未接続でも警戒レベルを上げない任意の情報源（GitHub トークンが必要なもの） */
+  optional?: boolean;
 }
 
 export interface TriageSecurityEventStats {
@@ -165,7 +167,7 @@ export function assessSecurityFindings(input: TriageInput): TriageAssessment {
     reasons.push(`7日以上未適用の中程度 ${mediumOverdue.length} 件`);
   }
 
-  const incompleteSources = input.collections.filter((c) => !c.ok).map((c) => c.source);
+  const incompleteSources = input.collections.filter((c) => !c.ok && !c.optional).map((c) => c.source);
   if (incompleteSources.length > 0) {
     // 一部が取れていない日は「問題なし」と言わない
     raise("warn");

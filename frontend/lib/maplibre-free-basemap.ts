@@ -84,7 +84,10 @@ export function isUnauthenticatedCartoBasemapUrl(url: string): boolean {
   try {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
-    if (!host.includes("cartocdn.com") && !host.includes("carto.com")) {
+    const isCarto = ["cartocdn.com", "carto.com"].some(
+      (domain) => host === domain || host.endsWith(`.${domain}`),
+    );
+    if (!isCarto) {
       return false;
     }
     if (u.searchParams.has("api_key") || u.searchParams.has("apikey")) {

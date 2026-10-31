@@ -137,7 +137,13 @@ export async function recordWaitSnapshot(
     }
     await container.items.upsert(snapshot);
   } catch (error) {
-    console.warn("[disney-historical-store] upsert failed", park, date, hour, error);
+    console.warn(
+      "[disney-historical-store] upsert failed",
+      String(park).replace(/[\r\n]/g, " ").slice(0, 16),
+      String(date).replace(/[\r\n]/g, " ").slice(0, 16),
+      hour,
+      error instanceof Error ? error.message : error,
+    );
   }
 
   return snapshot;

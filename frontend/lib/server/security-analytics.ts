@@ -1,6 +1,9 @@
 import { listActiveAutoBlocks } from "@/lib/server/security-blocklist";
 import { listSecurityEvents } from "@/lib/server/security-event";
-import { getLatestSecurityTriage } from "@/lib/server/security-triage";
+import {
+  getLatestSecurityTriage,
+  getRecentSecurityTriageLevels,
+} from "@/lib/server/security-triage";
 import type {
   SecurityAnalyticsReport,
 } from "@/lib/types/analytics";
@@ -17,10 +20,11 @@ const EVENT_LABELS: Record<SecurityEventType, string> = {
 export async function buildSecurityAnalyticsReport(
   month: string,
 ): Promise<SecurityAnalyticsReport> {
-  const [events, triage, blocks] = await Promise.all([
+  const [events, triage, blocks, triageHistory] = await Promise.all([
     listSecurityEvents(month),
     getLatestSecurityTriage(),
     listActiveAutoBlocks(),
+    getRecentSecurityTriageLevels(14),
   ]);
   const sourceSet = new Set<string>();
   const pathSet = new Set<string>();
@@ -99,12 +103,24 @@ export async function buildSecurityAnalyticsReport(
           reasons: triage.reasons,
           actions: triage.actions,
           aiStatus: triage.aiStatus,
+          aiModel: triage.aiModel,
           aiReason: triage.aiReason,
-          incompleteSources: triage.collections.filter((c) => !c.ok).map((c) => c.source),
-          emailStatus: triage.emailStatus,
-          emailError: triage.emailError,
+          counts: triage.counts,
+          issues: triage.issues,
+          collections: triage.collections.map((c) => ({
+            source: c.source,
+            ok: c.ok,
+            count: c.count,
+            error: c.error ?? null,
+            optional: Boolean(c.optional),
+          })),
+          events: triage.events,
+          // 旧形式（件数のみ）の保存データにも耐える
+          openSecurityPrs: Array.isArray(triage.openSecurityPrs) ? triage.openSecurityPrs : [],
+          modelSelection: triage.modelSelection ?? null,
         }
       : null,
+    triageHistory,
     activeAutoBlocks:
       blocks?.map((b) => ({
         blockedUntil: b.blockedUntil,

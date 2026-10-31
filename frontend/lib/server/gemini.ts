@@ -90,6 +90,8 @@ export type GeminiResult =
       promptTokens: number;
       completionTokens: number;
       finishReason?: string;
+      /** エイリアス（gemini-flash-latest 等）が実際に解決されたモデル */
+      modelVersion?: string;
     }
   | { ok: false; reason: string };
 
@@ -98,6 +100,7 @@ type GeminiApiResponse = {
     content?: { parts?: Array<{ text?: string }> };
     finishReason?: string;
   }>;
+  modelVersion?: string;
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
@@ -162,6 +165,7 @@ async function generateWithGeminiOnce(
       promptTokens: number;
       completionTokens: number;
       finishReason?: string;
+      modelVersion?: string;
     })
   | { ok: false; reason: string; retryable: boolean }
 > {
@@ -249,6 +253,7 @@ async function generateWithGeminiOnce(
       promptTokens: body.usageMetadata?.promptTokenCount ?? 0,
       completionTokens: body.usageMetadata?.candidatesTokenCount ?? 0,
       finishReason,
+      modelVersion: body.modelVersion,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

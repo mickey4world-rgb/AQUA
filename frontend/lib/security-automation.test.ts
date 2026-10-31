@@ -2,6 +2,13 @@
 import assert from "node:assert/strict";
 import { isCloudflareIp, isIndividualPublicIp, normalizeIp, resolveClientIp } from "./client-ip";
 import {
+  LATEST_ALIAS,
+  chooseModel,
+  nextFlashCandidates,
+  parseFlashModel,
+  probeCandidates,
+} from "./ai-model-selection";
+import {
   AUTOBLOCK_FIRST_BLOCK_MS,
   AUTOBLOCK_REPEAT_BLOCK_MS,
   AUTOBLOCK_SCORE_THRESHOLD,
@@ -158,5 +165,61 @@ assert.equal(
   }).level,
   "warn",
 );
+
+// トークン未接続の任意情報源はレベルを上げない
+assert.equal(
+  assessSecurityFindings({
+    ...base,
+    findings: [],
+    collections: [
+      allOk[0],
+      allOk[2],
+      { source: "dependabot", ok: false, optional: true, count: 0, error: "未接続" },
+      { source: "secret-scanning", ok: false, optional: true, count: 0, error: "未接続" },
+    ],
+  }).level,
+  "ok",
+);
+
+// --- AI モデルの自動選定 ---
+assert.deepEqual(parseFlashModel("gemini-3.6-flash"), { major: 3, minor: 6, lite: false });
+assert.equal(parseFlashModel("gemini-flash-latest"), null);
+assert.deepEqual(nextFlashCandidates(["gemini-3.6-flash", "gemini-flash-latest"]), [
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+  "gemini-4.0-flash",
+]);
+{
+  const candidates = probeCandidates(["gemini-flash-latest", "gemini-3.6-flash"], null);
+  assert.ok(candidates.includes("gemini-3.7-flash"));
+  assert.ok(candidates.includes(LATEST_ALIAS));
+  assert.ok(candidates.length <= 6);
+}
+// 新しい版が無料枠で応答したら切り替える
+assert.equal(
+  chooseModel(
+    [
+      { model: "gemini-3.7-flash", ok: true, latencyMs: 900 },
+      { model: "gemini-3.6-flash", ok: true, latencyMs: 800 },
+      { model: "gemini-4.0-flash", ok: false, latencyMs: 300, reason: "404" },
+      { model: LATEST_ALIAS, ok: true, latencyMs: 700 },
+    ],
+    "gemini-3.6-flash",
+  ),
+  "gemini-3.7-flash",
+);
+// 版番号付きが全滅ならエイリアス、lite は最後の手段、全滅なら前回を維持
+assert.equal(
+  chooseModel(
+    [
+      { model: "gemini-3.7-flash", ok: false, latencyMs: 1 },
+      { model: LATEST_ALIAS, ok: true, latencyMs: 1 },
+      { model: "gemini-3.6-flash-lite", ok: true, latencyMs: 1 },
+    ],
+    null,
+  ),
+  LATEST_ALIAS,
+);
+assert.equal(chooseModel([{ model: "gemini-3.7-flash", ok: false, latencyMs: 1 }], "gemini-3.6-flash"), "gemini-3.6-flash");
 
 console.log("security-automation tests passed");

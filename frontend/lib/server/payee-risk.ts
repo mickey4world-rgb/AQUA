@@ -175,7 +175,11 @@ async function searchMlitSuspensions(
     /<tr><td class="date">([^<]*)<\/td><td class="date">([^<]*)<\/td><td class="name">([\s\S]*?)<\/td><td class="address">([^<]*)<\/td><td class="punish">([^<]*)<\/td><td class="detail">([\s\S]*?)<\/td><\/tr>/g;
   for (const match of html.matchAll(rowRe)) {
     const companyHtml = match[3] || "";
-    const company = companyHtml.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const company = companyHtml
+      .replace(/<[^>]*>/g, "")
+      .replace(/[<>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     const corpMatch = companyHtml.match(/\((\d{13})\)/);
     const overview = (match[6] || "").match(/href="(search\.cgi[^"]+)"/);
     const detail = (match[6] || "").match(/href="(https?:\/\/[^"]+)"/);

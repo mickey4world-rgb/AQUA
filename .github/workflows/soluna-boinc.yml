@@ -22,6 +22,9 @@ on:
         default: "15"
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   boinc:
     runs-on: ubuntu-latest

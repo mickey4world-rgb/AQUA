@@ -27,7 +27,9 @@ function hashString(value: string): number {
   return Math.abs(hash);
 }
 
-function parseDistanceLy(text: string): number | undefined {
+function parseDistanceLy(rawText: string): number | undefined {
+  // 外部テキストの数字連続で正規表現が遅くならないよう長さを抑える
+  const text = rawText.slice(0, 4000).replace(/[\d,.]{40,}/g, " ");
   const lyMatch = text.match(/([\d,.]+)\s*(?:light[- ]?years?|ly\b)/i);
   if (lyMatch) return parseFloat(lyMatch[1].replace(/,/g, ""));
   const pcMatch = text.match(/([\d,.]+)\s*(?:parsecs?|pc\b)/i);

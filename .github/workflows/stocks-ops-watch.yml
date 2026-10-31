@@ -9,6 +9,9 @@ on:
     - cron: "*/10 0-6 * * 1-5"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   ops_watch:
     runs-on: ubuntu-latest

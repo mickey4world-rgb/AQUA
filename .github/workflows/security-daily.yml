@@ -1,6 +1,7 @@
 name: Security Daily Triage
 
-# 毎朝 7:00 JST。脆弱性・コード解析・防御履歴を集め、本番で AI 診断してメール通知する。
+# 毎朝 7:00 JST。脆弱性・コード解析・防御履歴を集め、本番で AI 診断する。
+# 結果はアクセス・セキュリティ分析画面で確認する（メール通知なし）。
 # 公開リポジトリなのでログには警戒レベルだけを出し、脆弱性の中身は出さない。
 on:
   schedule:
@@ -66,14 +67,14 @@ jobs:
             try { r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/triage.json", "utf8")); } catch {}
             const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
             if (status !== "200" || !r || !r.ok) {
-              summary("診断失敗: 本番の診断 API が応答しませんでした（メール未送信）。");
+              summary("診断失敗: 本番の診断 API が応答しませんでした。");
               console.log("::error::triage failed (HTTP " + status + ")");
               process.exit(1);
             }
-            summary("警戒レベル: " + r.level + " / AI: " + r.aiStatus + " / メール: " + r.emailStatus);
+            summary("警戒レベル: " + r.level + " / AI: " + r.aiStatus + "（" + r.aiModel + "）");
             if (r.incompleteSources.length) summary("取得できなかった情報源: " + r.incompleteSources.join(", "));
-            console.log("level=" + r.level + " ai=" + r.aiStatus + " email=" + r.emailStatus);
-            if (r.aiFailure || r.emailFailure) console.log("aiFailure=" + r.aiFailure + " emailFailure=" + r.emailFailure);
+            console.log("level=" + r.level + " ai=" + r.aiStatus + " model=" + r.aiModel);
+            if (r.aiFailure) console.log("aiFailure=" + r.aiFailure);
             let myIp = "";
             try { myIp = fs.readFileSync(process.env.RUNNER_TEMP + "/myip.txt", "utf8").trim(); } catch {}
             if (myIp) {
@@ -82,10 +83,5 @@ jobs:
               console.log("client-ip resolution " + (match ? "OK" : "MISMATCH"));
               summary("送信元IPの判定: " + (match ? "正常" : "不一致（自動ブロックの識別を要確認）"));
               if (!match) console.log("::warning::server resolved a different client IP than this runner");
-            }
-            // 至急なのにメールが届いていない時だけ失敗させ、GitHub の失敗通知で気づけるようにする
-            if (r.level !== "ok" && r.emailStatus !== "sent") {
-              console.log("::error::alert email was not delivered");
-              process.exit(1);
             }
           '

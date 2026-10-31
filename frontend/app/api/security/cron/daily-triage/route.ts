@@ -7,11 +7,10 @@ import { runSecurityTriage, type SecurityTriageRequest } from "@/lib/server/secu
 
 export const maxDuration = 120;
 
-/** 公開ログ向けに失敗理由を粗い分類だけにする（宛先やキー名を出さない） */
+/** 公開ログ向けに失敗理由を粗い分類だけにする（キー名などを出さない） */
 function failureCode(reason: string): string {
   const r = reason.toLowerCase();
-  if (r.includes("未設定") || r.includes("unset") || r.includes("no provider")) return "not-configured";
-  if (r.includes("recipient") || r.includes("通知先")) return "no-recipient";
+  if (r.includes("未設定") || r.includes("unset")) return "not-configured";
   if (r.includes("タイムアウト") || r.includes("timeout")) return "timeout";
   if (r.includes("json")) return "invalid-ai-output";
   if (r.includes("混雑") || r.includes("429") || r.includes("quota")) return "rate-limited";
@@ -50,10 +49,9 @@ export async function POST(request: Request) {
       ok: true,
       level: report.level,
       aiStatus: report.aiStatus,
-      emailStatus: report.emailStatus,
-      incompleteSources: report.collections.filter((c) => !c.ok).map((c) => c.source),
+      aiModel: report.modelSelection?.selected ?? null,
+      incompleteSources: report.collections.filter((c) => !c.ok && !c.optional).map((c) => c.source),
       aiFailure: report.aiReason ? failureCode(report.aiReason) : null,
-      emailFailure: report.emailError ? failureCode(report.emailError) : null,
       // 自動ブロックが本当の送信元で判定できているかを GHA 側の自 IP と照合する
       resolvedIpHash: createHash("sha256")
         .update(resolveClientIp(request.headers))

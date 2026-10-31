@@ -15,6 +15,9 @@ on:
           - "0"
           - "1"
 
+permissions:
+  contents: read
+
 jobs:
   wait_snapshots:
     runs-on: ubuntu-latest

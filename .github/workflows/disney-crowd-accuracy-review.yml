@@ -6,6 +6,9 @@ on:
     - cron: "10 16 1 * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   accuracy_review:
     runs-on: ubuntu-latest

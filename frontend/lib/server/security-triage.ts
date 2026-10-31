@@ -4,8 +4,11 @@ import {
   isCosmosConfigured,
 } from "@/lib/server/cosmos";
 import { generateWithGemini, stripJsonFence } from "@/lib/server/gemini";
-import { sendNotifyEmail } from "@/lib/server/notify-email";
-import { resolveSystemNotifyEmails } from "@/lib/server/notify-recipients";
+import {
+  securityAiModelOrder,
+  selectSecurityAiModel,
+  type SecurityAiModelState,
+} from "@/lib/server/security-ai-model";
 import { listActiveAutoBlocks } from "@/lib/server/security-blocklist";
 import { listSecurityEventsSince } from "@/lib/server/security-event";
 import { jstDateString } from "@/lib/server/soluna-system-config";
@@ -53,9 +56,15 @@ export interface SecurityTriageReport {
   collections: TriageCollection[];
   events: TriageSecurityEventStats | null;
   activeAutoBlocks: number | null;
-  openSecurityPrs: number;
-  emailStatus: "sent" | "skipped-ok" | "failed";
-  emailError: string | null;
+  openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+  modelSelection: {
+    selected: string | null;
+    resolvedVersion: string | null;
+    previous: string | null;
+    switchedAt: string | null;
+    checkedAt: string;
+    probes: SecurityAiModelState["probes"];
+  } | null;
   runUrl: string | null;
   markdown: string;
 }
@@ -72,6 +81,8 @@ function container() {
 }
 
 const SOURCES = new Set(["npm-audit", "dependabot", "code-scanning", "secret-scanning"]);
+/** 任意扱いを許すのはトークンが必要な情報源だけ（必須の情報源を任意にすり替えさせない） */
+const OPTIONAL_SOURCES = new Set(["dependabot", "secret-scanning"]);
 
 function str(value: unknown, max: number): string | null {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
@@ -110,16 +121,24 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
     const r = raw as Record<string, unknown>;
     const source = str(r.source, 32);
     if (!source || !SOURCES.has(source)) continue;
+    const optionalSource = OPTIONAL_SOURCES.has(source);
     collections.push({
       source: source as TriageCollection["source"],
       ok: r.ok === true,
       count: typeof r.count === "number" ? r.count : 0,
       error: str(r.error, 240),
+      optional: optionalSource && r.optional === true,
     });
   }
   for (const required of SOURCES) {
     if (!collections.some((c) => c.source === required)) {
-      collections.push({ source: required as TriageCollection["source"], ok: false, count: 0, error: "未送信" });
+      collections.push({
+        source: required as TriageCollection["source"],
+        ok: false,
+        count: 0,
+        error: "未送信",
+        optional: OPTIONAL_SOURCES.has(required),
+      });
     }
   }
   const openSecurityPrs = (Array.isArray(body.openSecurityPrs) ? body.openSecurityPrs.slice(0, 50) : [])
@@ -193,6 +212,7 @@ async function summarizeWithAi(input: {
   assessment: TriageAssessment;
   events: TriageSecurityEventStats | null;
   openSecurityPrs: number;
+  models: string[];
 }): Promise<{ ok: true; value: AiTriage; model: string } | { ok: false; reason: string }> {
   const issues = input.assessment.issues.slice(0, 25).map((i) => ({
     source: i.finding.source,
@@ -228,7 +248,8 @@ async function summarizeWithAi(input: {
       temperature: 0.2,
       responseMimeType: "application/json",
     },
-    { timeoutMs: 40_000, maxAttempts: 2 },
+    // 試験 20 秒＋要約 35 秒×2 モデルで関数の上限 120 秒に収める
+    { timeoutMs: 35_000, maxAttempts: 1, models: input.models.slice(0, 2) },
   );
   if (!result.ok) return { ok: false, reason: result.reason };
   const value = parseAiTriage(result.text);
@@ -300,10 +321,15 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     now,
   });
 
+  const modelState = await selectSecurityAiModel(now).catch((error) => {
+    console.warn("[security-triage] model selection failed", error instanceof Error ? error.message : error);
+    return null;
+  });
   const ai = await summarizeWithAi({
     assessment,
     events: stats,
     openSecurityPrs: parsed.openSecurityPrs.length,
+    models: securityAiModelOrder(modelState),
   });
   const headline = ai.ok ? ai.value.headline : `${TRIAGE_LEVEL_LABEL[assessment.level]}: ${assessment.reasons[0]}`;
   const summary = ai.ok ? ai.value.summary : assessment.reasons.join(" / ");
@@ -321,23 +347,6 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     events: stats,
     runUrl: parsed.runUrl,
   });
-
-  let emailStatus: SecurityTriageReport["emailStatus"] = "skipped-ok";
-  let emailError: string | null = null;
-  if (assessment.level !== "ok") {
-    const to = await resolveSystemNotifyEmails().catch(() => []);
-    const sent =
-      to.length === 0
-        ? { ok: false as const, reason: "通知先メールが未設定" }
-        : await sendNotifyEmail({
-            to,
-            subject: `[AQUA セキュリティ] ${TRIAGE_LEVEL_LABEL[assessment.level]} ${dateJst} — ${headline}`,
-            text: markdown,
-            category: "security-triage",
-          });
-    emailStatus = sent.ok ? "sent" : "failed";
-    emailError = sent.ok ? null : sent.reason;
-  }
 
   const report: SecurityTriageReport = {
     id: `triage-${dateJst}`,
@@ -367,9 +376,17 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     collections,
     events: stats,
     activeAutoBlocks: blocks?.length ?? null,
-    openSecurityPrs: parsed.openSecurityPrs.length,
-    emailStatus,
-    emailError,
+    openSecurityPrs: parsed.openSecurityPrs,
+    modelSelection: modelState
+      ? {
+          selected: modelState.selected,
+          resolvedVersion: modelState.resolvedVersion,
+          previous: modelState.previous,
+          switchedAt: modelState.switchedAt,
+          checkedAt: modelState.checkedAt,
+          probes: modelState.probes,
+        }
+      : null,
     runUrl: parsed.runUrl,
     markdown,
   };
@@ -378,6 +395,29 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     await container().items.upsert(report);
   }
   return report;
+}
+
+/** 画面の推移表示用（直近 N 日の警戒レベル） */
+export async function getRecentSecurityTriageLevels(
+  limit = 14,
+): Promise<Array<{ dateJst: string; level: TriageLevel; aiStatus: "ok" | "failed" }> | null> {
+  if (!isCosmosConfigured()) return null;
+  try {
+    const { resources } = await container()
+      .items.query<{ dateJst: string; level: TriageLevel; aiStatus: "ok" | "failed" }>({
+        query:
+          "SELECT TOP @limit c.dateJst, c.level, c.aiStatus FROM c WHERE c.bucket = @bucket AND c.docType = 'triage-report' ORDER BY c.dateJst DESC",
+        parameters: [
+          { name: "@bucket", value: TRIAGE_BUCKET },
+          { name: "@limit", value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources.reverse();
+  } catch (error) {
+    console.warn("[security-triage] history read failed", error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 export async function getLatestSecurityTriage(): Promise<SecurityTriageReport | null> {

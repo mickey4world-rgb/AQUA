@@ -49,7 +49,9 @@ function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 const SOL_LABEL = "⚔️ ソル（勇者）";
@@ -176,14 +178,20 @@ export function noteHashtags(): string[] {
 
 /** note の body_length は HTML タグ除去後の可視文字数 */
 export function noteVisibleLength(...htmlParts: string[]): number {
-  return htmlParts
-    .join("")
-    .replace(/<[^>]+>/g, "")
+  let text = htmlParts.join("");
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, "");
+  } while (text !== previous);
+  // &amp; を最後に戻さないと "&amp;lt;" が "<" まで二重に戻る
+  return text
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
     .length;
 }
 

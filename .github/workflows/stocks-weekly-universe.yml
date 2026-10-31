@@ -15,6 +15,9 @@ on:
           - force
         default: apply
 
+permissions:
+  contents: read
+
 jobs:
   weekly_universe:
     runs-on: ubuntu-latest

@@ -57,7 +57,7 @@ jobs:
     steps:
       - name: Dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
 
       - name: Merge and deploy
         # 本番に直結する frontend のみ自動。その他（VM ブリッジ等）は日次診断で人に知らせる

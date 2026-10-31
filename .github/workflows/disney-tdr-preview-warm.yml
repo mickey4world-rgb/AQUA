@@ -17,6 +17,9 @@ on:
     types: [completed]
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   warm_tdr_preview:
     if: >

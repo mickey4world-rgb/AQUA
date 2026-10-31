@@ -21,6 +21,9 @@ on:
           - schedule-probe
         default: full
 
+permissions:
+  contents: read
+
 jobs:
   schedule_probe:
     if: >

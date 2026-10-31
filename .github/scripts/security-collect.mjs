@@ -122,7 +122,8 @@ async function collectCodeScanning() {
 
 async function collectDependabot() {
   if (!alertsToken) {
-    collections.push({ source: "dependabot", ok: false, count: 0, error: "SECURITY_ALERTS_TOKEN 未設定" });
+    // npm audit が同じ依存脆弱性を拾うため任意扱い
+    collections.push({ source: "dependabot", ok: false, optional: true, count: 0, error: "未接続（任意。npm audit で代替）" });
     return;
   }
   const { status, body } = await gh(`/repos/${repo}/dependabot/alerts?state=open&per_page=100`, alertsToken);
@@ -148,7 +149,8 @@ async function collectDependabot() {
 
 async function collectSecretScanning() {
   if (!alertsToken) {
-    collections.push({ source: "secret-scanning", ok: false, count: 0, error: "SECURITY_ALERTS_TOKEN 未設定" });
+    // GitHub のプッシュ保護が秘密情報の push 自体を止めるため任意扱い
+    collections.push({ source: "secret-scanning", ok: false, optional: true, count: 0, error: "未接続（任意。GitHub のプッシュ保護で防止）" });
     return;
   }
   const { status, body } = await gh(`/repos/${repo}/secret-scanning/alerts?state=open&per_page=100`, alertsToken);
