@@ -117,6 +117,9 @@ export async function buildSecurityAnalyticsReport(
           events: triage.events,
           // 旧形式（件数のみ）の保存データにも耐える
           openSecurityPrs: Array.isArray(triage.openSecurityPrs) ? triage.openSecurityPrs : [],
+          appliedAutoPatches: Array.isArray(triage.appliedAutoPatches)
+            ? triage.appliedAutoPatches
+            : [],
           modelSelection: triage.modelSelection ?? null,
         }
       : null,

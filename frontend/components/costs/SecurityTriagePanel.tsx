@@ -181,8 +181,11 @@ export default function SecurityTriagePanel({
   const stale = triage.ageHours > TRIAGE_STALE_HOURS;
   const highOpen = triage.counts.critical + triage.counts.high;
   const overdue = triage.issues.filter((i) => i.overdue).length;
+  const applied = triage.appliedAutoPatches ?? [];
+  const waiting = triage.openSecurityPrs ?? [];
   const required = triage.collections.filter((c) => !c.optional);
   const requiredOk = required.filter((c) => c.ok).length;
+  const kindLabel = (kind?: string) => (kind === "platform" ? "ホスト" : "依存パッケージ");
 
   return (
     <section className="space-y-4" aria-labelledby="security-triage-heading">
@@ -218,13 +221,14 @@ export default function SecurityTriagePanel({
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Stat label="未解決（重大・高）" value={`${highOpen} 件`} tone={highOpen > 0 ? "warn" : undefined} />
         <Stat label="24時間超の放置" value={`${overdue} 件`} tone={overdue > 0 ? "bad" : undefined} />
+        <Stat label="自動適用（直近14日）" value={`${applied.length} 件`} />
         <Stat
-          label="自動パッチ待ちの修正 PR"
-          value={`${triage.openSecurityPrs.length} 件`}
-          tone={triage.openSecurityPrs.length > 0 ? "warn" : undefined}
+          label="自動パッチ待ち"
+          value={`${waiting.length} 件`}
+          tone={waiting.length > 0 ? "warn" : undefined}
         />
         <Stat
           label="直近24時間の防御（自動ブロック）"
@@ -336,24 +340,59 @@ export default function SecurityTriagePanel({
         </div>
       </div>
 
-      {triage.openSecurityPrs.length > 0 && (
-        <div className={`${costsPanelClass} px-5 py-3 text-sm`}>
-          <h4 className="font-semibold text-white">自動パッチ待ちの修正 PR</h4>
-          <ul className="mt-2 space-y-1">
-            {triage.openSecurityPrs.map((pr) => (
-              <li key={pr.number} className="text-slate-300">
-                <a href={pr.url} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-200">
-                  #{pr.number} {pr.title}
-                </a>
-                <span className="ml-2 text-xs text-slate-500">{formatJst(pr.createdAt)} 作成</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-slate-500">
-            検証が通れば自動でマージ・本番反映されます。1 日以上残っている場合は検証失敗の可能性があります。
-          </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className={`${costsPanelClass} overflow-hidden`}>
+          <div className="border-b border-white/10 px-5 py-3">
+            <h4 className="text-sm font-semibold text-white">自動適用済み（直近14日）{applied.length} 件</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Dependabot のセキュリティ修正と、SWA 上限に合わせたホスト版の自動揃えなど、検証後にマージ・反映されたものです。
+            </p>
+          </div>
+          {applied.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-slate-500">直近14日の自動適用はありません。</p>
+          ) : (
+            <ul className="divide-y divide-white/5 text-sm">
+              {applied.map((pr) => (
+                <li key={`applied-${pr.number}`} className="flex flex-wrap items-baseline gap-x-2 px-5 py-2.5">
+                  <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-200">
+                    {kindLabel(pr.kind)}
+                  </span>
+                  <a href={pr.url} target="_blank" rel="noopener noreferrer" className="text-slate-200 hover:text-cyan-200">
+                    #{pr.number} {pr.title}
+                  </a>
+                  <span className="text-xs text-slate-500">{formatJst(pr.mergedAt)} 適用</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
+
+        <div className={`${costsPanelClass} overflow-hidden`}>
+          <div className="border-b border-white/10 px-5 py-3">
+            <h4 className="text-sm font-semibold text-white">自動パッチ待ち {waiting.length} 件</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              検証が通れば自動でマージ・本番反映されます。1 日以上残っている場合は検証失敗の可能性があります。
+            </p>
+          </div>
+          {waiting.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-slate-500">待ちの修正 PR はありません。</p>
+          ) : (
+            <ul className="divide-y divide-white/5 text-sm">
+              {waiting.map((pr) => (
+                <li key={`wait-${pr.number}`} className="flex flex-wrap items-baseline gap-x-2 px-5 py-2.5">
+                  <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-100">
+                    {kindLabel(pr.kind)}
+                  </span>
+                  <a href={pr.url} target="_blank" rel="noopener noreferrer" className="text-slate-200 hover:text-cyan-200">
+                    #{pr.number} {pr.title}
+                  </a>
+                  <span className="text-xs text-slate-500">{formatJst(pr.createdAt)} 作成</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <p className="text-[11px] text-slate-500">
         費用: 診断・自動パッチ・コード解析は公開リポジトリの GitHub 無料枠、AI は Gemini 無料枠のみを使用します（追加費用なし）。

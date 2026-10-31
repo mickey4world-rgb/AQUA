@@ -48,7 +48,13 @@ export interface TriageSecurityEventStats {
 export interface TriageInput {
   findings: TriageFinding[];
   collections: TriageCollection[];
-  openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+  openSecurityPrs: Array<{
+    number: number;
+    title: string;
+    url: string;
+    createdAt?: string;
+    kind?: "dependency" | "platform";
+  }>;
   events: TriageSecurityEventStats | null;
   now: Date;
 }

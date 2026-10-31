@@ -240,7 +240,20 @@ export interface SecurityAnalyticsReport {
       autoBlocked: number;
       topTargets: Array<{ label: string; count: number }>;
     } | null;
-    openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+    openSecurityPrs: Array<{
+      number: number;
+      title: string;
+      url: string;
+      createdAt?: string;
+      kind?: "dependency" | "platform";
+    }>;
+    appliedAutoPatches: Array<{
+      number: number;
+      title: string;
+      url: string;
+      mergedAt?: string;
+      kind?: "dependency" | "platform";
+    }>;
     modelSelection: {
       selected: string | null;
       resolvedVersion: string | null;

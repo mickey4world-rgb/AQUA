@@ -30,6 +30,17 @@ import {
 
 const TRIAGE_BUCKET = "triage";
 
+export type AutoPatchKind = "dependency" | "platform";
+
+export type AutoPatchPr = {
+  number: number;
+  title: string;
+  url: string;
+  kind: AutoPatchKind;
+  createdAt?: string;
+  mergedAt?: string;
+};
+
 export interface SecurityTriageReport {
   id: string;
   bucket: typeof TRIAGE_BUCKET;
@@ -58,7 +69,8 @@ export interface SecurityTriageReport {
   collections: TriageCollection[];
   events: TriageSecurityEventStats | null;
   activeAutoBlocks: number | null;
-  openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+  openSecurityPrs: AutoPatchPr[];
+  appliedAutoPatches: AutoPatchPr[];
   modelSelection: {
     selected: string | null;
     resolvedVersion: string | null;
@@ -75,6 +87,7 @@ export interface SecurityTriageRequest {
   findings?: unknown;
   collections?: unknown;
   openSecurityPrs?: unknown;
+  appliedAutoPatches?: unknown;
   runUrl?: unknown;
   /** 夕方の再試行用。本日分の AI 要約が成功済みなら何もしない（無料枠の節約） */
   onlyIfAiFailed?: unknown;
@@ -95,10 +108,28 @@ function str(value: unknown, max: number): string | null {
 }
 
 /** GHA から来る JSON を信用しすぎない（型・長さを揃える） */
+function parseAutoPatchPr(raw: unknown): AutoPatchPr | null {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const number = typeof r.number === "number" ? r.number : 0;
+  const title = str(r.title, 200);
+  const url = str(r.url, 400);
+  if (number <= 0 || !title || !url) return null;
+  const kind = r.kind === "platform" ? "platform" : "dependency";
+  return {
+    number,
+    title,
+    url,
+    kind,
+    createdAt: str(r.createdAt, 40) ?? undefined,
+    mergedAt: str(r.mergedAt, 40) ?? undefined,
+  };
+}
+
 export function parseTriageRequest(body: SecurityTriageRequest): {
   findings: TriageFinding[];
   collections: TriageCollection[];
-  openSecurityPrs: Array<{ number: number; title: string; url: string; createdAt: string }>;
+  openSecurityPrs: AutoPatchPr[];
+  appliedAutoPatches: AutoPatchPr[];
   runUrl: string | null;
 } {
   const findings: TriageFinding[] = [];
@@ -148,17 +179,12 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
     }
   }
   const openSecurityPrs = (Array.isArray(body.openSecurityPrs) ? body.openSecurityPrs.slice(0, 50) : [])
-    .map((raw) => {
-      const r = (raw ?? {}) as Record<string, unknown>;
-      return {
-        number: typeof r.number === "number" ? r.number : 0,
-        title: str(r.title, 200) ?? "",
-        url: str(r.url, 400) ?? "",
-        createdAt: str(r.createdAt, 40) ?? "",
-      };
-    })
-    .filter((pr) => pr.number > 0);
-  return { findings, collections, openSecurityPrs, runUrl: str(body.runUrl, 400) };
+    .map(parseAutoPatchPr)
+    .filter((pr): pr is AutoPatchPr => pr != null);
+  const appliedAutoPatches = (Array.isArray(body.appliedAutoPatches) ? body.appliedAutoPatches.slice(0, 40) : [])
+    .map(parseAutoPatchPr)
+    .filter((pr): pr is AutoPatchPr => pr != null);
+  return { findings, collections, openSecurityPrs, appliedAutoPatches, runUrl: str(body.runUrl, 400) };
 }
 
 async function loadEventStats(now: Date): Promise<{ stats: TriageSecurityEventStats | null; collection: TriageCollection }> {
@@ -218,6 +244,7 @@ async function summarizeWithAi(input: {
   assessment: TriageAssessment;
   events: TriageSecurityEventStats | null;
   openSecurityPrs: number;
+  appliedAutoPatches: number;
   models: string[];
 }): Promise<{ ok: true; value: AiTriage; model: string } | { ok: false; reason: string }> {
   const issues = input.assessment.issues.slice(0, 25).map((i) => ({
@@ -244,6 +271,7 @@ async function summarizeWithAi(input: {
     incompleteSources: input.assessment.incompleteSources,
     securityEvents24h: input.events,
     openSecurityPrs: input.openSecurityPrs,
+    appliedAutoPatches: input.appliedAutoPatches,
   });
   const result = await generateWithGemini(
     {
@@ -365,6 +393,7 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
       assessment,
       events: stats,
       openSecurityPrs: parsed.openSecurityPrs.length,
+      appliedAutoPatches: parsed.appliedAutoPatches.length,
       models: securityAiModelOrder(currentModel),
     }),
   );
@@ -418,6 +447,7 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     events: stats,
     activeAutoBlocks: blocks?.length ?? null,
     openSecurityPrs: parsed.openSecurityPrs,
+    appliedAutoPatches: parsed.appliedAutoPatches,
     modelSelection: modelState
       ? {
           selected: modelState.selected,

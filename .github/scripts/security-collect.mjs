@@ -175,15 +175,60 @@ async function collectSecretScanning() {
   collections.push({ source: "secret-scanning", ok: true, count: body.length });
 }
 
+function prLabelNames(pr) {
+  return Array.isArray(pr.labels) ? pr.labels.map((l) => l.name) : [];
+}
+
+function isAutoSecurityPr(pr) {
+  const labels = prLabelNames(pr);
+  if (pr.user?.login === "dependabot[bot]") return true;
+  if (labels.includes("platform-versions")) return true;
+  if (labels.includes("security") && labels.includes("dependencies")) return true;
+  return false;
+}
+
+function autoPatchKind(pr) {
+  const labels = prLabelNames(pr);
+  if (labels.includes("platform-versions")) return "platform";
+  return "dependency";
+}
+
 async function collectOpenSecurityPrs() {
   const { status, body } = await gh(`/repos/${repo}/pulls?state=open&per_page=100`, ghToken);
   if (status !== 200 || !Array.isArray(body)) return [];
   return body
-    .filter((pr) =>
-      pr.user?.login === "dependabot[bot]" ||
-      (Array.isArray(pr.labels) && pr.labels.some((l) => l.name === "platform-versions")),
-    )
-    .map((pr) => ({ number: pr.number, title: pr.title, url: pr.html_url, createdAt: pr.created_at }));
+    .filter(isAutoSecurityPr)
+    .map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      url: pr.html_url,
+      createdAt: pr.created_at,
+      kind: autoPatchKind(pr),
+    }));
+}
+
+/** 直近14日にマージされた自動パッチ（Dependabot / ホスト揃え） */
+async function collectAppliedAutoPatches() {
+  const sinceMs = Date.now() - 14 * 24 * 3_600_000;
+  const { status, body } = await gh(
+    `/repos/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
+    ghToken,
+  );
+  if (status !== 200 || !Array.isArray(body)) return [];
+  return body
+    .filter((pr) => {
+      if (!pr.merged_at) return false;
+      if (Date.parse(pr.merged_at) < sinceMs) return false;
+      return isAutoSecurityPr(pr);
+    })
+    .map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      url: pr.html_url,
+      mergedAt: pr.merged_at,
+      kind: autoPatchKind(pr),
+    }))
+    .slice(0, 40);
 }
 
 /** SWA が許す Node 上限とリポジトリ内ピンのズレ（ソース依存以外のホスト制約） */
@@ -260,5 +305,8 @@ await collectDependabot();
 await collectSecretScanning();
 collectPlatformRuntime();
 const openSecurityPrs = await collectOpenSecurityPrs();
+const appliedAutoPatches = await collectAppliedAutoPatches();
 
-process.stdout.write(JSON.stringify({ findings, collections, openSecurityPrs, runUrl }));
+process.stdout.write(
+  JSON.stringify({ findings, collections, openSecurityPrs, appliedAutoPatches, runUrl }),
+);
