@@ -70,6 +70,7 @@ const digest = {
       }),
     ],
     security: [],
+    "national-security": [],
   },
 } as NewsSearchDigest;
 

@@ -36,6 +36,7 @@ function categoryKeyword(category: NewsSearchCategory): string {
   if (category === "ai") return "AI 最新動向";
   if (category === "economy") return "世界経済";
   if (category === "security") return "セキュリティ";
+  if (category === "national-security") return "国家危機管理";
   return NEWS_SEARCH_CATEGORY_LABEL[category] ?? category;
 }
 

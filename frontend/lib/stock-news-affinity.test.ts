@@ -45,6 +45,7 @@ function digestFixture(): NewsSearchDigest {
       ],
       government: [],
       security: [],
+      "national-security": [],
     },
   };
 }

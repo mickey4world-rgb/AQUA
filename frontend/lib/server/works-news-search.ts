@@ -65,10 +65,25 @@ export function digestNeedsEnrichment(digest: NewsSearchDigest): boolean {
   );
 }
 
+/** 記事が1件もないカテゴリ（収集漏れ・GHA二重リスト忘れの再発検知） */
+export function digestEmptyCategories(
+  digest: Pick<NewsSearchDigest, "categories">,
+): NewsSearchCategory[] {
+  return NEWS_SEARCH_CATEGORIES.filter((c) => (digest.categories[c] ?? []).length === 0);
+}
+
 export function computeEnrichmentStatus(
   digest: Pick<NewsSearchDigest, "categories">,
   triedAndFailed = false,
 ): NewsSearchEnrichmentStatus {
+  // 空カテゴリを無視して complete にすると、セキュリティ未収集でも定時スキップが永久化する
+  if (digestEmptyCategories(digest).length > 0) {
+    const anyItems = NEWS_SEARCH_CATEGORIES.some(
+      (c) => (digest.categories[c] ?? []).length > 0,
+    );
+    if (!anyItems) return triedAndFailed ? "failed" : "pending";
+    return triedAndFailed ? "failed" : "partial";
+  }
   const withItems = NEWS_SEARCH_CATEGORIES.filter(
     (c) => (digest.categories[c] ?? []).length > 0,
   );
@@ -293,9 +308,17 @@ async function enrichCategoryWithGemini(
     attentionHint: item.attentionScore,
   }));
 
+  const categoryHint =
+    category === "national-security"
+      ? "国家危機管理カテゴリ: 公開報道に基づき、スパイ・諜報・機密漏洩・情報機関関連で官公庁勤務者が注意すべき点を書く。未公開情報の推測・機密の創作は禁止。"
+      : category === "security"
+        ? "セキュリティカテゴリ: サイバー攻撃・脆弱性・情報漏洩など事故と対策に焦点を当てる。"
+        : "";
+
   const system = `あなたは官公庁向けテックアナリストです。与えられた「今日の生ニュース一覧」だけを根拠に、各記事を深堀・解説します。
 学習データの古い一般知識でニュースを捏造しないこと。一覧に無い出来事は書かない。
 ${USER_CONTEXT}
+${categoryHint}
 JSON のみ返す。`;
 
   const userPrompt = `基準日 JST: ${today}
@@ -310,7 +333,7 @@ ${JSON.stringify(payload, null, 2)}
 - deepDive: 背景・論点の深堀（120〜220字・日本語）
 - outlook: 今後30〜90日の予想（80〜160字・日本語）
 - explanation: 非専門家にも分かる解説（100〜180字・日本語）
-- govRelevance: 司法基盤クラウド／政府事業管理AI導入の実務への示唆（80〜160字・日本語）
+- govRelevance: 司法基盤クラウド／政府事業管理AI導入／情報保全の実務への示唆（80〜160字・日本語）
 - attentionScore: 注目度 0〜100（今日の新しさと実務影響）
 
 JSON:
@@ -487,7 +510,13 @@ export async function buildWorksNewsDigest(options?: {
   const docId = worksNewsSearchDocId();
   if (!options?.force) {
     const existing = await getTodayWorksNewsDigest();
-    if (existing?.id === docId) return { ok: true, digest: withEnrichmentMeta(existing) };
+    if (existing?.id === docId) {
+      const meta = withEnrichmentMeta(existing);
+      // カテゴリ追加後に空のまま残ると「情報がない」まま定時スキップされる
+      if (digestEmptyCategories(meta).length === 0) {
+        return { ok: true, digest: meta };
+      }
+    }
   }
 
   const { seeds, errors, usedFallback } = await collectMultiSourceNewsSeeds();

@@ -8,7 +8,10 @@
  */
 import { parseStringPromise } from "xml2js";
 import { fetchRssXml } from "@/lib/server/rss-fetch";
-import type { NewsSearchCategory } from "@/lib/types/works-news-search";
+import {
+  NEWS_SEARCH_CATEGORIES,
+  type NewsSearchCategory,
+} from "@/lib/types/works-news-search";
 
 export type RawNewsSeed = {
   category: NewsSearchCategory;
@@ -170,6 +173,37 @@ const FEEDS: readonly FeedDef[] = [
     sourceName: "ITmedia セキュリティ",
     weight: 1.2,
   },
+  {
+    category: "security",
+    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
+    sourceName: "NHK 主要",
+    weight: 0.95,
+  },
+  // 国家危機管理（ログイン専用）: 公開報道ベース。スパイ・諜報・国家安全保障の注意喚起用
+  {
+    category: "national-security",
+    url: "https://news.google.com/rss/search?q=%E3%82%B9%E3%83%91%E3%82%A4+OR+%E8%AB%9C%E5%A0%B1+OR+%E6%83%85%E5%A0%B1%E6%A9%9F%E9%96%A2+OR+%E5%9B%BD%E5%AE%B6%E5%AE%89%E5%85%A8%E4%BF%9D%E9%9A%9C+OR+%E5%85%AC%E5%AE%89+OR+%E6%A9%9F%E5%AF%86%E6%BC%8F%E6%B4%A9+when:3d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News",
+    weight: 1.25,
+  },
+  {
+    category: "national-security",
+    url: "https://www.bing.com/news/search?q=espionage+OR+spy+OR+%22national+security%22+OR+intelligence+agency+OR+Japan&format=rss",
+    sourceName: "Bing News",
+    weight: 1.1,
+  },
+  {
+    category: "national-security",
+    url: "https://www.nhk.or.jp/rss/news/cat4.xml",
+    sourceName: "NHK 政治",
+    weight: 1.15,
+  },
+  {
+    category: "national-security",
+    url: "https://news.yahoo.co.jp/rss/topics/domestic.xml",
+    sourceName: "Yahoo! 国内",
+    weight: 1.05,
+  },
 ];
 
 /** 主フィードが薄い／全滅したときの同意図ライブ代替 */
@@ -251,6 +285,18 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
     url: "https://rss.itmedia.co.jp/rss/2.0/security.xml",
     sourceName: "ITmedia セキュリティ",
     weight: 1.1,
+  },
+  {
+    category: "national-security",
+    url: "https://news.google.com/rss/search?q=%E3%82%B9%E3%83%91%E3%82%A4+OR+%E8%AB%9C%E5%A0%B1+OR+%E5%9B%BD%E5%AE%B6%E5%AE%89%E5%85%A8+OR+%E6%83%85%E5%A0%B1%E6%A9%9F%E9%96%A2+when:7d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (7d)",
+    weight: 1.0,
+  },
+  {
+    category: "national-security",
+    url: "https://www.nhk.or.jp/rss/news/cat1.xml",
+    sourceName: "NHK 社会",
+    weight: 1.05,
   },
 ];
 
@@ -380,14 +426,8 @@ export async function collectMultiSourceNewsSeeds(): Promise<{
   const errors = [...primary.errors];
   let usedFallback = false;
 
-  const categories: NewsSearchCategory[] = [
-    "ai",
-    "systems",
-    "economy",
-    "government",
-    "security",
-  ];
-  const thin = categories.filter(
+  // NEWS_SEARCH_CATEGORIES と二重管理しない（カテゴリ追加忘れ＝空枠の再発クラス）
+  const thin = NEWS_SEARCH_CATEGORIES.filter(
     (c) => seeds.filter((s) => s.category === c).length < MIN_SEEDS_BEFORE_FALLBACK,
   );
   if (thin.length > 0 || seeds.length === 0) {
@@ -431,6 +471,13 @@ export function scoreAttentionSeed(seed: RawNewsSeed, now = Date.now()): number 
     "漏洩",
     "脆弱性",
     "基盤",
+    "スパイ",
+    "諜報",
+    "公安",
+    "機密",
+    "情報機関",
+    "espionage",
+    "national security",
   ];
   for (const word of boosts) {
     if (blob.includes(word)) score += 3;

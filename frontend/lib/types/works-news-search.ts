@@ -3,7 +3,8 @@ export type NewsSearchCategory =
   | "systems"
   | "economy"
   | "government"
-  | "security";
+  | "security"
+  | "national-security";
 
 /** 収集・ログインユーザー向けの全カテゴリ */
 export const NEWS_SEARCH_CATEGORIES: readonly NewsSearchCategory[] = [
@@ -12,11 +13,12 @@ export const NEWS_SEARCH_CATEGORIES: readonly NewsSearchCategory[] = [
   "economy",
   "government",
   "security",
+  "national-security",
 ] as const;
 
 /**
  * 公開プレビュー／未ログイン向け。
- * 「セキュリティ」はログインユーザーのみ（機密性の高い話題を公開面に出さない）。
+ * セキュリティ・国家危機管理はログインユーザーのみ（公開面に出さない）。
  */
 export const NEWS_SEARCH_PUBLIC_CATEGORIES: readonly NewsSearchCategory[] = [
   "ai",
@@ -27,6 +29,7 @@ export const NEWS_SEARCH_PUBLIC_CATEGORIES: readonly NewsSearchCategory[] = [
 
 export const NEWS_SEARCH_AUTH_ONLY_CATEGORIES: readonly NewsSearchCategory[] = [
   "security",
+  "national-security",
 ] as const;
 
 export const NEWS_SEARCH_CATEGORY_LABEL: Record<NewsSearchCategory, string> = {
@@ -35,6 +38,7 @@ export const NEWS_SEARCH_CATEGORY_LABEL: Record<NewsSearchCategory, string> = {
   economy: "世界経済",
   government: "官公庁",
   security: "セキュリティ",
+  "national-security": "国家危機管理",
 };
 
 export type NewsSearchSourceRef = {
@@ -75,6 +79,7 @@ export function emptyNewsSearchCategories(): Record<
     economy: [],
     government: [],
     security: [],
+    "national-security": [],
   };
 }
 

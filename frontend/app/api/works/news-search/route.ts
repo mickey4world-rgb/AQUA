@@ -136,7 +136,10 @@ export async function POST(request: Request) {
       const category = parseCategory(body.category);
       if (!category) {
         return Response.json(
-          { error: "category に ai / systems / economy / government を指定してください。" },
+          {
+            error:
+              "category に ai / systems / economy / government / security / national-security を指定してください。",
+          },
           { status: 400 },
         );
       }

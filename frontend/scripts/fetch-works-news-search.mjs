@@ -1,13 +1,11 @@
 /**
  * WORKS ニュースサーチ（GHA）
- * RSS（主＋緊急フィード）→ ingest → カテゴリ別 enrich（最大3パス再試行）。
+ * RSS 収集は本番 API（works-news-search-rss.ts）に一本化。
+ * ここに別 FEEDS を持つとセキュリティ等が永久に空になる（2026-11 障害クラス）。
  * --enrich-only: 既存 digest の未完了カテゴリだけ再試行。
- * --force: 当日分を上書き ingest。
+ * --force: 当日分を上書き build。
  * --soft-incomplete: 深夜リトライ枠用。enrich 未完了でも exit 0（朝ゲートは厳格失敗のまま）。
  */
-import { createHash } from "crypto";
-import { parseStringPromise } from "xml2js";
-
 const cronSecret =
   process.env.SOLUNA_CRON_SECRET?.trim() || process.env.WORKS_CRON_SECRET?.trim();
 const baseUrl = (process.env.PRODUCTION_URL || "https://www.aquacore.net").replace(
@@ -26,374 +24,15 @@ if (!cronSecret) {
   process.exit(1);
 }
 
-const CATEGORIES = ["ai", "systems", "economy", "government"];
-const LABELS = {
-  ai: "AI ニュース",
-  systems: "システム開発",
-  economy: "世界経済",
-  government: "官公庁",
-};
-
-const FEEDS = [
-  {
-    category: "ai",
-    url: "https://news.google.com/rss/search?q=AI+OR+%E4%BA%BA%E5%B7%A5%E7%9F%A5%E8%83%BD+when:1d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News",
-    weight: 1.2,
-  },
-  {
-    category: "ai",
-    url: "https://www.bing.com/news/search?q=artificial+intelligence+OR+AI&format=rss",
-    sourceName: "Bing News",
-    weight: 1.1,
-  },
-  {
-    category: "ai",
-    url: "https://feeds.arstechnica.com/arstechnica/technology-lab",
-    sourceName: "Ars Technica",
-    weight: 1.0,
-  },
-  {
-    category: "systems",
-    url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+Kubernetes+OR+%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0%E9%96%8B%E7%99%BA+when:1d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News",
-    weight: 1.2,
-  },
-  {
-    category: "systems",
-    url: "https://www.bing.com/news/search?q=cloud+OR+Azure+OR+software+engineering&format=rss",
-    sourceName: "Bing News",
-    weight: 1.1,
-  },
-  {
-    category: "systems",
-    url: "https://devblogs.microsoft.com/feed/",
-    sourceName: "Microsoft DevBlogs",
-    weight: 1.05,
-  },
-  {
-    category: "economy",
-    url: "https://news.google.com/rss/search?q=%E4%B8%96%E7%95%8C%E7%B5%8C%E6%B8%88+OR+%E6%97%A5%E6%9C%AC%E7%B5%8C%E6%B8%88+when:1d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News",
-    weight: 1.2,
-  },
-  {
-    category: "economy",
-    url: "https://www.nhk.or.jp/rss/news/cat6.xml",
-    sourceName: "NHK 経済",
-    weight: 1.15,
-  },
-  {
-    category: "systems",
-    url: "https://www.infoq.com/feed/",
-    sourceName: "InfoQ",
-    weight: 1.0,
-  },
-  {
-    category: "systems",
-    url: "https://www.publickey1.jp/atom.xml",
-    sourceName: "Publickey",
-    weight: 1.1,
-  },
-  {
-    category: "economy",
-    url: "https://www.bing.com/news/search?q=world+economy+OR+markets&format=rss",
-    sourceName: "Bing News",
-    weight: 1.1,
-  },
-  {
-    category: "government",
-    url: "https://news.google.com/rss/search?q=%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+OR+%E5%AE%98%E5%85%AC%E5%BA%81+OR+%E6%94%BF%E5%BA%9C+AI+when:2d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News",
-    weight: 1.25,
-  },
-  {
-    category: "government",
-    url: "https://www.bing.com/news/search?q=%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%E5%BA%81+OR+%E5%AE%98%E5%85%AC%E5%BA%81&format=rss",
-    sourceName: "Bing News",
-    weight: 1.1,
-  },
-  {
-    category: "government",
-    url: "https://www.nikkei.com/rss/news/politics.rdf",
-    sourceName: "Nikkei Politics",
-    weight: 1.1,
-  },
-  {
-    category: "government",
-    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
-    sourceName: "NHK 主要",
-    weight: 1.15,
-  },
+// 正本は frontend/lib/types/works-news-search.ts の NEWS_SEARCH_CATEGORIES。
+const CATEGORIES = [
+  "ai",
+  "systems",
+  "economy",
+  "government",
+  "security",
+  "national-security",
 ];
-
-const FALLBACK_FEEDS = [
-  {
-    category: "ai",
-    url: "https://news.google.com/rss/search?q=AI+OR+ChatGPT+OR+Gemini+when:3d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News (3d)",
-    weight: 1.0,
-  },
-  {
-    category: "ai",
-    url: "https://news.yahoo.co.jp/rss/topics/it.xml",
-    sourceName: "Yahoo! ニュース IT",
-    weight: 0.95,
-  },
-  {
-    category: "systems",
-    url: "https://news.google.com/rss/search?q=クラウド+OR+Azure+OR+AWS+when:3d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News (3d)",
-    weight: 1.0,
-  },
-  {
-    category: "systems",
-    url: "https://www.publickey1.jp/atom.xml",
-    sourceName: "Publickey",
-    weight: 1.05,
-  },
-  {
-    category: "economy",
-    url: "https://news.google.com/rss/search?q=%E7%B5%8C%E6%B8%88+OR+%E5%B8%82%E5%A0%B4+when:3d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News (3d)",
-    weight: 1.0,
-  },
-  {
-    category: "economy",
-    url: "https://www.nhk.or.jp/rss/news/cat0.xml",
-    sourceName: "NHK 主要",
-    weight: 1.05,
-  },
-  {
-    category: "government",
-    url: "https://news.google.com/rss/search?q=%E6%94%BF%E5%BA%9C+OR+%E5%AE%98%E5%85%AC%E5%BA%81+when:7d&hl=ja&gl=JP&ceid=JP:ja",
-    sourceName: "Google News (7d)",
-    weight: 1.0,
-  },
-  {
-    category: "government",
-    url: "https://www.digital.go.jp/news.rss",
-    sourceName: "デジタル庁 (retry)",
-    weight: 1.2,
-  },
-];
-
-function jstDateString(date = new Date()) {
-  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 10);
-}
-
-function stripHtml(value) {
-  return String(value || "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseDate(raw) {
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const d = new Date(raw.trim());
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function textOf(node) {
-  if (typeof node === "string") return node;
-  if (node && typeof node === "object") {
-    if (typeof node._ === "string") return node._;
-    if (typeof node["#text"] === "string") return node["#text"];
-  }
-  return "";
-}
-
-function linkOf(node) {
-  if (typeof node === "string") return node;
-  if (node && typeof node === "object") {
-    const href = node.$?.href;
-    if (typeof href === "string") return href;
-    if (typeof node._ === "string") return node._;
-  }
-  return "";
-}
-
-function stableId(category, title, sourceUrl) {
-  return createHash("sha1")
-    .update(`${category}|${sourceUrl || title}`)
-    .digest("hex")
-    .slice(0, 16);
-}
-
-function scoreAttention(seed, now = Date.now()) {
-  let score = 45 * seed.weight;
-  if (seed.publishedAt) {
-    const ageH = (now - new Date(seed.publishedAt).getTime()) / 3_600_000;
-    if (ageH < 6) score += 25;
-    else if (ageH < 24) score += 15;
-    else if (ageH < 48) score += 8;
-  }
-  const blob = `${seed.title} ${seed.summary}`.toLowerCase();
-  for (const word of ["ai", "人工知能", "クラウド", "azure", "政府", "デジタル庁", "基盤"]) {
-    if (blob.includes(word)) score += 3;
-  }
-  return Math.max(1, Math.min(99, Math.round(score)));
-}
-
-async function fetchFeedItems(feedUrl) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
-  try {
-    const res = await fetch(feedUrl, {
-      signal: controller.signal,
-      headers: { "User-Agent": "AquaWorksNewsSearch/1.0 (+https://www.aquacore.net)" },
-    });
-    if (!res.ok) throw new Error(`RSS HTTP ${res.status}`);
-    const xml = await res.text();
-    const parsed = await parseStringPromise(xml, { explicitArray: false });
-    const channel = parsed?.rss?.channel ?? parsed?.feed;
-    if (!channel) return [];
-    const rawItems = Array.isArray(channel.item)
-      ? channel.item
-      : channel.item
-        ? [channel.item]
-        : Array.isArray(channel.entry)
-          ? channel.entry
-          : channel.entry
-            ? [channel.entry]
-            : [];
-    return rawItems.slice(0, 12).map((item) => {
-      const title = stripHtml(textOf(item.title)).slice(0, 160);
-      const desc = stripHtml(
-        textOf(item.description) || textOf(item.summary) || textOf(item.content),
-      ).slice(0, 280);
-      const link = linkOf(item.link) || textOf(item.guid);
-      const published =
-        parseDate(item.pubDate) ||
-        parseDate(item.published) ||
-        parseDate(item.updated) ||
-        parseDate(item["dc:date"]);
-      return {
-        title,
-        summary: desc || title,
-        link: typeof link === "string" ? link : "",
-        publishedAt: published ? published.toISOString() : undefined,
-      };
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function collectFromFeeds(feedList, label) {
-  const now = Date.now();
-  const maxAge = 3 * 24 * 60 * 60 * 1000;
-  const seeds = [];
-  const errors = [];
-  for (const feed of feedList) {
-    try {
-      const rows = await fetchFeedItems(feed.url);
-      for (const row of rows) {
-        if (!row.title) continue;
-        if (row.publishedAt) {
-          const t = new Date(row.publishedAt).getTime();
-          if (!Number.isNaN(t) && now - t > maxAge) continue;
-        }
-        seeds.push({
-          category: feed.category,
-          title: row.title,
-          summary: row.summary.slice(0, 200) || row.title,
-          sourceUrl: row.link.startsWith("http") ? row.link : undefined,
-          sourceName: feed.sourceName,
-          publishedAt: row.publishedAt,
-          weight: feed.weight,
-        });
-      }
-      console.log(`[works-news] ${label} OK ${feed.sourceName}/${feed.category}: ${rows.length}`);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      errors.push(msg);
-      console.warn(`[works-news] ${label} fail ${feed.url}:`, msg);
-    }
-  }
-  return { seeds, errors };
-}
-
-async function collectSeeds() {
-  const primary = await collectFromFeeds(FEEDS, "RSS");
-  const seeds = [...primary.seeds];
-  const errors = [...primary.errors];
-  let usedFallback = false;
-  const thin = CATEGORIES.filter(
-    (c) => seeds.filter((s) => s.category === c).length < 3,
-  );
-  if (thin.length > 0 || seeds.length === 0) {
-    const feeds =
-      seeds.length === 0
-        ? FALLBACK_FEEDS
-        : FALLBACK_FEEDS.filter((f) => thin.includes(f.category));
-    const secondary = await collectFromFeeds(feeds, "RSS-fallback");
-    seeds.push(...secondary.seeds);
-    errors.push(...secondary.errors);
-    if (secondary.seeds.length > 0) usedFallback = true;
-    console.log(
-      `[works-news] usedFallback=${usedFallback} thin=${thin.join(",") || "all"} added=${secondary.seeds.length}`,
-    );
-  }
-  return { seeds, errors, usedFallback };
-}
-
-function buildDigest(seeds, meta = {}) {
-  const seen = new Set();
-  const unique = [];
-  for (const seed of seeds) {
-    const key = `${seed.category}:${(seed.sourceUrl || seed.title).toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(seed);
-  }
-
-  const categories = { ai: [], systems: [], economy: [], government: [] };
-  for (const category of CATEGORIES) {
-    categories[category] = unique
-      .filter((s) => s.category === category)
-      .map((s) => ({ seed: s, score: scoreAttention(s) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6)
-      .map(({ seed, score }) => ({
-        id: stableId(seed.category, seed.title, seed.sourceUrl),
-        category: seed.category,
-        title: seed.title,
-        summary: seed.summary,
-        deepDive: seed.summary,
-        outlook: "AI解説は未生成です。生成に失敗した場合はエラーが表示されます。",
-        explanation: seed.summary,
-        govRelevance:
-          "司法クラウド基盤・政府事業管理AIの観点では、一次情報の確認と影響範囲の洗い出しから。",
-        sources: seed.sourceUrl
-          ? [{ name: seed.sourceName, url: seed.sourceUrl }]
-          : [{ name: seed.sourceName, url: "" }],
-        attentionScore: score,
-        publishedAt: seed.publishedAt,
-      }));
-  }
-
-  const total = CATEGORIES.reduce((sum, c) => sum + categories[c].length, 0);
-  if (total === 0) throw new Error("RSS からニュースを取得できませんでした（主＋緊急フィードとも空）。");
-
-  return {
-    id: `works-news-search-${jstDateString()}`,
-    fetchedAt: new Date().toISOString(),
-    source: "rss",
-    categories,
-    solunaSynced: false,
-    enrichmentStatus: "pending",
-    usedFallback: meta.usedFallback === true,
-    collectionErrors: Array.isArray(meta.collectionErrors)
-      ? meta.collectionErrors.slice(0, 8)
-      : [],
-    summary: CATEGORIES.map((c) => `${LABELS[c]}: ${categories[c][0]?.title ?? "—"}`).join(
-      " / ",
-    ),
-  };
-}
 
 async function postCron(body) {
   const response = await fetch(`${baseUrl}/api/works/news-search/cron`, {
@@ -414,14 +53,6 @@ async function postCron(body) {
   console.log(JSON.stringify(payload, null, 2));
   console.log(`cron HTTP ${response.status} step=${body.step ?? "build"}`);
   return { response, payload };
-}
-
-async function ingest(digest) {
-  const { response, payload } = await postCron({ step: "ingest", digest, force });
-  if (!response.ok || payload.ok !== true) {
-    throw new Error(`ingest failed HTTP ${response.status}`);
-  }
-  return payload;
 }
 
 async function fetchStatus() {
@@ -474,7 +105,6 @@ async function enrichAllCategories() {
   ) {
     const detail = `enrichment incomplete status=${status.enrichmentStatus} isToday=${status.isToday} digestId=${status.digestId} expected=${status.expectedDigestId} pending=${pending.join(",") || "?"} errors=${allErrors.join(" | ") || "none"}`;
     if (softIncomplete) {
-      // 深夜の複数枠は SWA 一時 500 で落ちやすい。同夜リトライ／朝ゲートに委ね、GitHub 失敗メールを抑える。
       console.warn(`[works-news] SOFT incomplete (will retry later / morning-gate): ${detail}`);
       return { complete: false, status };
     }
@@ -514,7 +144,7 @@ async function main() {
     return;
   }
 
-  // 完了済みの当日分を毎時枠で再 ingest→再 enrich すると OpenAI 課金が爆発する。
+  // 完了済みの当日分を毎時枠で再 build→再 enrich すると OpenAI 課金が爆発する。
   // --force のときだけ上書き再生成を許可する。
   // 昨日の complete を enrichmentOk と誤認してスキップしない（isToday 必須）。
   if (!force) {
@@ -522,27 +152,43 @@ async function main() {
       const status = await fetchStatus();
       if (isTodayComplete(status)) {
         console.log(
-          "[works-news] already complete — skip ingest/enrich",
+          "[works-news] already complete — skip build/enrich",
           status.digestId,
         );
         return;
       }
+      // enrichmentStatus=partial でも「カテゴリ自体が空」のときは RSS 再収集が必要。
+      // enrich-only では空配列は埋まらない（セキュリティ未収集の再発クラス）。
       if (
         status.digestId &&
         status.isToday === true &&
-        (status.enrichmentStatus === "partial" || status.needsEnrichment === true)
+        status.enrichmentStatus === "partial" &&
+        status.needsEnrichment === true &&
+        status.reason !== "empty-categories"
       ) {
+        const counts = status.counts && typeof status.counts === "object" ? status.counts : null;
+        const emptyCats = counts
+          ? CATEGORIES.filter((c) => !counts[c])
+          : Array.isArray(status.emptyCategories)
+            ? status.emptyCategories
+            : [];
+        if (emptyCats.length === 0) {
+          console.log(
+            "[works-news] incomplete digest — enrich-only (preserve existing AI fields)",
+            status.digestId,
+            status.enrichmentStatus,
+          );
+          await enrichAllCategories();
+          console.log("[works-news] enrich-only recovery ok");
+          return;
+        }
         console.log(
-          "[works-news] incomplete digest — enrich-only (preserve existing AI fields)",
-          status.digestId,
-          status.enrichmentStatus,
+          "[works-news] empty categories — full rebuild required",
+          emptyCats.join(","),
         );
-        await enrichAllCategories();
-        console.log("[works-news] enrich-only recovery ok");
-        return;
       }
       console.log(
-        "[works-news] today not complete — full ingest",
+        "[works-news] today not complete — full build",
         status.digestId ?? "(none)",
         status.reason ?? status.enrichmentStatus,
       );
@@ -554,19 +200,25 @@ async function main() {
     }
   }
 
-  const { seeds, errors, usedFallback } = await collectSeeds();
-  console.log(`[works-news] seeds=${seeds.length} errors=${errors.length}`);
-  const digest = buildDigest(seeds, {
-    usedFallback,
-    collectionErrors: errors,
-  });
-  for (const key of CATEGORIES) {
-    console.log(`[works-news] ${key}=${digest.categories[key].length}`);
+  const { response, payload } = await postCron({ step: "build", force: true });
+  if (!response.ok || payload.ok !== true) {
+    throw new Error(
+      `build failed HTTP ${response.status}: ${payload.error ?? JSON.stringify(payload).slice(0, 240)}`,
+    );
   }
-  await ingest(digest);
-  console.log("[works-news] ingest ok", digest.id);
+  console.log(
+    "[works-news] build ok",
+    payload.digestId,
+    JSON.stringify(payload.counts ?? {}),
+  );
+  const emptyAfterBuild = CATEGORIES.filter((c) => !(payload.counts?.[c] > 0));
+  if (emptyAfterBuild.length > 0) {
+    throw new Error(
+      `build left empty categories: ${emptyAfterBuild.join(",")} counts=${JSON.stringify(payload.counts ?? {})}`,
+    );
+  }
   await enrichAllCategories();
-  console.log("[works-news] pipeline ok", digest.id);
+  console.log("[works-news] pipeline ok", payload.digestId);
 }
 
 await main();

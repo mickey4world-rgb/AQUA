@@ -1,6 +1,7 @@
 import {
   buildWorksNewsDigest,
   computeEnrichmentStatus,
+  digestEmptyCategories,
   digestNeedsEnrichment,
   enrichWorksNewsDigestCategory,
   withEnrichmentMeta,
@@ -11,6 +12,7 @@ import { recordSecurityEvent } from "@/lib/server/security-event";
 import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import {
   NEWS_SEARCH_CATEGORIES,
+  normalizeNewsSearchCategories,
   type NewsSearchCategory,
   type NewsSearchDigest,
 } from "@/lib/types/works-news-search";
@@ -104,17 +106,15 @@ export async function POST(request: Request) {
         needsEnrichment: false,
         enrichmentOk: true,
         summary: meta.summary,
-        counts: {
-          ai: meta.categories.ai.length,
-          systems: meta.categories.systems.length,
-          economy: meta.categories.economy.length,
-          government: meta.categories.government.length,
-        },
+        counts: Object.fromEntries(
+          NEWS_SEARCH_CATEGORIES.map((c) => [c, meta.categories[c]?.length ?? 0]),
+        ),
       });
     }
 
     const digest = withEnrichmentMeta({
       ...ingest,
+      categories: normalizeNewsSearchCategories(ingest.categories),
       source: "rss",
       enrichmentStatus: "pending",
     });
@@ -127,12 +127,9 @@ export async function POST(request: Request) {
       enrichmentStatus: digest.enrichmentStatus,
       needsEnrichment: digestNeedsEnrichment(digest),
       summary: digest.summary,
-      counts: {
-        ai: digest.categories.ai.length,
-        systems: digest.categories.systems.length,
-        economy: digest.categories.economy.length,
-        government: digest.categories.government.length,
-      },
+      counts: Object.fromEntries(
+        NEWS_SEARCH_CATEGORIES.map((c) => [c, digest.categories[c]?.length ?? 0]),
+      ),
     });
   }
 
@@ -190,6 +187,7 @@ export async function POST(request: Request) {
     }
     const meta = withEnrichmentMeta(today);
     const enrichmentStatus = computeEnrichmentStatus(meta);
+    const emptyCategories = digestEmptyCategories(meta);
     return Response.json({
       ok: true,
       step: "status",
@@ -197,9 +195,14 @@ export async function POST(request: Request) {
       expectedDigestId,
       isToday: meta.id === expectedDigestId,
       enrichmentStatus,
-      needsEnrichment: digestNeedsEnrichment(meta),
+      needsEnrichment: digestNeedsEnrichment(meta) || emptyCategories.length > 0,
       enrichmentOk: enrichmentStatus === "complete",
       fetchedAt: meta.fetchedAt,
+      emptyCategories,
+      counts: Object.fromEntries(
+        NEWS_SEARCH_CATEGORIES.map((c) => [c, meta.categories[c]?.length ?? 0]),
+      ),
+      reason: emptyCategories.length > 0 ? "empty-categories" : undefined,
     });
   }
 
@@ -217,12 +220,12 @@ export async function POST(request: Request) {
     needsEnrichment: digestNeedsEnrichment(result.digest),
     // RSS のみ成功。解説完了は enrichmentOk で別判定（ごまかさない）
     enrichmentOk: false,
-    counts: {
-      ai: result.digest.categories.ai.length,
-      systems: result.digest.categories.systems.length,
-      economy: result.digest.categories.economy.length,
-      government: result.digest.categories.government.length,
-    },
+    counts: Object.fromEntries(
+      NEWS_SEARCH_CATEGORIES.map((c) => [
+        c,
+        result.digest.categories[c]?.length ?? 0,
+      ]),
+    ),
     summary: result.digest.summary,
   });
 }
