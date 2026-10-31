@@ -5,6 +5,7 @@ import {
 } from "@/lib/server/cosmos";
 import { generateWithGemini, stripJsonFence } from "@/lib/server/gemini";
 import {
+  SECURITY_AI_THINKING_LEVEL,
   securityAiModelOrder,
   selectSecurityAiModel,
   type SecurityAiModelState,
@@ -247,6 +248,7 @@ async function summarizeWithAi(input: {
       maxOutputTokens: 6000,
       temperature: 0.2,
       responseMimeType: "application/json",
+      thinkingLevel: SECURITY_AI_THINKING_LEVEL,
     },
     // 試験 20 秒＋要約 35 秒×2 モデルで関数の上限 120 秒に収める
     { timeoutMs: 35_000, maxAttempts: 1, models: input.models.slice(0, 2) },

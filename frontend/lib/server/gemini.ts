@@ -80,6 +80,8 @@ export type GeminiRequest = {
   temperature?: number;
   /** "application/json" を指定すると JSON のみを返させる */
   responseMimeType?: "text/plain" | "application/json";
+  /** Gemini 3 系の思考量。未対応モデルは 400 になるため、指定する呼び出し側でモデルを確かめること */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 };
 
 export type GeminiResult =
@@ -184,6 +186,7 @@ async function generateWithGeminiOnce(
       ...(request.responseMimeType
         ? { responseMimeType: request.responseMimeType }
         : {}),
+      ...(request.thinkingLevel ? { thinkingConfig: { thinkingLevel: request.thinkingLevel } } : {}),
     },
   };
 
