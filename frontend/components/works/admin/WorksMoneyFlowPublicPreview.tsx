@@ -309,7 +309,7 @@ export default function WorksMoneyFlowPublicPreview({
             <div className="border-t border-white/8 px-5 py-3 text-[11px] text-slate-500">
               出典: {data.source.label}（{data.source.license}） ·{" "}
               <a
-                href={data.source.url}
+                href={/^https?:\/\//i.test(data.source.url) ? data.source.url : undefined}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-cyan-300/80 hover:text-cyan-200"

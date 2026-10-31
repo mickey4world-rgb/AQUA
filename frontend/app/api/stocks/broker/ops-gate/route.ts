@@ -1,4 +1,5 @@
 import { withApiAccessLog } from "@/lib/server/api-access";
+import { recordSecurityEvent } from "@/lib/server/security-event";
 import {
   createOpsUnlockCookieValue,
   isOpsPinConfigured,
@@ -52,6 +53,22 @@ export async function POST(request: Request) {
     }
 
     if (action === "set") {
+      // 設定済みの PIN をセッションだけで上書きできると、端末を盗まれた時に PIN が意味をなさない
+      if (await isOpsPinConfigured(auth.userId)) {
+        await recordSecurityEvent({
+          request,
+          eventType: "auth_denied",
+          severity: "high",
+          statusCode: 409,
+          attackLabel: "外出確認PINの上書き試行",
+          reason: "設定済みPINを現在のPINなしで変更しようとした",
+          mitigation: "設定済みPINの上書きを拒否",
+        });
+        return Response.json(
+          { error: "PIN は設定済みです。変更は管理者に依頼してください。", configured: true },
+          { status: 409 },
+        );
+      }
       try {
         await setOpsPin(auth.userId, String(body.pin ?? ""));
       } catch (error) {
@@ -86,6 +103,15 @@ export async function POST(request: Request) {
     }
     const ok = await verifyOpsPin(auth.userId, String(body.pin ?? ""));
     if (!ok) {
+      await recordSecurityEvent({
+        request,
+        eventType: "auth_denied",
+        severity: "high",
+        statusCode: 401,
+        attackLabel: "外出確認PINの誤入力",
+        reason: "PIN が一致しない",
+        mitigation: "解除を拒否（繰り返すと送信元を自動ブロック）",
+      });
       return Response.json({ error: "PIN が違います", unlocked: false }, {
         status: 401,
       });
