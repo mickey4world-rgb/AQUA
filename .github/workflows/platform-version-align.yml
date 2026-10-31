@@ -1,10 +1,9 @@
 name: Platform Version Align
 
 # ソース依存以外: Azure SWA Managed API が許す最大 Node にリポジトリ内ピンを揃える。
-# SWA が node:24 を載せたら自動で 24 へ。載せない間は 22 のまま（ホスト制約が正本）。
+# SWA が node:24 を載せたら自動で上げる。載せない間は上限のまま。
 on:
   schedule:
-    # 毎週月曜 7:30 JST
     - cron: "30 22 * * 0"
   workflow_dispatch:
 
@@ -39,22 +38,21 @@ jobs:
           code=$?
           set -e
           cat "$RUNNER_TEMP/platform.json"
-          echo "exit=$code" >> "$GITHUB_OUTPUT"
-          node -e '
-            const fs = require("fs");
-            const r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/platform.json", "utf8"));
-            const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
-            summary("## ホスト制約（SWA Managed API）");
-            summary("- SWA 上限 Node: **" + (r.swaMaxMajor ?? "不明") + "**");
-            summary("- 目標: **" + (r.targetMajor ?? "なし") + "**");
-            if (r.parseError) summary("- 判定失敗: " + r.parseError);
-            summary("- 未揃え: " + (r.todo?.length ?? 0) + " ファイル");
-            if (r.todo?.length) summary("- 対象: " + r.todo.join(", "));
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "need_apply=" + ((r.todo && r.todo.length > 0 && r.ok) ? "true" : "false") + "\n");
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "target=" + (r.targetMajor ?? "") + "\n");
-          '
+          node <<'NODE'
+          const fs = require("fs");
+          const r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/platform.json", "utf8"));
+          const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
+          summary("## Host constraint (SWA Managed API)");
+          summary("- SWA max Node: **" + (r.swaMaxMajor ?? "unknown") + "**");
+          summary("- Target: **" + (r.targetMajor ?? "none") + "**");
+          if (r.parseError) summary("- Parse error: " + r.parseError);
+          summary("- Misaligned files: " + (r.todo?.length ?? 0));
+          if (r.todo?.length) summary("- Paths: " + r.todo.join(", "));
+          const need = Boolean(r.ok && r.todo && r.todo.length > 0);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `need_apply=${need}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `target=${r.targetMajor ?? ""}\n`);
+          NODE
           if [ "$code" -eq 1 ]; then exit 1; fi
-          if [ "$code" -eq 2 ]; then echo "::warning::could not parse SWA docs; skip apply"; fi
 
       - name: Apply alignment
         if: steps.probe.outputs.need_apply == 'true'
@@ -89,18 +87,17 @@ jobs:
           git commit -m "chore: align Node pins to SWA managed max (node:${TARGET})"
           git push -u origin "$BRANCH"
           gh label create platform-versions --color "0E8A16" --description "Host runtime alignment (SWA apiRuntime)" 2>/dev/null || true
-          PR_URL=$(gh pr create \
-            --title "chore: Node ${TARGET}（SWA Managed API 上限に自動揃え）" \
-            --label "platform-versions" \
-            --body "Azure Static Web Apps の公式 apiRuntime 上限が Node ${TARGET} のため、リポジトリ内のピンを自動で揃えました。
+          BODY_FILE="$RUNNER_TEMP/pr-body.md"
+          cat > "$BODY_FILE" <<EOF
+          Align repo Node pins to Azure Static Web Apps Managed API max (node:${TARGET}).
 
-- 制約の正本: SWA Managed API（\`node:${TARGET}\`）
-- 対象: staticwebapp.config.json / Actions node-version / engines / 設計メモ
-- gemini-proxy の Azure 上の実行ランタイム変更は別途（engines 宣言のみ同期）
+          - Constraint source: SWA Managed API
+          - Touches: staticwebapp.config.json, Actions node-version, package engines, design doc
+          - gemini-proxy Azure runtime change is separate; engines declaration only
 
-検証（tsc / テスト / build）済み。マージ後に本番デプロイを起動します。" \
-            --base main \
-            --head "$BRANCH")
+          Verified with tsc / tests / build. Deploy will be dispatched after merge.
+          EOF
+          PR_URL=$(gh pr create --title "chore: Node ${TARGET} (SWA managed max)" --label "platform-versions" --body-file "$BODY_FILE" --base main --head "$BRANCH")
           echo "PR=$PR_URL"
           gh pr merge "$PR_URL" --squash --delete-branch
           gh workflow run azure-static-web-apps.yml --ref main
