@@ -76,6 +76,8 @@ export interface SecurityTriageRequest {
   collections?: unknown;
   openSecurityPrs?: unknown;
   runUrl?: unknown;
+  /** 夕方の再試行用。本日分の AI 要約が成功済みなら何もしない（無料枠の節約） */
+  onlyIfAiFailed?: unknown;
 }
 
 function container() {
@@ -322,6 +324,15 @@ async function stage<T>(name: string, run: () => Promise<T>): Promise<T> {
 
 export async function runSecurityTriage(body: SecurityTriageRequest): Promise<SecurityTriageReport> {
   const now = new Date();
+  if (body.onlyIfAiFailed === true && isCosmosConfigured()) {
+    const today = await stage("read-today", () =>
+      container()
+        .item(`triage-${jstDateString(now)}`, TRIAGE_BUCKET)
+        .read<SecurityTriageReport>()
+        .then((r) => r.resource ?? null),
+    );
+    if (today?.aiStatus === "ok") return today;
+  }
   const parsedRaw = parseTriageRequest(body);
   const parsed = {
     ...parsedRaw,
