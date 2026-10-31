@@ -1,4 +1,6 @@
 import { createHash } from "crypto";
+import { resolveClientIp } from "@/lib/client-ip";
+import { rejectIfSourceBlocked } from "@/lib/server/security-blocklist";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 
 type RateBucket = {
@@ -17,13 +19,10 @@ const buckets = new Map<string, RateBucket>();
 const MAX_BUCKETS = 5000;
 
 function sourceKey(request: Request): string {
-  const forwarded = request.headers.get("x-azure-clientip")
-    ?? request.headers.get("x-forwarded-for")
-    ?? request.headers.get("cf-connecting-ip")
-    ?? "unknown";
+  const ip = resolveClientIp(request.headers);
   const userAgent = request.headers.get("user-agent") ?? "unknown";
   return createHash("sha256")
-    .update(`${forwarded.slice(0, 256)}:${userAgent.slice(0, 128)}`)
+    .update(`${ip}:${userAgent.slice(0, 128)}`)
     .digest("hex")
     .slice(0, 24);
 }
@@ -44,6 +43,9 @@ export async function enforcePublicRequestProtection(
   request: Request,
   policy: RateLimitPolicy,
 ): Promise<Response | null> {
+  const blocked = await rejectIfSourceBlocked(request);
+  if (blocked) return blocked;
+
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (
     policy.maxBodyBytes != null

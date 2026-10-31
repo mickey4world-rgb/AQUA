@@ -1,0 +1,90 @@
+name: Security Daily Triage
+
+# 毎朝 7:00 JST。脆弱性・コード解析・防御履歴を集め、本番で AI 診断してメール通知する。
+# 公開リポジトリなのでログには警戒レベルだけを出し、脆弱性の中身は出さない。
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: read
+  pull-requests: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Collect findings
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECURITY_ALERTS_TOKEN: ${{ secrets.SECURITY_ALERTS_TOKEN }}
+        run: node .github/scripts/security-collect.mjs > "$RUNNER_TEMP/findings.json"
+
+      - name: AI triage on production
+        id: triage
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+        run: |
+          if [ -z "$SOLUNA_CRON_SECRET" ]; then
+            echo "::error::SOLUNA_CRON_SECRET not set"
+            exit 1
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          curl -sS --max-time 10 https://api.ipify.org > "$RUNNER_TEMP/myip.txt" || true
+          status=""
+          for i in 1 2 3; do
+            status=$(curl -sS -o "$RUNNER_TEMP/triage.json" -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+              -H "Content-Type: application/json" \
+              --data-binary @"$RUNNER_TEMP/findings.json" \
+              --max-time 110 \
+              "${BASE%/}/api/security/cron/daily-triage" || true)
+            echo "attempt $i status=$status"
+            if [ "$status" = "200" ]; then break; fi
+            sleep $((20 * i))
+          done
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Judge result
+        env:
+          HTTP_STATUS: ${{ steps.triage.outputs.status }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const status = process.env.HTTP_STATUS;
+            let r = null;
+            try { r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/triage.json", "utf8")); } catch {}
+            const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
+            if (status !== "200" || !r || !r.ok) {
+              summary("診断失敗: 本番の診断 API が応答しませんでした（メール未送信）。");
+              console.log("::error::triage failed (HTTP " + status + ")");
+              process.exit(1);
+            }
+            summary("警戒レベル: " + r.level + " / AI: " + r.aiStatus + " / メール: " + r.emailStatus);
+            if (r.incompleteSources.length) summary("取得できなかった情報源: " + r.incompleteSources.join(", "));
+            console.log("level=" + r.level + " ai=" + r.aiStatus + " email=" + r.emailStatus);
+            let myIp = "";
+            try { myIp = fs.readFileSync(process.env.RUNNER_TEMP + "/myip.txt", "utf8").trim(); } catch {}
+            if (myIp) {
+              const mine = require("crypto").createHash("sha256").update(myIp).digest("hex").slice(0, 12);
+              const match = mine === r.resolvedIpHash;
+              console.log("client-ip resolution " + (match ? "OK" : "MISMATCH"));
+              summary("送信元IPの判定: " + (match ? "正常" : "不一致（自動ブロックの識別を要確認）"));
+              if (!match) console.log("::warning::server resolved a different client IP than this runner");
+            }
+            // 至急なのにメールが届いていない時だけ失敗させ、GitHub の失敗通知で気づけるようにする
+            if (r.level !== "ok" && r.emailStatus !== "sent") {
+              console.log("::error::alert email was not delivered");
+              process.exit(1);
+            }
+          '

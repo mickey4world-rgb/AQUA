@@ -3,6 +3,7 @@ import { requireAllowedAuth } from "@/lib/server/auth";
 import { resolveCanonicalPrincipal } from "@/lib/server/users";
 import { logApiAccess } from "@/lib/server/access-log";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { rejectIfSourceBlocked } from "@/lib/server/security-blocklist";
 
 export function getRequestStartedAt(): number {
   return Date.now();
@@ -30,6 +31,8 @@ export async function withApiAccessLog(
   options?: { skipAccessLog?: boolean },
 ): Promise<Response> {
   const startedAt = getRequestStartedAt();
+  const blocked = await rejectIfSourceBlocked(request);
+  if (blocked) return blocked;
   const authOrResponse = requireAuthOrResponse(request);
   if (authOrResponse instanceof Response) {
     await recordSecurityEvent({

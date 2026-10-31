@@ -19,6 +19,105 @@ function severityClass(severity: "low" | "medium" | "high"): string {
   return "bg-sky-500/15 text-sky-200";
 }
 
+const TRIAGE_STALE_HOURS = 36;
+
+const LEVEL_STYLE = {
+  ok: { label: "問題なし", className: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" },
+  warn: { label: "要確認", className: "border-amber-400/30 bg-amber-500/10 text-amber-100" },
+  critical: { label: "至急対応", className: "border-rose-400/40 bg-rose-500/15 text-rose-100" },
+} as const;
+
+const PRIORITY_LABEL = { now: "至急", today: "本日中", week: "今週" } as const;
+
+function TriagePanel({ triage }: { triage: SecurityAnalyticsReport["latestTriage"] }) {
+  if (!triage) {
+    return (
+      <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+        AI セキュリティ日次診断の結果がまだありません（毎朝 7 時に GitHub Actions が実行します）。
+      </div>
+    );
+  }
+  const stale = triage.ageHours > TRIAGE_STALE_HOURS;
+  const style = LEVEL_STYLE[triage.level];
+  return (
+    <div className={`rounded-2xl border px-5 py-4 ${style.className}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-semibold">
+          AI 日次診断: {style.label}
+        </span>
+        <span className="text-xs opacity-80">
+          {formatTimestamp(triage.generatedAt)} 実行（{triage.dateJst}）
+        </span>
+        {triage.aiStatus === "failed" && (
+          <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px]">
+            AI 要約失敗・ルール判定のみ
+          </span>
+        )}
+      </div>
+      {stale && (
+        <p className="mt-2 rounded-lg bg-rose-500/20 px-3 py-2 text-sm text-rose-100">
+          診断が {triage.ageHours} 時間更新されていません。GitHub Actions の「Security Daily Triage」を確認してください。
+        </p>
+      )}
+      <p className="mt-3 font-semibold">{triage.headline}</p>
+      <p className="mt-1 text-sm opacity-90">{triage.summary}</p>
+      {triage.incompleteSources.length > 0 && (
+        <p className="mt-2 text-xs opacity-80">
+          取得できなかった情報源: {triage.incompleteSources.join(", ")}
+        </p>
+      )}
+      {triage.actions.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm">
+          {triage.actions.slice(0, 6).map((action) => (
+            <li key={`${action.priority}-${action.title}`}>
+              <span className="mr-2 rounded bg-black/30 px-1.5 py-0.5 text-[10px]">
+                {PRIORITY_LABEL[action.priority]}
+              </span>
+              {action.title}
+              <span className="ml-1 opacity-70">— {action.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {triage.emailStatus === "failed" && (
+        <p className="mt-2 text-xs text-rose-200">通知メールの送信に失敗しました。</p>
+      )}
+    </div>
+  );
+}
+
+function AutoBlockPanel({ blocks }: { blocks: SecurityAnalyticsReport["activeAutoBlocks"] }) {
+  if (blocks == null) {
+    return (
+      <p className="text-xs text-rose-300">自動ブロック一覧を取得できませんでした。</p>
+    );
+  }
+  if (blocks.length === 0) {
+    return (
+      <p className="text-xs text-slate-500">
+        現在自動ブロック中の送信元はありません（10分間に繰り返し攻撃を検知すると全APIで1〜24時間遮断します）。
+      </p>
+    );
+  }
+  return (
+    <div className={`${costsPanelClass} overflow-hidden`}>
+      <div className="border-b border-white/10 px-5 py-4">
+        <h3 className="text-sm font-semibold text-white">自動ブロック中の送信元 {blocks.length} 件</h3>
+      </div>
+      <div className="divide-y divide-white/5">
+        {blocks.slice(0, 20).map((block) => (
+          <div key={`${block.lastBlockedAt}-${block.lastPath}`} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
+            <span className="text-white">{block.lastAttackLabel}</span>
+            <span className="font-mono text-xs text-slate-400">{block.lastPath}</span>
+            <span className="text-xs text-slate-400">{block.country ?? "不明"}・{block.blockCount}回目</span>
+            <span className="text-xs text-rose-200">{formatTimestamp(block.blockedUntil)} まで</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SecurityDefensePanels({
   report,
 }: {
@@ -42,6 +141,9 @@ export default function SecurityDefensePanels({
         </h2>
         <p className="mt-2 text-sm text-slate-400">{report.coverageNote}</p>
       </div>
+
+      <TriagePanel triage={report.latestTriage} />
+      <AutoBlockPanel blocks={report.activeAutoBlocks} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (

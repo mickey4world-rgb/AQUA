@@ -14,10 +14,19 @@ on:
     paths:
       - "frontend/**"
       - ".github/workflows/azure-static-web-apps.yml"
+  # Security Autopatch のマージ後に起動される
+  workflow_dispatch:
+
+concurrency:
+  group: swa-deploy-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
 
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    # Dependabot の PR は公開プレビュー環境を作らない（検証は security-autopatch.yml）
+    if: >
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     env:
@@ -66,8 +75,67 @@ jobs:
           output_location: ""
           skip_app_build: true
 
+  smoke_and_rollback_job:
+    needs: build_and_deploy_job
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: Smoke Test and Auto Rollback
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Smoke test production
+        id: smoke
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          sleep 60
+          failed=""
+          for path in "/" "/login" "/api/public/works-news-search"; do
+            ok=0
+            for i in 1 2 3 4 5 6; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "${BASE%/}${path}" || true)
+              if [ "$code" = "200" ]; then ok=1; break; fi
+              echo "$path attempt $i -> $code"
+              sleep 20
+            done
+            if [ "$ok" != "1" ]; then failed="$failed $path"; fi
+          done
+          if [ -n "$failed" ]; then
+            echo "failed=$failed" >> "$GITHUB_OUTPUT"
+            echo "::error::smoke test failed:$failed"
+            exit 1
+          fi
+          echo "smoke ok"
+
+      - name: Roll back automated dependency update
+        if: failure() && steps.smoke.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          author=$(git log -1 --format=%an)
+          subject=$(git log -1 --format=%s)
+          echo "head: $author / $subject"
+          # 自動マージした依存更新だけを戻す。人のコミットは戻さず失敗通知に任せる
+          if [ "$author" != "dependabot[bot]" ]; then
+            echo "not an automated update; leaving rollback to a human"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git revert --no-edit HEAD
+          git push origin HEAD:main
+          gh workflow run azure-static-web-apps.yml --ref main -R "$REPO"
+          echo "::warning::reverted automated update and redeployed"
+
   close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:

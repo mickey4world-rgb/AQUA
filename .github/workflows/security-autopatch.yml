@@ -1,0 +1,73 @@
+name: Security Autopatch
+
+# Dependabot のセキュリティ修正 PR を検証し、通れば自動マージして本番へ反映する。
+# 反映後の疎通確認に失敗したら azure-static-web-apps.yml が自動で元に戻す。
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Regression tests
+        run: |
+          npm run -s test:security-hardening
+          npm run -s test:security-automation
+          npm run -s test:stock-statement-fills
+          npm run -s test:stock-realized-pnl
+          npm run -s test:stock-dip-buy
+          npm run -s test:stock-buy-eligibility
+          npm run -s test:soluna-hunt
+
+      - name: Production build
+        run: npm run build
+
+  merge:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: Merge and deploy
+        # 本番に直結する frontend のみ自動。その他（VM ブリッジ等）は日次診断で人に知らせる
+        if: steps.meta.outputs.directory == '/frontend'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr merge "$PR_URL" --squash --delete-branch
+          # GITHUB_TOKEN による push はワークフローを起動しないため、デプロイを明示的に起動する
+          gh workflow run azure-static-web-apps.yml --ref main -R "$REPO"
+          echo "merged ${{ steps.meta.outputs.dependency-names }} (${{ steps.meta.outputs.update-type }}) and dispatched deploy"

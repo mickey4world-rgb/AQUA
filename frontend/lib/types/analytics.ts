@@ -202,6 +202,31 @@ export interface SecurityAnalyticsReport {
     createdAt: string;
   }>;
   coverageNote: string;
+  /** 最新の AI 日次診断（未実行・取得失敗は null） */
+  latestTriage: {
+    dateJst: string;
+    generatedAt: string;
+    /** 生成からの経過時間（サーバー算出） */
+    ageHours: number;
+    level: "ok" | "warn" | "critical";
+    headline: string;
+    summary: string;
+    reasons: string[];
+    actions: Array<{ priority: "now" | "today" | "week"; title: string; detail: string }>;
+    aiStatus: "ok" | "failed";
+    aiReason: string | null;
+    incompleteSources: string[];
+    emailStatus: "sent" | "skipped-ok" | "failed";
+  } | null;
+  /** 現在有効な自動ブロック（取得失敗は null） */
+  activeAutoBlocks: Array<{
+    blockedUntil: string;
+    lastBlockedAt: string;
+    blockCount: number;
+    lastAttackLabel: string;
+    lastPath: string;
+    country: string | null;
+  }> | null;
 }
 
 export interface PublicAccessAnalyticsPageSummary {

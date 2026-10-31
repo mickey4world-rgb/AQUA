@@ -1,4 +1,6 @@
+import { listActiveAutoBlocks } from "@/lib/server/security-blocklist";
 import { listSecurityEvents } from "@/lib/server/security-event";
+import { getLatestSecurityTriage } from "@/lib/server/security-triage";
 import type {
   SecurityAnalyticsReport,
 } from "@/lib/types/analytics";
@@ -9,12 +11,17 @@ const EVENT_LABELS: Record<SecurityEventType, string> = {
   automation_auth_denied: "自動タスク認証で遮断",
   rate_limited: "レート制限で遮断",
   invalid_request: "不正入力を遮断",
+  auto_blocked: "繰り返し攻撃を自動ブロック",
 };
 
 export async function buildSecurityAnalyticsReport(
   month: string,
 ): Promise<SecurityAnalyticsReport> {
-  const events = await listSecurityEvents(month);
+  const [events, triage, blocks] = await Promise.all([
+    listSecurityEvents(month),
+    getLatestSecurityTriage(),
+    listActiveAutoBlocks(),
+  ]);
   const sourceSet = new Set<string>();
   const pathSet = new Set<string>();
   const byTypeMap = new Map<
@@ -81,5 +88,30 @@ export async function buildSecurityAnalyticsReport(
     })),
     coverageNote:
       "表示値はAQUAアプリ層で検知・遮断してSecurityEventsへ記録できた事象です。Azure基盤がアプリ到達前に遮断したDDoS・プラットフォーム認証拒否は含みません。",
+    latestTriage: triage
+      ? {
+          dateJst: triage.dateJst,
+          generatedAt: triage.generatedAt,
+          ageHours: Math.max(0, Math.floor((Date.now() - Date.parse(triage.generatedAt)) / 3_600_000)),
+          level: triage.level,
+          headline: triage.headline,
+          summary: triage.summary,
+          reasons: triage.reasons,
+          actions: triage.actions,
+          aiStatus: triage.aiStatus,
+          aiReason: triage.aiReason,
+          incompleteSources: triage.collections.filter((c) => !c.ok).map((c) => c.source),
+          emailStatus: triage.emailStatus,
+        }
+      : null,
+    activeAutoBlocks:
+      blocks?.map((b) => ({
+        blockedUntil: b.blockedUntil,
+        lastBlockedAt: b.lastBlockedAt,
+        blockCount: b.blockCount,
+        lastAttackLabel: b.lastAttackLabel,
+        lastPath: b.lastPath,
+        country: b.country,
+      })) ?? null,
   };
 }

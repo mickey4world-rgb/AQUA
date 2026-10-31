@@ -2,7 +2,8 @@ export type SecurityEventType =
   | "auth_denied"
   | "automation_auth_denied"
   | "rate_limited"
-  | "invalid_request";
+  | "invalid_request"
+  | "auto_blocked";
 
 export type SecurityEventSeverity = "low" | "medium" | "high";
 

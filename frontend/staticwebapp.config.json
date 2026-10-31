@@ -169,6 +169,10 @@
       "allowedRoles": ["anonymous"]
     },
     {
+      "route": "/api/security/cron/*",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/soluna/*",
       "allowedRoles": ["authenticated"]
     },

@@ -18,6 +18,7 @@
     "test:stock-realized-pnl": "npx --yes tsx lib/stock-realized-pnl.test.ts",
     "test:stock-statement-fills": "npx --yes tsx lib/stock-broker-statement-fills.test.ts",
     "test:security-hardening": "npx --yes tsx lib/security-hardening.test.ts",
+    "test:security-automation": "npx --yes tsx lib/security-automation.test.ts",
     "test:stock-portfolio-overview": "npx --yes tsx lib/stock-portfolio-overview.test.ts",
     "test:soluna-hunt-materials": "npx --yes tsx lib/soluna-hunt-materials.test.ts",
     "test:soluna-hunt": "npx --yes tsx lib/soluna-hunt-improvements.test.ts",

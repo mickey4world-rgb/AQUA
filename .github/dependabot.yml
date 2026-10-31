@@ -1,0 +1,30 @@
+# セキュリティ修正 PR だけを出す（通常のバージョン更新は open-pull-requests-limit: 0 で止める）。
+# frontend の修正 PR は security-autopatch.yml が検証後に自動マージ・本番反映する。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: daily
+      time: "05:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 0
+    labels: [security, dependencies]
+  - package-ecosystem: npm
+    directory: /gemini-proxy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels: [security, dependencies]
+  - package-ecosystem: npm
+    directory: /tools/kabu-bridge
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels: [security, dependencies]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels: [security, dependencies]
