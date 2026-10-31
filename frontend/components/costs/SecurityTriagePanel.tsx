@@ -43,6 +43,7 @@ const SOURCE_LABEL: Record<string, string> = {
   "secret-scanning": "秘密情報の検出",
   "security-events": "防御履歴（直近24時間）",
   autoblock: "自動ブロック一覧",
+  "platform-runtime": "ホスト制約（SWA Node など）",
 };
 
 const ISSUE_SOURCE_LABEL: Record<string, string> = {
@@ -50,6 +51,7 @@ const ISSUE_SOURCE_LABEL: Record<string, string> = {
   dependabot: "依存パッケージ",
   "code-scanning": "コード",
   "secret-scanning": "秘密情報",
+  "platform-runtime": "ホスト",
 };
 
 const PRIORITY = {

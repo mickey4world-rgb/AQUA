@@ -5,7 +5,12 @@
  */
 
 export type TriageSeverity = "critical" | "high" | "medium" | "low" | "unknown";
-export type TriageSource = "npm-audit" | "dependabot" | "code-scanning" | "secret-scanning";
+export type TriageSource =
+  | "npm-audit"
+  | "dependabot"
+  | "code-scanning"
+  | "secret-scanning"
+  | "platform-runtime";
 export type TriageLevel = "ok" | "warn" | "critical";
 
 export interface TriageFinding {
@@ -29,6 +34,9 @@ export interface TriageCollection {
   /** 未接続でも警戒レベルを上げない任意の情報源（GitHub トークンが必要なもの） */
   optional?: boolean;
 }
+
+/** 収集結果に載せるホスト制約の情報源（依存パッケージの SOURCES とは別枠） */
+export const PLATFORM_COLLECTION_SOURCE = "platform-runtime" as const;
 
 export interface TriageSecurityEventStats {
   total: number;

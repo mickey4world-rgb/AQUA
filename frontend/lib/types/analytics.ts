@@ -218,7 +218,7 @@ export interface SecurityAnalyticsReport {
     aiReason: string | null;
     counts: Record<"critical" | "high" | "medium" | "low" | "unknown", number>;
     issues: Array<{
-      source: "npm-audit" | "dependabot" | "code-scanning" | "secret-scanning";
+      source: "npm-audit" | "dependabot" | "code-scanning" | "secret-scanning" | "platform-runtime";
       severity: "critical" | "high" | "medium" | "low" | "unknown";
       title: string;
       packageName: string | null;

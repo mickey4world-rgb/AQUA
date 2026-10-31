@@ -1,0 +1,107 @@
+name: Platform Version Align
+
+# ソース依存以外: Azure SWA Managed API が許す最大 Node にリポジトリ内ピンを揃える。
+# SWA が node:24 を載せたら自動で 24 へ。載せない間は 22 のまま（ホスト制約が正本）。
+on:
+  schedule:
+    # 毎週月曜 7:30 JST
+    - cron: "30 22 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Probe SWA docs vs repo pins
+        id: probe
+        working-directory: frontend
+        run: |
+          set +e
+          npx --yes tsx scripts/platform-version-align.ts > "$RUNNER_TEMP/platform.json"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/platform.json"
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          node -e '
+            const fs = require("fs");
+            const r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/platform.json", "utf8"));
+            const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
+            summary("## ホスト制約（SWA Managed API）");
+            summary("- SWA 上限 Node: **" + (r.swaMaxMajor ?? "不明") + "**");
+            summary("- 目標: **" + (r.targetMajor ?? "なし") + "**");
+            if (r.parseError) summary("- 判定失敗: " + r.parseError);
+            summary("- 未揃え: " + (r.todo?.length ?? 0) + " ファイル");
+            if (r.todo?.length) summary("- 対象: " + r.todo.join(", "));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "need_apply=" + ((r.todo && r.todo.length > 0 && r.ok) ? "true" : "false") + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "target=" + (r.targetMajor ?? "") + "\n");
+          '
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          if [ "$code" -eq 2 ]; then echo "::warning::could not parse SWA docs; skip apply"; fi
+
+      - name: Apply alignment
+        if: steps.probe.outputs.need_apply == 'true'
+        working-directory: frontend
+        run: npx --yes tsx scripts/platform-version-align.ts --apply
+
+      - name: Install and verify
+        if: steps.probe.outputs.need_apply == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm run -s test:platform-versions
+          npm run -s test:security-automation
+          npm run build
+
+      - name: Open PR, merge, deploy
+        if: steps.probe.outputs.need_apply == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.probe.outputs.target }}
+        run: |
+          BRANCH="chore/platform-node-${TARGET}-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no file changes after apply"
+            exit 0
+          fi
+          git commit -m "chore: align Node pins to SWA managed max (node:${TARGET})"
+          git push -u origin "$BRANCH"
+          gh label create platform-versions --color "0E8A16" --description "Host runtime alignment (SWA apiRuntime)" 2>/dev/null || true
+          PR_URL=$(gh pr create \
+            --title "chore: Node ${TARGET}（SWA Managed API 上限に自動揃え）" \
+            --label "platform-versions" \
+            --body "Azure Static Web Apps の公式 apiRuntime 上限が Node ${TARGET} のため、リポジトリ内のピンを自動で揃えました。
+
+- 制約の正本: SWA Managed API（\`node:${TARGET}\`）
+- 対象: staticwebapp.config.json / Actions node-version / engines / 設計メモ
+- gemini-proxy の Azure 上の実行ランタイム変更は別途（engines 宣言のみ同期）
+
+検証（tsc / テスト / build）済み。マージ後に本番デプロイを起動します。" \
+            --base main \
+            --head "$BRANCH")
+          echo "PR=$PR_URL"
+          gh pr merge "$PR_URL" --squash --delete-branch
+          gh workflow run azure-static-web-apps.yml --ref main
+          echo "deploy dispatched"

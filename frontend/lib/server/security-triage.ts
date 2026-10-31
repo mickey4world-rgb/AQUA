@@ -87,6 +87,8 @@ function container() {
 const SOURCES = new Set(["npm-audit", "dependabot", "code-scanning", "secret-scanning"]);
 /** 任意扱いを許すのはトークンが必要な情報源だけ（必須の情報源を任意にすり替えさせない） */
 const OPTIONAL_SOURCES = new Set(["dependabot", "secret-scanning"]);
+/** 依存以外のホスト制約チェック（SWA apiRuntime など） */
+const PLATFORM_SOURCES = new Set(["platform-runtime"]);
 
 function str(value: unknown, max: number): string | null {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
@@ -106,7 +108,7 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
     const source = str(r.source, 32);
     const id = str(r.id, 120);
     const title = str(r.title, 240);
-    if (!source || !SOURCES.has(source) || !id || !title) continue;
+    if (!source || !(SOURCES.has(source) || PLATFORM_SOURCES.has(source)) || !id || !title) continue;
     findings.push({
       source: source as TriageFinding["source"],
       id,
@@ -124,7 +126,7 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
     if (!raw || typeof raw !== "object") continue;
     const r = raw as Record<string, unknown>;
     const source = str(r.source, 32);
-    if (!source || !SOURCES.has(source)) continue;
+    if (!source || !(SOURCES.has(source) || PLATFORM_SOURCES.has(source))) continue;
     const optionalSource = OPTIONAL_SOURCES.has(source);
     collections.push({
       source: source as TriageCollection["source"],
@@ -134,7 +136,7 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
       optional: optionalSource && r.optional === true,
     });
   }
-  for (const required of SOURCES) {
+  for (const required of [...SOURCES, ...PLATFORM_SOURCES]) {
     if (!collections.some((c) => c.source === required)) {
       collections.push({
         source: required as TriageCollection["source"],

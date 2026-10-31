@@ -97,6 +97,7 @@ const allOk: TriageCollection[] = [
   { source: "dependabot", ok: true, count: 0 },
   { source: "code-scanning", ok: true, count: 0 },
   { source: "secret-scanning", ok: true, count: 0 },
+  { source: "platform-runtime", ok: true, count: 0 },
 ];
 const base = { collections: allOk, openSecurityPrs: [], events: null, now };
 

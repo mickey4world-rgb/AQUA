@@ -179,14 +179,86 @@ async function collectOpenSecurityPrs() {
   const { status, body } = await gh(`/repos/${repo}/pulls?state=open&per_page=100`, ghToken);
   if (status !== 200 || !Array.isArray(body)) return [];
   return body
-    .filter((pr) => pr.user?.login === "dependabot[bot]")
+    .filter((pr) =>
+      pr.user?.login === "dependabot[bot]" ||
+      (Array.isArray(pr.labels) && pr.labels.some((l) => l.name === "platform-versions")),
+    )
     .map((pr) => ({ number: pr.number, title: pr.title, url: pr.html_url, createdAt: pr.created_at }));
+}
+
+/** SWA が許す Node 上限とリポジトリ内ピンのズレ（ソース依存以外のホスト制約） */
+function collectPlatformRuntime() {
+  let report;
+  try {
+    const stdout = execFileSync(
+      "npx",
+      ["--yes", "tsx", "frontend/scripts/platform-version-align.ts"],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
+    report = JSON.parse(stdout);
+  } catch (error) {
+    const stdout = error.stdout ?? "";
+    try {
+      report = JSON.parse(stdout);
+    } catch {
+      collections.push({
+        source: "platform-runtime",
+        ok: false,
+        count: 0,
+        error: "ホスト版の判定に失敗",
+      });
+      return;
+    }
+  }
+  const behind = Array.isArray(report?.behind) ? report.behind : [];
+  const ahead = Array.isArray(report?.ahead) ? report.ahead : [];
+  const misaligned = [...behind, ...ahead];
+  const target = report?.targetMajor;
+  if (report?.ok === false || target == null) {
+    collections.push({
+      source: "platform-runtime",
+      ok: false,
+      count: 0,
+      error: report?.parseError ?? "SWA 上限を取得できず",
+    });
+    return;
+  }
+  for (const pin of misaligned) {
+    findings.push({
+      source: "platform-runtime",
+      id: `node-${pin.path}-${pin.major ?? "unknown"}`,
+      title:
+        pin.major != null && pin.major > target
+          ? `Node ${pin.major} が SWA 上限 ${target} を超えています（${pin.path}）`
+          : `Node を ${target} に揃えられます（いま ${pin.major} / ${pin.path}）`,
+      severity: pin.major != null && pin.major > target ? "medium" : "low",
+      packageName: "node",
+      manifest: pin.path,
+      fixAvailable: true,
+      firstSeenAt: null,
+      url: report.docsUrl ?? null,
+    });
+  }
+  collections.push({
+    source: "platform-runtime",
+    ok: misaligned.length === 0,
+    count: misaligned.length,
+    error:
+      misaligned.length === 0
+        ? null
+        : `SWA 上限 Node ${target} に対し未揃え ${misaligned.length} 箇所（自動揃え workflow あり）`,
+  });
 }
 
 collectNpmAudit();
 await collectCodeScanning();
 await collectDependabot();
 await collectSecretScanning();
+collectPlatformRuntime();
 const openSecurityPrs = await collectOpenSecurityPrs();
 
 process.stdout.write(JSON.stringify({ findings, collections, openSecurityPrs, runUrl }));
