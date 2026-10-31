@@ -4,7 +4,8 @@ name: Platform Version Align
 # SWA が node:24 を載せたら自動で上げる。載せない間は上限のまま。
 on:
   schedule:
-    - cron: "30 22 * * 0"
+    # 毎週土曜 7:30 JST（= 金曜 22:30 UTC）
+    - cron: "30 22 * * 5"
   workflow_dispatch:
 
 permissions:
