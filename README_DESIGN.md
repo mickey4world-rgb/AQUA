@@ -86,7 +86,7 @@ flowchart TB
     subgraph Azure["Azure（国内リージョン中心）"]
         subgraph SWA["Azure Static Web Apps<br/>swa-personal-apps-prod"]
             FE["Next.js フロントエンド<br/>React / App Router"]
-            API["Next.js API Routes<br/>/api/* （Node 20）"]
+            API["Next.js API Routes<br/>/api/* （Node 22）"]
         end
 
         Cosmos[("Cosmos DB Serverless<br/>DB: personal-apps")]

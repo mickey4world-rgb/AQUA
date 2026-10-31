@@ -15,6 +15,7 @@ import {
 import {
   generateWithGemini,
   getGeminiModel,
+  getGeminiModelCandidates,
   isGeminiConfigured,
   stripJsonFence,
 } from "@/lib/server/gemini";
@@ -101,12 +102,6 @@ const DUO_PROVIDER_TIMEOUT_MS = 6_500;
 const MAX_PROVIDER_ATTEMPTS_SOL = 2;
 const MAX_PROVIDER_ATTEMPTS_LUNA = 2;
 const MAX_CLAUDE_MODEL_ATTEMPTS = 2;
-const FAST_GEMINI_MODELS = [
-  "gemini-flash-latest",
-  "gemini-2.0-flash",
-  "gemini-3.6-flash",
-] as const;
-
 const SOL_CATEGORIES = new Set<SolunaMemoryCategory>([
   "goal",
   "task",
@@ -969,7 +964,8 @@ async function chatVoiceDuo(params: {
   // 即答: Gemini Flash を最優先（1試行で決める）
   const attempts: SolunaRouteAssignment[] = [];
   if (isGeminiConfigured()) {
-    for (const modelId of FAST_GEMINI_MODELS) {
+    // 候補の正本は getGeminiModelCandidates（古い 2.x を個別ハードコードしない）
+    for (const modelId of getGeminiModelCandidates()) {
       attempts.push({
         ...buildFallbackAssignment(
           params.voiceLead,

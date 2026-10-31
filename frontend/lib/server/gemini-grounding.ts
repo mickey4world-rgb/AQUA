@@ -1,22 +1,16 @@
 /**
  * Gemini Google Search grounding（ニュース討伐・人間チャット共用）
  */
-import { isGeminiConfigured } from "@/lib/server/gemini";
+import { getGeminiModelCandidates, isGeminiConfigured } from "@/lib/server/gemini";
 
 const DEFAULT_TIMEOUT_MS = 18_000;
 const FAST_RACE_MODELS = 2;
 
 function getGroundingModelCandidates(): string[] {
-  const env =
+  const preferred =
     process.env.SOLUNA_WEB_GEMINI_MODEL?.trim() ||
     process.env.SOLUNA_NEWS_GEMINI_MODEL?.trim();
-  const defaults = [
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
-  ];
-  return env ? [...new Set([env, ...defaults])] : defaults;
+  return getGeminiModelCandidates(preferred);
 }
 
 function getRelay(): { url: string; key: string } | null {

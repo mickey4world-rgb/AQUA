@@ -6,6 +6,12 @@
 
 export const LATEST_ALIAS = "gemini-flash-latest";
 
+/**
+ * テキスト生成で使う無料枠 Flash の正本。
+ * gemini.ts / grounding / chat / セキュリティ選定はここを参照し、古い 2.x を個別に並べない。
+ */
+export const KNOWN_FLASH_MODELS = [LATEST_ALIAS, "gemini-3.6-flash"] as const;
+
 type ParsedFlash = { major: number; minor: number; lite: boolean };
 
 export function parseFlashModel(model: string): ParsedFlash | null {

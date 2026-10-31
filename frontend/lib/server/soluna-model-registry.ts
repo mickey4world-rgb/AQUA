@@ -47,11 +47,10 @@ const MODEL_CATALOG: ModelCandidate[] = [
   { provider: "claude", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", costClass: "high", minTier: "growing", priority: 80 },
   { provider: "claude", modelId: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", costClass: "low", minTier: "budding", priority: 45 },
 
-  // Gemini
+  // Gemini（Flash 候補の正本は ai-model-selection / getGeminiModelCandidates と揃える）
   { provider: "gemini", modelId: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", costClass: "free", minTier: "mature", priority: 90 },
-  { provider: "gemini", modelId: "gemini-flash-latest", displayName: "Gemini Flash", costClass: "free", minTier: "budding", priority: 80 },
-  { provider: "gemini", modelId: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash", costClass: "free", minTier: "budding", priority: 70 },
   { provider: "gemini", modelId: "gemini-3.6-flash", displayName: "Gemini 3.6 Flash", costClass: "free", minTier: "budding", priority: 85 },
+  { provider: "gemini", modelId: "gemini-flash-latest", displayName: "Gemini Flash", costClass: "free", minTier: "budding", priority: 80 },
 ];
 
 function trimEnv(key: string): string | undefined {

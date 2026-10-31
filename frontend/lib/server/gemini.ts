@@ -3,10 +3,12 @@
  * SDK を足さず fetch のみで呼ぶ。課金 API（Vertex AI）は使わない。
  */
 
+import { KNOWN_FLASH_MODELS, LATEST_ALIAS } from "@/lib/ai-model-selection";
+
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 /** 思考モデル。maxOutputTokens には思考分（1000〜1500程度）を上乗せして渡すこと。 */
-const DEFAULT_MODEL = "gemini-flash-latest";
-const DEFAULT_FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-flash-latest"];
+const DEFAULT_MODEL = LATEST_ALIAS;
+const DEFAULT_FALLBACK_MODELS = [...KNOWN_FLASH_MODELS];
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_GEMINI_ATTEMPTS = 3;
 
