@@ -1,13 +1,13 @@
 name: Security Daily Triage
 
 # 毎朝 7:00 JST。脆弱性・コード解析・防御履歴を集め、本番で AI 診断する。
-# 17:00 JST（無料枠の日次リセット後）は、朝の AI 要約が失敗した日だけやり直す。
+# 18:00 JST（無料枠の日次リセット＝米太平洋 0 時の後。夏時間でも冬時間でも過ぎている）は、朝の AI 要約が失敗した日だけやり直す。
 # 結果はアクセス・セキュリティ分析画面で確認する（メール通知なし）。
 # 公開リポジトリなのでログには警戒レベルだけを出し、脆弱性の中身は出さない。
 on:
   schedule:
     - cron: "0 22 * * *"
-    - cron: "0 8 * * *"
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       retry_only:
@@ -35,7 +35,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SECURITY_ALERTS_TOKEN: ${{ secrets.SECURITY_ALERTS_TOKEN }}
-          RETRY_ONLY: ${{ github.event.schedule == '0 8 * * *' || inputs.retry_only == true }}
+          RETRY_ONLY: ${{ github.event.schedule == '0 9 * * *' || inputs.retry_only == true }}
         run: |
           node .github/scripts/security-collect.mjs > "$RUNNER_TEMP/findings.json"
           if [ "$RETRY_ONLY" = "true" ]; then
