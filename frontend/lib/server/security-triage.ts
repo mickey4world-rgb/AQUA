@@ -6,6 +6,7 @@ import {
 import { generateWithGemini, stripJsonFence } from "@/lib/server/gemini";
 import {
   SECURITY_AI_THINKING_LEVEL,
+  getSecurityAiModelState,
   securityAiModelOrder,
   selectSecurityAiModel,
   type SecurityAiModelState,
@@ -344,18 +345,20 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     now,
   });
 
-  const modelState = await selectSecurityAiModel(now).catch((error) => {
-    console.warn("[security-triage] model selection failed", error instanceof Error ? error.message : error);
-    return null;
-  });
+  // 無料枠は分あたりの回数制限があるため、要約を先に済ませてからモデルを試す（切替は翌日から有効）
+  const currentModel = await getSecurityAiModelState();
   const ai = await stage("ai-summary", () =>
     summarizeWithAi({
       assessment,
       events: stats,
       openSecurityPrs: parsed.openSecurityPrs.length,
-      models: securityAiModelOrder(modelState),
+      models: securityAiModelOrder(currentModel),
     }),
   );
+  const modelState = await selectSecurityAiModel(now).catch((error) => {
+    console.warn("[security-triage] model selection failed", error instanceof Error ? error.message : error);
+    return currentModel;
+  });
   const headline = ai.ok ? ai.value.headline : `${TRIAGE_LEVEL_LABEL[assessment.level]}: ${assessment.reasons[0]}`;
   const summary = ai.ok ? ai.value.summary : assessment.reasons.join(" / ");
   const actions = ai.ok && ai.value.actions.length > 0 ? ai.value.actions : fallbackTriageActions(assessment);

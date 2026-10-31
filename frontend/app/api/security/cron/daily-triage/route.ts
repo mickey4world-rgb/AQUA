@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       ok: true,
       level: report.level,
       aiStatus: report.aiStatus,
-      aiModel: report.modelSelection?.selected ?? null,
+      aiModel: report.aiModel ?? report.modelSelection?.selected ?? null,
       incompleteSources: report.collections.filter((c) => !c.ok && !c.optional).map((c) => c.source),
       aiFailure: report.aiReason ? failureCode(report.aiReason) : null,
       // 自動ブロックが本当の送信元で判定できているかを GHA 側の自 IP と照合する
