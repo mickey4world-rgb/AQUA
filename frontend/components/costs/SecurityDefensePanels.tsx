@@ -49,7 +49,10 @@ function TriagePanel({ triage }: { triage: SecurityAnalyticsReport["latestTriage
           {formatTimestamp(triage.generatedAt)} 実行（{triage.dateJst}）
         </span>
         {triage.aiStatus === "failed" && (
-          <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px]">
+          <span
+            className="rounded-full bg-black/30 px-2 py-0.5 text-[10px]"
+            title={triage.aiReason ?? undefined}
+          >
             AI 要約失敗・ルール判定のみ
           </span>
         )}
@@ -80,7 +83,12 @@ function TriagePanel({ triage }: { triage: SecurityAnalyticsReport["latestTriage
         </ul>
       )}
       {triage.emailStatus === "failed" && (
-        <p className="mt-2 text-xs text-rose-200">通知メールの送信に失敗しました。</p>
+        <p className="mt-2 text-xs text-rose-200">
+          通知メールの送信に失敗しました{triage.emailError ? `（${triage.emailError}）` : ""}。
+        </p>
+      )}
+      {triage.aiStatus === "failed" && triage.aiReason && (
+        <p className="mt-1 text-xs opacity-70">AI 要約の失敗理由: {triage.aiReason}</p>
       )}
     </div>
   );

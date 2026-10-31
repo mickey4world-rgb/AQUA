@@ -102,6 +102,7 @@ export async function buildSecurityAnalyticsReport(
           aiReason: triage.aiReason,
           incompleteSources: triage.collections.filter((c) => !c.ok).map((c) => c.source),
           emailStatus: triage.emailStatus,
+          emailError: triage.emailError,
         }
       : null,
     activeAutoBlocks:

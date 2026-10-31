@@ -223,7 +223,8 @@ async function summarizeWithAi(input: {
     {
       system,
       messages: [{ role: "user", content: user }],
-      maxOutputTokens: 2500,
+      // 思考モデルは思考分も消費するため余裕を持たせる（不足すると JSON が途中で切れる）
+      maxOutputTokens: 6000,
       temperature: 0.2,
       responseMimeType: "application/json",
     },

@@ -73,6 +73,7 @@ jobs:
             summary("警戒レベル: " + r.level + " / AI: " + r.aiStatus + " / メール: " + r.emailStatus);
             if (r.incompleteSources.length) summary("取得できなかった情報源: " + r.incompleteSources.join(", "));
             console.log("level=" + r.level + " ai=" + r.aiStatus + " email=" + r.emailStatus);
+            if (r.aiFailure || r.emailFailure) console.log("aiFailure=" + r.aiFailure + " emailFailure=" + r.emailFailure);
             let myIp = "";
             try { myIp = fs.readFileSync(process.env.RUNNER_TEMP + "/myip.txt", "utf8").trim(); } catch {}
             if (myIp) {

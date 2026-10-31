@@ -217,6 +217,7 @@ export interface SecurityAnalyticsReport {
     aiReason: string | null;
     incompleteSources: string[];
     emailStatus: "sent" | "skipped-ok" | "failed";
+    emailError: string | null;
   } | null;
   /** 現在有効な自動ブロック（取得失敗は null） */
   activeAutoBlocks: Array<{
