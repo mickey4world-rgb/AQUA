@@ -44,7 +44,7 @@
 |---|---|---|
 | フロントエンド | **Next.js 16**（App Router）+ **React** + TypeScript + Tailwind CSS | ユーザー向け UI |
 | 認証 | **Azure Static Web Apps 組み込み認証** | Microsoft Entra ID（`aad`）/ GitHub |
-| バックエンド API | **Next.js Route Handlers**（`/app/api/*`） | SWA の Managed API（`node:20`）として実行 |
+| バックエンド API | **Next.js Route Handlers**（`/app/api/*`） | SWA の Managed API（`node:22`）として実行 |
 | データベース | **Azure Cosmos DB**（Serverless） | DB 名 `personal-apps`、パーティションキー `userId` |
 | AI | **Azure OpenAI**（＋任意で OpenAI 直 API） | 機能ごとにデプロイメント指定 |
 | CI/CD | GitHub Actions → Azure Static Web Apps | `main` ブランチ push で自動デプロイ |
