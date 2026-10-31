@@ -1,5 +1,8 @@
 import type { NewsSearchDigest, NewsSearchItem } from "@/lib/types/works-news-search";
-import { NEWS_SEARCH_CATEGORIES } from "@/lib/types/works-news-search";
+import {
+  NEWS_SEARCH_CATEGORIES,
+  normalizeNewsSearchCategories,
+} from "@/lib/types/works-news-search";
 
 /** 注目度が高い順。同点は新しい publishedAt を先に */
 export function sortNewsItemsByAttention(items: NewsSearchItem[]): NewsSearchItem[] {
@@ -12,11 +15,11 @@ export function sortNewsItemsByAttention(items: NewsSearchItem[]): NewsSearchIte
   });
 }
 
-/** 全カテゴリの一覧を注目度順に正規化 */
+/** 全カテゴリの一覧を注目度順に正規化（欠けたキーも埋める） */
 export function withCategoriesSortedByAttention(
   digest: NewsSearchDigest,
 ): NewsSearchDigest {
-  const categories = { ...digest.categories };
+  const categories = normalizeNewsSearchCategories(digest.categories);
   for (const category of NEWS_SEARCH_CATEGORIES) {
     categories[category] = sortNewsItemsByAttention(categories[category] ?? []);
   }

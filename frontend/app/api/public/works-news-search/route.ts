@@ -4,6 +4,7 @@ import {
 } from "@/lib/server/works-news-search";
 import { getLatestWorksNewsDigest } from "@/lib/server/works-news-search-store";
 import { enforcePublicRequestProtection } from "@/lib/server/request-protection";
+import { toPublicNewsSearchDigest } from "@/lib/types/works-news-search";
 
 /** バッチ取得済みダイジェストの読み取り専用公開。チャット／再生成は含まない。 */
 export const dynamic = "force-dynamic";
@@ -34,7 +35,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const digest = withEnrichmentMeta(raw);
+    // セキュリティはログイン専用 — 公開面では空配列に落とす
+    const digest = toPublicNewsSearchDigest(withEnrichmentMeta(raw));
     return Response.json(
       {
         ok: true,

@@ -35,6 +35,7 @@ function categoryKeyword(category: NewsSearchCategory): string {
   // Soluna 既存キーワードと WORKS カテゴリ表示名を接続
   if (category === "ai") return "AI 最新動向";
   if (category === "economy") return "世界経済";
+  if (category === "security") return "セキュリティ";
   return NEWS_SEARCH_CATEGORY_LABEL[category] ?? category;
 }
 

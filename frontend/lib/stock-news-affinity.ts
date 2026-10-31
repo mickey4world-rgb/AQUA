@@ -26,11 +26,11 @@ export const STOCK_TAG_TO_NEWS_CATEGORIES: Record<
   readonly NewsSearchCategory[]
 > = {
   ai: ["ai", "systems"],
-  cloud: ["ai", "systems"],
+  cloud: ["ai", "systems", "security"],
   fiber: ["ai", "systems"],
   semi: ["ai", "systems", "economy"],
-  internet: ["ai", "systems", "economy"],
-  fintech: ["economy", "systems"],
+  internet: ["ai", "systems", "economy", "security"],
+  fintech: ["economy", "systems", "security"],
   macro: ["economy"],
   energy: ["economy", "government"],
   plant: ["economy", "government"],
@@ -40,6 +40,7 @@ export const STOCK_TAG_TO_NEWS_CATEGORIES: Record<
   game: ["economy", "systems"],
   theme: ["ai"],
   edtech: ["systems", "government"],
+  security: ["security", "systems"],
 };
 
 /** タグごとの見出しキーワード（小文字比較用に正規化） */
@@ -79,6 +80,16 @@ export const STOCK_TAG_KEYWORDS: Record<string, readonly string[]> = {
   game: ["ゲーム", "アプリ", "gumi"],
   theme: ["医療ロボット", "cyberdyne", "hal"],
   edtech: ["教育", "オンライン学習", "bbt"],
+  security: [
+    "セキュリティ",
+    "サイバー",
+    "ransomware",
+    "漏洩",
+    "脆弱性",
+    "ゼロデイ",
+    "情報漏えい",
+    "攻撃",
+  ],
 };
 
 function normalizeText(s: string): string {

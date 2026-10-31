@@ -2,13 +2,31 @@ export type NewsSearchCategory =
   | "ai"
   | "systems"
   | "economy"
-  | "government";
+  | "government"
+  | "security";
 
+/** 収集・ログインユーザー向けの全カテゴリ */
 export const NEWS_SEARCH_CATEGORIES: readonly NewsSearchCategory[] = [
   "ai",
   "systems",
   "economy",
   "government",
+  "security",
+] as const;
+
+/**
+ * 公開プレビュー／未ログイン向け。
+ * 「セキュリティ」はログインユーザーのみ（機密性の高い話題を公開面に出さない）。
+ */
+export const NEWS_SEARCH_PUBLIC_CATEGORIES: readonly NewsSearchCategory[] = [
+  "ai",
+  "systems",
+  "economy",
+  "government",
+] as const;
+
+export const NEWS_SEARCH_AUTH_ONLY_CATEGORIES: readonly NewsSearchCategory[] = [
+  "security",
 ] as const;
 
 export const NEWS_SEARCH_CATEGORY_LABEL: Record<NewsSearchCategory, string> = {
@@ -16,6 +34,7 @@ export const NEWS_SEARCH_CATEGORY_LABEL: Record<NewsSearchCategory, string> = {
   systems: "システム開発",
   economy: "世界経済",
   government: "官公庁",
+  security: "セキュリティ",
 };
 
 export type NewsSearchSourceRef = {
@@ -45,6 +64,42 @@ export type NewsSearchItem = {
   attentionScore: number;
   publishedAt?: string;
 };
+
+export function emptyNewsSearchCategories(): Record<
+  NewsSearchCategory,
+  NewsSearchItem[]
+> {
+  return {
+    ai: [],
+    systems: [],
+    economy: [],
+    government: [],
+    security: [],
+  };
+}
+
+/** 旧ダイジェストに欠けたカテゴリキーを埋める */
+export function normalizeNewsSearchCategories(
+  categories: Partial<Record<NewsSearchCategory, NewsSearchItem[]>> | undefined,
+): Record<NewsSearchCategory, NewsSearchItem[]> {
+  const next = emptyNewsSearchCategories();
+  if (!categories) return next;
+  for (const key of NEWS_SEARCH_CATEGORIES) {
+    next[key] = Array.isArray(categories[key]) ? categories[key]! : [];
+  }
+  return next;
+}
+
+/** 公開面用: 認証専用カテゴリを空にする（キーは残す） */
+export function toPublicNewsSearchDigest<T extends { categories: Record<NewsSearchCategory, NewsSearchItem[]> }>(
+  digest: T,
+): T {
+  const categories = normalizeNewsSearchCategories(digest.categories);
+  for (const key of NEWS_SEARCH_AUTH_ONLY_CATEGORIES) {
+    categories[key] = [];
+  }
+  return { ...digest, categories };
+}
 
 /** pending = RSS only; partial = some categories; complete = AI 解説そろい; failed = 生成試行後も未完 */
 export type NewsSearchEnrichmentStatus =

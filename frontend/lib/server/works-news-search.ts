@@ -28,6 +28,7 @@ import {
 import {
   NEWS_SEARCH_CATEGORIES,
   NEWS_SEARCH_CATEGORY_LABEL,
+  emptyNewsSearchCategories,
   type NewsSearchCategory,
   type NewsSearchChatMessage,
   type NewsSearchDigest,
@@ -118,7 +119,7 @@ const USER_CONTEXT = `相談者の前提:
 役立つ視点: クラウド基盤、セキュリティ・ガバナンス、調達、事業レビュー、行政 DX、司法 IT、コスト、運用負荷。`;
 
 function emptyCategories(): Record<NewsSearchCategory, NewsSearchItem[]> {
-  return { ai: [], systems: [], economy: [], government: [] };
+  return emptyNewsSearchCategories();
 }
 
 function dedupeSeeds(seeds: RawNewsSeed[]): RawNewsSeed[] {

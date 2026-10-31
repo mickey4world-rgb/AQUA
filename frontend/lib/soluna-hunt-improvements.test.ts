@@ -148,6 +148,7 @@ import type { NewsSearchDigest } from "./types/works-news-search";
       economy: [],
       systems: [],
       government: [],
+      security: [],
     },
   } as unknown as NewsSearchDigest;
 

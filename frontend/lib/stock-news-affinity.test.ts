@@ -44,6 +44,7 @@ function digestFixture(): NewsSearchDigest {
         },
       ],
       government: [],
+      security: [],
     },
   };
 }

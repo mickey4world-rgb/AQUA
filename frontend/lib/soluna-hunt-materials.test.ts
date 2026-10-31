@@ -69,6 +69,7 @@ const digest = {
         attentionScore: 35,
       }),
     ],
+    security: [],
   },
 } as NewsSearchDigest;
 

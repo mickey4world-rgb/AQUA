@@ -420,7 +420,7 @@ export default function NewsSearchPanel() {
               >
                 {NEWS_SEARCH_CATEGORY_LABEL[c]}
                 <span className="ml-1 text-slate-500">
-                  {digest?.categories[c].length ?? 0}
+                  {(digest?.categories[c] ?? []).length}
                 </span>
               </button>
             ))}

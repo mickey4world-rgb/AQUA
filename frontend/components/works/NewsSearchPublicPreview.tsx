@@ -46,7 +46,7 @@ export default function NewsSearchPublicPreview() {
         <h1 className="mt-3 text-2xl font-medium text-white sm:text-3xl">ニュースサーチ</h1>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
           深夜バッチで集約した AI／システム開発／世界経済／官公庁のニュースと解説を無料公開しています。
-          AI 相談チャットはログイン後の WORKS で利用できます。
+          セキュリティ分類と AI 相談チャットはログイン後の WORKS で利用できます。
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link

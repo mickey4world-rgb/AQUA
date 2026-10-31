@@ -146,6 +146,30 @@ const FEEDS: readonly FeedDef[] = [
     sourceName: "NHK 社会",
     weight: 1.15,
   },
+  {
+    category: "security",
+    url: "https://news.google.com/rss/search?q=%E3%82%BB%E3%82%AD%E3%83%A5%E3%83%AA%E3%83%86%E3%82%A3+OR+cybersecurity+OR+%E6%94%BB%E6%92%83+OR+ransomware+OR+zero-day+OR+%E6%83%85%E5%A0%B1%E6%BC%8F%E6%B4%A9+when:2d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News",
+    weight: 1.25,
+  },
+  {
+    category: "security",
+    url: "https://www.bing.com/news/search?q=cybersecurity+OR+ransomware+OR+data+breach&format=rss",
+    sourceName: "Bing News",
+    weight: 1.1,
+  },
+  {
+    category: "security",
+    url: "https://k-tai.watch.impress.co.jp/data/rss/1.0/kwt/feed.rdf",
+    sourceName: "ケータイ Watch",
+    weight: 1.0,
+  },
+  {
+    category: "security",
+    url: "https://rss.itmedia.co.jp/rss/2.0/security.xml",
+    sourceName: "ITmedia セキュリティ",
+    weight: 1.2,
+  },
 ];
 
 /** 主フィードが薄い／全滅したときの同意図ライブ代替 */
@@ -214,6 +238,18 @@ const FALLBACK_FEEDS: readonly FeedDef[] = [
     category: "government",
     url: "https://www.nhk.or.jp/rss/news/cat4.xml",
     sourceName: "NHK 政治",
+    weight: 1.1,
+  },
+  {
+    category: "security",
+    url: "https://news.google.com/rss/search?q=%E3%82%BB%E3%82%AD%E3%83%A5%E3%83%AA%E3%83%86%E3%82%A3+OR+cyber+OR+%E6%94%BB%E6%92%83+when:7d&hl=ja&gl=JP&ceid=JP:ja",
+    sourceName: "Google News (7d)",
+    weight: 1.0,
+  },
+  {
+    category: "security",
+    url: "https://rss.itmedia.co.jp/rss/2.0/security.xml",
+    sourceName: "ITmedia セキュリティ",
     weight: 1.1,
   },
 ];
@@ -344,7 +380,13 @@ export async function collectMultiSourceNewsSeeds(): Promise<{
   const errors = [...primary.errors];
   let usedFallback = false;
 
-  const categories: NewsSearchCategory[] = ["ai", "systems", "economy", "government"];
+  const categories: NewsSearchCategory[] = [
+    "ai",
+    "systems",
+    "economy",
+    "government",
+    "security",
+  ];
   const thin = categories.filter(
     (c) => seeds.filter((s) => s.category === c).length < MIN_SEEDS_BEFORE_FALLBACK,
   );
@@ -384,6 +426,10 @@ export function scoreAttentionSeed(seed: RawNewsSeed, now = Date.now()): number 
     "規制",
     "予算",
     "セキュリティ",
+    "サイバー",
+    "ransomware",
+    "漏洩",
+    "脆弱性",
     "基盤",
   ];
   for (const word of boosts) {

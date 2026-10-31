@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import {
-  NEWS_SEARCH_CATEGORIES,
   NEWS_SEARCH_CATEGORY_LABEL,
+  NEWS_SEARCH_PUBLIC_CATEGORIES,
   type NewsSearchCategory,
   type NewsSearchDigest,
   type NewsSearchItem,
@@ -37,15 +37,24 @@ type NewsSearchBrowseViewProps = {
   /** コンパクト表示（SHOWCASE 埋め込み） */
   compact?: boolean;
   className?: string;
+  /**
+   * 表示カテゴリ。未指定時は公開用（セキュリティ除外）。
+   * ログイン後フル版は NEWS_SEARCH_CATEGORIES を渡す。
+   */
+  categories?: readonly NewsSearchCategory[];
 };
 
 export default function NewsSearchBrowseView({
   digest,
   compact = false,
   className = "",
+  categories = NEWS_SEARCH_PUBLIC_CATEGORIES,
 }: NewsSearchBrowseViewProps) {
+  const visibleCategories = categories;
   const [category, setCategory] = useState<NewsSearchCategory>(() => {
-    const first = NEWS_SEARCH_CATEGORIES.find((c) => digest.categories[c].length > 0);
+    const first = visibleCategories.find(
+      (c) => (digest.categories[c] ?? []).length > 0,
+    );
     return first ?? "ai";
   });
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -60,12 +69,12 @@ export default function NewsSearchBrowseView({
 
   const selected: NewsSearchItem | null = useMemo(() => {
     if (!selectedId) return null;
-    for (const c of NEWS_SEARCH_CATEGORIES) {
-      const hit = digest.categories[c].find((item) => item.id === selectedId);
+    for (const c of visibleCategories) {
+      const hit = (digest.categories[c] ?? []).find((item) => item.id === selectedId);
       if (hit) return hit;
     }
     return null;
-  }, [digest, selectedId]);
+  }, [digest, selectedId, visibleCategories]);
 
   const statusLabel =
     digest.enrichmentStatus === "complete"
@@ -94,7 +103,7 @@ export default function NewsSearchBrowseView({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {NEWS_SEARCH_CATEGORIES.map((c) => (
+        {visibleCategories.map((c) => (
           <button
             key={c}
             type="button"
@@ -110,7 +119,9 @@ export default function NewsSearchBrowseView({
             }`}
           >
             {NEWS_SEARCH_CATEGORY_LABEL[c]}
-            <span className="ml-1 text-slate-500">{digest.categories[c].length}</span>
+            <span className="ml-1 text-slate-500">
+              {(digest.categories[c] ?? []).length}
+            </span>
           </button>
         ))}
       </div>
