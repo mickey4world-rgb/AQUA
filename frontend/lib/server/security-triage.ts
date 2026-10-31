@@ -299,12 +299,33 @@ async function applyFirstSeen(findings: TriageFinding[], now: Date): Promise<Tri
   return result;
 }
 
+/** 公開ログには失敗した工程名だけを出すため、原因メッセージと分けて持つ */
+export class SecurityTriageStageError extends Error {
+  constructor(
+    readonly stage: string,
+    cause: unknown,
+  ) {
+    super(`${stage}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
+async function stage<T>(name: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    throw new SecurityTriageStageError(name, error);
+  }
+}
+
 export async function runSecurityTriage(body: SecurityTriageRequest): Promise<SecurityTriageReport> {
   const now = new Date();
   const parsedRaw = parseTriageRequest(body);
-  const parsed = { ...parsedRaw, findings: await applyFirstSeen(parsedRaw.findings, now) };
-  const { stats, collection: eventCollection } = await loadEventStats(now);
-  const blocks = await listActiveAutoBlocks();
+  const parsed = {
+    ...parsedRaw,
+    findings: await stage("first-seen", () => applyFirstSeen(parsedRaw.findings, now)),
+  };
+  const { stats, collection: eventCollection } = await stage("events", () => loadEventStats(now));
+  const blocks = await stage("autoblock", () => listActiveAutoBlocks());
   const collections: TriageCollection[] = [
     ...parsed.collections,
     eventCollection,
@@ -325,12 +346,14 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
     console.warn("[security-triage] model selection failed", error instanceof Error ? error.message : error);
     return null;
   });
-  const ai = await summarizeWithAi({
-    assessment,
-    events: stats,
-    openSecurityPrs: parsed.openSecurityPrs.length,
-    models: securityAiModelOrder(modelState),
-  });
+  const ai = await stage("ai-summary", () =>
+    summarizeWithAi({
+      assessment,
+      events: stats,
+      openSecurityPrs: parsed.openSecurityPrs.length,
+      models: securityAiModelOrder(modelState),
+    }),
+  );
   const headline = ai.ok ? ai.value.headline : `${TRIAGE_LEVEL_LABEL[assessment.level]}: ${assessment.reasons[0]}`;
   const summary = ai.ok ? ai.value.summary : assessment.reasons.join(" / ");
   const actions = ai.ok && ai.value.actions.length > 0 ? ai.value.actions : fallbackTriageActions(assessment);
@@ -392,7 +415,7 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
   };
 
   if (isCosmosConfigured()) {
-    await container().items.upsert(report);
+    await stage("save", () => container().items.upsert(report));
   }
   return report;
 }

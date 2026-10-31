@@ -50,7 +50,8 @@ jobs:
               --data-binary @"$RUNNER_TEMP/findings.json" \
               --max-time 110 \
               "${BASE%/}/api/security/cron/daily-triage" || true)
-            echo "attempt $i status=$status"
+            stage=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.failedStage??"-")+" "+String(r.elapsedMs??"-")+"ms")}catch{process.stdout.write("non-json")}' "$RUNNER_TEMP/triage.json")
+            echo "attempt $i status=$status stage/elapsed=$stage"
             if [ "$status" = "200" ]; then break; fi
             sleep $((20 * i))
           done
@@ -67,8 +68,9 @@ jobs:
             try { r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/triage.json", "utf8")); } catch {}
             const summary = (line) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n");
             if (status !== "200" || !r || !r.ok) {
-              summary("診断失敗: 本番の診断 API が応答しませんでした。");
-              console.log("::error::triage failed (HTTP " + status + ")");
+              const where = r && r.failedStage ? "（工程: " + r.failedStage + "）" : "";
+              summary("診断失敗: 本番の診断 API が失敗しました" + where + "。");
+              console.log("::error::triage failed (HTTP " + status + ", stage " + (r && r.failedStage ? r.failedStage : "-") + ")");
               process.exit(1);
             }
             summary("警戒レベル: " + r.level + " / AI: " + r.aiStatus + "（" + r.aiModel + "）");

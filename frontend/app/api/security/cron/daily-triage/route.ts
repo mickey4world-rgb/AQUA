@@ -3,7 +3,11 @@ import { resolveClientIp } from "@/lib/client-ip";
 import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { recordSecurityEvent } from "@/lib/server/security-event";
-import { runSecurityTriage, type SecurityTriageRequest } from "@/lib/server/security-triage";
+import {
+  SecurityTriageStageError,
+  runSecurityTriage,
+  type SecurityTriageRequest,
+} from "@/lib/server/security-triage";
 
 export const maxDuration = 120;
 
@@ -42,6 +46,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
+  const startedAt = Date.now();
   try {
     const report = await runSecurityTriage(body);
     // 公開リポジトリの Actions ログに出るため、脆弱性の中身は返さない
@@ -57,10 +62,19 @@ export async function POST(request: Request) {
         .update(resolveClientIp(request.headers))
         .digest("hex")
         .slice(0, 12),
+      elapsedMs: Date.now() - startedAt,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "診断に失敗しました";
     console.error("[security-triage] failed", message);
-    return Response.json({ ok: false, error: message }, { status: 500 });
+    // 公開ログに載るため、工程名と所要時間だけ返す
+    return Response.json(
+      {
+        ok: false,
+        failedStage: error instanceof SecurityTriageStageError ? error.stage : "unknown",
+        elapsedMs: Date.now() - startedAt,
+      },
+      { status: 500 },
+    );
   }
 }
