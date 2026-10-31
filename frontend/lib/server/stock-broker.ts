@@ -1,5 +1,6 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
 import { COSMOS_CONTAINERS } from "@/lib/server/cosmos";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import type {
   StockBrokerSnapshot,
   StockBrokerSyncPayload,
@@ -206,8 +207,5 @@ export async function getStockBrokerSnapshot(
 }
 
 export function authorizeStockBridge(request: Request): boolean {
-  const secret = process.env.STOCK_KABU_BRIDGE_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  return header === `Bearer ${secret}`;
+  return requestHasAutomationSecret(request, [process.env.STOCK_KABU_BRIDGE_SECRET]);
 }

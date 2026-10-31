@@ -14,7 +14,7 @@ import {
 } from "./soluna-news-display";
 import { estimateSolunaAttentionScore, withEstimatedAttention } from "./soluna-attention";
 import { planSolunaDailyPipeline } from "./soluna-daily-pipeline";
-import type { SolunaNewsBriefing } from "./types/soluna";
+import type { SolunaNewsBriefing, SolunaNewsItem } from "./types/soluna";
 import { mapDigestToSolunaSeedItems } from "./server/works-news-search";
 import type { NewsSearchDigest } from "./types/works-news-search";
 
@@ -203,7 +203,7 @@ import type { NewsSearchDigest } from "./types/works-news-search";
 }
 
 {
-  const ranked = withEstimatedAttention([
+  const ranked = withEstimatedAttention<SolunaNewsItem>([
     {
       title: "Quiet niche note",
       summary: "A small internal tip few people will care about today.",
@@ -224,6 +224,7 @@ import type { NewsSearchDigest } from "./types/works-news-search";
     estimateSolunaAttentionScore({
       title: "Fed signals rate path",
       summary: "Markets surge on Fed remarks.",
+      keyword: "世界経済",
       sourceUrl: "https://www.bloomberg.com/news/x",
       publishedAt: new Date().toISOString(),
     }) >= 70,

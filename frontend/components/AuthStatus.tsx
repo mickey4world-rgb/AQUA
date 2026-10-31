@@ -181,14 +181,6 @@ export default function AuthStatus({ variant = "light" }: AuthStatusProps) {
               </dd>
             </div>
           )}
-          {(!user?.authProviders || user.authProviders.length <= 1) &&
-            user?.email === "owner@example.invalid" &&
-            principal.userDetails.toLowerCase() === "mickey4world-rgb" && (
-              <div className="flex gap-2">
-                <dt className="font-medium">同一アカウント:</dt>
-                <dd>GitHub mickey4world-rgb ≒ Microsoft owner@example.invalid</dd>
-              </div>
-            )}
         <div className="flex gap-2">
           <dt className="font-medium">登録日:</dt>
           <dd>

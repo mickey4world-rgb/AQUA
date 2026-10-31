@@ -174,7 +174,7 @@ async function migrateSeededUser(
 
 /**
  * SWA principal をアプリ内の正規 userId に付け替える。
- * GitHub mickey4world-rgb → owner@example.invalid の既存プロファイルなど。
+ * GitHub ログイン → Microsoft アカウントの既存プロファイルなど（AQUA_IDENTITY_LINKS_JSON）。
  */
 export async function resolveCanonicalPrincipal(
   principal: ClientPrincipal,

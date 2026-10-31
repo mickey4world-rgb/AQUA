@@ -250,10 +250,10 @@ sequenceDiagram
 {
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "email": "owner@example.invalid",
-  "displayName": "Mickey",
+  "email": "user@example.invalid",
+  "displayName": "Sample User",
   "authProvider": "aad",
-  "notifyEmail": "owner@example.invalid",
+  "notifyEmail": "user@example.invalid",
   "monthlyTokenLimit": 100000,
   "createdAt": "2026-07-15T03:20:00.000Z",
   "updatedAt": "2026-08-07T09:30:00.000Z"
@@ -342,7 +342,7 @@ sequenceDiagram
    フロントエンド（[`AuthStatus`](frontend/components/AuthStatus.tsx)）が `GET /.auth/me` を呼び、`clientPrincipal`（`userId`, `userDetails`, `identityProvider`, `claims`）を取得する。
 
 6. **許可ユーザーチェック（第 1 関門）**  
-   [`allowed-users.ts`](frontend/lib/allowed-users.ts) のホワイトリスト（`owner-a`, `member-b`, `guest-c`）と照合。  
+   [`allowed-users.ts`](frontend/lib/allowed-users.ts) のホワイトリスト（ログイン名の SHA-256 ハッシュ。実名はリポジトリに置かない）と照合。  
    不一致の場合は「アクセス拒否」UI を表示し、以降の API は呼ばない。
 
 7. **保護ルートの middleware チェック（第 2 関門）**  

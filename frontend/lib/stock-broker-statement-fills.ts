@@ -1,7 +1,8 @@
 /**
- * 証券アプリの約定履歴から補完する LIVE 約定（Costs 実現損益用）。
+ * 証券アプリの約定明細から補完する LIVE 約定（Costs 実現損益用）。
  * bridge が realizedPnlYen を保存していなかった期間の不足分。
- * 完全架空データではない — ユーザー提示の約定明細に基づく。
+ * 実約定は公開リポジトリに置かず、SWA アプリ設定 STOCK_BROKER_STATEMENT_FILLS_JSON
+ * （JSON 配列、または その base64）から読む。
  */
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
 
@@ -17,13 +18,42 @@ export type StockBrokerStatementFill = {
   settlementYen: number;
 };
 
-/**
- * Mickey 提示の約定（2026-10-20〜23）。時系列順。
- */
-export const STOCK_BROKER_STATEMENT_FILLS: StockBrokerStatementFill[] = [
-  // redacted from history
-];
+function isStatementFill(value: unknown): value is StockBrokerStatementFill {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.jstAt === "string" &&
+    typeof v.symbol === "string" &&
+    typeof v.symbolName === "string" &&
+    (v.side === "buy" || v.side === "sell") &&
+    typeof v.priceYen === "number" &&
+    typeof v.qty === "number" &&
+    typeof v.settlementYen === "number"
+  );
+}
 
+/** 環境変数の約定明細（JSON か base64 JSON）。未設定・不正なら空。 */
+export function parseStatementFillsSetting(
+  raw: string | undefined | null,
+): StockBrokerStatementFill[] {
+  const text = raw?.trim();
+  if (!text) return [];
+  const json = text.startsWith("[")
+    ? text
+    : Buffer.from(text, "base64").toString("utf8");
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isStatementFill).sort((a, b) => a.jstAt.localeCompare(b.jstAt));
+  } catch {
+    console.warn("[stock-statement-fills] STOCK_BROKER_STATEMENT_FILLS_JSON を解析できません");
+    return [];
+  }
+}
+
+export function loadStatementFills(): StockBrokerStatementFill[] {
+  return parseStatementFillsSetting(process.env.STOCK_BROKER_STATEMENT_FILLS_JSON);
+}
 /** JST wall clock → ISO UTC */
 export function jstWallToIso(jstAt: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(
@@ -122,7 +152,7 @@ export function assignStatementRealizedPnl(
 
 export function statementFillsToOrders(
   userId: string,
-  fills: StockBrokerStatementFill[] = STOCK_BROKER_STATEMENT_FILLS,
+  fills: StockBrokerStatementFill[] = loadStatementFills(),
 ): StockBrokerOrderRecord[] {
   const priced = assignStatementRealizedPnl(fills);
   return priced.map((f) => {
@@ -163,8 +193,9 @@ export function statementFillsToOrders(
 export function mergeStockBrokerOrdersWithStatementFills(
   orders: StockBrokerOrderRecord[],
   userId: string,
+  fills: StockBrokerStatementFill[] = loadStatementFills(),
 ): StockBrokerOrderRecord[] {
-  const supplements = statementFillsToOrders(userId);
+  const supplements = statementFillsToOrders(userId, fills);
   const byFp = new Map<string, StockBrokerOrderRecord>();
   for (const o of orders) {
     if (o.symbol === "_CHECK_") continue;
@@ -205,10 +236,13 @@ export function mergeStockBrokerOrdersWithStatementFills(
   );
 }
 
-/** オラクル: 10/20 売り3件の受渡実現合計（−180 −1900 −410 = −2490） */
-export function oct20StatementRealizedPnlYen(): number {
+/** 指定 JST 日の売り受渡実現合計 */
+export function statementRealizedPnlYenForDay(
+  fills: StockBrokerStatementFill[],
+  jstDate: string,
+): number {
   const priced = assignStatementRealizedPnl(
-    STOCK_BROKER_STATEMENT_FILLS.filter((f) => f.jstAt.startsWith("2026-10-20")),
+    fills.filter((f) => f.jstAt.startsWith(jstDate)),
   );
   return priced
     .filter((f) => f.side === "sell")

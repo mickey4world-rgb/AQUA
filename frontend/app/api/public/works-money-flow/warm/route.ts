@@ -3,17 +3,18 @@ import {
   warmWorksMoneyFlowPublicPreview,
 } from "@/lib/server/gyosei-public-preview";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import type { MoneyFlowResponse } from "@/lib/types/gyosei";
 
 export const maxDuration = 120;
 
 function authorizeCron(request: Request): boolean {
-  const secret = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  if (header === `Bearer ${secret}`) return true;
-  return request.headers.get("x-soluna-cron-secret")?.trim() === secret;
+  return requestHasAutomationSecret(
+    request,
+    [process.env.SOLUNA_CRON_SECRET],
+    ["x-soluna-cron-secret"],
+  );
 }
 
 type WarmBody = {

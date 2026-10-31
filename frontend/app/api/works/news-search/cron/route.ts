@@ -8,6 +8,7 @@ import {
 import { saveWorksNewsDigest } from "@/lib/server/works-news-search-store";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import {
   NEWS_SEARCH_CATEGORIES,
   type NewsSearchCategory,
@@ -19,11 +20,7 @@ export const maxDuration = 60;
 function authorizeCron(request: Request): boolean {
   const secret =
     process.env.SOLUNA_CRON_SECRET?.trim() || process.env.WORKS_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  if (header === `Bearer ${secret}`) return true;
-  const alt = request.headers.get("x-works-cron-secret")?.trim();
-  return alt === secret;
+  return requestHasAutomationSecret(request, [secret], ["x-works-cron-secret"]);
 }
 
 function isValidDigest(value: unknown): value is NewsSearchDigest {

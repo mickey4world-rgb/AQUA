@@ -1,5 +1,6 @@
 import { isCosmosConfigured } from "@/lib/server/cosmos";
 import { authorizeStockBridge } from "@/lib/server/stock-broker";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 import { recordSecurityEvent } from "@/lib/server/security-event";
 import { runWeeklyUniverseReview } from "@/lib/server/stock-weekly-universe-review";
 
@@ -13,10 +14,7 @@ export const maxDuration = 60;
  */
 function authorizeWeeklyCron(request: Request): boolean {
   if (authorizeStockBridge(request)) return true;
-  const secret = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  return header === `Bearer ${secret}`;
+  return requestHasAutomationSecret(request, [process.env.SOLUNA_CRON_SECRET]);
 }
 
 function resolveUserId(request: Request, bodyUserId?: string): string | null {

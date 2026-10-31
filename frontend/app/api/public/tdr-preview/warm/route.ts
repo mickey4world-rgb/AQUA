@@ -3,6 +3,7 @@ import { backfillPastAccuracy } from "@/lib/server/disney-accuracy";
 import { collectLiveWaitSnapshotsNow } from "@/lib/server/disney-historical-store";
 import { clearCalendarMonthCache } from "@/lib/server/disney-calendar-prediction";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 
 /**
  * SWA マネージド API の実効上限は短い。
@@ -11,11 +12,11 @@ import { recordSecurityEvent } from "@/lib/server/security-event";
 export const maxDuration = 60;
 
 function authorizeCron(request: Request): boolean {
-  const secret = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  if (header === `Bearer ${secret}`) return true;
-  return request.headers.get("x-soluna-cron-secret")?.trim() === secret;
+  return requestHasAutomationSecret(
+    request,
+    [process.env.SOLUNA_CRON_SECRET],
+    ["x-soluna-cron-secret"],
+  );
 }
 
 type WarmMode = "core" | "calendars" | "extras" | "full";

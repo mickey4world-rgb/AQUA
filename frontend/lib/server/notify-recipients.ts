@@ -22,12 +22,7 @@ export async function resolveSystemNotifyEmails(): Promise<string[]> {
   }
 
   const users = await listAllUsers().catch(() => []);
-  const mickey = users.find(
-    (u) =>
-      u.email?.toLowerCase() === "owner@example.invalid" ||
-      u.notifyEmail?.toLowerCase() === "owner@example.invalid" ||
-      u.displayName?.toLowerCase() === "mickey",
-  );
+  const mickey = users.find((u) => u.displayName?.toLowerCase() === "mickey");
   const fallback = mickey?.notifyEmail?.trim() || mickey?.email?.trim();
   return fallback?.includes("@") ? [fallback] : [];
 }

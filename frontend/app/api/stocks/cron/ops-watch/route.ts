@@ -6,22 +6,20 @@
  */
 import { runStockOpsWatchForUser } from "@/lib/server/stock-ops-watch";
 import { parseJsonBody } from "@/lib/server/security";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function authorize(request: Request): boolean {
-  const auth = request.headers.get("authorization")?.trim() ?? "";
-  const bearer = auth.toLowerCase().startsWith("bearer ")
-    ? auth.slice(7).trim()
-    : "";
-  const bridge = process.env.STOCK_KABU_BRIDGE_SECRET?.trim();
-  const cron = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (bridge && bearer === bridge) return true;
-  if (cron && bearer === cron) return true;
-  const alt = request.headers.get("x-soluna-cron-secret")?.trim();
-  if (cron && alt === cron) return true;
-  return false;
+  if (requestHasAutomationSecret(request, [process.env.STOCK_KABU_BRIDGE_SECRET])) {
+    return true;
+  }
+  return requestHasAutomationSecret(
+    request,
+    [process.env.SOLUNA_CRON_SECRET],
+    ["x-soluna-cron-secret"],
+  );
 }
 
 export async function POST(request: Request) {

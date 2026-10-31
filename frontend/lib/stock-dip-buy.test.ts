@@ -126,7 +126,7 @@ async function liveSim() {
     code: string;
     action: string;
     trend: string;
-    rsi14: number;
+    rsi14?: number;
     nearWeekLow?: boolean;
     nearMonthLow?: boolean;
     dipBuyEligible?: boolean;

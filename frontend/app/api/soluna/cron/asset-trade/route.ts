@@ -8,16 +8,16 @@
 import { runAssetTradeTick, isBitFlyerEnabled } from "@/lib/server/soluna-asset-trade";
 import { isSolunaSystemStorageConfigured } from "@/lib/server/soluna-system-store";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 
 export const maxDuration = 60;
 
 function authorizeCron(request: Request): boolean {
-  const secret = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  if (header === `Bearer ${secret}`) return true;
-  const alt = request.headers.get("x-soluna-cron-secret")?.trim();
-  return alt === secret;
+  return requestHasAutomationSecret(
+    request,
+    [process.env.SOLUNA_CRON_SECRET],
+    ["x-soluna-cron-secret"],
+  );
 }
 
 export async function POST(request: Request) {

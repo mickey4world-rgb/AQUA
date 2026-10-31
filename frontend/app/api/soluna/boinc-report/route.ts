@@ -10,12 +10,10 @@ import {
   saveSystemSettlement,
 } from "@/lib/server/soluna-system-store";
 import { recordSecurityEvent } from "@/lib/server/security-event";
+import { requestHasAutomationSecret } from "@/lib/server/automation-auth";
 
 function authorizeCron(request: Request): boolean {
-  const secret = process.env.SOLUNA_CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = request.headers.get("authorization")?.trim();
-  return header === `Bearer ${secret}`;
+  return requestHasAutomationSecret(request, [process.env.SOLUNA_CRON_SECRET]);
 }
 
 type BoincReportBody = {

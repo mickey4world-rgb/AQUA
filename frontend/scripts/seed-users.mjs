@@ -4,7 +4,10 @@
  * 使い方:
  *   $env:COSMOS_ENDPOINT="..."
  *   $env:COSMOS_KEY="..."
+ *   $env:SEED_USERS_JSON='[{"id":"user-x","email":"x@example.invalid","displayName":"X","authProvider":"aad"}]'
  *   node scripts/seed-users.mjs
+ *
+ * 実メールは公開リポジトリに置かないため、登録内容は SEED_USERS_JSON で渡す。
  */
 import { CosmosClient } from "@azure/cosmos";
 
@@ -18,35 +21,27 @@ if (!endpoint || !key) {
   process.exit(1);
 }
 
-const SEED_USERS = [
-  {
-    id: "user-mickey",
-    userId: "user-mickey",
-    email: "owner@example.invalid",
-    displayName: "Mickey",
-    authProvider: "aad",
-    notifyEmail: "owner@example.invalid",
-    monthlyTokenLimit: 1_000_000,
-  },
-  {
-    id: "user-aya",
-    userId: "user-aya",
-    email: "member@example.invalid",
-    displayName: "Aya",
-    authProvider: "aad",
-    notifyEmail: "member@example.invalid",
-    monthlyTokenLimit: 1_000_000,
-  },
-  {
-    id: "user-gest",
-    userId: "user-gest",
-    email: "gest@personal.apps",
-    displayName: "Gest",
-    authProvider: "github",
-    notifyEmail: "gest@personal.apps",
-    monthlyTokenLimit: 1_000_000,
-  },
-];
+let seedInput;
+try {
+  seedInput = JSON.parse(process.env.SEED_USERS_JSON ?? "");
+} catch {
+  console.error("SEED_USERS_JSON に JSON 配列を設定してください");
+  process.exit(1);
+}
+if (!Array.isArray(seedInput) || seedInput.length === 0) {
+  console.error("SEED_USERS_JSON が空です");
+  process.exit(1);
+}
+
+const SEED_USERS = seedInput.map((u) => ({
+  id: u.id,
+  userId: u.id,
+  email: u.email,
+  displayName: u.displayName,
+  authProvider: u.authProvider ?? "aad",
+  notifyEmail: u.notifyEmail ?? u.email,
+  monthlyTokenLimit: u.monthlyTokenLimit ?? 1_000_000,
+}));
 
 const client = new CosmosClient({ endpoint, key });
 const container = client.database(databaseId).container(containerId);

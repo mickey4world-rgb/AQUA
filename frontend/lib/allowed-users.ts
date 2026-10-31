@@ -1,14 +1,19 @@
 import { findLinkedIdentity } from "@/lib/identity-links";
+import { sha256Hex } from "@/lib/sha256-hex";
 
-export const ALLOWED_LOGIN_NAMES = [
-  "owner-a",
-  "member-b",
-  "guest-c",
-] as const;
+/**
+ * 許可ログイン名（小文字）の SHA-256。公開リポジトリに実ログイン名を置かないためハッシュで持つ。
+ * 追加: `node -e "console.log(require('crypto').createHash('sha256').update('<login>'.toLowerCase()).digest('hex'))"`
+ */
+export const ALLOWED_LOGIN_HASHES: readonly string[] = [
+  "b48f4fd2bee7c4fda4cad96a387a85624acbe299145ac32e0e73686c685dad46",
+  "b1f19fcb1b3032b807f79c31573e15d1314f06c158181c9a7384ed77fb50047e",
+  "d231c69b75ebf08dd5239af4e0abb2f6c1886bd797de5607d0ee440eb175520a",
+  // GitHub ログイン（Microsoft アカウントと同一人物）
+  "3ddaf27740faa440baf5017ec8ae99fc15da3649236ce4423757a7238581e778",
+];
 
-const ALLOWED_SET = new Set(
-  ALLOWED_LOGIN_NAMES.map((name) => name.toLowerCase()),
-);
+const ALLOWED_SET = new Set(ALLOWED_LOGIN_HASHES);
 
 export function normalizeLoginName(value: string): string {
   return value.trim().toLowerCase();
@@ -47,6 +52,6 @@ export function collectLoginCandidates(
 
 export function isAllowedLogin(userDetails: string, email?: string): boolean {
   return collectLoginCandidates(userDetails, email).some((candidate) =>
-    ALLOWED_SET.has(candidate),
+    ALLOWED_SET.has(sha256Hex(candidate)),
   );
 }

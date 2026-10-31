@@ -49,7 +49,7 @@ const briefing = {
       monster: { name: "金利の蒼竜", rank: 5, species: "dragon", speciesLabel: "竜", weakness: "次の会合" },
     },
   ],
-} as SolunaNewsBriefing;
+} as unknown as SolunaNewsBriefing;
 
 const battle = {
   id: "bat1",
