@@ -45,7 +45,8 @@ function collectNpmAudit() {
     if (!existsSync(join(dir, "package-lock.json"))) continue;
     let stdout = "";
     try {
-      stdout = execFileSync("npm", ["audit", "--json", "--package-lock-only"], {
+      // 本番に載る依存だけを見る。開発ツール（eslint 等）の DoS 系は公開サイトから突けず、毎日「要確認」に張り付くと警告が無視される
+      stdout = execFileSync("npm", ["audit", "--json", "--package-lock-only", "--omit=dev"], {
         cwd: dir,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
