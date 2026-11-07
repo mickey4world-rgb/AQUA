@@ -4,12 +4,15 @@ import {
   resolveStockName,
 } from "@/lib/server/stock-market";
 import {
+  STOCK_ATR_ACTIVE_RATIO,
   STOCK_DIP_MAX_RSI,
   STOCK_DIP_MONTH_LOOKBACK,
   STOCK_DIP_NEAR_MONTH_PCT,
   STOCK_DIP_NEAR_WEEK_PCT,
   STOCK_DIP_WEEK_LOOKBACK,
   STOCK_HARD_STOP_LOSS_RATE,
+  STOCK_MOMENTUM_MIN_VOLUME_MULT,
+  STOCK_PYRAMID_MIN_PROFIT_PCT,
   STOCK_RSI_OVERBOUGHT,
   STOCK_RSI_OVERSOLD,
   STOCK_SOFT_STOP_LOSS_RATE,
@@ -17,7 +20,13 @@ import {
 } from "@/lib/stock-trade-constants";
 import { isPerTradeLossBreached } from "@/lib/stock-guardrails";
 import {
+  atr,
+  atrExpansionRatio,
   bollinger,
+  bollingerBreakout,
+  emaCross,
+  emaLast,
+  isPerfectOrderBull,
   maDeviationPct,
   macd,
   rsi,
@@ -85,6 +94,10 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     const low = Number(row.low);
     return Number.isFinite(low) && low > 0 ? low : row.close;
   });
+  const highs = history.map((row) => {
+    const high = Number(row.high);
+    return Number.isFinite(high) && high > 0 ? high : row.close;
+  });
   const volumes = history.map((row) => Number(row.volume ?? 0));
   const latest = history[history.length - 1]!;
   const previous = history[history.length - 2]!;
@@ -113,16 +126,33 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
         )
       : 0;
 
+  // 表示互換で SMA も残し、売買判定は EMA（直近重視・活発化）
   const ma5 = sma(closes, 5);
   const ma25 = sma(closes, Math.min(25, closes.length));
-  const ma5DeviationPct = maDeviationPct(currentPrice, ma5);
-  const ma25DeviationPct = maDeviationPct(currentPrice, ma25);
+  const ema5 = emaLast(closes, 5);
+  const ema25 = emaLast(closes, 25);
+  const ema75 = emaLast(closes, 75);
+  const ma5DeviationPct = maDeviationPct(currentPrice, ema5 > 0 ? ema5 : ma5);
+  const ma25DeviationPct = maDeviationPct(currentPrice, ema25 > 0 ? ema25 : ma25);
   const rsi14 = rsi(closes, 14);
   const bb = bollinger(closes, 20, 2);
+  const bbBreak = bollingerBreakout(closes, 20, 2);
   const macdSnap = macd(closes);
   const volSpike = volumeSpikeRatio(volumes, 5);
+  const emaX = emaCross(closes, 5, 25);
+  const perfectOrder = isPerfectOrderBull(closes, 5, 25, 75);
+  const atr14 = atr(highs, lows, closes, 14);
+  const atrRatio = atrExpansionRatio(highs, lows, closes, 14);
+  const volumeConfirmed = volSpike >= STOCK_MOMENTUM_MIN_VOLUME_MULT;
+  const atrActive = atrRatio >= STOCK_ATR_ACTIVE_RATIO;
 
-  const trend = ma5 > ma25 ? "bullish" : "bearish";
+  // 長期フィルタ=EMA75 位置、短期エントリ=EMA5/25（日足での二段近似）
+  const trend =
+    ema5 > ema25 && (ema75 <= 0 || currentPrice >= ema75 * 0.97)
+      ? "bullish"
+      : ema5 > ema25
+        ? "bullish"
+        : "bearish";
 
   const profitPct = ((currentPrice - watch.buyPrice) / watch.buyPrice) * 100;
   const distanceToTargetPct =
@@ -133,16 +163,21 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
 
   if (trend === "bullish") {
     reasons.push(
-      `5日移動平均が25日移動平均を上回っており、短期上昇トレンドです（MA5乖離 ${ma5DeviationPct.toFixed(1)}%）。`,
+      `EMA5>EMA25の短期上昇（EMA5乖離 ${ma5DeviationPct.toFixed(1)}%` +
+        (perfectOrder ? "・パーフェクトオーダー" : "") +
+        `）。`,
     );
   } else {
     reasons.push(
-      `5日移動平均が25日移動平均を下回っており、短期下降トレンドです（MA5乖離 ${ma5DeviationPct.toFixed(1)}%）。`,
+      `EMA5≤EMA25の短期下降（EMA5乖離 ${ma5DeviationPct.toFixed(1)}%）。`,
     );
   }
 
   reasons.push(
-    `RSI(14)=${rsi14.toFixed(0)} / BB幅=${(bb.widthPct * 100).toFixed(1)}% / MACD=${macdSnap.cross === "none" ? "クロスなし" : macdSnap.cross === "golden" ? "ゴールデンクロス" : "デッドクロス"} / 出来高倍率×${volSpike.toFixed(1)}`,
+    `RSI(14)=${rsi14.toFixed(0)} / BB幅=${(bb.widthPct * 100).toFixed(1)}%(${bbBreak.regime})` +
+      ` / EMAクロス=${emaX === "none" ? "なし" : emaX === "golden" ? "ゴールデン" : "デッド"}` +
+      ` / MACD=${macdSnap.cross === "none" ? "なし" : macdSnap.cross === "golden" ? "ゴールデン" : "デッド"}` +
+      ` / 出来高×${volSpike.toFixed(1)} / ATR比×${atrRatio.toFixed(2)}`,
   );
 
   if (fundamentals.trailingPe != null || fundamentals.priceToBook != null) {
@@ -176,18 +211,34 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     reasons.push(
       `目標株価 ${targetLabel} に到達（含み益）。利確を検討してください。`,
     );
-  } else if (macdSnap.cross === "dead" && profitPct > 0) {
+  } else if (
+    (macdSnap.cross === "dead" || emaX === "dead") &&
+    profitPct > 0
+  ) {
     action = "sell";
-    reasons.push("MACDデッドクロスかつ含み益のため、利確寄りで売り検討です。");
+    reasons.push(
+      `${emaX === "dead" ? "EMA" : "MACD"}デッドクロスかつ含み益のため、利確寄りで売り検討です。`,
+    );
   } else if (distanceToTargetPct <= 5 && profitPct > 0) {
     action = "sell";
     reasons.push(
       `目標株価まであと ${distanceToTargetPct.toFixed(1)}%（含み益）。売り時を検討してください。`,
     );
+  } else if (
+    atrActive &&
+    profitPct > 0 &&
+    distanceToTargetPct <= 8 &&
+    rsi14 >= STOCK_RSI_OVERBOUGHT - 5
+  ) {
+    // ATR拡大時は利確を早めに（損切はしない・プラス圏のみ）
+    action = "sell";
+    reasons.push(
+      `ATR拡大(×${atrRatio.toFixed(2)})かつ含み益・RSI高めのため、動的に利確を検討します。`,
+    );
   } else if (layer1Breached || profitPct / 100 <= softStopPct / 100) {
     action = "hold";
     reasons.push(
-      `含み損 ${profitPct.toFixed(1)}% を監視中（即損切りしない。保有1年超の深い含み損のみ例外。参考閾値 ${hardStopPct}%/${softStopPct}%）。`,
+      `含み損 ${profitPct.toFixed(1)}% を監視中（損切りしない。参考閾値 ${hardStopPct}%/${softStopPct}%）。余剰・利益がない局面では保有継続。`,
     );
   } else if (rsi14 >= STOCK_RSI_OVERBOUGHT && trend === "bullish") {
     action = "watch";
@@ -195,9 +246,64 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
       `RSI ${rsi14.toFixed(0)} ≥ ${STOCK_RSI_OVERBOUGHT}（買われすぎ）。新規買いを控え様子見です。`,
     );
   } else if (
+    // EMA ゴールデン + 出来高確認（ダマシ低減）
+    emaX === "golden" &&
+    volumeConfirmed &&
+    rsi14 < STOCK_RSI_OVERBOUGHT &&
+    macdSnap.cross !== "dead"
+  ) {
+    action = "buy";
+    reasons.push(
+      `EMA5/25ゴールデンクロス＋出来高×${volSpike.toFixed(1)}（≥${STOCK_MOMENTUM_MIN_VOLUME_MULT}）で順張り買い検討。`,
+    );
+  } else if (
+    // BB エクスパンション上抜け + 出来高
+    bbBreak.up &&
+    volumeConfirmed &&
+    rsi14 < STOCK_RSI_OVERBOUGHT + 5
+  ) {
+    action = "buy";
+    reasons.push(
+      `ボリンジャー拡大ブレイク（上限抜け）＋出来高×${volSpike.toFixed(1)}で順張り買い検討。`,
+    );
+  } else if (
+    perfectOrder &&
+    volumeConfirmed &&
+    rsi14 < STOCK_RSI_OVERBOUGHT &&
+    macdSnap.cross !== "dead"
+  ) {
+    action = "buy";
+    reasons.push(
+      `パーフェクトオーダー（EMA5>25>75）＋出来高確認のため、トレンド追随の買い検討。`,
+    );
+  } else if (
+    // 含み益中のパーフェクトオーダー＝ピラミッディング（損切ナンピンはしない）
+    perfectOrder &&
+    profitPct >= STOCK_PYRAMID_MIN_PROFIT_PCT &&
+    watch.shares > 0 &&
+    rsi14 < STOCK_RSI_OVERBOUGHT &&
+    volumeConfirmed
+  ) {
+    action = "buy";
+    reasons.push(
+      `含み益 ${profitPct.toFixed(1)}%＋パーフェクトオーダーのため買い増し（ピラミッディング）を検討。`,
+    );
+  } else if (
+    trend === "bullish" &&
+    atrActive &&
+    volumeConfirmed &&
+    rsi14 <= STOCK_RSI_OVERBOUGHT - 5 &&
+    macdSnap.cross !== "dead"
+  ) {
+    action = "buy";
+    reasons.push(
+      `上昇トレンドかつ ATR 拡大(×${atrRatio.toFixed(2)})・出来高ありのため、活発化バイアスで買い検討。`,
+    );
+  } else if (
     trend === "bullish" &&
     rsi14 <= STOCK_RSI_OVERSOLD &&
-    macdSnap.cross !== "dead"
+    macdSnap.cross !== "dead" &&
+    emaX !== "dead"
   ) {
     action = "buy";
     reasons.push(
@@ -208,10 +314,10 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     trend === "bullish" &&
     rsi14 < STOCK_RSI_OVERBOUGHT
   ) {
-    // 自動ナンピンは含み損を拡大しやすい → hold（長期回復待ち）。買い増しは人手判断。
+    // 自動ナンピンは含み損を拡大しやすい → hold。損切もしない。
     action = "hold";
     reasons.push(
-      `購入価格比 ${profitPct.toFixed(1)}% の含み損だが上昇トレンド。自動ナンピンはせず保有継続（損切りは1年超のみ）。`,
+      `購入価格比 ${profitPct.toFixed(1)}% の含み損だが上昇トレンド。自動ナンピン・損切りはせず保有継続。`,
     );
   } else if (
     volSpike >= STOCK_VOLUME_SPIKE_MULT &&
@@ -226,7 +332,8 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     trend === "bearish" &&
     rsi14 <= STOCK_RSI_OVERSOLD &&
     (nearWeekLow || nearMonthLow) &&
-    macdSnap.cross !== "dead"
+    macdSnap.cross !== "dead" &&
+    emaX !== "dead"
   ) {
     action = "buy";
     reasons.push(
@@ -237,9 +344,26 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     reasons.push(
       "含み益がありますが下降トレンドのため、利益確定または様子見が無難です。",
     );
-  } else if (trend === "bullish" && macdSnap.cross === "golden") {
+  } else if (
+    trend === "bullish" &&
+    macdSnap.cross === "golden" &&
+    (volumeConfirmed || atrActive)
+  ) {
     action = "buy";
-    reasons.push("MACDゴールデンクロスと上昇トレンドが重なり、買い検討です。");
+    reasons.push(
+      "MACDゴールデンクロスと上昇トレンド" +
+        (volumeConfirmed ? "・出来高確認" : "・ATR拡大") +
+        "が重なり、買い検討です。",
+    );
+  } else if (
+    // 出来高なしのクロスはスルー（ダマシ低減）
+    (emaX === "golden" || macdSnap.cross === "golden") &&
+    !volumeConfirmed
+  ) {
+    action = "watch";
+    reasons.push(
+      `クロスはあるが出来高×${volSpike.toFixed(1)}不足（要≥${STOCK_MOMENTUM_MIN_VOLUME_MULT}）のため見送り（ダマシ回避）。`,
+    );
   } else {
     action = "hold";
     reasons.push("大きな売買シグナルはありません。保有継続が妥当です。");
@@ -308,10 +432,19 @@ export async function analyzeStock(watch: StockWatch): Promise<StockAdvice> {
     ma25,
     ma5DeviationPct,
     ma25DeviationPct,
+    ema5,
+    ema25,
+    ema75,
+    emaCross: emaX,
+    perfectOrder,
+    atr14,
+    atrRatio,
+    bbRegime: bbBreak.regime,
     rsi14,
     bollingerWidthPct: bb.widthPct,
     macdCross: macdSnap.cross,
     volumeSpikeRatio: volSpike,
+    volumeConfirmed,
     trailingPe: fundamentals.trailingPe,
     priceToBook: fundamentals.priceToBook,
     dividendYieldPct: fundamentals.dividendYieldPct,

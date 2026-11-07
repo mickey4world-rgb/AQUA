@@ -80,7 +80,7 @@ const now = Date.parse("2026-10-20T06:00:00.000Z");
 }
 
 {
-  // 1年超・深い含み損のみ損切り
+  // 1年超・深い含み損でも、今は損切オフ（余剰・利益なし局面）
   const boughtAt = new Date(now - STOCK_STOP_LOSS_MIN_HOLD_MS - 86_400_000).toISOString();
   const d = decideStockSellIntent({
     symbol: "7203",
@@ -92,8 +92,23 @@ const now = Date.parse("2026-10-20T06:00:00.000Z");
     orders: [buyOrder("7203", boughtAt)],
     nowMs: now,
   });
-  assert.ok(d);
-  assert.equal(d!.kind, "stop-loss");
+  assert.equal(d, null, "STOCK_ALLOW_STOP_LOSS=false → no stop-loss even after 1y");
+}
+
+{
+  // −3%・直近買い: 絶対に売らない（再発オラクル）
+  const boughtAt = new Date(now - 10 * 60_000).toISOString();
+  const d = decideStockSellIntent({
+    symbol: "6758",
+    buyPrice: 1000,
+    currentPrice: 970,
+    adviceAction: "sell",
+    targetPrice: 900,
+    preferEarlierTakeProfit: true,
+    orders: [buyOrder("6758", boughtAt)],
+    nowMs: now,
+  });
+  assert.equal(d, null, "bought 10m ago at -3% must NOT sell");
 }
 
 {

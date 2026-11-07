@@ -13,6 +13,7 @@ import StockTradeRulesPanel from "@/components/stocks/StockTradeRulesPanel";
 import StockEquityChart from "@/components/stocks/StockEquityChart";
 import StockPortfolioOverviewPanel from "@/components/stocks/StockPortfolioOverviewPanel";
 import StockTradeActivityPanel from "@/components/stocks/StockTradeActivityPanel";
+import StockChartExternalLinks from "@/components/stocks/StockChartExternalLinks";
 import type {
   StockPortfolioOverview,
   StockProductProjection,
@@ -495,6 +496,8 @@ export default function StockBrokerPanel({
               {unregistered.length > 0
                 ? ` · 未登録 ${unregistered.length}`
                 : ""}
+              {" · "}
+              チャート列からローソク足（外部）
             </p>
           </div>
           <div className="mt-2 overflow-x-auto rounded-xl border border-white/10">
@@ -504,6 +507,7 @@ export default function StockBrokerPanel({
                   <th className="px-3 py-2 font-medium">状態</th>
                   <th className="px-3 py-2 font-medium">コード</th>
                   <th className="px-3 py-2 font-medium">銘柄</th>
+                  <th className="px-3 py-2 font-medium">チャート</th>
                   <th className="px-3 py-2 font-medium">参考単価</th>
                   <th className="px-3 py-2 font-medium">単元</th>
                   <th className="px-3 py-2 font-medium">保有</th>
@@ -555,6 +559,12 @@ export default function StockBrokerPanel({
                               : ""}
                           </span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <StockChartExternalLinks
+                          code={c.code}
+                          emphasize={c.isActive === true}
+                        />
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         {c.buyPrice > 0 ? formatYen(c.buyPrice) : "—"}
@@ -617,7 +627,7 @@ export default function StockBrokerPanel({
             {formatYen(
               data.guardrails.layers?.cumulativeMaxLossYen ?? 800_000,
             )}
-            。損切りは保有1年超のみ。利確優先で自動売買は止めません。
+            。損切りは停止中（利確のみ）。EMA・出来高・BB/ATRで買いを活発化。自動売買は止めません。
           </p>
           {(data.guardrails.notes ?? []).map((n) => (
             <p key={n} className="mt-1 text-[11px] text-amber-100/80">

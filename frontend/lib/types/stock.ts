@@ -75,14 +75,27 @@ export interface StockAdvice {
   changePct: number;
   ma5: number;
   ma25: number;
-  /** 短期MAからの乖離率（%） */
+  /** 短期MA/EMAからの乖離率（%） */
   ma5DeviationPct?: number;
-  /** 長期MAからの乖離率（%） */
+  /** 長期MA/EMAからの乖離率（%） */
   ma25DeviationPct?: number;
+  /** EMA（売買判定用・直近重視） */
+  ema5?: number;
+  ema25?: number;
+  ema75?: number;
+  emaCross?: "golden" | "dead" | "none";
+  /** EMA5>25>75 */
+  perfectOrder?: boolean;
+  atr14?: number;
+  /** 直近ATR ÷ 直前ATR（>1でボラ拡大） */
+  atrRatio?: number;
+  bbRegime?: "squeeze" | "expansion" | "normal";
   rsi14?: number;
   bollingerWidthPct?: number;
   macdCross?: "golden" | "dead" | "none";
   volumeSpikeRatio?: number;
+  /** モメンタム買いに必要な出来高を満たすか */
+  volumeConfirmed?: boolean;
   /** PER など取得できたときのみ */
   trailingPe?: number | null;
   priceToBook?: number | null;

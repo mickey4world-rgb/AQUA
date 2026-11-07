@@ -59,11 +59,26 @@ export const STOCK_MAX_QTY_PER_ORDER = 200;
 /** ハード利確: ウォッチ目標倍率 */
 export const STOCK_HARD_TAKE_PROFIT_MULT = 1.2;
 
-/** ハード損切り: 取得単価からの下落率（以下で強制売り検討） */
+/** ハード損切り: 取得単価からの下落率（建玉サイジング参考。売りトリガには使わない） */
 export const STOCK_HARD_STOP_LOSS_RATE = -0.08;
 
-/** ソフト損切り: AI/下降トレンドと合わせて売り検討 */
+/** ソフト損切り: 参考閾値（売りトリガには使わない） */
 export const STOCK_SOFT_STOP_LOSS_RATE = -0.05;
+
+/**
+ * 自動損切りの許可。false = 余剰・利益が乏しい局面では損切しない（利確のみ）。
+ * 1年超の深い含み損例外もオフ。再有効化は明示的に true へ。
+ */
+export const STOCK_ALLOW_STOP_LOSS = false;
+
+/** モメンタム買い（EMAクロス／BBブレイク）に必要な出来高倍率（過去5日平均比） */
+export const STOCK_MOMENTUM_MIN_VOLUME_MULT = 1.5;
+
+/** ATR が直前比この倍率以上ならボラ拡大＝売買活発化バイアス */
+export const STOCK_ATR_ACTIVE_RATIO = 1.25;
+
+/** パーフェクトオーダー時のピラミッディング（含み益の買い増し）最低含み益率 */
+export const STOCK_PYRAMID_MIN_PROFIT_PCT = 2;
 
 /**
  * 1日の実現損失がこの額に達したら新規買い停止（硬損切り売りは例外）。

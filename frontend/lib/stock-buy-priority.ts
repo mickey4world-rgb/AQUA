@@ -13,10 +13,24 @@ export function stockBuySignalPriority(advice: {
   rsi14?: number;
   nearWeekLow?: boolean;
   nearMonthLow?: boolean;
+  perfectOrder?: boolean;
+  emaCross?: string;
+  volumeConfirmed?: boolean;
+  atrRatio?: number;
 }): number {
   let priority = 0;
   if (advice.action === "buy" && advice.trend === "bullish") {
     priority = Math.max(priority, 1000 + Math.max(0, advice.dipScore ?? 0));
+  }
+  // EMA/出来高/パーフェクトオーダーの強いモメンタムは優先
+  if (advice.action === "buy" && advice.perfectOrder && advice.volumeConfirmed) {
+    priority = Math.max(priority, 1100 + Math.max(0, advice.dipScore ?? 0));
+  }
+  if (advice.action === "buy" && advice.emaCross === "golden" && advice.volumeConfirmed) {
+    priority = Math.max(priority, 1080 + Math.max(0, advice.dipScore ?? 0));
+  }
+  if (advice.action === "buy" && (advice.atrRatio ?? 1) >= 1.25 && advice.volumeConfirmed) {
+    priority = Math.max(priority, 1050);
   }
   // hold+強気+安値（Path A 活性化）は buy+強気より少し低く
   if (

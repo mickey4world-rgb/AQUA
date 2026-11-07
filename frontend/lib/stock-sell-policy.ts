@@ -1,16 +1,17 @@
 /**
  * 日本株の売り方針（仮想通貨 Soluna と同型）。
  * - 利確: プラス圏のみ（短期でも可）
- * - 損切り: 保有1年未満は禁止。1年超かつ深い含み損のみ例外
+ * - 損切り: 既定オフ（STOCK_ALLOW_STOP_LOSS）。余剰・利益がない局面では売らない
  * - 「買ってすぐ赤字で売る」は禁止
  */
 import {
+  STOCK_ALLOW_STOP_LOSS,
   STOCK_HARD_STOP_LOSS_RATE,
   STOCK_SOFT_STOP_LOSS_RATE,
 } from "@/lib/stock-trade-constants";
 import type { StockBrokerOrderRecord } from "@/lib/types/stock-broker-trade";
 
-/** 損切りを検討できる最短保有（仮想通貨と同じ 1 年） */
+/** 損切りを検討できる最短保有（仮想通貨と同じ 1 年）。ALLOW が true のときのみ使用 */
 export const STOCK_STOP_LOSS_MIN_HOLD_MS = 365 * 24 * 60 * 60 * 1000;
 
 /** 1年超後の硬損切り率（Soluna HARD_STOP に合わせる） */
@@ -113,12 +114,21 @@ export function decideStockSellIntent(input: {
     return null;
   }
 
-  // --- 含み損 / トントン: 1年未満は絶対に売らない ---
+  // --- 含み損 / トントン: 利確以外は売らない（今は損切オフ）---
+  if (!STOCK_ALLOW_STOP_LOSS) {
+    void STOCK_HARD_STOP_LOSS_RATE;
+    void STOCK_SOFT_STOP_LOSS_RATE;
+    void withinYear;
+    void holdLabel;
+    return null;
+  }
+
+  // --- 含み損: 1年未満は絶対に売らない ---
   if (withinYear) {
     return null;
   }
 
-  // 1年超: 深い含み損のみ（Soluna 同型）。旧 -8% 即損切りは廃止。
+  // 1年超: 深い含み損のみ（Soluna 同型）。STOCK_ALLOW_STOP_LOSS=true のときだけ。
   if (changeRate <= STOCK_STOP_LOSS_AFTER_YEAR_HARD_RATE) {
     return {
       sell: true,

@@ -8,10 +8,14 @@
  * - 将来（データ源が未接続／不安定のためカタログのみ）
  */
 import {
+  STOCK_ALLOW_STOP_LOSS,
+  STOCK_ATR_ACTIVE_RATIO,
   STOCK_AUDIT_PROMOTE_THRESHOLD,
   STOCK_CUMULATIVE_MAX_LOSS_YEN,
   STOCK_DAILY_MAX_LOSS_YEN,
   STOCK_DIP_MAX_RSI,
+  STOCK_MOMENTUM_MIN_VOLUME_MULT,
+  STOCK_PYRAMID_MIN_PROFIT_PCT,
   STOCK_DIP_MONTH_LOOKBACK,
   STOCK_DIP_NEAR_MONTH_PCT,
   STOCK_DIP_NEAR_WEEK_PCT,
@@ -251,14 +255,14 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 25,
     category: "sell",
-    title: "ハード損切り（1年超のみ）",
-    summary: `仮想通貨と同型。保有1年未満は損切り禁止。1年超かつ取得比おおむね -25% 以下のみ例外的に損切り。旧「即 -8% 売り」は廃止（建玉サイジング参考値 ${pct(STOCK_HARD_STOP_LOSS_RATE)} は残置）`,
+    title: "ハード損切り（現在オフ）",
+    summary: `STOCK_ALLOW_STOP_LOSS=${STOCK_ALLOW_STOP_LOSS}。余剰・利益が乏しい局面では損切しない。再有効時のみ保有1年超かつ概ね -25% 以下。建玉サイジング参考値 ${pct(STOCK_HARD_STOP_LOSS_RATE)} は残置`,
   },
   {
     id: 26,
     category: "sell",
-    title: "ソフト損切り（1年超のみ）",
-    summary: `保有1年超かつ深い含み損（目安 ${pct(STOCK_SOFT_STOP_LOSS_RATE)} 超の下落継続）のみ。プラス圏の利確とは別`,
+    title: "ソフト損切り（現在オフ）",
+    summary: `損切オフ中は発動しない。再有効時のみ保有1年超かつ深い含み損（目安 ${pct(STOCK_SOFT_STOP_LOSS_RATE)}）。プラス圏の利確とは別`,
   },
   {
     id: 27,
@@ -269,8 +273,21 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 28,
     category: "signal",
-    title: "テクニカル指標（AIトレンド入力）",
-    summary: `SMA乖離・RSI（≥${STOCK_RSI_OVERBOUGHT} 買われすぎ / ≤${STOCK_RSI_OVERSOLD} 売られすぎ）・ボリンジャー幅・MACDクロスを日足から算出し、買い/売り判定とAI解説に渡す`,
+    title: "テクニカル指標（EMA中心）",
+    summary: `EMA5/25/75・ゴールデン/デッド・パーフェクトオーダー・RSI（≥${STOCK_RSI_OVERBOUGHT}/≤${STOCK_RSI_OVERSOLD}）・BBスクイーズ→拡大ブレイク・ATR拡大(≥${STOCK_ATR_ACTIVE_RATIO})・MACDを日足から算出。短期エントリ＋中長期フィルタの二段近似`,
+  },
+  {
+    id: 48,
+    category: "buy",
+    title: "出来高確認付きモメンタム買い",
+    summary: `EMAクロス／BB上限ブレイク／パーフェクトオーダーは、出来高が過去5日平均の ${STOCK_MOMENTUM_MIN_VOLUME_MULT} 倍以上のときだけ買い（ダマシ低減）。含み益≥${STOCK_PYRAMID_MIN_PROFIT_PCT}%＋パーフェクトオーダーは買い増し可`,
+  },
+  {
+    id: 49,
+    category: "deferred",
+    title: "板インバランス・分足（未接続）",
+    summary:
+      "板の厚み・1分/5分足は kabu 板APIと安定イントラデイ源が無いため未強制。現状は日足EMA75を長期、EMA5/25を短期エントリの近似とする",
   },
   {
     id: 29,
@@ -362,9 +379,8 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
   {
     id: 47,
     category: "sell",
-    title: "利確優先・短期損切り禁止",
-    summary:
-      "プラス圏のみ利確可。買ってすぐの赤字売りは禁止。損切りは保有1年超かつ深い含み損のみ（仮想通貨 Soluna と同契約）",
+    title: "利確優先・損切り停止",
+    summary: `プラス圏のみ利確可。買ってすぐの赤字売りは禁止。STOCK_ALLOW_STOP_LOSS=${STOCK_ALLOW_STOP_LOSS}（今は損切しない）`,
   },
 ];
 

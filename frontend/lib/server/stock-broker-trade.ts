@@ -484,7 +484,7 @@ export async function buildStockBrokerTradeIntents(
   for (const row of analyzed) {
     const { watch, advice, symbol, holding, price } = row;
 
-    // --- 売り: 利確のみ短期可。損切りは保有1年超のみ（仮想通貨と同型）---
+    // --- 売り: 利確のみ。損切りは STOCK_ALLOW_STOP_LOSS（現在オフ）---
     if (holding && holding.qty >= STOCK_LOT_SIZE) {
       // 取得単価: 証券の平均取得価額を最優先（ウォッチメモの古い buyPrice で偽プラス売りしない）
       const buyPx =
