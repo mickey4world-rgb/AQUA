@@ -114,8 +114,14 @@ PROJECT_NAME_RAW="$(boinc --get_project_status 2>/dev/null | grep -oP '(?<=proje
 PROJECT_NAME="${PROJECT_NAME_RAW:-World Community Grid}"
 
 if [ "${ATTACHED}" -ne 1 ]; then
-  echo "::error::World Community Grid へのアカウント接続に失敗（user_name 空）。計算せずに報告して終了します。"
-  report_boinc "error" "0" "0" "0" || true
+  # 接続失敗は実績 error として記録し、workflow は緑にする（定時11枠の失敗メール連打防止）。
+  # 討伐・Note は別ステップで既に担保済み。再実行は手動 soluna-boinc / force のみ。
+  echo "::warning::World Community Grid へのアカウント接続に失敗（user_name 空）。error 報告後に soft-ok で終了します。"
+  if report_boinc "error" "0" "0" "0"; then
+    echo "boinc soft-ok: attach failed but reported (no email storm)"
+    exit 0
+  fi
+  echo "::error::接続失敗の報告（boinc-report）にも失敗したため hard-fail します。"
   exit 1
 fi
 

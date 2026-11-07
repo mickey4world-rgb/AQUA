@@ -97,7 +97,7 @@ export async function POST(request: Request) {
           ...existing,
           status: "error" as const,
           solComment: `宇宙分析の接続に失敗した… ${body.runMinutesActual} 分は回せなかったよ。`,
-          lunaComment: `BOINC 実績登録: 失敗（接続または RPC）。再試行枠で拾うこと。`,
+          lunaComment: `BOINC 実績登録: 失敗（接続または RPC）。当日は再試行しない（失敗メール連打防止）。手動 workflow_dispatch のみ再実行。`,
           result: {
             creditGranted: creditRounded,
             tasksCompleted: body.tasksCompleted,

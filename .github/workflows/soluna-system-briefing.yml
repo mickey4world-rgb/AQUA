@@ -269,9 +269,11 @@ jobs:
           BRIEFING_ID: ${{ steps.boinc_inputs.outputs.briefing_id }}
         run: |
           if [ -z "${BOINC_ACCOUNT_KEY}" ]; then
+            # 秘密未設定は設定ミスなので red。接続失敗（報告済み）とは別扱い。
             echo "::error::BOINC_ACCOUNT_KEY 未設定のため社会貢献を実行できません。"
             exit 1
           fi
           chmod +x frontend/scripts/run-soluna-boinc.sh
           sed -i 's/\r$//' frontend/scripts/run-soluna-boinc.sh || true
+          # 接続失敗は script 内で error 報告後 exit 0（定時失敗メール連打防止）
           frontend/scripts/run-soluna-boinc.sh

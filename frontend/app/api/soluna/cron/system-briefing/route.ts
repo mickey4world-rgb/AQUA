@@ -198,14 +198,10 @@ export async function POST(request: Request) {
     const liveGate = assertTodayLiveBriefing(todayBriefing);
     const boincForToday =
       latestBoinc && latestBoinc.briefingId === status.todayBriefingId ? latestBoinc : null;
-    // 討伐完了後でも、実績未着・失敗なら BOINC 再実行が必要（スキップ成功にしない）
-    const boincNeedsRun = Boolean(
-      boincForToday &&
-        (boincForToday.status === "waiting-spec" ||
-          boincForToday.status === "queued" ||
-          boincForToday.status === "error" ||
-          !boincForToday.result),
-    );
+    // 討伐完了後でも未着手は BOINC 再実行。接続失敗を報告済みなら当日クローズ
+    // （error のまま毎時再実行 → GHA 失敗メール連打の再発防止）
+    const { computeBoincNeedsRun } = await import("@/lib/soluna-boinc-needs-run");
+    const boincNeedsRun = computeBoincNeedsRun(boincForToday);
     // battle complete だけ見てスキップすると Note 500 後に永久未公開になる
     const noteReady = solunaNoteCoversBriefing(latestNote, status.todayBriefingId);
     const jobsNeedsRun = status.hasBattle && !noteReady;
