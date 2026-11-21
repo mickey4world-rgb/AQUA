@@ -166,12 +166,55 @@ export interface AccessAnalyticsReport {
   security: SecurityAnalyticsReport;
 }
 
+export interface SecurityArchitectureLayerView {
+  id: string;
+  title: string;
+  role: string;
+  defenses: string[];
+}
+
+export interface SecurityWorldIssueView {
+  id: string;
+  title: string;
+  publishedAt: string;
+  severity: "critical" | "high" | "medium" | "low";
+  judgment: "affected" | "watch" | "mitigated" | "not_applicable";
+  judgmentLabel: string;
+  reason: string;
+  sourceUrl: string;
+}
+
+export interface SecurityAttackFlowView {
+  country: string;
+  targetKind: string;
+  targetLabel: string;
+  pathSample: string;
+  reasonSample: string;
+  count: number;
+}
+
 export interface SecurityAnalyticsReport {
+  /** 集計対象月 YYYY-MM（攻撃履歴の履歴キー） */
+  month: string;
+  monthLabel: string;
   summary: {
     blockedEvents: number;
     highSeverityEvents: number;
     uniqueSources: number;
     affectedPaths: number;
+  };
+  /** 素人向け: いまの構成の層 */
+  architectureLayers: SecurityArchitectureLayerView[];
+  /** 世の中の重要問題 × この環境の該当判定 */
+  worldIssues: SecurityWorldIssueView[];
+  worldIssuesSummary: { level: "ok" | "warn" | "critical"; text: string };
+  /** 国 → 攻撃場所 → 件数 */
+  attackInsights: {
+    flows: SecurityAttackFlowView[];
+    byCountry: Array<{ country: string; count: number }>;
+    byTarget: Array<{ targetKind: string; targetLabel: string; count: number }>;
+    narrative: string[];
+    totalEvents: number;
   };
   byType: Array<{
     eventType: SecurityEventType;
@@ -262,8 +305,10 @@ export interface SecurityAnalyticsReport {
       checkedAt: string;
       probes: Array<{ model: string; ok: boolean; latencyMs: number; resolvedVersion?: string | null; reason?: string | null }>;
     } | null;
+    /** その日に保存した世界重要問題の判定（旧データは欠落可） */
+    worldIssues?: SecurityWorldIssueView[];
   } | null;
-  /** 直近の診断レベル推移（古い順。取得失敗は null） */
+  /** 直近の診断レベル推移（古い順。取得失敗は null）。日付選択で過去診断を開く */
   triageHistory: Array<{ dateJst: string; level: "ok" | "warn" | "critical"; aiStatus: "ok" | "failed" }> | null;
   /** 現在有効な自動ブロック（取得失敗は null） */
   activeAutoBlocks: Array<{

@@ -27,6 +27,11 @@ import {
   type TriageLevel,
   type TriageSecurityEventStats,
 } from "@/lib/security-triage";
+import {
+  assessWorldSecurityIssues,
+  defaultWorldIssueContext,
+  type WorldIssueAssessment,
+} from "@/lib/security-world-issues";
 
 const TRIAGE_BUCKET = "triage";
 
@@ -79,6 +84,8 @@ export interface SecurityTriageReport {
     checkedAt: string;
     probes: SecurityAiModelState["probes"];
   } | null;
+  /** その日時点の「世界の重要問題 × この環境」判定（履歴閲覧用。旧ドキュメントは欠落可） */
+  worldIssues?: WorldIssueAssessment[];
   runUrl: string | null;
   markdown: string;
 }
@@ -458,6 +465,11 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
           probes: modelState.probes,
         }
       : null,
+    worldIssues: assessWorldSecurityIssues(
+      defaultWorldIssueContext({
+        recentDependencyPatches: parsed.appliedAutoPatches.length > 0,
+      }),
+    ),
     runUrl: parsed.runUrl,
     markdown,
   };
@@ -504,6 +516,31 @@ export async function getLatestSecurityTriage(): Promise<SecurityTriageReport | 
     return resources[0] ?? null;
   } catch (error) {
     console.warn("[security-triage] read failed", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/** 履歴: 指定 JST 日付の診断を1件取得 */
+export async function getSecurityTriageByDateJst(
+  dateJst: string,
+): Promise<SecurityTriageReport | null> {
+  if (!isCosmosConfigured()) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateJst)) return null;
+  try {
+    const { resource } = await container()
+      .item(`triage-${dateJst}`, TRIAGE_BUCKET)
+      .read<SecurityTriageReport>();
+    return resource ?? null;
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? Number((error as { code?: number }).code)
+        : 0;
+    if (code === 404) return null;
+    console.warn(
+      "[security-triage] by-date read failed",
+      error instanceof Error ? error.message : error,
+    );
     return null;
   }
 }

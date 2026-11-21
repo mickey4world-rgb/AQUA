@@ -19,6 +19,8 @@
     "test:stock-statement-fills": "npx --yes tsx lib/stock-broker-statement-fills.test.ts",
     "test:security-hardening": "npx --yes tsx lib/security-hardening.test.ts",
     "test:security-automation": "npx --yes tsx lib/security-automation.test.ts",
+    "test:security-world-issues": "npx --yes tsx lib/security-world-issues.test.ts",
+    "test:security-attack-insights": "npx --yes tsx lib/security-attack-insights.test.ts",
     "test:platform-versions": "npx --yes tsx lib/platform-versions.test.ts",
     "platform:align": "npx --yes tsx scripts/platform-version-align.ts",
     "platform:align:apply": "npx --yes tsx scripts/platform-version-align.ts --apply",

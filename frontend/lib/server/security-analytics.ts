@@ -1,12 +1,17 @@
+import { SECURITY_ARCHITECTURE_LAYERS } from "@/lib/security-architecture";
+import { buildAttackInsights } from "@/lib/security-attack-insights";
+import {
+  assessWorldSecurityIssues,
+  defaultWorldIssueContext,
+  worldIssuesSummaryLabel,
+} from "@/lib/security-world-issues";
 import { listActiveAutoBlocks } from "@/lib/server/security-blocklist";
 import { listSecurityEvents } from "@/lib/server/security-event";
 import {
   getLatestSecurityTriage,
   getRecentSecurityTriageLevels,
 } from "@/lib/server/security-triage";
-import type {
-  SecurityAnalyticsReport,
-} from "@/lib/types/analytics";
+import type { SecurityAnalyticsReport } from "@/lib/types/analytics";
 import type { SecurityEventType } from "@/lib/types/security-event";
 
 const EVENT_LABELS: Record<SecurityEventType, string> = {
@@ -17,6 +22,49 @@ const EVENT_LABELS: Record<SecurityEventType, string> = {
   auto_blocked: "繰り返し攻撃を自動ブロック",
 };
 
+function monthLabelJa(month: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return month;
+  return `${match[1]}年${Number(match[2])}月`;
+}
+
+function mapTriage(
+  triage: NonNullable<Awaited<ReturnType<typeof getLatestSecurityTriage>>>,
+): NonNullable<SecurityAnalyticsReport["latestTriage"]> {
+  return {
+    dateJst: triage.dateJst,
+    generatedAt: triage.generatedAt,
+    ageHours: Math.max(
+      0,
+      Math.floor((Date.now() - Date.parse(triage.generatedAt)) / 3_600_000),
+    ),
+    level: triage.level,
+    headline: triage.headline,
+    summary: triage.summary,
+    reasons: triage.reasons,
+    actions: triage.actions,
+    aiStatus: triage.aiStatus,
+    aiModel: triage.aiModel,
+    aiReason: triage.aiReason,
+    counts: triage.counts,
+    issues: triage.issues,
+    collections: triage.collections.map((c) => ({
+      source: c.source,
+      ok: c.ok,
+      count: c.count,
+      error: c.error ?? null,
+      optional: Boolean(c.optional),
+    })),
+    events: triage.events,
+    openSecurityPrs: Array.isArray(triage.openSecurityPrs) ? triage.openSecurityPrs : [],
+    appliedAutoPatches: Array.isArray(triage.appliedAutoPatches)
+      ? triage.appliedAutoPatches
+      : [],
+    modelSelection: triage.modelSelection ?? null,
+    worldIssues: Array.isArray(triage.worldIssues) ? triage.worldIssues : undefined,
+  };
+}
+
 export async function buildSecurityAnalyticsReport(
   month: string,
 ): Promise<SecurityAnalyticsReport> {
@@ -24,7 +72,7 @@ export async function buildSecurityAnalyticsReport(
     listSecurityEvents(month),
     getLatestSecurityTriage(),
     listActiveAutoBlocks(),
-    getRecentSecurityTriageLevels(14),
+    getRecentSecurityTriageLevels(90),
   ]);
   const sourceSet = new Set<string>();
   const pathSet = new Set<string>();
@@ -55,13 +103,41 @@ export async function buildSecurityAnalyticsReport(
     byDayMap.set(date, (byDayMap.get(date) ?? 0) + 1);
   }
 
+  const attackInsights = buildAttackInsights(
+    events.map((e) => ({
+      country: e.country,
+      path: e.path,
+      reason: e.attackLabel || e.mitigation,
+      count: 1,
+    })),
+  );
+
+  const recentPatches = (triage?.appliedAutoPatches?.length ?? 0) > 0;
+  const worldIssues =
+    triage && Array.isArray(triage.worldIssues) && triage.worldIssues.length > 0
+      ? triage.worldIssues
+      : assessWorldSecurityIssues(
+          defaultWorldIssueContext({ recentDependencyPatches: recentPatches }),
+        );
+
   return {
+    month,
+    monthLabel: monthLabelJa(month),
     summary: {
       blockedEvents: events.length,
       highSeverityEvents,
       uniqueSources: sourceSet.size,
       affectedPaths: pathSet.size,
     },
+    architectureLayers: SECURITY_ARCHITECTURE_LAYERS.map((layer) => ({
+      id: layer.id,
+      title: layer.title,
+      role: layer.role,
+      defenses: [...layer.defenses],
+    })),
+    worldIssues,
+    worldIssuesSummary: worldIssuesSummaryLabel(worldIssues),
+    attackInsights,
     byType: [...byTypeMap.entries()]
       .map(([eventType, value]) => ({
         eventType,
@@ -91,38 +167,8 @@ export async function buildSecurityAnalyticsReport(
       createdAt: event.createdAt,
     })),
     coverageNote:
-      "表示値はAQUAアプリ層で検知・遮断してSecurityEventsへ記録できた事象です。Azure基盤がアプリ到達前に遮断したDDoS・プラットフォーム認証拒否は含みません。",
-    latestTriage: triage
-      ? {
-          dateJst: triage.dateJst,
-          generatedAt: triage.generatedAt,
-          ageHours: Math.max(0, Math.floor((Date.now() - Date.parse(triage.generatedAt)) / 3_600_000)),
-          level: triage.level,
-          headline: triage.headline,
-          summary: triage.summary,
-          reasons: triage.reasons,
-          actions: triage.actions,
-          aiStatus: triage.aiStatus,
-          aiModel: triage.aiModel,
-          aiReason: triage.aiReason,
-          counts: triage.counts,
-          issues: triage.issues,
-          collections: triage.collections.map((c) => ({
-            source: c.source,
-            ok: c.ok,
-            count: c.count,
-            error: c.error ?? null,
-            optional: Boolean(c.optional),
-          })),
-          events: triage.events,
-          // 旧形式（件数のみ）の保存データにも耐える
-          openSecurityPrs: Array.isArray(triage.openSecurityPrs) ? triage.openSecurityPrs : [],
-          appliedAutoPatches: Array.isArray(triage.appliedAutoPatches)
-            ? triage.appliedAutoPatches
-            : [],
-          modelSelection: triage.modelSelection ?? null,
-        }
-      : null,
+      "表示値はAQUAアプリ層で検知・遮断してSecurityEventsへ記録できた事象です。Azure基盤がアプリ到達前に遮断したDDoS・プラットフォーム認証拒否は含みません。攻撃イベントは月単位、診断は日単位で過去を選べます。",
+    latestTriage: triage ? mapTriage(triage) : null,
     triageHistory,
     activeAutoBlocks:
       blocks?.map((b) => ({
@@ -134,4 +180,11 @@ export async function buildSecurityAnalyticsReport(
         country: b.country,
       })) ?? null,
   };
+}
+
+/** 過去日付の診断を画面用に整形（履歴閲覧 API） */
+export function mapSecurityTriageForClient(
+  triage: NonNullable<Awaited<ReturnType<typeof getLatestSecurityTriage>>>,
+): NonNullable<SecurityAnalyticsReport["latestTriage"]> {
+  return mapTriage(triage);
 }

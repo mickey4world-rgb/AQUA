@@ -123,7 +123,7 @@ export default function AccessAnalyticsPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-slate-400">
               公開フロント（認証不要ページ）の訪問者分析と、ログイン後の内部 API
-              利用、外部からの不正アクセスや防御実績を分けて表示します。
+              利用、外部からの不正アクセスや防御実績を分けて表示します。上部の月切替で過去月の攻撃履歴、診断パネルの日付選択で過去の日次診断を確認できます。
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { costsPanelClass } from "@/lib/analytics-utils";
 import type { SecurityAnalyticsReport } from "@/lib/types/analytics";
 
@@ -87,18 +88,33 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ba
   );
 }
 
-function History({ history }: { history: SecurityAnalyticsReport["triageHistory"] }) {
+function HistoryDots({
+  history,
+  selected,
+  onSelect,
+}: {
+  history: SecurityAnalyticsReport["triageHistory"];
+  selected: string | null;
+  onSelect: (dateJst: string) => void;
+}) {
   if (!history || history.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5" aria-label="直近の診断推移">
-      <span className="mr-1 text-[11px] text-slate-400">直近{history.length}日:</span>
-      {history.map((day) => (
-        <span
-          key={day.dateJst}
-          title={`${day.dateJst} ${LEVEL[day.level].label}${day.aiStatus === "failed" ? "（AI要約なし）" : ""}`}
-          className={`h-3 w-3 rounded-sm ${LEVEL[day.level].dot}`}
-        />
-      ))}
+    <div className="flex flex-wrap items-center gap-1.5" aria-label="診断履歴（クリックで過去を表示）">
+      <span className="mr-1 text-[11px] text-slate-400">履歴{history.length}日:</span>
+      {history.map((day) => {
+        const active = selected === day.dateJst;
+        return (
+          <button
+            key={day.dateJst}
+            type="button"
+            title={`${day.dateJst} ${LEVEL[day.level].label}${day.aiStatus === "failed" ? "（AI要約なし）" : ""} — クリックで表示`}
+            onClick={() => onSelect(day.dateJst)}
+            className={`h-3.5 w-3.5 rounded-sm transition ring-offset-1 ring-offset-slate-950 ${LEVEL[day.level].dot} ${
+              active ? "ring-2 ring-white" : "hover:opacity-80"
+            }`}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -163,22 +179,74 @@ function ModelPanel({ selection, usedModel }: { selection: Triage["modelSelectio
 }
 
 export default function SecurityTriagePanel({
-  triage,
+  triage: initialTriage,
   history,
+  sectionTitle = "AI セキュリティ診断（毎朝 7 時）",
 }: {
   triage: SecurityAnalyticsReport["latestTriage"];
   history: SecurityAnalyticsReport["triageHistory"];
+  sectionTitle?: string;
 }) {
+  const [triage, setTriage] = useState(initialTriage);
+  const [selectedDate, setSelectedDate] = useState<string | null>(
+    initialTriage?.dateJst ?? null,
+  );
+  const [loadingDate, setLoadingDate] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const viewingPast =
+    Boolean(initialTriage && triage && triage.dateJst !== initialTriage.dateJst);
+
+  useEffect(() => {
+    setTriage(initialTriage);
+    setSelectedDate(initialTriage?.dateJst ?? null);
+    setLoadError(null);
+  }, [initialTriage]);
+
+  async function loadHistoryDate(dateJst: string) {
+    if (!dateJst) return;
+    if (initialTriage?.dateJst === dateJst) {
+      setTriage(initialTriage);
+      setSelectedDate(dateJst);
+      setLoadError(null);
+      return;
+    }
+    setLoadingDate(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/costs/security-triage?dateJst=${encodeURIComponent(dateJst)}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? `${dateJst} の診断を取得できませんでした`);
+      }
+      const body = (await res.json()) as { triage: Triage };
+      setTriage(body.triage);
+      setSelectedDate(dateJst);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "履歴の取得に失敗しました");
+    } finally {
+      setLoadingDate(false);
+    }
+  }
+
   if (!triage) {
     return (
       <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
         AI セキュリティ診断の結果がまだありません（毎朝 7 時に自動実行）。
+        {history && history.length > 0 && (
+          <div className="mt-3">
+            <HistoryDots
+              history={history}
+              selected={selectedDate}
+              onSelect={(d) => void loadHistoryDate(d)}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   const level = LEVEL[triage.level];
-  const stale = triage.ageHours > TRIAGE_STALE_HOURS;
+  const stale = !viewingPast && triage.ageHours > TRIAGE_STALE_HOURS;
   const highOpen = triage.counts.critical + triage.counts.high;
   const overdue = triage.issues.filter((i) => i.overdue).length;
   const applied = triage.appliedAutoPatches ?? [];
@@ -191,10 +259,74 @@ export default function SecurityTriagePanel({
     <section className="space-y-4" aria-labelledby="security-triage-heading">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <h3 id="security-triage-heading" className="text-lg font-semibold text-white">
-          AI セキュリティ診断（毎朝 7 時）
+          {sectionTitle}
         </h3>
-        <History history={history} />
+        <HistoryDots
+          history={history}
+          selected={selectedDate}
+          onSelect={(d) => void loadHistoryDate(d)}
+        />
       </div>
+
+      {history && history.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <label htmlFor="triage-history-date" className="shrink-0">
+            過去の診断日
+          </label>
+          <select
+            id="triage-history-date"
+            className="rounded-md border border-white/10 bg-slate-950 px-2 py-1.5 text-slate-200"
+            value={selectedDate ?? triage.dateJst}
+            disabled={loadingDate}
+            onChange={(e) => void loadHistoryDate(e.target.value)}
+          >
+            {[...history].reverse().map((day) => (
+              <option key={day.dateJst} value={day.dateJst}>
+                {day.dateJst}（{LEVEL[day.level].label}
+                {day.aiStatus === "failed" ? "・AIなし" : ""}）
+              </option>
+            ))}
+          </select>
+          {loadingDate && <span className="text-amber-200">読み込み中…</span>}
+          {viewingPast && initialTriage && (
+            <button
+              type="button"
+              className="rounded border border-white/15 px-2 py-1 text-cyan-200 hover:bg-white/5"
+              onClick={() => void loadHistoryDate(initialTriage.dateJst)}
+            >
+              最新（{initialTriage.dateJst}）に戻る
+            </button>
+          )}
+        </div>
+      )}
+      {loadError && (
+        <p className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+          {loadError}
+        </p>
+      )}
+      {viewingPast && (
+        <p className="rounded-lg border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+          {triage.dateJst} 時点の診断を表示しています（履歴閲覧）。自動パッチ件数もその日のスナップショットです。
+        </p>
+      )}
+      {Array.isArray(triage.worldIssues) && triage.worldIssues.length > 0 && viewingPast && (
+        <div className={`${costsPanelClass} overflow-hidden`}>
+          <div className="border-b border-white/10 px-5 py-3">
+            <h4 className="text-sm font-semibold text-white">
+              その日の世界重要問題判定 {triage.worldIssues.length} 件
+            </h4>
+          </div>
+          <ul className="divide-y divide-white/5 text-sm">
+            {triage.worldIssues.map((issue) => (
+              <li key={issue.id} className="px-5 py-3">
+                <p className="text-xs text-slate-400">{issue.judgmentLabel}</p>
+                <p className="text-slate-200">{issue.title}</p>
+                <p className="mt-1 text-xs text-slate-500">{issue.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className={`rounded-2xl border px-5 py-4 ${level.banner}`}>
         <div className="flex flex-wrap items-center gap-2">
@@ -338,6 +470,13 @@ export default function SecurityTriagePanel({
           </div>
           <ModelPanel selection={triage.modelSelection} usedModel={triage.aiModel} />
         </div>
+      </div>
+
+      <div>
+        <h4 className="text-sm font-semibold text-white">4. 環境・ソースの改善</h4>
+        <p className="mt-1 text-xs text-slate-500">
+          依存パッケージとホスト（SWA Node）の自動修正。検証後にマージされたものと、待ちの PR。
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
