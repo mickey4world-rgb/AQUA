@@ -13,14 +13,6 @@ import type {
   SecurityEvent,
 } from "@/lib/types/security-event";
 
-function safeOrigin(request: Request): string | null {
-  try {
-    return new URL(request.url).origin;
-  } catch {
-    return null;
-  }
-}
-
 function securityEventsContainer() {
   return getContainer(COSMOS_CONTAINERS.securityEvents);
 }
@@ -80,10 +72,7 @@ export async function recordSecurityEvent(
   // SWA は国ヘッダーを付けないため、同梱の IP→国 表で引く（IP 自体は保存しない）
   const country = extractGeoFromHeaders(input.request.headers).country
     ? null
-    : await resolveIpCountry(
-        resolveClientIp(input.request.headers),
-        safeOrigin(input.request),
-      );
+    : await resolveIpCountry(resolveClientIp(input.request.headers));
   const event = buildEvent(input, new Date(), country);
   await writeEvent(event);
 

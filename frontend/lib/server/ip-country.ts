@@ -6,8 +6,8 @@ import {
   type IpCountryTable,
 } from "@/lib/ip-country-lookup";
 
-const ASSET_PATH = "/vendor/geo/ip-country.bin";
-const FALLBACK_ORIGIN = "https://www.aquacore.net";
+/** 同梱表。リクエスト由来の origin では絶対に取得しない（SSRF 防止） */
+const ASSET_URL = "https://www.aquacore.net/vendor/geo/ip-country.bin";
 const RETRY_AFTER_FAIL_MS = 10 * 60_000;
 
 let tablePromise: Promise<IpCountryTable | null> | null = null;
@@ -22,8 +22,9 @@ async function loadFromFs(): Promise<IpCountryTable | null> {
   }
 }
 
-async function loadFromOrigin(origin: string): Promise<IpCountryTable | null> {
-  const res = await fetch(`${origin.replace(/\/$/, "")}${ASSET_PATH}`, {
+async function loadFromTrustedUrl(): Promise<IpCountryTable | null> {
+  // URL は定数のみ。request.origin / PRODUCTION_URL など可変値は渡さない
+  const res = await fetch(ASSET_URL, {
     signal: AbortSignal.timeout(8_000),
     cache: "no-store",
   });
@@ -33,22 +34,17 @@ async function loadFromOrigin(origin: string): Promise<IpCountryTable | null> {
   return parseIpCountryTable(await res.arrayBuffer());
 }
 
-function getTable(origin: string | null): Promise<IpCountryTable | null> {
+function getTable(): Promise<IpCountryTable | null> {
   if (tablePromise) return tablePromise;
   if (failedAt && Date.now() - failedAt < RETRY_AFTER_FAIL_MS) return Promise.resolve(null);
   tablePromise = (async () => {
     const local = await loadFromFs();
     if (local) return local;
-    for (const o of [origin, process.env.PRODUCTION_URL, FALLBACK_ORIGIN]) {
-      if (!o) continue;
-      try {
-        const t = await loadFromOrigin(o);
-        if (t) return t;
-      } catch {
-        // 次の候補へ
-      }
+    try {
+      return await loadFromTrustedUrl();
+    } catch {
+      return null;
     }
-    return null;
   })().then((t) => {
     if (!t) {
       failedAt = Date.now();
@@ -61,14 +57,11 @@ function getTable(origin: string | null): Promise<IpCountryTable | null> {
 }
 
 /** IP から国コードを引く（表が読めない間は null。呼び出しを止めない） */
-export async function resolveIpCountry(
-  ip: string | null | undefined,
-  origin: string | null = null,
-): Promise<string | null> {
+export async function resolveIpCountry(ip: string | null | undefined): Promise<string | null> {
   if (!ip || ip === "unknown") return null;
   try {
     const table = await Promise.race([
-      getTable(origin),
+      getTable(),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
     ]);
     return table ? lookupIpCountry(table, ip) : null;

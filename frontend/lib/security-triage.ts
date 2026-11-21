@@ -156,11 +156,15 @@ export function assessSecurityFindings(input: TriageInput): TriageAssessment {
     if (rank >= SEVERITY_RANK.high) {
       const overdue = age != null && age > PATCH_SLA_HOURS && finding.fixAvailable !== false;
       const reason =
-        finding.fixAvailable === false
-          ? "修正版なし（回避策が必要）"
-          : overdue
-            ? `修正版があるのに ${Math.floor(age!)} 時間未適用`
-            : "重大・高の脆弱性（24時間以内に適用予定）";
+        finding.source === "code-scanning"
+          ? overdue
+            ? `コード解析の指摘が ${Math.floor(age!)} 時間未修正（自動パッチ対象外）`
+            : "コード解析の指摘（自動パッチ対象外・コード修正が必要）"
+          : finding.fixAvailable === false
+            ? "修正版なし（回避策が必要）"
+            : overdue
+              ? `修正版があるのに ${Math.floor(age!)} 時間未適用`
+              : "重大・高の脆弱性（Dependabot 自動修正の対象）";
       issues.push({ finding, ageHours: age, overdue, reason });
       continue;
     }
@@ -242,6 +246,12 @@ export function fallbackTriageActions(assessment: TriageAssessment): TriageActio
     const target = f.packageName ? `${f.packageName}（${f.title}）` : f.title;
     if (f.source === "secret-scanning") {
       actions.push({ priority: "now", title: `秘密情報を無効化: ${f.title}`, detail: "該当キーを再発行し、古いキーを失効させる。" });
+    } else if (f.source === "code-scanning") {
+      actions.push({
+        priority: issue.overdue ? "now" : "today",
+        title: `コードを修正: ${target}`,
+        detail: "CodeQL の指摘です。Dependabot では直らないため、該当コードを直して main に入れます。",
+      });
     } else if (f.fixAvailable === false) {
       actions.push({ priority: issue.overdue ? "now" : "today", title: `回避策を検討: ${target}`, detail: "修正版がないため、該当機能の無効化・入力制限・WAF ルールで緩和する。" });
     } else {

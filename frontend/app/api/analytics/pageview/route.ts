@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   const geo = extractGeoFromHeaders(request.headers);
   const country =
     geo.country ??
-    (await resolveIpCountry(resolveClientIp(request.headers), new URL(request.url).origin));
+    (await resolveIpCountry(resolveClientIp(request.headers)));
 
   await recordPageView({
     pathname,
