@@ -182,6 +182,26 @@ export interface SecurityWorldIssueView {
   judgmentLabel: string;
   reason: string;
   sourceUrl: string;
+  origin?: "cisa-kev" | "nodejs" | "ghsa-npm" | "baseline";
+  originLabel?: string;
+  vendor?: string | null;
+  product?: string | null;
+  ransomware?: boolean;
+}
+
+export interface SecurityWorldFeedMetaView {
+  fetchedAt: string | null;
+  live: boolean;
+  sources: Array<{
+    source: string;
+    label: string;
+    ok: boolean;
+    count: number;
+    checkedAt: string | null;
+    error?: string | null;
+  }>;
+  scanned: number;
+  notApplicable: number;
 }
 
 export interface SecurityAttackFlowView {
@@ -208,6 +228,7 @@ export interface SecurityAnalyticsReport {
   /** 世の中の重要問題 × この環境の該当判定 */
   worldIssues: SecurityWorldIssueView[];
   worldIssuesSummary: { level: "ok" | "warn" | "critical"; text: string };
+  worldFeedMeta: SecurityWorldFeedMetaView;
   /** 国 → 攻撃場所 → 件数 */
   attackInsights: {
     flows: SecurityAttackFlowView[];
@@ -276,6 +297,15 @@ export interface SecurityAnalyticsReport {
       count: number;
       error: string | null;
       optional: boolean;
+      /** 確認時刻（旧データは null。その場合は診断時刻を使う） */
+      checkedAt: string | null;
+      alternative: {
+        label: string;
+        ok: boolean;
+        count: number;
+        checkedAt: string | null;
+        detail: string | null;
+      } | null;
     }>;
     events: {
       total: number;
@@ -307,6 +337,7 @@ export interface SecurityAnalyticsReport {
     } | null;
     /** その日に保存した世界重要問題の判定（旧データは欠落可） */
     worldIssues?: SecurityWorldIssueView[];
+    worldFeedMeta?: SecurityWorldFeedMetaView;
   } | null;
   /** 直近の診断レベル推移（古い順。取得失敗は null）。日付選択で過去診断を開く */
   triageHistory: Array<{ dateJst: string; level: "ok" | "warn" | "critical"; aiStatus: "ok" | "failed" }> | null;

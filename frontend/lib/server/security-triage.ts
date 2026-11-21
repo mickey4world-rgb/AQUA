@@ -28,8 +28,13 @@ import {
   type TriageSecurityEventStats,
 } from "@/lib/security-triage";
 import {
+  assessWorldFeed,
   assessWorldSecurityIssues,
+  buildWorldFeedMeta,
   defaultWorldIssueContext,
+  parseWorldFeed,
+  type WorldFeed,
+  type WorldFeedMeta,
   type WorldIssueAssessment,
 } from "@/lib/security-world-issues";
 
@@ -86,6 +91,8 @@ export interface SecurityTriageReport {
   } | null;
   /** その日時点の「世界の重要問題 × この環境」判定（履歴閲覧用。旧ドキュメントは欠落可） */
   worldIssues?: WorldIssueAssessment[];
+  /** 世界の重要問題をいつ・どこから取ったか */
+  worldFeedMeta?: WorldFeedMeta;
   runUrl: string | null;
   markdown: string;
 }
@@ -95,6 +102,7 @@ export interface SecurityTriageRequest {
   collections?: unknown;
   openSecurityPrs?: unknown;
   appliedAutoPatches?: unknown;
+  worldFeed?: unknown;
   runUrl?: unknown;
   /** 夕方の再試行用。本日分の AI 要約が成功済みなら何もしない（無料枠の節約） */
   onlyIfAiFailed?: unknown;
@@ -137,6 +145,7 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
   collections: TriageCollection[];
   openSecurityPrs: AutoPatchPr[];
   appliedAutoPatches: AutoPatchPr[];
+  worldFeed: WorldFeed | null;
   runUrl: string | null;
 } {
   const findings: TriageFinding[] = [];
@@ -166,12 +175,24 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
     const source = str(r.source, 32);
     if (!source || !(SOURCES.has(source) || PLATFORM_SOURCES.has(source))) continue;
     const optionalSource = OPTIONAL_SOURCES.has(source);
+    const alt = (r.alternative ?? null) as Record<string, unknown> | null;
     collections.push({
       source: source as TriageCollection["source"],
       ok: r.ok === true,
       count: typeof r.count === "number" ? r.count : 0,
       error: str(r.error, 240),
       optional: optionalSource && r.optional === true,
+      checkedAt: str(r.checkedAt, 40),
+      alternative:
+        alt && typeof alt === "object" && str(alt.label, 160)
+          ? {
+              label: str(alt.label, 160)!,
+              ok: alt.ok === true,
+              count: typeof alt.count === "number" ? alt.count : 0,
+              checkedAt: str(alt.checkedAt, 40),
+              detail: str(alt.detail, 400),
+            }
+          : null,
     });
   }
   for (const required of [...SOURCES, ...PLATFORM_SOURCES]) {
@@ -191,7 +212,14 @@ export function parseTriageRequest(body: SecurityTriageRequest): {
   const appliedAutoPatches = (Array.isArray(body.appliedAutoPatches) ? body.appliedAutoPatches.slice(0, 40) : [])
     .map(parseAutoPatchPr)
     .filter((pr): pr is AutoPatchPr => pr != null);
-  return { findings, collections, openSecurityPrs, appliedAutoPatches, runUrl: str(body.runUrl, 400) };
+  return {
+    findings,
+    collections,
+    openSecurityPrs,
+    appliedAutoPatches,
+    worldFeed: parseWorldFeed(body.worldFeed),
+    runUrl: str(body.runUrl, 400),
+  };
 }
 
 async function loadEventStats(now: Date): Promise<{ stats: TriageSecurityEventStats | null; collection: TriageCollection }> {
@@ -377,12 +405,30 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
   };
   const { stats, collection: eventCollection } = await stage("events", () => loadEventStats(now));
   const blocks = await stage("autoblock", () => listActiveAutoBlocks());
+  const nowIso = now.toISOString();
+  const feed = parsed.worldFeed;
+  const feedOkSources = feed?.sources.filter((s) => s.ok).length ?? 0;
+  const worldFeedCollection: TriageCollection = !feed
+    ? { source: "world-feed", ok: false, count: 0, error: "世界の重要問題を取得できず（未送信）", checkedAt: nowIso }
+    : feedOkSources === 0
+      ? { source: "world-feed", ok: false, count: 0, error: "取得元すべて失敗", checkedAt: feed.fetchedAt }
+      : {
+          source: "world-feed",
+          ok: feedOkSources === feed.sources.length,
+          count: feed.items.length,
+          error:
+            feedOkSources === feed.sources.length
+              ? null
+              : `一部失敗: ${feed.sources.filter((s) => !s.ok).map((s) => s.source).join(", ")}`,
+          checkedAt: feed.fetchedAt,
+        };
   const collections: TriageCollection[] = [
     ...parsed.collections,
-    eventCollection,
+    { ...eventCollection, checkedAt: nowIso },
     blocks == null
-      ? { source: "autoblock", ok: false, count: 0, error: "自動ブロック一覧の取得失敗" }
-      : { source: "autoblock", ok: true, count: blocks.length },
+      ? { source: "autoblock", ok: false, count: 0, error: "自動ブロック一覧の取得失敗", checkedAt: nowIso }
+      : { source: "autoblock", ok: true, count: blocks.length, checkedAt: nowIso },
+    worldFeedCollection,
   ];
 
   const assessment = assessSecurityFindings({
@@ -412,6 +458,21 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
   const summary = ai.ok ? ai.value.summary : assessment.reasons.join(" / ");
   const actions = ai.ok && ai.value.actions.length > 0 ? ai.value.actions : fallbackTriageActions(assessment);
   const dateJst = jstDateString(now);
+
+  const worldCtx = defaultWorldIssueContext({
+    nodeMajor: feed?.nodeMajor ?? 22,
+    recentDependencyPatches: parsed.appliedAutoPatches.length > 0,
+    openAdvisoryIds: new Set(parsed.findings.map((f) => f.id.toUpperCase())),
+    openAdvisoryPackages: new Set(
+      parsed.findings
+        .map((f) => (f.packageName ?? "").toLowerCase())
+        .filter(Boolean),
+    ),
+  });
+  const worldIssues =
+    feed && feedOkSources > 0
+      ? assessWorldFeed(feed, worldCtx)
+      : assessWorldSecurityIssues(worldCtx);
 
   const markdown = renderTriageMarkdown({
     dateJst,
@@ -465,11 +526,8 @@ export async function runSecurityTriage(body: SecurityTriageRequest): Promise<Se
           probes: modelState.probes,
         }
       : null,
-    worldIssues: assessWorldSecurityIssues(
-      defaultWorldIssueContext({
-        recentDependencyPatches: parsed.appliedAutoPatches.length > 0,
-      }),
-    ),
+    worldIssues,
+    worldFeedMeta: buildWorldFeedMeta(feed, worldIssues),
     runUrl: parsed.runUrl,
     markdown,
   };

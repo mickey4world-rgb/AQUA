@@ -2,6 +2,7 @@ import { SECURITY_ARCHITECTURE_LAYERS } from "@/lib/security-architecture";
 import { buildAttackInsights } from "@/lib/security-attack-insights";
 import {
   assessWorldSecurityIssues,
+  buildWorldFeedMeta,
   defaultWorldIssueContext,
   worldIssuesSummaryLabel,
 } from "@/lib/security-world-issues";
@@ -54,6 +55,8 @@ function mapTriage(
       count: c.count,
       error: c.error ?? null,
       optional: Boolean(c.optional),
+      checkedAt: c.checkedAt ?? null,
+      alternative: c.alternative ?? null,
     })),
     events: triage.events,
     openSecurityPrs: Array.isArray(triage.openSecurityPrs) ? triage.openSecurityPrs : [],
@@ -62,6 +65,7 @@ function mapTriage(
       : [],
     modelSelection: triage.modelSelection ?? null,
     worldIssues: Array.isArray(triage.worldIssues) ? triage.worldIssues : undefined,
+    worldFeedMeta: triage.worldFeedMeta,
   };
 }
 
@@ -110,15 +114,23 @@ export async function buildSecurityAnalyticsReport(
       reason: e.attackLabel || e.mitigation,
       count: 1,
     })),
+    { topN: 80 },
   );
 
   const recentPatches = (triage?.appliedAutoPatches?.length ?? 0) > 0;
-  const worldIssues =
+  const savedWorld =
     triage && Array.isArray(triage.worldIssues) && triage.worldIssues.length > 0
       ? triage.worldIssues
-      : assessWorldSecurityIssues(
-          defaultWorldIssueContext({ recentDependencyPatches: recentPatches }),
-        );
+      : null;
+  const worldIssues =
+    savedWorld ??
+    assessWorldSecurityIssues(
+      defaultWorldIssueContext({ recentDependencyPatches: recentPatches }),
+    );
+  const worldFeedMeta =
+    savedWorld && triage?.worldFeedMeta
+      ? triage.worldFeedMeta
+      : buildWorldFeedMeta(null, worldIssues);
 
   return {
     month,
@@ -137,6 +149,7 @@ export async function buildSecurityAnalyticsReport(
     })),
     worldIssues,
     worldIssuesSummary: worldIssuesSummaryLabel(worldIssues),
+    worldFeedMeta,
     attackInsights,
     byType: [...byTypeMap.entries()]
       .map(([eventType, value]) => ({

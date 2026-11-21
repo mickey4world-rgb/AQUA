@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { costsPanelClass } from "@/lib/analytics-utils";
+import {
+  SectionHeader,
+  glassPanel as costsPanelClass,
+} from "@/components/costs/security/SecurityVisuals";
 import type { SecurityAnalyticsReport } from "@/lib/types/analytics";
 
 type Triage = NonNullable<SecurityAnalyticsReport["latestTriage"]>;
@@ -45,7 +48,95 @@ const SOURCE_LABEL: Record<string, string> = {
   "security-events": "防御履歴（直近24時間）",
   autoblock: "自動ブロック一覧",
   "platform-runtime": "ホスト制約（SWA Node など）",
+  "world-feed": "世界の重要問題（CISA KEV・Node.js・GitHub Advisory）",
 };
+
+const SEVERITY_BAR: Array<{ key: "critical" | "high" | "medium" | "low" | "unknown"; color: string }> = [
+  { key: "critical", color: "#f43f5e" },
+  { key: "high", color: "#fb923c" },
+  { key: "medium", color: "#fbbf24" },
+  { key: "low", color: "#38bdf8" },
+  { key: "unknown", color: "#64748b" },
+];
+
+function SeverityBar({ counts }: { counts: Triage["counts"] }) {
+  const total = SEVERITY_BAR.reduce((s, x) => s + counts[x.key], 0);
+  return (
+    <div className={`${costsPanelClass} p-4`}>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-white">検出された脆弱性の重要度</span>
+        <span className="font-mono text-slate-300">合計 {total} 件</span>
+      </div>
+      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-white/[0.06]">
+        {total > 0 &&
+          SEVERITY_BAR.filter((x) => counts[x.key] > 0).map((x) => (
+            <div
+              key={x.key}
+              title={`${SEVERITY[x.key].label}: ${counts[x.key]}`}
+              style={{ width: `${(counts[x.key] / total) * 100}%`, background: x.color, boxShadow: `0 0 10px ${x.color}88` }}
+            />
+          ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-400">
+        {SEVERITY_BAR.map((x) => (
+          <span key={x.key} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: x.color }} />
+            {SEVERITY[x.key].label} <span className="font-mono text-slate-200">{counts[x.key]}</span>
+          </span>
+        ))}
+      </div>
+      {total === 0 && <p className="mt-2 text-xs text-emerald-200">未解決の脆弱性はありません。</p>}
+    </div>
+  );
+}
+
+function SourceRow({ c, fallbackAt }: { c: Triage["collections"][number]; fallbackAt: string }) {
+  const at = c.checkedAt ?? fallbackAt;
+  const alt = c.alternative;
+  const altOk = alt?.ok === true;
+  const status = c.ok
+    ? { dot: "bg-emerald-400 shadow-[0_0_6px_#34d399]", text: `確認済み（${c.count} 件）`, cls: "text-emerald-200" }
+    : c.optional && altOk
+      ? { dot: "bg-cyan-400 shadow-[0_0_6px_#22d3ee]", text: "代替で確認済み", cls: "text-cyan-200" }
+      : c.optional && alt
+        ? { dot: "bg-amber-400", text: "代替で要確認", cls: "text-amber-200" }
+        : c.optional
+          ? { dot: "bg-slate-500", text: "未接続（代替の記録なし）", cls: "text-slate-400" }
+          : { dot: "bg-rose-500", text: c.error ?? "取得失敗", cls: "text-rose-200" };
+  return (
+    <li className="px-5 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex items-center gap-2 text-sm text-slate-200">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${status.dot}`} />
+          {SOURCE_LABEL[c.source] ?? c.source}
+          {c.optional && (
+            <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-400">任意</span>
+          )}
+        </span>
+        <span className="text-right">
+          <span className={`block text-xs ${status.cls}`}>{status.text}</span>
+          <span className="block font-mono text-[10px] text-slate-500">{formatJst(at)} 確認</span>
+        </span>
+      </div>
+      {c.optional && !c.ok && (
+        <div className="ml-4 mt-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px]">
+          <p className="text-slate-400">本体: {c.error ?? "未接続"}</p>
+          {alt ? (
+            <>
+              <p className={`mt-1 ${altOk ? "text-cyan-100" : "text-amber-100"}`}>
+                代替: {alt.label} — {altOk ? "問題なし" : `${alt.count} 件`}
+                <span className="ml-1 font-mono text-slate-500">（{formatJst(alt.checkedAt ?? at)} 確認）</span>
+              </p>
+              {alt.detail && <p className="mt-0.5 text-slate-500">{alt.detail}</p>}
+            </>
+          ) : (
+            <p className="mt-1 text-slate-500">この日の診断には代替確認の記録がありません（次回の診断から記録）。</p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 const ISSUE_SOURCE_LABEL: Record<string, string> = {
   "npm-audit": "依存パッケージ",
@@ -246,6 +337,7 @@ export default function SecurityTriagePanel({
   const applied = triage.appliedAutoPatches ?? [];
   const waiting = triage.openSecurityPrs ?? [];
   const required = triage.collections.filter((c) => !c.optional);
+  const optional = triage.collections.filter((c) => c.optional);
   const requiredOk = required.filter((c) => c.ok).length;
   const kindLabel = (kind?: string) => (kind === "platform" ? "ホスト" : "依存パッケージ");
 
@@ -326,7 +418,7 @@ export default function SecurityTriagePanel({
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-black/30 px-3 py-1 text-sm font-semibold">{level.label}</span>
           <span className="text-xs opacity-80">
-            {formatJst(triage.generatedAt)} 診断（{triage.dateJst}）
+            {formatJst(triage.generatedAt)} 診断（{triage.dateJst}・毎日自動、7時予定／GitHub の混雑で数時間遅れることがあります）
           </span>
           {triage.aiStatus === "failed" && (
             <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px]">
@@ -346,6 +438,8 @@ export default function SecurityTriagePanel({
           <p className="mt-2 text-xs opacity-70">AI 要約の失敗理由: {triage.aiReason}</p>
         )}
       </div>
+
+      <SeverityBar counts={triage.counts} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Stat label="未解決（重大・高）" value={`${highOpen} 件`} tone={highOpen > 0 ? "warn" : undefined} />
@@ -444,18 +538,22 @@ export default function SecurityTriagePanel({
             </h4>
           </div>
           <ul className="divide-y divide-white/5 text-sm">
-            {triage.collections.map((c) => (
-              <li key={c.source} className="flex items-start justify-between gap-3 px-5 py-2">
-                <span className="text-slate-200">
-                  {SOURCE_LABEL[c.source] ?? c.source}
-                  {c.optional && <span className="ml-1 text-[10px] text-slate-500">任意</span>}
-                </span>
-                <span className={`text-right text-xs ${c.ok ? "text-emerald-300" : c.optional ? "text-slate-500" : "text-rose-300"}`}>
-                  {c.ok ? `確認済み（${c.count} 件）` : c.error ?? "取得失敗"}
-                </span>
-              </li>
+            {required.map((c) => (
+              <SourceRow key={c.source} c={c} fallbackAt={triage.generatedAt} />
             ))}
           </ul>
+          {optional.length > 0 && (
+            <>
+              <p className="border-t border-white/10 bg-white/[0.02] px-5 py-2 text-[11px] text-slate-500">
+                任意（GitHub 読み取りトークン未設定でも、代替の確認を毎日実行）
+              </p>
+              <ul className="divide-y divide-white/5 text-sm">
+                {optional.map((c) => (
+                  <SourceRow key={c.source} c={c} fallbackAt={triage.generatedAt} />
+                ))}
+              </ul>
+            </>
+          )}
         </div>
 
         <div className={`${costsPanelClass} overflow-hidden`}>
@@ -466,11 +564,23 @@ export default function SecurityTriagePanel({
         </div>
       </div>
 
-      <div>
-        <h4 className="text-sm font-semibold text-white">4. 環境・ソースの改善</h4>
-        <p className="mt-1 text-xs text-slate-500">
-          依存パッケージとホスト（SWA Node）の自動修正。検証後にマージされたものと、待ちの PR。
-        </p>
+      <div className="pt-6">
+        <SectionHeader
+          step="4"
+          title="環境・ソースの改善"
+          subtitle="依存パッケージとホスト（SWA Node）の自動修正。検証後に反映済みのものと待ちの PR"
+          accent="from-emerald-400 to-teal-500"
+          right={
+            <div className="flex gap-2 text-xs">
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-100">
+                適用 {applied.length}
+              </span>
+              <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-amber-100">
+                待ち {waiting.length}
+              </span>
+            </div>
+          }
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

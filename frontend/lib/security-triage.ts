@@ -27,12 +27,24 @@ export interface TriageFinding {
 }
 
 export interface TriageCollection {
-  source: TriageSource | "security-events" | "autoblock";
+  source: TriageSource | "security-events" | "autoblock" | "world-feed";
   ok: boolean;
   count: number;
   error?: string | null;
   /** 未接続でも警戒レベルを上げない任意の情報源（GitHub トークンが必要なもの） */
   optional?: boolean;
+  /** この情報源を確認した時刻 */
+  checkedAt?: string | null;
+  /** 未接続時に代わりに実行した確認 */
+  alternative?: TriageAlternativeCheck | null;
+}
+
+export interface TriageAlternativeCheck {
+  label: string;
+  ok: boolean;
+  count: number;
+  checkedAt: string | null;
+  detail: string | null;
 }
 
 /** 収集結果に載せるホスト制約の情報源（依存パッケージの SOURCES とは別枠） */
