@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import SecurityTriagePanel from "@/components/costs/SecurityTriagePanel";
+import AttackWorldMap from "@/components/costs/security/AttackWorldMap";
+import { countryNameJa } from "@/lib/security-attack-insights";
 import {
   AreaChart,
   Donut,
@@ -229,6 +231,137 @@ function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
   );
 }
 
+type Decision = { tone: "bad" | "warn"; title: string; detail: string };
+
+function buildDecisions(report: SecurityAnalyticsReport): Decision[] {
+  const out: Decision[] = [];
+  const t = report.latestTriage;
+  if (!t) {
+    out.push({ tone: "warn", title: "日次診断がまだありません", detail: "毎朝 1 時の自動診断の結果を待っています。" });
+  } else {
+    if (t.ageHours > 36) {
+      out.push({ tone: "bad", title: `診断が ${t.ageHours} 時間更新されていません`, detail: "自動診断の停止を疑ってください。" });
+    }
+    for (const a of t.actions.filter((x) => x.priority !== "week").slice(0, 3)) {
+      out.push({ tone: a.priority === "now" ? "bad" : "warn", title: a.title, detail: a.detail });
+    }
+    const missing = t.collections.filter((c) => !c.ok && !c.optional);
+    if (missing.length > 0) {
+      out.push({
+        tone: "warn",
+        title: `取得できなかった情報源 ${missing.length} 件`,
+        detail: "この日の「問題なし」は一部の確認が欠けています。",
+      });
+    }
+  }
+  const affected = report.worldIssues.filter((i) => i.judgment === "affected");
+  if (affected.length > 0) {
+    out.push({
+      tone: "bad",
+      title: `世界の重要問題がこの環境に該当 ${affected.length} 件`,
+      detail: affected.slice(0, 2).map((i) => i.title).join(" / "),
+    });
+  }
+  const brute = report.suspiciousSources.filter((s) => s.pattern === "brute_force");
+  if (brute.length > 0) {
+    out.push({
+      tone: "warn",
+      title: `総当たりログインの疑い ${brute.length} 送信元`,
+      detail: "自動ブロックが働いているかを下の一覧で確認できます。",
+    });
+  }
+  return out;
+}
+
+function DecisionStrip({ report }: { report: SecurityAnalyticsReport }) {
+  const items = buildDecisions(report);
+  if (items.length === 0) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-gradient-to-r from-emerald-500/15 to-cyan-500/5 px-5 py-4">
+        <span className="h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_12px_#34d399]" />
+        <div>
+          <p className="text-sm font-semibold text-emerald-50">今、判断が必要なことはありません</p>
+          <p className="text-xs text-emerald-100/70">診断・世界の重要問題・攻撃の集中のいずれも対応不要です。</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">今、判断すべきこと</p>
+      <ul className="grid gap-2 md:grid-cols-2">
+        {items.map((d) => (
+          <li
+            key={d.title}
+            className={`rounded-xl border px-4 py-3 ${
+              d.tone === "bad"
+                ? "border-rose-400/40 bg-rose-500/10"
+                : "border-amber-400/30 bg-amber-500/10"
+            }`}
+          >
+            <p className={`text-sm font-semibold ${d.tone === "bad" ? "text-rose-50" : "text-amber-50"}`}>{d.title}</p>
+            <p className="mt-0.5 text-xs text-slate-300">{d.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const TYPE_ACCENT: Record<string, string> = {
+  auth_denied: "from-violet-500 to-fuchsia-500",
+  automation_auth_denied: "from-fuchsia-500 to-pink-500",
+  rate_limited: "from-amber-400 to-orange-500",
+  invalid_request: "from-sky-400 to-cyan-500",
+  auto_blocked: "from-rose-500 to-red-600",
+};
+
+function SuspiciousList({ sources }: { sources: SecurityAnalyticsReport["suspiciousSources"] }) {
+  if (sources.length === 0) {
+    return (
+      <p className="text-xs text-slate-500">
+        同じ送信元から 5 回以上の集中はありません（散発的な遮断のみ）。
+      </p>
+    );
+  }
+  const max = Math.max(1, ...sources.map((s) => s.count));
+  return (
+    <ul className="space-y-2">
+      {sources.map((s) => (
+        <li key={s.sourceHash} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] ${
+                  s.pattern === "brute_force"
+                    ? "bg-rose-500/25 text-rose-100"
+                    : s.pattern === "scan"
+                      ? "bg-amber-500/20 text-amber-100"
+                      : "bg-sky-500/20 text-sky-100"
+                }`}
+              >
+                {s.patternLabel}
+              </span>
+              <span className="text-sm text-white">{s.country}</span>
+            </span>
+            <span className="font-mono text-sm text-rose-100">{s.count} 回</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-rose-500 to-amber-300"
+              style={{ width: `${(s.count / max) * 100}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            {s.topLabel}・対象 {s.distinctPaths} 箇所・{formatJst(s.firstAt)} 〜 {formatJst(s.lastAt)}
+            <span className="ml-2 font-mono text-slate-600">{s.sourceHash.slice(0, 12)}</span>
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function AutoBlockList({ blocks }: { blocks: SecurityAnalyticsReport["activeAutoBlocks"] }) {
   if (blocks == null) {
     return <p className="text-xs text-rose-300">自動ブロック一覧を取得できませんでした。</p>;
@@ -263,8 +396,20 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
   const triage = report.latestTriage;
   const level = triage ? LEVEL_STYLE[triage.level] : null;
   const highOpen = triage ? triage.counts.critical + triage.counts.high : null;
-  const daily = useMemo(() => fillMonthDays(report.month, report.byDay), [report.month, report.byDay]);
-  const insights = report.attackInsights;
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const detail = typeFilter ? report.byTypeDetail.find((d) => d.eventType === typeFilter) : null;
+  const daily = useMemo(
+    () => fillMonthDays(report.month, detail ? detail.byDay : report.byDay),
+    [report.month, report.byDay, detail],
+  );
+  const insights = detail ? detail.insights : report.attackInsights;
+  const filteredEvents = typeFilter
+    ? report.recentEvents.filter((e) => e.eventType === typeFilter)
+    : report.recentEvents;
+  const filterLabel = typeFilter
+    ? (report.byType.find((t) => t.eventType === typeFilter)?.label ?? typeFilter)
+    : null;
+  const coverage = report.countryCoverage;
   const heatRows = insights.byCountry.slice(0, 6).map((c) => c.country);
   const heatCols = insights.byTarget.slice(0, 6).map((t) => ({ key: t.targetKind, label: t.targetLabel }));
   const flowValue = (country: string, target: string) =>
@@ -319,6 +464,9 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
             <p className="mt-1 text-[11px] text-slate-400">高重要度 {report.summary.highSeverityEvents} 回</p>
           </StatTile>
         </div>
+        <div className="relative mt-5">
+          <DecisionStrip report={report} />
+        </div>
       </div>
 
       {/* ① 構成 */}
@@ -358,9 +506,68 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
           accent="from-rose-400 to-orange-400"
         />
 
+        <div>
+          <p className="mb-2 text-xs text-slate-400">
+            攻撃の種類（クリックで下のグラフ・地図・明細をその種類だけに絞り込み）
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <button
+              type="button"
+              onClick={() => setTypeFilter(null)}
+              className={`rounded-2xl border p-4 text-left transition ${
+                typeFilter == null
+                  ? "border-white/40 bg-white/[0.08] shadow-lg shadow-white/5"
+                  : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
+              }`}
+            >
+              <p className="text-[11px] text-slate-400">すべて</p>
+              <p className="mt-1 font-mono text-2xl text-white">{report.summary.blockedEvents}</p>
+            </button>
+            {report.byType.map((t) => (
+              <button
+                key={t.eventType}
+                type="button"
+                onClick={() => setTypeFilter(typeFilter === t.eventType ? null : t.eventType)}
+                className={`relative overflow-hidden rounded-2xl border p-4 text-left transition ${
+                  typeFilter === t.eventType
+                    ? "border-white/40 bg-white/[0.08] shadow-lg"
+                    : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
+                }`}
+              >
+                <span
+                  className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${TYPE_ACCENT[t.eventType] ?? "from-slate-400 to-slate-600"}`}
+                />
+                <p className="text-[11px] text-slate-400">{t.label}</p>
+                <p className="mt-1 font-mono text-2xl text-white">{t.count}</p>
+              </button>
+            ))}
+          </div>
+          {filterLabel && (
+            <p className="mt-2 text-xs text-cyan-200">
+              絞り込み中：{filterLabel}
+              <button type="button" onClick={() => setTypeFilter(null)} className="ml-2 underline">
+                解除
+              </button>
+            </p>
+          )}
+        </div>
+
+        <div className={`${glassPanel} p-5`}>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-white">攻撃元の世界地図</p>
+              <p className="text-xs text-slate-500">どの国から AQUA（日本）へ攻撃が来ているか</p>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              国判定済み {coverage.known}/{coverage.total} 件 ・ {coverage.note}
+            </p>
+          </div>
+          <AttackWorldMap countries={insights.byCountry} />
+        </div>
+
         <div className="grid gap-4 xl:grid-cols-3">
           <div className={`${glassPanel} p-5 xl:col-span-2`}>
-            <p className="text-sm font-semibold text-white">日別の遮断件数</p>
+            <p className="text-sm font-semibold text-white">日別の遮断件数{filterLabel ? `（${filterLabel}）` : ""}</p>
             <AreaChart points={daily} />
           </div>
           <div className={`${glassPanel} p-5`}>
@@ -374,7 +581,7 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
               ))}
             </ul>
             <p className="mt-4 text-[11px] text-slate-500">
-              国・地域は Azure が付与した情報。IP は保存せず日次ハッシュ化しています。
+              国は IP から同梱の表で判定し、IP 自体は保存せず日次ハッシュ化しています。
             </p>
           </div>
         </div>
@@ -429,19 +636,30 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
           </div>
         </div>
 
-        <div className={`${glassPanel} p-5`}>
-          <p className="mb-3 text-sm font-semibold text-white">
-            自動ブロック中の送信元{report.activeAutoBlocks ? ` ${report.activeAutoBlocks.length} 件` : ""}
-          </p>
-          <AutoBlockList blocks={report.activeAutoBlocks} />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className={`${glassPanel} p-5`}>
+            <p className="text-sm font-semibold text-white">要注意の送信元（集中した攻撃）</p>
+            <p className="mb-3 text-xs text-slate-500">
+              同じ送信元から 5 回以上。総当たり・探索・連打を自動で見分けます（この月・全種類）。
+            </p>
+            <SuspiciousList sources={report.suspiciousSources} />
+          </div>
+          <div className={`${glassPanel} p-5`}>
+            <p className="mb-3 text-sm font-semibold text-white">
+              自動ブロック中の送信元{report.activeAutoBlocks ? ` ${report.activeAutoBlocks.length} 件` : ""}
+            </p>
+            <AutoBlockList blocks={report.activeAutoBlocks} />
+          </div>
         </div>
 
         <div className={`${glassPanel}`}>
           <div className="border-b border-white/10 px-5 py-4">
-            <p className="text-sm font-semibold text-white">防御記録の明細（{report.monthLabel}）</p>
+            <p className="text-sm font-semibold text-white">
+              防御記録の明細（{report.monthLabel}{filterLabel ? `・${filterLabel}` : ""}）
+            </p>
             <p className="mt-1 text-xs text-slate-500">{report.coverageNote}</p>
           </div>
-          {report.recentEvents.length === 0 ? (
+          {filteredEvents.length === 0 ? (
             <p className="px-5 py-6 text-sm text-slate-500">防御記録はありません。</p>
           ) : (
             <div className="max-h-[30rem] overflow-auto">
@@ -456,7 +674,7 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {report.recentEvents.map((event) => (
+                  {filteredEvents.map((event) => (
                     <tr key={event.id} className="align-top hover:bg-white/[0.02]">
                       <td className="px-5 py-3">
                         <p className="text-slate-300">{formatJst(event.createdAt)}</p>
@@ -466,7 +684,8 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
                       </td>
                       <td className="px-5 py-3 text-slate-300">
                         <p>
-                          {event.country} / {event.region}
+                          {countryNameJa(event.country === "不明" ? null : event.country)}
+                          {event.region && event.region !== "不明" ? ` / ${event.region}` : ""}
                         </p>
                         <p className="mt-1 font-mono text-[10px] text-slate-500">{event.sourceHash}</p>
                       </td>

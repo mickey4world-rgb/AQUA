@@ -272,7 +272,7 @@ function ModelPanel({ selection, usedModel }: { selection: Triage["modelSelectio
 export default function SecurityTriagePanel({
   triage: initialTriage,
   history,
-  sectionTitle = "AI セキュリティ診断（毎朝 7 時）",
+  sectionTitle = "AI セキュリティ診断（毎朝 1 時）",
 }: {
   triage: SecurityAnalyticsReport["latestTriage"];
   history: SecurityAnalyticsReport["triageHistory"];
@@ -316,7 +316,7 @@ export default function SecurityTriagePanel({
   if (!triage) {
     return (
       <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
-        AI セキュリティ診断の結果がまだありません（毎朝 7 時に自動実行）。
+        AI セキュリティ診断の結果がまだありません（毎朝 1 時に自動実行）。
         {history && history.length > 0 && (
           <div className="mt-3">
             <HistoryDots
@@ -418,7 +418,7 @@ export default function SecurityTriagePanel({
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-black/30 px-3 py-1 text-sm font-semibold">{level.label}</span>
           <span className="text-xs opacity-80">
-            {formatJst(triage.generatedAt)} 診断（{triage.dateJst}・毎日自動、7時予定／GitHub の混雑で数時間遅れることがあります）
+            {formatJst(triage.generatedAt)} 診断（{triage.dateJst}・毎日自動、1時予定／GitHub の混雑で数時間遅れても朝までに完了）
           </span>
           {triage.aiStatus === "failed" && (
             <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px]">

@@ -204,6 +204,14 @@ export interface SecurityWorldFeedMetaView {
   notApplicable: number;
 }
 
+export interface SecurityAttackInsightsView {
+  flows: SecurityAttackFlowView[];
+  byCountry: Array<{ country: string; code: string | null; count: number }>;
+  byTarget: Array<{ targetKind: string; targetLabel: string; count: number }>;
+  narrative: string[];
+  totalEvents: number;
+}
+
 export interface SecurityAttackFlowView {
   country: string;
   targetKind: string;
@@ -230,13 +238,27 @@ export interface SecurityAnalyticsReport {
   worldIssuesSummary: { level: "ok" | "warn" | "critical"; text: string };
   worldFeedMeta: SecurityWorldFeedMetaView;
   /** 国 → 攻撃場所 → 件数 */
-  attackInsights: {
-    flows: SecurityAttackFlowView[];
-    byCountry: Array<{ country: string; count: number }>;
-    byTarget: Array<{ targetKind: string; targetLabel: string; count: number }>;
-    narrative: string[];
-    totalEvents: number;
-  };
+  attackInsights: SecurityAttackInsightsView;
+  /** 攻撃の種類ごとの内訳（パネルのクリックで下の図を絞り込む） */
+  byTypeDetail: Array<{
+    eventType: SecurityEventType;
+    insights: SecurityAttackInsightsView;
+    byDay: Array<{ date: string; count: number }>;
+  }>;
+  /** 同じ送信元からの集中（5回以上のみ） */
+  suspiciousSources: Array<{
+    sourceHash: string;
+    country: string;
+    code: string | null;
+    count: number;
+    distinctPaths: number;
+    pattern: "brute_force" | "scan" | "flood";
+    patternLabel: string;
+    topLabel: string;
+    firstAt: string;
+    lastAt: string;
+  }>;
+  countryCoverage: { known: number; total: number; note: string };
   byType: Array<{
     eventType: SecurityEventType;
     label: string;

@@ -1,4 +1,6 @@
 import { extractGeoFromHeaders } from "@/lib/client-hints";
+import { resolveClientIp } from "@/lib/client-ip";
+import { resolveIpCountry } from "@/lib/server/ip-country";
 import { isPublicTrackablePath } from "@/lib/public-pages";
 import { recordPageView } from "@/lib/server/page-view-log";
 import { isCosmosConfigured } from "@/lib/server/cosmos";
@@ -74,6 +76,9 @@ export async function POST(request: Request) {
   }
 
   const geo = extractGeoFromHeaders(request.headers);
+  const country =
+    geo.country ??
+    (await resolveIpCountry(resolveClientIp(request.headers), new URL(request.url).origin));
 
   await recordPageView({
     pathname,
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
     timezone: body.timezone ?? null,
     screen: body.screen ?? null,
     acceptLanguage: request.headers.get("accept-language"),
-    country: geo.country,
+    country,
     region: geo.region,
     city: geo.city,
   });

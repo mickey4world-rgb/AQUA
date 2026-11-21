@@ -26,7 +26,8 @@ export type AttackFlowRow = {
 
 export type AttackInsightReport = {
   flows: AttackFlowRow[];
-  byCountry: Array<{ country: string; count: number }>;
+  /** code は ISO 3166-1 alpha-2（不明は null）。地図の位置に使う */
+  byCountry: Array<{ country: string; code: string | null; count: number }>;
   byTarget: Array<{ targetKind: AttackTargetKind; targetLabel: string; count: number }>;
   narrative: string[];
   totalEvents: number;
@@ -89,10 +90,98 @@ export function classifyAttackTarget(path: string): AttackTargetKind {
   return "page";
 }
 
-function countryLabel(raw: string | null | undefined): string {
-  const c = (raw || "").trim();
-  if (!c || c === "?" || c.toLowerCase() === "unknown") return "不明";
+function countryCode(raw: string | null | undefined): string | null {
+  const c = (raw || "").trim().toUpperCase();
+  if (!c || c === "?" || c === "UNKNOWN" || c === "不明") return null;
   return c;
+}
+
+let regionNames: Intl.DisplayNames | null = null;
+/** 国コード → 日本語名（「CN」→「中国」）。変換できなければコードのまま */
+export function countryNameJa(code: string | null): string {
+  if (!code) return "不明";
+  if (!/^[A-Z]{2}$/.test(code)) return code;
+  try {
+    regionNames ??= new Intl.DisplayNames(["ja"], { type: "region" });
+    return regionNames.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+export type SuspiciousSource = {
+  sourceHash: string;
+  country: string;
+  code: string | null;
+  count: number;
+  distinctPaths: number;
+  pattern: "brute_force" | "scan" | "flood";
+  patternLabel: string;
+  topLabel: string;
+  firstAt: string;
+  lastAt: string;
+};
+
+type SourceEvent = {
+  sourceHash: string;
+  eventType: string;
+  country: string | null;
+  path: string;
+  attackLabel: string;
+  createdAt: string;
+};
+
+/** 同じ送信元からの集中（総当たり・探索・連打）。1〜4 回の散発は出さない */
+export function buildSuspiciousSources(
+  events: SourceEvent[],
+  options?: { minCount?: number; limit?: number },
+): SuspiciousSource[] {
+  const min = options?.minCount ?? 5;
+  const map = new Map<
+    string,
+    { events: SourceEvent[]; paths: Set<string>; labels: Map<string, number> }
+  >();
+  for (const e of events) {
+    if (!e.sourceHash) continue;
+    const entry = map.get(e.sourceHash) ?? {
+      events: [] as SourceEvent[],
+      paths: new Set<string>(),
+      labels: new Map<string, number>(),
+    };
+    entry.events.push(e);
+    entry.paths.add(e.path);
+    entry.labels.set(e.attackLabel, (entry.labels.get(e.attackLabel) ?? 0) + 1);
+    map.set(e.sourceHash, entry);
+  }
+  const out: SuspiciousSource[] = [];
+  for (const [sourceHash, entry] of map) {
+    if (entry.events.length < min) continue;
+    const authCount = entry.events.filter(
+      (e) => e.eventType === "auth_denied" || e.eventType === "automation_auth_denied",
+    ).length;
+    const pattern: SuspiciousSource["pattern"] =
+      authCount >= min ? "brute_force" : entry.paths.size >= 5 ? "scan" : "flood";
+    const times = entry.events.map((e) => e.createdAt).sort();
+    const code = countryCode(entry.events.find((e) => e.country)?.country ?? null);
+    out.push({
+      sourceHash,
+      country: countryNameJa(code),
+      code,
+      count: entry.events.length,
+      distinctPaths: entry.paths.size,
+      pattern,
+      patternLabel:
+        pattern === "brute_force"
+          ? "総当たりログインの疑い"
+          : pattern === "scan"
+            ? "脆弱箇所の探索（スキャン）の疑い"
+            : "短時間の連続アクセス",
+      topLabel: [...entry.labels.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "",
+      firstAt: times[0]!,
+      lastAt: times[times.length - 1]!,
+    });
+  }
+  return out.sort((a, b) => b.count - a.count).slice(0, options?.limit ?? 10);
 }
 
 export function buildAttackInsights(
@@ -100,6 +189,13 @@ export function buildAttackInsights(
   options?: { topN?: number },
 ): AttackInsightReport {
   const topN = options?.topN ?? 12;
+  const codeByName = new Map<string, string | null>();
+  const countryLabel = (raw: string | null | undefined) => {
+    const code = countryCode(raw);
+    const name = countryNameJa(code);
+    codeByName.set(name, code);
+    return name;
+  };
   const flowMap = new Map<string, AttackFlowRow>();
   const countryMap = new Map<string, number>();
   const targetMap = new Map<AttackTargetKind, number>();
@@ -137,9 +233,9 @@ export function buildAttackInsights(
     .slice(0, topN);
 
   const byCountry = [...countryMap.entries()]
-    .map(([country, count]) => ({ country, count }))
+    .map(([country, count]) => ({ country, code: codeByName.get(country) ?? null, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
+    .slice(0, 20);
 
   const byTarget = [...targetMap.entries()]
     .map(([targetKind, count]) => ({

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import { extractGeoFromHeaders, parseUserAgent } from "@/lib/client-hints";
 import { resolveClientIp } from "@/lib/client-ip";
+import { resolveIpCountry } from "@/lib/server/ip-country";
 import { noteSecurityEventForAutoBlock } from "@/lib/server/security-blocklist";
 import {
   COSMOS_CONTAINERS,
@@ -11,6 +12,14 @@ import type {
   RecordSecurityEventInput,
   SecurityEvent,
 } from "@/lib/types/security-event";
+
+function safeOrigin(request: Request): string | null {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return null;
+  }
+}
 
 function securityEventsContainer() {
   return getContainer(COSMOS_CONTAINERS.securityEvents);
@@ -27,7 +36,11 @@ function sourceFingerprint(request: Request, date: Date): string {
   return `src-${createHash("sha256").update(rotatingInput).digest("hex").slice(0, 24)}`;
 }
 
-function buildEvent(input: RecordSecurityEventInput, now: Date): SecurityEvent {
+function buildEvent(
+  input: RecordSecurityEventInput,
+  now: Date,
+  resolvedCountry: string | null = null,
+): SecurityEvent {
   const geo = extractGeoFromHeaders(input.request.headers);
   const agent = parseUserAgent(input.request.headers.get("user-agent"));
   return {
@@ -40,7 +53,7 @@ function buildEvent(input: RecordSecurityEventInput, now: Date): SecurityEvent {
     path: new URL(input.request.url).pathname.slice(0, 256),
     statusCode: input.statusCode,
     sourceHash: sourceFingerprint(input.request, now),
-    country: geo.country?.slice(0, 8) ?? null,
+    country: (geo.country ?? resolvedCountry)?.slice(0, 8) ?? null,
     region: geo.region?.slice(0, 64) ?? null,
     browser: agent.browser,
     deviceType: agent.deviceType,
@@ -64,7 +77,14 @@ export async function recordSecurityEvent(
 ): Promise<void> {
   if (!isCosmosConfigured()) return;
 
-  const event = buildEvent(input, new Date());
+  // SWA は国ヘッダーを付けないため、同梱の IP→国 表で引く（IP 自体は保存しない）
+  const country = extractGeoFromHeaders(input.request.headers).country
+    ? null
+    : await resolveIpCountry(
+        resolveClientIp(input.request.headers),
+        safeOrigin(input.request),
+      );
+  const event = buildEvent(input, new Date(), country);
   await writeEvent(event);
 
   try {
@@ -91,6 +111,7 @@ export async function recordSecurityEvent(
             mitigation: `送信元を全APIで${hours}時間自動ブロック`,
           },
           new Date(),
+          country,
         ),
       );
     }

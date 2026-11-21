@@ -1,5 +1,8 @@
 import { SECURITY_ARCHITECTURE_LAYERS } from "@/lib/security-architecture";
-import { buildAttackInsights } from "@/lib/security-attack-insights";
+import {
+  buildAttackInsights,
+  buildSuspiciousSources,
+} from "@/lib/security-attack-insights";
 import {
   assessWorldSecurityIssues,
   buildWorldFeedMeta,
@@ -107,15 +110,40 @@ export async function buildSecurityAnalyticsReport(
     byDayMap.set(date, (byDayMap.get(date) ?? 0) + 1);
   }
 
-  const attackInsights = buildAttackInsights(
+  const toInsight = (list: typeof events) =>
+    buildAttackInsights(
+      list.map((e) => ({
+        country: e.country,
+        path: e.path,
+        reason: e.attackLabel || e.mitigation,
+        count: 1,
+      })),
+      { topN: 80 },
+    );
+  const attackInsights = toInsight(events);
+  const byTypeDetail = [...new Set(events.map((e) => e.eventType))].map((eventType) => {
+    const list = events.filter((e) => e.eventType === eventType);
+    const days = new Map<string, number>();
+    for (const e of list) days.set(e.createdAt.slice(0, 10), (days.get(e.createdAt.slice(0, 10)) ?? 0) + 1);
+    return {
+      eventType,
+      insights: toInsight(list),
+      byDay: [...days.entries()]
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    };
+  });
+  const suspiciousSources = buildSuspiciousSources(
     events.map((e) => ({
+      sourceHash: e.sourceHash,
+      eventType: e.eventType,
       country: e.country,
       path: e.path,
-      reason: e.attackLabel || e.mitigation,
-      count: 1,
+      attackLabel: e.attackLabel,
+      createdAt: e.createdAt,
     })),
-    { topN: 80 },
   );
+  const withCountry = events.filter((e) => e.country).length;
 
   const recentPatches = (triage?.appliedAutoPatches?.length ?? 0) > 0;
   const savedWorld =
@@ -151,6 +179,13 @@ export async function buildSecurityAnalyticsReport(
     worldIssuesSummary: worldIssuesSummaryLabel(worldIssues),
     worldFeedMeta,
     attackInsights,
+    byTypeDetail,
+    suspiciousSources,
+    countryCoverage: {
+      known: withCountry,
+      total: events.length,
+      note: "国は同梱の IP→国 表（DB-IP Lite）で判定。2026-11-21 以前の記録は国情報なし。",
+    },
     byType: [...byTypeMap.entries()]
       .map(([eventType, value]) => ({
         eventType,

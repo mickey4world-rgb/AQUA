@@ -1,0 +1,10 @@
+{
+  "source": "DB-IP IP to Country Lite",
+  "license": "CC BY 4.0 (https://db-ip.com)",
+  "edition": "2026-11",
+  "builtAt": "2026-11-21T09:57:29.615Z",
+  "countries": 251,
+  "v4Ranges": 362998,
+  "v6Ranges": 369490,
+  "bytes": 5140918
+}

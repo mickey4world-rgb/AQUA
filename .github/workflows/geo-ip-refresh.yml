@@ -1,0 +1,47 @@
+name: Geo IP Table Refresh
+
+# DB-IP「IP to Country Lite」（CC BY 4.0）は毎月更新される。
+# 攻撃元の国判定が古い割り当てでずれないよう、月初に表を作り直して main に反映する。
+on:
+  schedule:
+    - cron: "0 18 3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build table
+        working-directory: frontend
+        run: node scripts/build-ip-country.mjs
+
+      - name: Verify lookups
+        working-directory: frontend
+        run: npx --yes tsx lib/ip-country-lookup.test.ts
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- frontend/public/vendor/geo/ip-country.bin; then
+            echo "no change"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/public/vendor/geo/
+          git commit -m "Refresh IP-to-country table (DB-IP Lite)"
+          git push
+          # GITHUB_TOKEN の push は他の workflow を起動しないため、デプロイを明示的に起動する
+          gh workflow run azure-static-web-apps.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -141,6 +141,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/vendor/geo/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/space/*",
       "allowedRoles": ["authenticated"]
     },
@@ -189,6 +193,9 @@
   },
   "platform": {
     "apiRuntime": "node:22"
+  },
+  "mimeTypes": {
+    ".bin": "application/octet-stream"
   },
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
