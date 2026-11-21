@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { costsPanelClass } from "@/lib/analytics-utils";
 import type { SecurityAnalyticsReport } from "@/lib/types/analytics";
 
@@ -195,12 +195,6 @@ export default function SecurityTriagePanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const viewingPast =
     Boolean(initialTriage && triage && triage.dateJst !== initialTriage.dateJst);
-
-  useEffect(() => {
-    setTriage(initialTriage);
-    setSelectedDate(initialTriage?.dateJst ?? null);
-    setLoadError(null);
-  }, [initialTriage]);
 
   async function loadHistoryDate(dateJst: string) {
     if (!dateJst) return;

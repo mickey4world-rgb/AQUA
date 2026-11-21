@@ -190,6 +190,7 @@ export default function SecurityDefensePanels({
         </div>
 
         <SecurityTriagePanel
+          key={`${report.month}-${report.latestTriage?.generatedAt ?? "none"}`}
           triage={report.latestTriage}
           history={report.triageHistory}
           sectionTitle="脆弱性の日次診断と改善履歴"
