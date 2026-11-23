@@ -4,6 +4,10 @@ import {
   buildSuspiciousSources,
 } from "@/lib/security-attack-insights";
 import {
+  buildSecurityStackInventory,
+  stackComponentsForLayer,
+} from "@/lib/security-stack";
+import {
   assessWorldSecurityIssues,
   buildWorldFeedMeta,
   defaultWorldIssueContext,
@@ -144,6 +148,7 @@ export async function buildSecurityAnalyticsReport(
     })),
   );
   const withCountry = events.filter((e) => e.country).length;
+  const stack = buildSecurityStackInventory();
 
   const recentPatches = (triage?.appliedAutoPatches?.length ?? 0) > 0;
   const savedWorld =
@@ -174,7 +179,21 @@ export async function buildSecurityAnalyticsReport(
       title: layer.title,
       role: layer.role,
       defenses: [...layer.defenses],
+      components: stackComponentsForLayer(stack, layer.id).map((c) => ({
+        name: c.name,
+        version: c.version,
+        kind: c.kind,
+        kindLabel: c.kindLabel,
+        role: c.role,
+        inUse: c.inUse,
+      })),
     })),
+    stackInventory: {
+      generatedAt: stack.generatedAt,
+      nodeMajor: stack.nodeMajor,
+      summary: stack.summary,
+      clarifications: [...stack.clarifications],
+    },
     worldIssues,
     worldIssuesSummary: worldIssuesSummaryLabel(worldIssues),
     worldFeedMeta,

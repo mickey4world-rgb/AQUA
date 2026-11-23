@@ -166,11 +166,29 @@ export interface AccessAnalyticsReport {
   security: SecurityAnalyticsReport;
 }
 
+export interface SecurityStackComponentView {
+  name: string;
+  version: string | null;
+  kind: "app" | "platform" | "data" | "ai" | "transitive" | "not_used";
+  kindLabel: string;
+  role: string;
+  inUse: boolean;
+}
+
 export interface SecurityArchitectureLayerView {
   id: string;
   title: string;
   role: string;
   defenses: string[];
+  /** この層で使っている／使っていない部品 */
+  components: SecurityStackComponentView[];
+}
+
+export interface SecurityStackInventoryView {
+  generatedAt: string;
+  nodeMajor: number | null;
+  summary: string;
+  clarifications: string[];
 }
 
 export interface SecurityWorldIssueView {
@@ -233,6 +251,8 @@ export interface SecurityAnalyticsReport {
   };
   /** 素人向け: いまの構成の層 */
   architectureLayers: SecurityArchitectureLayerView[];
+  /** 利用部品の要約（層ごとの詳細は architectureLayers.components） */
+  stackInventory: SecurityStackInventoryView;
   /** 世の中の重要問題 × この環境の該当判定 */
   worldIssues: SecurityWorldIssueView[];
   worldIssuesSummary: { level: "ok" | "warn" | "critical"; text: string };

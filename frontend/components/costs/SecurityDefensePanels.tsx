@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import SecurityTriagePanel from "@/components/costs/SecurityTriagePanel";
+import SecurityStatusChatPanel from "@/components/costs/SecurityStatusChatPanel";
 import AttackWorldMap from "@/components/costs/security/AttackWorldMap";
 import { countryNameJa } from "@/lib/security-attack-insights";
 import {
@@ -60,7 +61,13 @@ function fillMonthDays(month: string, byDay: Array<{ date: string; count: number
   });
 }
 
-function ArchitecturePipeline({ layers }: { layers: SecurityAnalyticsReport["architectureLayers"] }) {
+function ArchitecturePipeline({
+  layers,
+  stack,
+}: {
+  layers: SecurityAnalyticsReport["architectureLayers"];
+  stack: SecurityAnalyticsReport["stackInventory"];
+}) {
   const accents = [
     "from-cyan-400 to-sky-500",
     "from-violet-400 to-fuchsia-500",
@@ -68,31 +75,84 @@ function ArchitecturePipeline({ layers }: { layers: SecurityAnalyticsReport["arc
     "from-emerald-400 to-teal-500",
   ];
   return (
-    <div className="relative grid gap-4 lg:grid-cols-4">
-      <div className="pointer-events-none absolute left-0 right-0 top-6 hidden h-px bg-gradient-to-r from-cyan-400/0 via-fuchsia-400/50 to-emerald-400/0 lg:block" />
-      {layers.map((layer, i) => (
-        <div key={layer.id} className={`${glassPanel} p-4`}>
-          <div className="flex items-center gap-3">
-            <span
-              className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${accents[i % accents.length]} font-mono text-lg font-bold text-slate-950 shadow-lg`}
-            >
-              {i + 1}
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-white">{layer.title.replace(/^[①②③④]\s*/, "")}</p>
-              <p className="text-[11px] text-slate-400">{layer.role}</p>
+    <div className="space-y-4">
+      <div className={`${glassPanel} px-5 py-4`}>
+        <p className="text-sm font-semibold text-white">利用している部品（いまの版）</p>
+        <p className="mt-1 text-xs text-slate-300">{stack.summary}</p>
+        <ul className="mt-2 space-y-1 text-[11px] text-slate-400">
+          {stack.clarifications.map((line) => (
+            <li key={line} className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-400" />
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="relative grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="pointer-events-none absolute left-0 right-0 top-6 hidden h-px bg-gradient-to-r from-cyan-400/0 via-fuchsia-400/50 to-emerald-400/0 xl:block" />
+        {layers.map((layer, i) => (
+          <div key={layer.id} className={`${glassPanel} p-4`}>
+            <div className="flex items-center gap-3">
+              <span
+                className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${accents[i % accents.length]} font-mono text-lg font-bold text-slate-950 shadow-lg`}
+              >
+                {i + 1}
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  {layer.title.replace(/^[①②③④]\s*/, "")}
+                </p>
+                <p className="text-[11px] text-slate-400">{layer.role}</p>
+              </div>
             </div>
+            <ul className="mt-3 space-y-1.5">
+              {layer.defenses.map((d) => (
+                <li key={d} className="flex gap-2 text-xs text-slate-300">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+                  {d}
+                </li>
+              ))}
+            </ul>
+            {(layer.components?.length ?? 0) > 0 && (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  部品
+                </p>
+                <ul className="mt-1.5 space-y-2">
+                  {layer.components.map((c) => (
+                    <li key={`${layer.id}-${c.name}`} className="text-xs">
+                      <div className="flex flex-wrap items-baseline gap-1.5">
+                        <span
+                          className={
+                            c.inUse ? "font-medium text-white" : "font-medium text-slate-400"
+                          }
+                        >
+                          {c.name}
+                        </span>
+                        {c.version && (
+                          <span className="font-mono text-[10px] text-cyan-200/80">
+                            v{c.version}
+                          </span>
+                        )}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] ${
+                            c.inUse
+                              ? "bg-emerald-500/15 text-emerald-100"
+                              : "bg-amber-500/10 text-amber-100/80"
+                          }`}
+                        >
+                          {c.inUse ? c.kindLabel : `${c.kindLabel}・枠組みではない`}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{c.role}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <ul className="mt-3 space-y-1.5">
-            {layer.defenses.map((d) => (
-              <li key={d} className="flex gap-2 text-xs text-slate-300">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-                {d}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -603,15 +663,27 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
         </div>
       </div>
 
+      <SecurityStatusChatPanel month={report.month} />
+
       {/* ① 構成 */}
       <div className="space-y-4">
         <SectionHeader
           step="1"
           title="いまの構成（守りの層）"
-          subtitle="インターネットに近い順。どの層で何を止めているか"
+          subtitle="インターネットに近い順。どの層で何を止めているか。Next.js など実際の部品と版もここに出ます"
           accent="from-cyan-400 to-sky-500"
         />
-        <ArchitecturePipeline layers={report.architectureLayers} />
+        <ArchitecturePipeline
+          layers={report.architectureLayers}
+          stack={
+            report.stackInventory ?? {
+              generatedAt: "",
+              nodeMajor: null,
+              summary: "部品情報は次の再取得で表示されます",
+              clarifications: [],
+            }
+          }
+        />
       </div>
 
       {/* ② 脆弱性 + 世界 */}
