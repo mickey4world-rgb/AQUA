@@ -13,19 +13,23 @@ export function inMonthDayRange(
 /** 小中高の長期休暇・イベント時期 */
 export function scoreSchoolK12(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
-  let score = 18;
+  let score = 40;
   const tags: string[] = [];
 
   if (inMonthDayRange(month, day, [3, 20], [4, 7])) {
-    score += 32;
+    score += 28;
     tags.push("小中高・春休み");
   }
+  if (inMonthDayRange(month, day, [4, 29], [5, 6])) {
+    score += 30;
+    tags.push("小中高・GW");
+  }
   if (inMonthDayRange(month, day, [7, 20], [8, 31])) {
-    score += 34;
+    score += 30;
     tags.push("小中高・夏休み");
   }
   if (inMonthDayRange(month, day, [12, 26], [1, 7])) {
-    score += 28;
+    score += 26;
     tags.push("小中高・冬休み");
   }
 
@@ -47,19 +51,19 @@ export function scoreSchoolK12(dateStr: string): { score: number; label: string 
 /** 大学の長期休暇・イベント時期 */
 export function scoreUniversityBreak(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
-  let score = 16;
+  let score = 38;
   const tags: string[] = [];
 
   if (inMonthDayRange(month, day, [2, 1], [4, 10])) {
-    score += 26;
+    score += 24;
     tags.push("大学・春休み");
   }
   if (inMonthDayRange(month, day, [7, 15], [9, 30])) {
-    score += 28;
+    score += 26;
     tags.push("大学・夏休み");
   }
   if (inMonthDayRange(month, day, [12, 20], [1, 10])) {
-    score += 22;
+    score += 20;
     tags.push("大学・冬休み");
   }
 
@@ -87,16 +91,16 @@ export function scoreUniversityBreak(dateStr: string): { score: number; label: s
 /** 地域限定ディズニーパスポート発行・利用が集中しやすい時期 */
 export function scoreRegionalPassport(dateStr: string): { score: number; label: string } {
   const { month, day } = parseJstDate(dateStr);
-  let score = 12;
+  let score = 36;
   const tags: string[] = [];
 
   // 春・秋に関東限定パスポートの発売・利用が集中しやすい
   if (inMonthDayRange(month, day, [3, 1], [5, 15])) {
-    score += 22;
+    score += 20;
     tags.push("春の地域限定パス");
   }
   if (inMonthDayRange(month, day, [9, 1], [11, 30])) {
-    score += 24;
+    score += 22;
     tags.push("秋の地域限定パス");
   }
 
@@ -112,7 +116,7 @@ export function scoreRegionalPassport(dateStr: string): { score: number; label: 
 /** 他テーマパーク（USJ・富士急など）の混雑・イベントが TDR 需要に与える影響 */
 export function scoreOtherThemeParks(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
-  let score = 22;
+  let score = 42;
   const tags: string[] = [];
 
   // テーマパーク全体の需要が高い時期（他園も混雑 → TDR も高止まり）
@@ -151,7 +155,7 @@ export function scoreOtherThemeParks(dateStr: string): { score: number; label: s
 /** 都内・湾岸の大型イベント・コンサート・スポーツによる人流 */
 export function scoreMetroEvents(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
-  let score = 14;
+  let score = 38;
   const tags: string[] = [];
 
   // 東京マラソン（3月第1日曜前後）
@@ -202,7 +206,7 @@ export function scoreMetroEvents(dateStr: string): { score: number; label: strin
 /** 台風・大雨・震災などで来園者の流れが変わりやすい時期 */
 export function scoreDisasterImpact(dateStr: string): { score: number; label: string } {
   const { month, day, dayOfWeek } = parseJstDate(dateStr);
-  let score = 20;
+  let score = 40;
   const tags: string[] = [];
 
   // 台風シーズン（来園キャンセルと室内代替需要が混在 → 週末は高止まり）

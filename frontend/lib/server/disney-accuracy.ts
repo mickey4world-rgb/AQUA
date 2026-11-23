@@ -10,6 +10,10 @@ import {
   isJapanHoliday,
   parseJstDate,
 } from "@/lib/disney-holidays";
+import {
+  crowdScoreToLevel,
+  waitAverageToCrowdScore,
+} from "@/lib/disney-crowd-score";
 import { buildCrowdBreakdown } from "@/lib/server/disney-crowd-breakdown";
 import {
   getSnapshotsForDate,
@@ -29,10 +33,7 @@ import type {
 const DEFAULT_MONTHS_BACK = 2;
 
 function scoreToCrowdLevel(score: number): CrowdLevel {
-  if (score < 32) return "low";
-  if (score < 52) return "moderate";
-  if (score < 72) return "high";
-  return "extreme";
+  return crowdScoreToLevel(score);
 }
 
 function collectPredictionFactors(dateStr: string, park: DisneyParkKey): string[] {
@@ -73,23 +74,6 @@ function collectPredictionFactors(dateStr: string, park: DisneyParkKey): string[
 
 function accuracyId(park: DisneyParkKey, date: string): string {
   return `acc-${park}-${date}`;
-}
-
-function levelFromAverageWait(averageWait: number): CrowdLevel {
-  if (averageWait >= 70) return "extreme";
-  if (averageWait >= 45) return "high";
-  if (averageWait >= 25) return "moderate";
-  return "low";
-}
-
-function levelToScore(level: CrowdLevel): number {
-  const map: Record<CrowdLevel, number> = {
-    low: 22,
-    moderate: 42,
-    high: 62,
-    extreme: 82,
-  };
-  return map[level];
 }
 
 function levelRank(level: CrowdLevel): number {
@@ -140,10 +124,12 @@ export async function deriveActualCrowdFromSnapshots(
   const averageWait = Math.round(
     waits.reduce((sum, value) => sum + value, 0) / waits.length,
   );
-  const level = levelFromAverageWait(averageWait);
+  // 待ち分数から連続スコアへ（帯の代表点 22/42/62/82 だと予想との差が毎日 15〜30 点開く）
+  const score = waitAverageToCrowdScore(averageWait);
+  const level = scoreToCrowdLevel(score);
   return {
     level,
-    score: levelToScore(level),
+    score,
     averageWait,
     snapshotHours: source.length,
     actualSource,
