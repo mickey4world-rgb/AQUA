@@ -4,7 +4,9 @@ import {
   assessWorldSecurityIssues,
   buildWorldFeedMeta,
   defaultWorldIssueContext,
+  isWorldBuzzIssue,
   parseWorldFeed,
+  worldIssueOpenUrl,
   worldIssuesSummaryLabel,
 } from "./security-world-issues";
 
@@ -70,5 +72,18 @@ const exposed = assessWorldSecurityIssues(
   defaultWorldIssueContext({ behindSwaEdge: false, exposesRawNodeHttpServer: true }),
 );
 assert.equal(worldIssuesSummaryLabel(exposed).level, "critical");
+
+assert.equal(isWorldBuzzIssue(by("CVE-2026-0001")), true, "ransomware KEV is buzz");
+assert.equal(isWorldBuzzIssue(by("CVE-2026-0002")), true, "CISA KEV is buzz");
+assert.equal(isWorldBuzzIssue(by("nodejs-v22.99.1")), false, "routine Node watch is not buzz");
+assert.equal(
+  worldIssueOpenUrl({ id: "CVE-2026-0001", sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-0001" }),
+  "https://nvd.nist.gov/vuln/detail/CVE-2026-0001",
+);
+assert.equal(
+  worldIssueOpenUrl({ id: "CVE-2024-10441", sourceUrl: "" }),
+  "https://nvd.nist.gov/vuln/detail/CVE-2024-10441",
+);
+assert.equal(worldIssueOpenUrl({ id: "x", sourceUrl: "javascript:alert(1)" }), null);
 
 console.log("security-world-issues.test.ts: ok");

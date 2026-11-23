@@ -377,3 +377,31 @@ export function worldIssuesSummaryLabel(
     text: `この環境で問題ありは 0 件。掲載 ${issues.length} 件はすべて非該当または対策済みです。`,
   };
 }
+
+/**
+ * 世界で「悪用確認・重大・ランサム」として騒がれている側の項目か。
+ * この環境の該当／非該当とは別軸（素人はまず内容をリンクで読める必要がある）。
+ */
+export function isWorldBuzzIssue(
+  issue: Pick<WorldIssueAssessment, "origin" | "severity" | "ransomware">,
+): boolean {
+  if (issue.ransomware) return true;
+  if (issue.origin === "cisa-kev") return true;
+  return issue.severity === "critical";
+}
+
+/** カード／タイトルから開く公式 URL（https のみ） */
+export function worldIssueOpenUrl(
+  issue: Pick<WorldIssueAssessment, "id" | "sourceUrl">,
+): string | null {
+  const url = (issue.sourceUrl ?? "").trim();
+  if (/^https:\/\//i.test(url)) return url;
+  const id = (issue.id ?? "").trim().toUpperCase();
+  if (/^CVE-\d{4}-\d{4,}$/.test(id)) {
+    return `https://nvd.nist.gov/vuln/detail/${id}`;
+  }
+  if (/^GHSA-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/.test(id)) {
+    return `https://github.com/advisories/${id.toLowerCase()}`;
+  }
+  return null;
+}

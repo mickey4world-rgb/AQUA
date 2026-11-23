@@ -16,9 +16,14 @@ import {
   glassPanel,
   type DonutSegment,
 } from "@/components/costs/security/SecurityVisuals";
+import {
+  isWorldBuzzIssue,
+  worldIssueOpenUrl,
+} from "@/lib/security-world-issues";
 import type { SecurityAnalyticsReport } from "@/lib/types/analytics";
 
 type Judgment = SecurityAnalyticsReport["worldIssues"][number]["judgment"];
+type WorldIssue = SecurityAnalyticsReport["worldIssues"][number];
 
 const JUDGMENT_STYLE: Record<Judgment, { color: string; chip: string; short: string }> = {
   affected: { color: "#f43f5e", chip: "border-rose-400/50 bg-rose-500/20 text-rose-100", short: "問題あり" },
@@ -92,11 +97,93 @@ function ArchitecturePipeline({ layers }: { layers: SecurityAnalyticsReport["arc
   );
 }
 
+function WorldIssueCard({ issue, emphasize }: { issue: WorldIssue; emphasize?: boolean }) {
+  const st = JUDGMENT_STYLE[issue.judgment];
+  const openUrl = worldIssueOpenUrl(issue);
+  const titleClass = emphasize
+    ? "mt-2 text-sm font-semibold text-white"
+    : "mt-2 text-sm font-medium text-white";
+  return (
+    <div
+      className={`relative overflow-hidden rounded-xl border p-4 ${
+        emphasize
+          ? "border-rose-400/35 bg-gradient-to-br from-rose-500/15 to-fuchsia-500/5"
+          : "border-white/10 bg-white/[0.02]"
+      }`}
+    >
+      <span
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ background: st.color, boxShadow: `0 0 12px ${st.color}` }}
+      />
+      <div className="flex flex-wrap items-center gap-1.5">
+        {emphasize && (
+          <span className="rounded-full bg-rose-500/30 px-2 py-0.5 text-[10px] font-semibold text-rose-50">
+            世界で注目
+          </span>
+        )}
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${st.chip}`}>
+          {issue.judgmentLabel}
+        </span>
+        {issue.originLabel && (
+          <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-slate-300">
+            {issue.originLabel}
+          </span>
+        )}
+        {issue.ransomware && (
+          <span className="rounded-full bg-rose-600/30 px-2 py-0.5 text-[10px] text-rose-100">
+            ランサムウェアで悪用
+          </span>
+        )}
+        {issue.severity === "critical" && (
+          <span className="rounded-full bg-orange-500/25 px-2 py-0.5 text-[10px] text-orange-100">
+            重大
+          </span>
+        )}
+        {issue.publishedAt && (
+          <span className="text-[10px] text-slate-500">{issue.publishedAt}</span>
+        )}
+      </div>
+      {openUrl ? (
+        <a
+          href={openUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${titleClass} underline-offset-2 hover:text-cyan-200 hover:underline`}
+        >
+          {issue.title}
+        </a>
+      ) : (
+        <p className={titleClass}>{issue.title}</p>
+      )}
+      {(issue.vendor || issue.product || issue.id) && (
+        <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+          {[issue.vendor, issue.product].filter(Boolean).join(" / ") || issue.id}
+          {issue.vendor || issue.product ? ` · ${issue.id}` : ""}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-slate-300">{issue.reason}</p>
+      {openUrl ? (
+        <a
+          href={openUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-flex items-center gap-1 rounded-full border border-cyan-400/35 bg-cyan-500/15 px-3 py-1 text-[11px] font-medium text-cyan-50 hover:bg-cyan-500/25"
+        >
+          公式の説明を開く →
+        </a>
+      ) : (
+        <p className="mt-2 text-[11px] text-slate-500">公式リンクは未設定です。</p>
+      )}
+    </div>
+  );
+}
+
 function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
-  const [filter, setFilter] = useState<Judgment | "relevant" | "all">("relevant");
+  const [filter, setFilter] = useState<Judgment | "relevant" | "buzz" | "all">("buzz");
   const issues = report.worldIssues;
   const counts: Record<Judgment, number> = { affected: 0, watch: 0, mitigated: 0, not_applicable: 0 };
   for (const i of issues) counts[i.judgment] += 1;
+  const buzzIssues = issues.filter((i) => isWorldBuzzIssue(i));
   const segments: DonutSegment[] = (Object.keys(counts) as Judgment[]).map((k) => ({
     label: JUDGMENT_STYLE[k].short,
     value: counts[k],
@@ -104,9 +191,16 @@ function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
   }));
   const meta = report.worldFeedMeta;
   const visible = issues.filter((i) =>
-    filter === "all" ? true : filter === "relevant" ? i.judgment !== "not_applicable" : i.judgment === filter,
+    filter === "all"
+      ? true
+      : filter === "buzz"
+        ? isWorldBuzzIssue(i)
+        : filter === "relevant"
+          ? i.judgment !== "not_applicable"
+          : i.judgment === filter,
   );
   const tabs: Array<{ key: typeof filter; label: string }> = [
+    { key: "buzz", label: `世界で注目 ${buzzIssues.length}` },
     { key: "relevant", label: `関係あり ${issues.length - counts.not_applicable}` },
     { key: "affected", label: `問題あり ${counts.affected}` },
     { key: "watch", label: `監視 ${counts.watch}` },
@@ -136,6 +230,9 @@ function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
           >
             {report.worldIssuesSummary.text}
           </p>
+          <p className="mt-2 text-xs text-slate-400">
+            「世界で注目」は悪用確認（CISA KEV）・重大・ランサム関連です。この環境の該当／非該当に関係なく、タイトルまたはボタンから公式説明を開けます。
+          </p>
           <div className="mt-3 max-w-xs">
             <Legend segments={segments} />
           </div>
@@ -164,6 +261,29 @@ function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
         </div>
       </div>
 
+      {buzzIssues.length > 0 && (
+        <div className="mt-5 rounded-2xl border border-rose-400/25 bg-rose-500/5 p-4">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-rose-50">今、世界で騒がれている危険</p>
+              <p className="mt-0.5 text-[11px] text-rose-100/70">
+                クリックで公式ページ（CISA / NVD / Advisory など）が開きます。非該当でも中身を読めます。
+              </p>
+            </div>
+            <p className="font-mono text-xs text-rose-100/80">{buzzIssues.length} 件</p>
+          </div>
+          <div className="mt-3 grid max-h-[22rem] gap-3 overflow-auto pr-1 md:grid-cols-2">
+            {buzzIssues.slice(0, 8).map((issue) => (
+              <WorldIssueCard
+                key={`buzz-${issue.origin ?? "x"}-${issue.id}`}
+                issue={issue}
+                emphasize
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap gap-1.5">
         {tabs.map((t) => (
           <button
@@ -185,53 +305,26 @@ function WorldIssuesPanel({ report }: { report: SecurityAnalyticsReport }) {
         <p className="mt-4 text-sm text-slate-500">この区分の項目はありません。</p>
       ) : (
         <div className="mt-4 grid max-h-[32rem] gap-3 overflow-auto pr-1 md:grid-cols-2">
-          {visible.slice(0, 60).map((issue) => {
-            const st = JUDGMENT_STYLE[issue.judgment];
-            return (
-              <div
-                key={`${issue.origin ?? "x"}-${issue.id}`}
-                className="relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-4"
-              >
-                <span className="absolute inset-y-0 left-0 w-1" style={{ background: st.color, boxShadow: `0 0 12px ${st.color}` }} />
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] ${st.chip}`}>{issue.judgmentLabel}</span>
-                  {issue.originLabel && (
-                    <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-slate-300">
-                      {issue.originLabel}
-                    </span>
-                  )}
-                  {issue.ransomware && (
-                    <span className="rounded-full bg-rose-600/30 px-2 py-0.5 text-[10px] text-rose-100">
-                      ランサムウェアで悪用
-                    </span>
-                  )}
-                  {issue.publishedAt && <span className="text-[10px] text-slate-500">{issue.publishedAt}</span>}
-                </div>
-                <p className="mt-2 text-sm font-medium text-white">{issue.title}</p>
-                {(issue.vendor || issue.product) && (
-                  <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                    {[issue.vendor, issue.product].filter(Boolean).join(" / ")} · {issue.id}
-                  </p>
-                )}
-                <p className="mt-2 text-xs text-slate-300">{issue.reason}</p>
-                <a
-                  href={issue.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-block text-[11px] text-cyan-300 hover:text-cyan-200"
-                >
-                  出典を開く →
-                </a>
-              </div>
-            );
-          })}
+          {visible.slice(0, 60).map((issue) => (
+            <WorldIssueCard
+              key={`${issue.origin ?? "x"}-${issue.id}`}
+              issue={issue}
+              emphasize={isWorldBuzzIssue(issue)}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-type Decision = { tone: "bad" | "warn"; title: string; detail: string };
+type Decision = {
+  tone: "bad" | "warn";
+  title: string;
+  detail: string;
+  href?: string | null;
+  hrefLabel?: string;
+};
 
 function buildDecisions(report: SecurityAnalyticsReport): Decision[] {
   const out: Decision[] = [];
@@ -243,7 +336,19 @@ function buildDecisions(report: SecurityAnalyticsReport): Decision[] {
       out.push({ tone: "bad", title: `診断が ${t.ageHours} 時間更新されていません`, detail: "自動診断の停止を疑ってください。" });
     }
     for (const a of t.actions.filter((x) => x.priority !== "week").slice(0, 3)) {
-      out.push({ tone: a.priority === "now" ? "bad" : "warn", title: a.title, detail: a.detail });
+      const matched = t.issues.find(
+        (i) =>
+          a.title.includes(i.title) ||
+          (i.packageName != null && a.title.includes(i.packageName)),
+      );
+      const href = matched?.url && /^https:\/\//i.test(matched.url) ? matched.url : null;
+      out.push({
+        tone: a.priority === "now" ? "bad" : "warn",
+        title: a.title,
+        detail: a.detail,
+        href,
+        hrefLabel: href ? "詳細を開く" : undefined,
+      });
     }
     const missing = t.collections.filter((c) => !c.ok && !c.optional);
     if (missing.length > 0) {
@@ -256,10 +361,24 @@ function buildDecisions(report: SecurityAnalyticsReport): Decision[] {
   }
   const affected = report.worldIssues.filter((i) => i.judgment === "affected");
   if (affected.length > 0) {
+    const firstUrl = worldIssueOpenUrl(affected[0]!);
     out.push({
       tone: "bad",
       title: `世界の重要問題がこの環境に該当 ${affected.length} 件`,
       detail: affected.slice(0, 2).map((i) => i.title).join(" / "),
+      href: firstUrl,
+      hrefLabel: firstUrl ? "最初の該当を公式で開く" : undefined,
+    });
+  }
+  const buzz = report.worldIssues.filter((i) => isWorldBuzzIssue(i));
+  if (buzz.length > 0 && affected.length === 0) {
+    const firstUrl = worldIssueOpenUrl(buzz[0]!);
+    out.push({
+      tone: "warn",
+      title: `世界で注目の危険 ${buzz.length} 件（この環境は非該当または監視）`,
+      detail: buzz.slice(0, 2).map((i) => i.title).join(" / "),
+      href: firstUrl,
+      hrefLabel: firstUrl ? "話題の内容を公式で開く" : undefined,
     });
   }
   const brute = report.suspiciousSources.filter((s) => s.pattern === "brute_force");
@@ -301,6 +420,16 @@ function DecisionStrip({ report }: { report: SecurityAnalyticsReport }) {
           >
             <p className={`text-sm font-semibold ${d.tone === "bad" ? "text-rose-50" : "text-amber-50"}`}>{d.title}</p>
             <p className="mt-0.5 text-xs text-slate-300">{d.detail}</p>
+            {d.href && (
+              <a
+                href={d.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-[11px] font-medium text-cyan-300 hover:text-cyan-200"
+              >
+                {d.hrefLabel ?? "公式の説明を開く"} →
+              </a>
+            )}
           </li>
         ))}
       </ul>
@@ -461,7 +590,12 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
             unit="回"
             tone={report.summary.highSeverityEvents > 0 ? "warn" : "neutral"}
           >
-            <p className="mt-1 text-[11px] text-slate-400">高重要度 {report.summary.highSeverityEvents} 回</p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              高重要度 {report.summary.highSeverityEvents} 回
+              {report.summary.blockedEvents <= 1
+                ? " · 承認済みの防御テストを含む場合があります"
+                : ""}
+            </p>
           </StatTile>
         </div>
         <div className="relative mt-5">
@@ -485,7 +619,7 @@ export default function SecurityDefensePanels({ report }: { report: SecurityAnal
         <SectionHeader
           step="2"
           title="脆弱性対応と世界の重要問題"
-          subtitle="毎日の診断で、世界の最新リストとこの環境の該当を照合"
+          subtitle="世界で騒がれている危険はリンクで公式説明を開けます。あわせてこの環境への該当も毎日照合"
           accent="from-violet-400 to-fuchsia-500"
         />
         <WorldIssuesPanel report={report} />
