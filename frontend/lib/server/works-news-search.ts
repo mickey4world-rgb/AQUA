@@ -588,7 +588,7 @@ export async function markWorksNewsSolunaSynced(digest: NewsSearchDigest): Promi
 
 /**
  * Soluna 討伐／Note 向け材料。
- * 全カテゴリから注目度順に最大3件。うち2件は注目度≥80を優先（WORKS と同じスコア）。
+ * 全カテゴリから一般読者向け注目度順に最大3件。うち2件は注目度≥80を優先。
  */
 export function mapDigestToSolunaSeedItems(digest: NewsSearchDigest): Array<{
   keyword: string;

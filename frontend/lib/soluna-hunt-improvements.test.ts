@@ -155,7 +155,7 @@ import type { NewsSearchDigest } from "./types/works-news-search";
 
   const seeds = mapDigestToSolunaSeedItems(digest);
   assert.ok(seeds.length >= 1);
-  assert.equal(seeds[0]?.attentionScore, 95);
+  assert.ok((seeds[0]?.attentionScore ?? 0) >= 80, "巨大モデル発表が先頭の高注目");
   assert.equal(seeds[0]?.titleJa, "巨大モデル発表が業界を揺るがす");
   assert.equal(seeds[0]?.title, "Huge model launch shocks industry");
   assert.ok(

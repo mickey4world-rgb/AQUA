@@ -78,9 +78,15 @@ assert.equal(digestHighAttentionCount(digest), 2);
 
 const seeds = selectSolunaHuntSeedItems(digest);
 assert.equal(seeds.length, 3);
-assert.equal(seeds[0]?.attentionScore, 92);
-assert.equal(seeds[1]?.attentionScore, 88);
-assert.ok((seeds[2]?.attentionScore ?? 0) <= 88);
+assert.ok((seeds[0]?.attentionScore ?? 0) >= 80, "1件目は高注目");
+assert.ok((seeds[1]?.attentionScore ?? 0) >= 80, "2件目は高注目");
+assert.ok(
+  (seeds[0]?.attentionScore ?? 0) >= (seeds[1]?.attentionScore ?? 0),
+  "注目度降順",
+);
+assert.ok(
+  (seeds[2]?.attentionScore ?? 0) <= (seeds[1]?.attentionScore ?? 0),
+);
 assert.equal(
   seeds.filter((s) => s.attentionScore >= 80).length,
   2,
@@ -95,7 +101,7 @@ assert.equal(contract.ok, true);
 
 const mapped = mapDigestToSolunaSeedItems(digest);
 assert.equal(mapped.length, 3);
-assert.equal(mapped[0]?.attentionScore, 92);
+assert.ok((mapped[0]?.attentionScore ?? 0) >= 80, "先頭は一般読者向け高注目");
 assert.ok(
   mapped.some((s) => s.title.includes("cloud outage") || s.titleJa?.includes("クラウド")),
   "systems の高注目も材料に入る",
@@ -105,5 +111,59 @@ assert.ok(
 assert.ok(
   !mapped.every((s) => s.keyword.includes("AI") || s.keyword.includes("経済")),
 );
+
+// 実務点だけ高い政府細目より、話題性のある経済本丸を先に取る
+{
+  const nicheHeavy = {
+    ...digest,
+    categories: {
+      ...digest.categories,
+      government: [
+        item({
+          id: "g-high-works",
+          category: "government",
+          title: "Local filing notice and procurement checklist update",
+          summary: "庁内向けの調達仕様の小さな改定。",
+          explanation: "庁内向けの調達仕様の小さな改定と入札公告の案内。",
+          attentionScore: 96,
+          publishedAt: new Date().toISOString(),
+        }),
+      ],
+      economy: [
+        item({
+          id: "e-fed",
+          category: "economy",
+          title: "Fed signals rate path as markets surge",
+          summary: "FRBの示唆で株が急騰した。",
+          explanation: "FRBの示唆で株が急騰し、金利見通しが焦点になった。",
+          attentionScore: 78,
+          publishedAt: new Date().toISOString(),
+          titleJa: "FRB示唆で市場急騰",
+        }),
+      ],
+      ai: [
+        item({
+          id: "a-mid",
+          category: "ai",
+          title: "Quiet AI tip",
+          attentionScore: 40,
+        }),
+      ],
+      systems: [],
+      security: [],
+      "national-security": [],
+    },
+  } as NewsSearchDigest;
+
+  const noteSeeds = selectSolunaHuntSeedItems(nicheHeavy);
+  assert.ok(
+    noteSeeds.some((s) => s.title.includes("Fed") || s.titleJa?.includes("FRB")),
+    "話題性の高い経済ニュースが材料に入る",
+  );
+  assert.ok(
+    !noteSeeds[0]?.title.includes("procurement"),
+    "庁内調達の実務高点だけで大ボス先頭にしない",
+  );
+}
 
 console.log("soluna-hunt-materials.test.ts: ok");

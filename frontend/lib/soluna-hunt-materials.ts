@@ -1,7 +1,9 @@
 /**
  * Soluna 討伐／Note 用ニュース材料の選定。
- * 不変条件: 3件のうち少なくとも2件は注目度 ≥80（WORKS ダイジェストにその水準があるとき）。
+ * 不変条件: 3件のうち少なくとも2件は注目度 ≥80（ダイジェストにその水準の一般注目があるとき）。
+ * Note は一般読者向けなので、WORKS 実務点ではなく noteAudience 点で並べる。
  */
+import { scoreSolunaNoteAudienceAttention } from "@/lib/soluna-attention";
 import {
   NEWS_SEARCH_CATEGORIES,
   NEWS_SEARCH_CATEGORY_LABEL,
@@ -53,21 +55,35 @@ function flattenDigestItems(digest: NewsSearchDigest): Array<
 
 function toSeed(
   item: NewsSearchItem & { category: NewsSearchCategory },
+  now = Date.now(),
 ): SolunaHuntSeedItem {
+  const summary = item.explanation || item.summary;
+  const titleJa = item.titleJa?.trim() || undefined;
+  const summaryJa =
+    item.summaryJa?.trim() ||
+    (item.explanation?.trim() ? item.explanation.trim().slice(0, 160) : undefined);
+  // WORKS 実務点を種に、一般読者向け注目度へ再スコア
+  const attentionScore = scoreSolunaNoteAudienceAttention(
+    {
+      title: item.title,
+      summary,
+      titleJa,
+      summaryJa,
+      sourceUrl: item.sources.find((s) => s.url)?.url,
+      publishedAt: item.publishedAt,
+      attentionScore: item.attentionScore,
+      keyword: categoryKeyword(item.category),
+      category: item.category,
+    },
+    now,
+  );
   return {
     keyword: categoryKeyword(item.category),
     title: item.title,
-    summary: item.explanation || item.summary,
-    titleJa: item.titleJa?.trim() || undefined,
-    summaryJa:
-      item.summaryJa?.trim() ||
-      (item.explanation?.trim()
-        ? item.explanation.trim().slice(0, 160)
-        : undefined),
-    attentionScore: Math.max(
-      1,
-      Math.min(100, Math.round(item.attentionScore ?? 0)),
-    ),
+    summary,
+    titleJa,
+    summaryJa,
+    attentionScore,
     sourceUrl: item.sources.find((s) => s.url)?.url,
     publishedAt: item.publishedAt,
     category: item.category,
@@ -75,8 +91,7 @@ function toSeed(
 }
 
 /**
- * 全カテゴリから注目度順に選び、高注目枠を先に埋める。
- * WORKS UI と同じ attentionScore をそのまま使う（再推定で薄めない）。
+ * 全カテゴリから一般読者向け注目度順に選び、高注目枠を先に埋める。
  */
 export function selectSolunaHuntSeedItems(
   digest: NewsSearchDigest,
@@ -89,10 +104,11 @@ export function selectSolunaHuntSeedItems(
   const slotCount = options?.slotCount ?? SOLUNA_HUNT_SLOT_COUNT;
   const highMin = options?.highMin ?? SOLUNA_HUNT_HIGH_ATTENTION_MIN;
   const highSlots = options?.highSlots ?? SOLUNA_HUNT_HIGH_ATTENTION_SLOTS;
+  const now = Date.now();
 
   const pool = flattenDigestItems(digest)
     .filter((item) => Boolean(item.title?.trim()) && Boolean(item.summary?.trim() || item.explanation?.trim()))
-    .map(toSeed)
+    .map((item) => toSeed(item, now))
     .sort((a, b) => b.attentionScore - a.attentionScore);
 
   if (pool.length === 0) return [];
@@ -133,9 +149,12 @@ export function digestHighAttentionCount(
   digest: NewsSearchDigest,
   highMin = SOLUNA_HUNT_HIGH_ATTENTION_MIN,
 ): number {
-  return flattenDigestItems(digest).filter(
-    (item) => (item.attentionScore ?? 0) >= highMin,
-  ).length;
+  const now = Date.now();
+  // Note／討伐契約は一般読者向け再スコア後の件数で見る
+  return flattenDigestItems(digest).filter((item) => {
+    const seed = toSeed(item, now);
+    return seed.attentionScore >= highMin;
+  }).length;
 }
 
 /**

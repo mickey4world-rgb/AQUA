@@ -200,6 +200,7 @@ ${lines.join("\n\n")}
 /**
  * 大ボス選定: 注目度（attentionScore）優先、同点ならモンスター rank。
  * 「議論しがいのある今日いちばん気になるネタ」をボスにする。
+ * 高注目（≥80）が1件でもあれば、大ボスは必ずその中から選ぶ。
  */
 export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
   const items = enrichBriefingWithMonsters(briefing).items;
@@ -210,12 +211,13 @@ export function pickBoss(briefing: SolunaNewsBriefing): SolunaNewsItem {
       keyword: "AI 最新動向",
     });
   }
-  return [...items].sort((a, b) => {
-    const att =
-      (b.attentionScore ?? -1) - (a.attentionScore ?? -1);
+  const ranked = [...items].sort((a, b) => {
+    const att = (b.attentionScore ?? -1) - (a.attentionScore ?? -1);
     if (att !== 0) return att;
     return (b.monster?.rank ?? 1) - (a.monster?.rank ?? 1);
-  })[0]!;
+  });
+  const high = ranked.filter((item) => (item.attentionScore ?? 0) >= 80);
+  return (high[0] ?? ranked[0])!;
 }
 
 /** 大ボス以外から、次点の高注目を最大 max 体（Note の残り材料と同順） */

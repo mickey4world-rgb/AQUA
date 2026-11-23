@@ -118,17 +118,19 @@ assert.ok(
     note.freeBody.indexOf("AI liability debate"),
 );
 
-// 無料: 気になる点と白熱状況が読めることを明言
-assert.ok(note.freeBody.includes("各試合ごとの「気になる点」"));
-assert.ok(note.freeBody.includes("議論の白熱状況"));
+// 無料: 注目本丸＋考察の入口が読めることを明言
+assert.ok(note.freeBody.includes("注目度の高い本丸ニュース"));
+assert.ok(note.freeBody.includes("考察の入口"));
 assert.ok(note.freeBody.includes("気になる点:"));
 assert.ok(note.freeBody.includes("白熱状況:"));
 assert.ok(
   note.freeBody.includes("そこまで白熱するほど熱い会議ではなく終わった——だから小物モンスター"),
 );
 
-// 有料: 1試合ごとの丁寧な討論
+// 有料: 1試合ごとの丁寧な討論＋考察メモ
 assert.ok(note.paidBody.includes("試合ごとの丁寧な討論"));
+assert.ok(note.paidBody.includes("考察メモ"));
+assert.ok(note.paidBody.includes("考察その1"));
 assert.ok(note.paidBody.includes("第1試合"));
 assert.ok(note.paidBody.includes("第2試合"));
 assert.ok(note.paidBody.includes("法学の専門家"));

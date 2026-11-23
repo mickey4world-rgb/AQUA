@@ -3,8 +3,13 @@ import type { SolunaCharacterMood, SolunaSystemCharacterPersonality } from "@/li
 /** Cosmos 上のグローバル（全ユーザー共通）システム会話用パーティション */
 export const SOLUNA_SYSTEM_USER_ID = "__system__";
 
-/** 毎朝のシステム会話で検索する共通キーワード */
-export const SOLUNA_SYSTEM_KEYWORDS = ["AI 最新動向", "世界経済"] as const;
+/** 毎朝のシステム会話で検索する共通キーワード（一般読者が止まる本丸寄り） */
+export const SOLUNA_SYSTEM_KEYWORDS = [
+  "AI 最新動向",
+  "世界経済",
+  "国際情勢",
+  "株式 為替 金利",
+] as const;
 
 /** JST での今日の日付文字列を返す（例: "2026-08-19"） */
 export function jstDateString(date = new Date()): string {
