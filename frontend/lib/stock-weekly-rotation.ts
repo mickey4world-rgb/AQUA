@@ -13,6 +13,10 @@ import {
   STOCK_WEEKLY_OVERHEAT_CHANGE_PCT,
   STOCK_WEEKLY_TARGET_ACTIVE_JP,
 } from "@/lib/stock-trade-constants";
+import {
+  ensureMonthlyHarvestInActiveCodes,
+  isMonthlyHarvestCandidate,
+} from "@/lib/stock-monthly-harvest";
 import type { StockJpUniverseTier } from "@/lib/stock-jp-universe";
 
 /** コア銘柄は週次 soft ローテで監視メモへ落とさない（単元不可は除く） */
@@ -150,6 +154,11 @@ export function scoreTakeProfitEase(input: WeeklyScoreInput): WeeklyScoreResult 
         `買付枠内で約 ${lotsInTradeCap.toFixed(1)} 単元分の回転余地`,
       );
     }
+  }
+
+  if (isMonthlyHarvestCandidate(price)) {
+    score += 18;
+    reasons.push("月次少額利確エンジン候補（1%動で小利が取れる単元）");
   }
 
   const tierBonus = TIER_BONUS[input.tier] ?? 0;
@@ -298,10 +307,26 @@ export function planWeeklyRotation(args: {
     if (desiredActiveCodes.length >= targetActive) break;
     desiredActiveCodes.push(s.code);
   }
+
+  // 月次: 少額利確エンジン銘柄を必ず1つアクティブに残す
+  const harvestEnsure = ensureMonthlyHarvestInActiveCodes({
+    desiredActiveCodes,
+    candidates: ranked.map((s) => ({
+      code: s.code,
+      price: s.price,
+      score: s.score,
+    })),
+    targetActive,
+    protectedCodes: new Set([...heldCodes, ...coreKeepCodes]),
+  });
+  desiredActiveCodes.length = 0;
+  desiredActiveCodes.push(...harvestEnsure.codes);
+
   const desiredSet = new Set(desiredActiveCodes);
 
   const actions: WeeklyRotationAction[] = [];
   const toRaise: WeeklyScoreResult[] = [];
+  // harvestEnsure.injectedCode は desired に入っているので、下の toRaise で activate される
   const forcedDown: WeeklyScoreResult[] = [];
   const softExcess: WeeklyScoreResult[] = [];
 
@@ -351,10 +376,13 @@ export function planWeeklyRotation(args: {
   toRaise.sort((a, b) => b.score - a.score);
   for (const s of toRaise) {
     const exists = args.existingCodes.has(s.code);
+    const harvestSeed = s.code === harvestEnsure.injectedCode;
     actions.push({
       type: exists ? "activate" : "create",
       code: s.code,
-      reason: `利確しやすい候補（スコア ${s.score} / 硬利確1単元 ${s.tpYenAtTarget.toLocaleString("ja-JP")}円）`,
+      reason: harvestSeed
+        ? `月次少額利確エンジンを必ず1つ確保（スコア ${s.score}）`
+        : `利確しやすい候補（スコア ${s.score} / 硬利確1単元 ${s.tpYenAtTarget.toLocaleString("ja-JP")}円）`,
     });
   }
 

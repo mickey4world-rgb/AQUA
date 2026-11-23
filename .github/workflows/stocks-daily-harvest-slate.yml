@@ -1,0 +1,48 @@
+name: Stocks Daily Harvest Slate
+
+# 少額売買専用枠（約10件）を、前日までの相場で毎朝入れ替え。
+# JST 8:10 ≈ UTC 23:10（前日）— 寄り付き前に枠を確定する。
+on:
+  schedule:
+    - cron: "10 23 * * 0-4"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "本日分があっても再作成"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  harvest_slate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST daily-harvest-slate
+        env:
+          SOLUNA_CRON_SECRET: ${{ secrets.SOLUNA_CRON_SECRET }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          STOCK_AUTO_TRADE_USER_ID: ${{ vars.STOCK_AUTO_TRADE_USER_ID }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOLUNA_CRON_SECRET:-}" ]; then
+            echo "SOLUNA_CRON_SECRET not set"
+            exit 1
+          fi
+          if [ -z "${STOCK_AUTO_TRADE_USER_ID:-}" ]; then
+            echo "STOCK_AUTO_TRADE_USER_ID var not set"
+            exit 1
+          fi
+          BASE="${PRODUCTION_URL:-https://www.aquacore.net}"
+          BODY=$(jq -nc --arg u "$STOCK_AUTO_TRADE_USER_ID" --argjson f "${FORCE:-false}" '{userId:$u, force:$f}')
+          echo "POST $BASE/api/stocks/cron/daily-harvest-slate"
+          RESP=$(curl -sfS -X POST \
+            -H "Authorization: Bearer ${SOLUNA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data "$BODY" \
+            "${BASE%/}/api/stocks/cron/daily-harvest-slate" \
+            --max-time 90)
+          echo "$RESP" | jq .
+          echo "$RESP" | jq -e '.ok == true' >/dev/null

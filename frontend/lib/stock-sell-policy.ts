@@ -70,6 +70,12 @@ export function decideStockSellIntent(input: {
   preferEarlierTakeProfit: boolean;
   orders: StockBrokerOrderRecord[];
   nowMs?: number;
+  /** 月次売り益未達時の少額利確エンジン */
+  monthlyHarvest?: {
+    needed: boolean;
+    urgent: boolean;
+    isCandidate: boolean;
+  };
 }): StockSellDecision | null {
   const nowMs = input.nowMs ?? Date.now();
   const buy = input.buyPrice;
@@ -94,12 +100,19 @@ export function decideStockSellIntent(input: {
       input.targetPrice > 0 &&
       px >= input.targetPrice * 0.95;
     const aiSell = input.adviceAction === "sell";
+    const harvest =
+      input.monthlyHarvest &&
+      input.monthlyHarvest.needed &&
+      (input.monthlyHarvest.urgent || input.monthlyHarvest.isCandidate);
 
-    if (hitTarget || earlyTp || aiSell) {
+    if (hitTarget || earlyTp || aiSell || harvest) {
       const ruleIds = hitTarget
         ? [1, 11, 12, 13, 14, 15, 19, 20, 23, 26]
-        : [1, 12, 13, 14, 15, 19, 20, 23, 47];
+        : harvest
+          ? [1, 12, 13, 14, 15, 19, 20, 48]
+          : [1, 12, 13, 14, 15, 19, 20, 23, 47];
       if (input.preferEarlierTakeProfit) ruleIds.push(24);
+      if (harvest) ruleIds.push(50);
       return {
         sell: true,
         kind: "take-profit",
@@ -107,7 +120,9 @@ export function decideStockSellIntent(input: {
           ? `利確: 目標到達 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）`
           : earlyTp
             ? `利確: 目標手前の早期利確 +${(changeRate * 100).toFixed(1)}%（${holdLabel}）`
-            : `利確: プラス圏のAI売り +${(changeRate * 100).toFixed(1)}%（${holdLabel}）`,
+            : harvest
+              ? `利確: 月次少額刈り取り +${(changeRate * 100).toFixed(1)}%（${holdLabel}${input.monthlyHarvest?.urgent ? "・月末寄与急務" : "・月次エンジン"}）`
+              : `利確: プラス圏のAI売り +${(changeRate * 100).toFixed(1)}%（${holdLabel}）`,
         ruleIds,
       };
     }

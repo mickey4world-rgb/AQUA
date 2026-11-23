@@ -50,6 +50,8 @@ import {
   STOCK_VOLUME_SPIKE_MULT,
   STOCK_WEEKLY_MAX_ROTATIONS,
   STOCK_WEEKLY_TARGET_ACTIVE_JP,
+  STOCK_DAILY_HARVEST_SLATE_SIZE,
+  STOCK_DAILY_HARVEST_MAX_REPLACEMENTS,
 } from "@/lib/stock-trade-constants";
 
 export type StockTradeRuleCategory =
@@ -224,7 +226,20 @@ export const STOCK_TRADE_RULES: StockTradeRule[] = [
     id: 20,
     category: "mode",
     title: "月次売り益目標",
-    summary: `毎月の売り側実現益の合計が元本 ${yen(STOCK_PRINCIPAL_YEN)} の ${(STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE * 100).toFixed(0)}%（${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)}）以上を目標。グラフ・達成率の基準`,
+    summary: `毎月の売り側実現益の合計が元本 ${yen(STOCK_PRINCIPAL_YEN)} の ${(STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE * 100).toFixed(0)}%（${yen(STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN)}）以上を目標。グラフ・達成率の基準。未達時は#50の少額刈り取りが動く`,
+  },
+  {
+    id: 50,
+    category: "sell",
+    title: "月次少額利確エンジン",
+    summary:
+      "単元が回せて1%動で小利が取れる銘柄をアクティブに必ず1つ残す。当月の売り実現益が目標未満なら、その銘柄（月末・未売買時はプラス圏）を手数料負けしない最低益率以上で利確。赤字の即売りはしない。相場により利益は保証できない",
+  },
+  {
+    id: 51,
+    category: "buy",
+    title: "少額売買専用枠（毎日入替）",
+    summary: `週次本隊とは別に、少額利確向き候補を最大 ${STOCK_DAILY_HARVEST_SLATE_SIZE} 件の専用枠で管理。前日までの騰落・流動性で採点し、1日最大 ${STOCK_DAILY_HARVEST_MAX_REPLACEMENTS} 件まで入れ替え。押し目を残し過熱を外して的中率を上げる。枠銘柄は監視メモとして買い挑戦に優先投入`,
   },
   {
     id: 21,

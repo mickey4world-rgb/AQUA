@@ -8,6 +8,7 @@ import {
   listStockTradeLessons,
 } from "@/lib/server/stock-trade-lessons";
 import { getLatestWeeklyUniverseReview } from "@/lib/server/stock-weekly-universe-review";
+import { getLatestDailyHarvestSlate } from "@/lib/server/stock-daily-harvest-slate";
 import { buildStockBrokerActivity } from "@/lib/stock-broker-activity";
 import { buildStockEquityPerformance } from "@/lib/stock-equity-performance";
 import { enrichBrokerOrdersForRealizedPnl } from "@/lib/stock-realized-pnl";
@@ -27,6 +28,7 @@ import {
 import { displayTicker } from "@/lib/stock-utils";
 import {
   STOCK_CUMULATIVE_MAX_LOSS_YEN,
+  STOCK_DAILY_HARVEST_SLATE_SIZE,
   STOCK_MONTHLY_MAX_LOSS_YEN,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_RATE,
   STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
@@ -34,25 +36,35 @@ import {
   STOCK_PRINCIPAL_YEN,
   STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
 } from "@/lib/stock-trade-constants";
+import { evaluateMonthlyHarvestStatus } from "@/lib/stock-monthly-harvest";
 import { stockTradeRulesForApi } from "@/lib/stock-trade-rules";
 
 /** ログインユーザーの証券同期＋注文＋条件＋監査＋元本対比グラフ */
 export async function GET(request: Request) {
   return withApiAccessLog(request, async (auth) => {
-    const [snapshot, recentOrders, lessons, bias, watches, halt, weeklyReview] =
-      await Promise.all([
-        getStockBrokerSnapshot(auth.userId),
-        listRecentBrokerOrders(auth.userId, 200).catch(() => []),
-        listStockTradeLessons(auth.userId, 8).catch(() => []),
-        getStockTradeLessonBias(auth.userId).catch(() => null),
-        listStockWatches(auth.userId).catch(() => []),
-        getStockTradingHalt(auth.userId).catch(
-          (): { halted: boolean; haltedAt?: string; reason?: string } => ({
-            halted: false,
-          }),
-        ),
-        getLatestWeeklyUniverseReview(auth.userId).catch(() => null),
-      ]);
+    const [
+      snapshot,
+      recentOrders,
+      lessons,
+      bias,
+      watches,
+      halt,
+      weeklyReview,
+      dailyHarvestSlate,
+    ] = await Promise.all([
+      getStockBrokerSnapshot(auth.userId),
+      listRecentBrokerOrders(auth.userId, 200).catch(() => []),
+      listStockTradeLessons(auth.userId, 8).catch(() => []),
+      getStockTradeLessonBias(auth.userId).catch(() => null),
+      listStockWatches(auth.userId).catch(() => []),
+      getStockTradingHalt(auth.userId).catch(
+        (): { halted: boolean; haltedAt?: string; reason?: string } => ({
+          halted: false,
+        }),
+      ),
+      getLatestWeeklyUniverseReview(auth.userId).catch(() => null),
+      getLatestDailyHarvestSlate(auth.userId).catch(() => null),
+    ]);
 
     const costBySymbol = new Map<string, number>();
     for (const h of snapshot?.holdings ?? []) {
@@ -144,10 +156,15 @@ export async function GET(request: Request) {
     const scoreByCode = new Map(
       (weeklyReview?.scores ?? []).map((s) => [s.code, s] as const),
     );
+    const harvestSlateCodes = new Set(dailyHarvestSlate?.codes ?? []);
+    const harvestScoreByCode = new Map(
+      (dailyHarvestSlate?.scores ?? []).map((s) => [s.code, s] as const),
+    );
 
     const candidateCodes = new Set<string>([
       ...STOCK_JP_UNIVERSE.map((e) => e.code),
       ...watchByCode.keys(),
+      ...harvestSlateCodes,
     ]);
 
     const tradeCandidates = [...candidateCodes]
@@ -155,15 +172,16 @@ export async function GET(request: Request) {
         const watch = watchByCode.get(code);
         const uni = stockJpUniverseByCode(code);
         const score = scoreByCode.get(code);
+        const harvest = harvestScoreByCode.get(code);
         return {
           code,
           watchId: watch?.id ?? null,
-          name: watch?.name || uni?.name || code,
+          name: watch?.name || harvest?.name || uni?.name || code,
           isActive: watch?.isActive === true,
           registered: Boolean(watch),
           shares: watch?.shares ?? 0,
           heldQty: holdingQty.get(code) ?? 0,
-          buyPrice: watch?.buyPrice ?? score?.price ?? 0,
+          buyPrice: watch?.buyPrice ?? score?.price ?? harvest?.price ?? 0,
           targetPrice: watch?.targetPrice ?? 0,
           memo: watch?.memo,
           tier: uni?.tier ?? null,
@@ -172,13 +190,24 @@ export async function GET(request: Request) {
           weeklyScore: score?.score ?? null,
           lotYen: score?.lotYen ?? null,
           affordable: score?.affordable ?? null,
+          inDailyHarvestSlate: harvestSlateCodes.has(code),
+          harvestScore: harvest?.score ?? null,
+          harvestChangePct: harvest?.changePct ?? null,
         };
       })
       .sort((a, b) => {
+        if (a.inDailyHarvestSlate !== b.inDailyHarvestSlate) {
+          return a.inDailyHarvestSlate ? -1 : 1;
+        }
         if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
         if (a.registered !== b.registered) return a.registered ? -1 : 1;
         return (b.weeklyScore ?? -999) - (a.weeklyScore ?? -999);
       });
+
+    const monthlyHarvest = evaluateMonthlyHarvestStatus({
+      orders: ordersForChart,
+      targetYen: STOCK_MONTHLY_SELL_PROFIT_TARGET_YEN,
+    });
 
     const meta = snapshot?.bridgeMeta;
     const allowLiveOrders =
@@ -260,6 +289,22 @@ export async function GET(request: Request) {
             appliedActions: weeklyReview.appliedActions ?? [],
             newsDigestId: weeklyReview.newsDigestId ?? null,
             createdAt: weeklyReview.createdAt,
+          }
+        : null,
+      monthlyHarvest,
+      dailyHarvestSlate: dailyHarvestSlate
+        ? {
+            dayId: dailyHarvestSlate.dayId,
+            codes: dailyHarvestSlate.codes,
+            kept: dailyHarvestSlate.kept,
+            added: dailyHarvestSlate.added,
+            removed: dailyHarvestSlate.removed,
+            summary: dailyHarvestSlate.summary,
+            scores: dailyHarvestSlate.scores,
+            applied: dailyHarvestSlate.applied,
+            dryRun: dailyHarvestSlate.dryRun,
+            createdAt: dailyHarvestSlate.createdAt,
+            size: STOCK_DAILY_HARVEST_SLATE_SIZE,
           }
         : null,
       hint: snapshot

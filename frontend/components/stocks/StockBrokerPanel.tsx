@@ -75,6 +75,9 @@ type TradeCandidate = {
   weeklyScore?: number | null;
   lotYen?: number | null;
   affordable?: boolean | null;
+  inDailyHarvestSlate?: boolean;
+  harvestScore?: number | null;
+  harvestChangePct?: number | null;
 };
 
 type LiveMode = {
@@ -115,6 +118,38 @@ type StatusResponse = {
     }>;
     newsDigestId?: string | null;
     createdAt: string;
+  } | null;
+  monthlyHarvest?: {
+    monthPrefix: string;
+    realizedSellProfitYen: number;
+    targetYen: number;
+    remainingYen: number;
+    needed: boolean;
+    urgent: boolean;
+    tradeCount: number;
+    daysLeft: number;
+    day: number;
+  } | null;
+  dailyHarvestSlate?: {
+    dayId: string;
+    codes: string[];
+    kept: string[];
+    added: string[];
+    removed: string[];
+    summary: string;
+    scores: Array<{
+      code: string;
+      name: string;
+      price: number;
+      changePct: number;
+      score: number;
+      yenAt1pct: number;
+      reasons: string[];
+    }>;
+    applied: boolean;
+    dryRun: boolean;
+    createdAt: string;
+    size: number;
   } | null;
   vmStatus?: StockVmRuntimeStatus;
   policy?: string;
@@ -320,9 +355,9 @@ export default function StockBrokerPanel({
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
         日本株・kabu 自動運用です。米国株の「保有株」ページとは別系統。
+        週次の本隊（約8銘柄）とは別に、少額売買専用枠（最大10件）を毎朝入れ替え、月次の売り益目標に向けて小利確候補を確保します。
         LIVE 表示は VM sync の{" "}
         <code className="text-cyan-200/80">KABU_ALLOW_LIVE_ORDERS</code> / ポートを反映します。
-        監視メモ銘柄もアクティブより好条件なら買い可。
         {data?.policy ? ` ポリシー: ${data.policy}` : null}
       </p>
       <p className="mt-2">
@@ -480,6 +515,144 @@ export default function StockBrokerPanel({
         </div>
       )}
 
+      {(data?.monthlyHarvest || data?.dailyHarvestSlate) && (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {data.monthlyHarvest && (
+            <div
+              className={`rounded-xl border px-3 py-2.5 text-[12px] ${
+                data.monthlyHarvest.needed
+                  ? data.monthlyHarvest.urgent
+                    ? "border-amber-400/40 bg-amber-500/10 text-amber-50"
+                    : "border-sky-400/30 bg-sky-500/10 text-sky-50"
+                  : "border-emerald-400/30 bg-emerald-500/10 text-emerald-50"
+              }`}
+            >
+              <p className="font-medium">
+                月次少額利確（#50）· {data.monthlyHarvest.monthPrefix}
+                {data.monthlyHarvest.needed
+                  ? data.monthlyHarvest.urgent
+                    ? " · 急ぎ刈り取り"
+                    : " · 未達・稼働中"
+                  : " · 目標達成"}
+              </p>
+              <p className="mt-1 text-[11px] opacity-90">
+                売り実現{" "}
+                {formatYen(data.monthlyHarvest.realizedSellProfitYen)} / 目標{" "}
+                {formatYen(data.monthlyHarvest.targetYen)}
+                {data.monthlyHarvest.needed
+                  ? ` · 残り ${formatYen(data.monthlyHarvest.remainingYen)}`
+                  : ""}
+              </p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/20">
+                <div
+                  className={`h-full rounded-full ${
+                    data.monthlyHarvest.needed
+                      ? data.monthlyHarvest.urgent
+                        ? "bg-amber-300"
+                        : "bg-sky-300"
+                      : "bg-emerald-300"
+                  }`}
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (data.monthlyHarvest.realizedSellProfitYen /
+                          Math.max(1, data.monthlyHarvest.targetYen)) *
+                          100,
+                      ),
+                    )}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] opacity-75">
+                今月の売買 {data.monthlyHarvest.tradeCount} 件 · 月末まで{" "}
+                {data.monthlyHarvest.daysLeft} 日
+                （単元が回る少額候補を必ず1つ残し、未達ならプラス圏で利確）
+              </p>
+            </div>
+          )}
+
+          {data.dailyHarvestSlate ? (
+            <div className="rounded-xl border border-violet-400/30 bg-violet-500/10 px-3 py-2.5 text-[12px] text-violet-50">
+              <p className="font-medium text-violet-100">
+                少額売買専用枠（#51）· {data.dailyHarvestSlate.dayId}
+                {data.dailyHarvestSlate.dryRun
+                  ? " · 試算のみ"
+                  : data.dailyHarvestSlate.applied
+                    ? " · 反映済み"
+                    : ""}
+                {data.dailyHarvestSlate.createdAt
+                  ? ` · ${formatSyncedAt(data.dailyHarvestSlate.createdAt)}`
+                  : ""}
+              </p>
+              <p className="mt-1 text-[11px] text-violet-100/80">
+                {data.dailyHarvestSlate.summary}
+              </p>
+              <p className="mt-1 text-[11px] text-violet-100/70">
+                前日までの押し目を優先し、過熱は外して毎日最大{" "}
+                {data.dailyHarvestSlate.size} 件まで入れ替え（週次本隊とは別枠）。
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200/90">
+                    本日入った
+                  </p>
+                  {data.dailyHarvestSlate.added.length === 0 ? (
+                    <p className="mt-1 text-[11px] text-slate-400">なし</p>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5 text-[11px] text-emerald-50">
+                      {data.dailyHarvestSlate.added.map((code) => {
+                        const row = data.dailyHarvestSlate?.scores.find(
+                          (s) => s.code === code,
+                        );
+                        return (
+                          <li key={`h-add-${code}`}>
+                            {row?.name ?? code}（{code}）
+                            {row
+                              ? ` · 前日比 ${row.changePct.toFixed(1)}%`
+                              : ""}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-200/90">
+                    本日外した
+                  </p>
+                  {data.dailyHarvestSlate.removed.length === 0 ? (
+                    <p className="mt-1 text-[11px] text-slate-400">なし</p>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5 text-[11px] text-amber-50">
+                      {data.dailyHarvestSlate.removed.map((code) => (
+                        <li key={`h-rm-${code}`}>{code}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              {data.dailyHarvestSlate.codes.length > 0 && (
+                <p className="mt-2 text-[11px] text-violet-100/85">
+                  いまの枠: {data.dailyHarvestSlate.codes.join(", ")}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[12px] text-slate-300">
+              <p className="font-medium text-slate-200">
+                少額売買専用枠（#51）
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                まだ日次枠の更新がありません。寄り前の cron
+                が走ると最大10件がここに出ます。
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
       {data?.activity && <StockTradeActivityPanel activity={data.activity} />}
@@ -493,6 +666,9 @@ export default function StockBrokerPanel({
             <p className="text-[11px] text-slate-500">
               アクティブ {activeCandidates.length} · 監視メモ{" "}
               {parkedCandidates.length}
+              {candidates.filter((c) => c.inDailyHarvestSlate).length > 0
+                ? ` · 少額枠 ${candidates.filter((c) => c.inDailyHarvestSlate).length}`
+                : ""}
               {unregistered.length > 0
                 ? ` · 未登録 ${unregistered.length}`
                 : ""}
@@ -532,17 +708,24 @@ export default function StockBrokerPanel({
                     <tr key={c.code} className="text-slate-300">
                       <td className={`px-3 py-2 whitespace-nowrap ${statusClass}`}>
                         <span className="block">{status}</span>
-                        {weeklyBadges.get(c.code) && (
-                          <span
-                            className={`mt-0.5 inline-block rounded border px-1.5 py-0.5 text-[10px] ${
-                              weeklyBadges.get(c.code) === "今週追加"
-                                ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-100"
-                                : "border-amber-400/35 bg-amber-500/15 text-amber-100"
-                            }`}
-                          >
-                            {weeklyBadges.get(c.code)}
-                          </span>
-                        )}
+                        <span className="mt-0.5 flex flex-wrap gap-1">
+                          {c.inDailyHarvestSlate && (
+                            <span className="inline-block rounded border border-violet-400/40 bg-violet-500/20 px-1.5 py-0.5 text-[10px] text-violet-100">
+                              少額売買枠
+                            </span>
+                          )}
+                          {weeklyBadges.get(c.code) && (
+                            <span
+                              className={`inline-block rounded border px-1.5 py-0.5 text-[10px] ${
+                                weeklyBadges.get(c.code) === "今週追加"
+                                  ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-100"
+                                  : "border-amber-400/35 bg-amber-500/15 text-amber-100"
+                              }`}
+                            >
+                              {weeklyBadges.get(c.code)}
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-3 py-2 font-mono text-slate-200">
                         {c.code}

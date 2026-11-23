@@ -20,6 +20,7 @@ import {
   STOCK_MAX_TRADE_YEN,
   STOCK_MIN_CASH_RATIO,
   STOCK_PRINCIPAL_YEN,
+  STOCK_DAILY_HARVEST_MEMO_TAG,
   STOCK_SMALL_DIP_ALLOW_ONE_LOT,
   STOCK_SMALL_INVEST_CASH_FLOOR_YEN,
   STOCK_SMALL_TRADE_YEN,
@@ -43,6 +44,11 @@ import {
   getStockTradeLessonBias,
 } from "@/lib/server/stock-trade-lessons";
 import { decideStockSellIntent } from "@/lib/stock-sell-policy";
+import {
+  evaluateMonthlyHarvestStatus,
+  isMonthlyHarvestCandidate,
+} from "@/lib/stock-monthly-harvest";
+import { getLatestDailyHarvestSlate } from "@/lib/server/stock-daily-harvest-slate";
 import { formatSellRealizedForecast } from "@/lib/stock-realized-pnl";
 import type {
   StockBrokerBuySkip,
@@ -112,9 +118,22 @@ export async function buildStockBrokerTradeIntents(
   const activeWatches = allJp
     .filter((w) => w.isActive)
     .slice(0, STOCK_MAX_ACTIVE_JP_WATCHES);
-  const memoChallengers = allJp
-    .filter((w) => !w.isActive)
-    .slice(0, STOCK_MAX_MEMO_CHALLENGER_WATCHES);
+  const harvestSlate = await getLatestDailyHarvestSlate(userId).catch(() => null);
+  const harvestSlateCodes = new Set(harvestSlate?.codes ?? []);
+  const inactive = allJp.filter((w) => !w.isActive);
+  // 少額売買枠の監視メモを挑戦枠の先頭に（的中しやすい候補を毎日届ける）
+  const memoChallengers = [
+    ...inactive.filter(
+      (w) =>
+        harvestSlateCodes.has(displayTicker(w.ticker, "jp")) ||
+        (w.memo ?? "").includes(STOCK_DAILY_HARVEST_MEMO_TAG),
+    ),
+    ...inactive.filter(
+      (w) =>
+        !harvestSlateCodes.has(displayTicker(w.ticker, "jp")) &&
+        !(w.memo ?? "").includes(STOCK_DAILY_HARVEST_MEMO_TAG),
+    ),
+  ].slice(0, STOCK_MAX_MEMO_CHALLENGER_WATCHES);
   // アクティブ優先で分析。監視メモは「好条件なら買い」挑戦枠。
   const watches = [...activeWatches, ...memoChallengers];
   if (watches.length === 0) return { intents: [], buySkips: [] };
@@ -176,6 +195,10 @@ export async function buildStockBrokerTradeIntents(
   const lessonBias = await getStockTradeLessonBias(userId).catch(() => null);
   const preferEarlierTakeProfit = Boolean(lessonBias?.preferEarlierTakeProfit);
   const avoidChaseBuys = Boolean(lessonBias?.avoidChaseBuys);
+  const monthlyHarvest = evaluateMonthlyHarvestStatus({ orders: recentOrders });
+  const holdingHarvest = snapshot.holdings.some(
+    (h) => h.qty >= STOCK_LOT_SIZE && isMonthlyHarvestCandidate(h.price),
+  );
 
   const newsDigest = await getLatestWorksNewsDigest().catch(() => null);
   // 損失サーキット・月次停止・メインブレーカーで買いを止めない（利益優先）
@@ -243,6 +266,21 @@ export async function buildStockBrokerTradeIntents(
     const holding = snapshot.holdings.find((h) => h.symbol === symbol && h.qty > 0);
     const price = advice.currentPrice > 0 ? advice.currentPrice : holding?.price ?? 0;
     analyzed.push({ watch, advice, symbol, holding, price });
+  }
+
+  // 月次エンジン未保有／売り益未達 → 当日の少額売買枠を最優先、次に単元適格
+  if (monthlyHarvest.needed) {
+    analyzed.sort((a, b) => {
+      const as = harvestSlateCodes.has(a.symbol) ? 2 : isMonthlyHarvestCandidate(a.price) ? 1 : 0;
+      const bs = harvestSlateCodes.has(b.symbol) ? 2 : isMonthlyHarvestCandidate(b.price) ? 1 : 0;
+      if (bs !== as) return bs - as;
+      if (!holdingHarvest) {
+        const ah = isMonthlyHarvestCandidate(a.price) ? 1 : 0;
+        const bh = isMonthlyHarvestCandidate(b.price) ? 1 : 0;
+        return bh - ah;
+      }
+      return 0;
+    });
   }
 
   const bestActivePriority = analyzed
@@ -509,6 +547,12 @@ export async function buildStockBrokerTradeIntents(
         targetPrice: watch.targetPrice,
         preferEarlierTakeProfit,
         orders: recentOrders,
+        monthlyHarvest: {
+          needed: monthlyHarvest.needed,
+          urgent: monthlyHarvest.urgent,
+          isCandidate:
+            isMonthlyHarvestCandidate(markPx) || harvestSlateCodes.has(symbol),
+        },
       });
       if (sellDecision) {
         const watchQty =

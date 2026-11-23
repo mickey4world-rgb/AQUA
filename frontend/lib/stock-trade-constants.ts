@@ -195,3 +195,15 @@ export const STOCK_WEEKLY_MAX_ROTATIONS = 3;
 
 /** 週次採点で「過熱」とみなす直近騰落率（%）— 追撃より押し目待ち */
 export const STOCK_WEEKLY_OVERHEAT_CHANGE_PCT = 8;
+
+/**
+ * 少額売買専用枠（月次エンジン）。
+ * 週次アクティブ本隊とは別。前日までの値動きで毎日入れ替え、的中しやすい押し目を残す。
+ */
+export const STOCK_DAILY_HARVEST_SLATE_SIZE = 10;
+
+/** 1日あたりの入れ替え上限（全部入れ替え禁止＝継続学習） */
+export const STOCK_DAILY_HARVEST_MAX_REPLACEMENTS = 4;
+
+/** ウォッチ memo に付ける枠ラベル（UI・監査用） */
+export const STOCK_DAILY_HARVEST_MEMO_TAG = "[少額売買枠]";
