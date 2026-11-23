@@ -94,7 +94,7 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     title: "Money Flow",
     titleJa: "公開五鏡（お金の流れ）",
     description:
-      "行政事業レビューを「誰→いくら→誰へ→選び方→疑い」の公開五鏡で読む通帳。サンキーは水量と着地の図。無料プレビューで五鏡と明細まで確認できます。",
+      "行政事業レビューを公開五鏡・七つの跡・生活接点マップで読む通帳。サンキーは水量と着地の図。無料プレビューで五鏡から近い着地まで確認できます。",
     accent: "#67e8f9",
     href: "/works/admin/money-flow",
     publicHref: "/works-preview",

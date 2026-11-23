@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import PublicPreviewNav from "@/components/public/PublicPreviewNav";
 import GyoseiFiveMirrorsPanel from "@/components/works/admin/GyoseiFiveMirrorsPanel";
+import GyoseiLifeProximityPanel from "@/components/works/admin/GyoseiLifeProximityPanel";
+import GyoseiSevenTracesPanel from "@/components/works/admin/GyoseiSevenTracesPanel";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import {
@@ -12,6 +14,7 @@ import {
   fiveMirrorsSankeyLegend,
   type FiveMirrorId,
 } from "@/lib/gyosei-five-mirrors";
+import { buildSevenTracesBrief } from "@/lib/gyosei-seven-traces";
 import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
@@ -123,6 +126,10 @@ export default function WorksMoneyFlowPublicPreview({
     () => (data ? buildFiveMirrorsBrief(data, selectedNode) : null),
     [data, selectedNode],
   );
+  const sevenTraces = useMemo(
+    () => (data ? buildSevenTracesBrief(data, selectedNode) : null),
+    [data, selectedNode],
+  );
   const mirrorFocus = activeMirror ?? fiveMirrors?.activeMirror ?? "source";
 
   const pagedRows = useMemo(() => {
@@ -159,7 +166,7 @@ export default function WorksMoneyFlowPublicPreview({
         <p className="eyebrow">WORKS · 行政事業レビュー · 公開五鏡</p>
         <h1 className="display-section mt-3 text-white">お金の流れ（無料プレビュー）</h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400">
-          内閣官房「行政事業レビュー」の公開データを、公開五鏡（誰→いくら→誰へ→選び方→疑い）の順で読みます。
+          内閣官房「行政事業レビュー」の公開データを、公開五鏡（誰→いくら→誰へ→選び方→疑い）と七つの跡・生活接点マップで読みます。
           サンキーは水量と着地の図。府省庁・事業・支出先をクリックすると明細が絞り込まれます（AI コストなし）。
           {data ? (
             <>
@@ -209,6 +216,14 @@ export default function WorksMoneyFlowPublicPreview({
               compact
             />
           ) : null}
+
+          {sevenTraces ? <GyoseiSevenTracesPanel brief={sevenTraces} compact /> : null}
+
+          <GyoseiLifeProximityPanel
+            year={data.year}
+            endpoint="/api/public/works-money-flow/proximity"
+            compact
+          />
 
           <section className="glass-panel overflow-hidden rounded-3xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4">

@@ -9,6 +9,8 @@ import {
   writeMoneyFlowCache,
 } from "@/lib/money-flow-client-cache";
 import GyoseiFiveMirrorsPanel from "@/components/works/admin/GyoseiFiveMirrorsPanel";
+import GyoseiLifeProximityPanel from "@/components/works/admin/GyoseiLifeProximityPanel";
+import GyoseiSevenTracesPanel from "@/components/works/admin/GyoseiSevenTracesPanel";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import {
@@ -17,6 +19,7 @@ import {
   fiveMirrorsSankeyLegend,
   type FiveMirrorId,
 } from "@/lib/gyosei-five-mirrors";
+import { buildSevenTracesBrief } from "@/lib/gyosei-seven-traces";
 import type {
   MoneyFlowFocusKind,
   MoneyFlowNode,
@@ -279,6 +282,10 @@ export default function MoneyFlowPanel() {
     () => (data?.yearAvailable ? buildFiveMirrorsBrief(data, selectedNode) : null),
     [data, selectedNode],
   );
+  const sevenTraces = useMemo(
+    () => (data?.yearAvailable ? buildSevenTracesBrief(data, selectedNode) : null),
+    [data, selectedNode],
+  );
   const mirrorFocus = activeMirror ?? fiveMirrors?.activeMirror ?? "source";
   const ROW_PAGE_SIZE = 20;
   const pagedRows = useMemo(() => {
@@ -295,7 +302,7 @@ export default function MoneyFlowPanel() {
             <p className="eyebrow">行政事業レビュー · 公開五鏡</p>
             <h2 className="display-sub mt-2 text-white">お金の流れ</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              誰の事業か→いくら→誰へ→どう選んだ→どこを疑うか、の順で読む通帳です。サンキーは水量と着地の図。支出先は企業名・分野キーワードでも探せます。
+              公開五鏡で読み、七つの跡で疑いを定型印にし、生活接点マップで「近い着地」を拾います。サンキーは水量と着地の図。支出先は企業名・分野キーワードでも探せます。
             </p>
           </div>
           {data?.yearAvailable && (
@@ -478,6 +485,15 @@ export default function MoneyFlowPanel() {
               /* highlight landing mirror; user clicks a payee node next */
             }
           }}
+        />
+      )}
+
+      {sevenTraces && <GyoseiSevenTracesPanel brief={sevenTraces} />}
+
+      {data?.yearAvailable && (
+        <GyoseiLifeProximityPanel
+          year={data.year}
+          endpoint="/api/works/money-flow/proximity"
         />
       )}
 
