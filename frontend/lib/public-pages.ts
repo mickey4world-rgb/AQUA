@@ -7,14 +7,14 @@ export const PUBLIC_PAGE_LABELS: Record<string, string> = {
   "/login": "ログイン",
   "/tdr-preview": "SHOWCASE詳細 · TDRプレビュー",
   "/theme-parks-preview": "SHOWCASE詳細 · テーマパークプレビュー",
-  "/works-preview": "SHOWCASE詳細 · サンキープレビュー",
+  "/works-preview": "SHOWCASE詳細 · 公開五鏡プレビュー",
   "/neo-preview": "SHOWCASE詳細 · NEOプレビュー",
   "/news-search-preview": "SHOWCASE詳細 · ニュースサーチ",
 };
 
 export const SHOWCASE_SECTION_LABELS: Record<string, string> = {
   intro: "SHOWCASE · 導入",
-  sankey: "SHOWCASE · サンキー",
+  sankey: "SHOWCASE · 公開五鏡",
   "news-search": "SHOWCASE · ニュースサーチ",
   judicial: "SHOWCASE · 訴訟記録",
   council: "SHOWCASE · AI合議",

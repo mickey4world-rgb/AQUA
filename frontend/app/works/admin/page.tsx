@@ -6,7 +6,7 @@ import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 const apps = [
   {
     title: "Money Flow",
-    titleJa: "お金の流れ",
+    titleJa: "お金の流れ · 公開五鏡",
     desc: "行政事業レビューの支出先データをサンキー図で可視化。政府全体から府省庁、企業名まで絞り込めます。",
     href: "/works/admin/money-flow",
     accent: "#67e8f9",

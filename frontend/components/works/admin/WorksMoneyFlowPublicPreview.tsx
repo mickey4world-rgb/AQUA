@@ -3,8 +3,15 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import PublicPreviewNav from "@/components/public/PublicPreviewNav";
+import GyoseiFiveMirrorsPanel from "@/components/works/admin/GyoseiFiveMirrorsPanel";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
+import {
+  buildFiveMirrorsBrief,
+  fiveMirrorsFocusDescription,
+  fiveMirrorsSankeyLegend,
+  type FiveMirrorId,
+} from "@/lib/gyosei-five-mirrors";
 import type { MoneyFlowNode, MoneyFlowResponse } from "@/lib/types/gyosei";
 import { PAGE_MAIN_CLASS } from "@/lib/mobile-utils";
 import { fetchJsonWithTimeout } from "@/lib/fetch-with-timeout";
@@ -18,7 +25,6 @@ import {
   filterRowsBySelectedNode,
   formatMoneyFlowAmount,
   resolveSankeyGraphData,
-  sankeyFocusDescription,
 } from "@/lib/works-money-flow-ui";
 
 const ROW_PAGE_SIZE = 25;
@@ -37,6 +43,7 @@ export default function WorksMoneyFlowPublicPreview({
   const [error, setError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
   const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
+  const [activeMirror, setActiveMirror] = useState<FiveMirrorId | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -112,6 +119,12 @@ export default function WorksMoneyFlowPublicPreview({
     [data, selectedNode],
   );
 
+  const fiveMirrors = useMemo(
+    () => (data ? buildFiveMirrorsBrief(data, selectedNode) : null),
+    [data, selectedNode],
+  );
+  const mirrorFocus = activeMirror ?? fiveMirrors?.activeMirror ?? "source";
+
   const pagedRows = useMemo(() => {
     const start = rowPage * ROW_PAGE_SIZE;
     return filteredRows.slice(start, start + ROW_PAGE_SIZE);
@@ -123,10 +136,18 @@ export default function WorksMoneyFlowPublicPreview({
   function handleNodeClick(node: MoneyFlowNode) {
     if (node.kind === "government") {
       setSelectedNode(null);
+      setActiveMirror("source");
       setRowPage(0);
       return;
     }
-    setSelectedNode((current) => (current?.id === node.id ? null : node));
+    setSelectedNode((current) => {
+      const next = current?.id === node.id ? null : node;
+      if (!next) setActiveMirror("source");
+      else if (next.kind === "payee") setActiveMirror("landing");
+      else if (next.kind === "ministry" || next.kind === "project") setActiveMirror("source");
+      else setActiveMirror("volume");
+      return next;
+    });
     setRowPage(0);
   }
 
@@ -135,11 +156,11 @@ export default function WorksMoneyFlowPublicPreview({
       <PublicPreviewNav showcaseAnchor="sankey" />
 
       <div className="mb-6">
-        <p className="eyebrow">WORKS · 行政事業レビュー</p>
+        <p className="eyebrow">WORKS · 行政事業レビュー · 公開五鏡</p>
         <h1 className="display-section mt-3 text-white">お金の流れ（無料プレビュー）</h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400">
-          内閣官房「行政事業レビュー」の公開データを、サンキー図と明細で表示します。
-          府省庁・事業・支出先をクリックすると詳細と明細が絞り込まれます（AI コストなし）。
+          内閣官房「行政事業レビュー」の公開データを、公開五鏡（誰→いくら→誰へ→選び方→疑い）の順で読みます。
+          サンキーは水量と着地の図。府省庁・事業・支出先をクリックすると明細が絞り込まれます（AI コストなし）。
           {data ? (
             <>
               {" "}
@@ -180,21 +201,27 @@ export default function WorksMoneyFlowPublicPreview({
 
       {data ? (
         <div className="space-y-6">
+          {fiveMirrors ? (
+            <GyoseiFiveMirrorsPanel
+              brief={fiveMirrors}
+              activeMirror={mirrorFocus}
+              onSelectMirror={setActiveMirror}
+              compact
+            />
+          ) : null}
+
           <section className="glass-panel overflow-hidden rounded-3xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
               <div>
-                <p className="eyebrow">Sankey</p>
+                <p className="eyebrow">水量 · 着地（サンキー）</p>
                 <p className="mt-1 text-sm text-slate-400">
-                  {sankeyFocusDescription(selectedNode)}
+                  {fiveMirrors
+                    ? fiveMirrorsFocusDescription(selectedNode, fiveMirrors)
+                    : "—"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
-                {[
-                  { label: "国庫", color: "#67e8f9" },
-                  { label: "府省庁", color: "#5eead4" },
-                  { label: "事業", color: "#a5b4fc" },
-                  { label: "支出先", color: "#fcd34d" },
-                ].map((item) => (
+                {fiveMirrorsSankeyLegend().map((item) => (
                   <span key={item.label} className="inline-flex items-center gap-1.5">
                     <span
                       className="h-2 w-2 rounded-sm"
@@ -226,6 +253,7 @@ export default function WorksMoneyFlowPublicPreview({
                   unit={data.unit}
                   onClear={() => {
                     setSelectedNode(null);
+                    setActiveMirror("source");
                     setRowPage(0);
                   }}
                 />

@@ -1,4 +1,9 @@
-import type { MoneyFlowLink, MoneyFlowNode, MoneyFlowRow } from "@/lib/types/gyosei";
+import type {
+  MoneyFlowLink,
+  MoneyFlowNode,
+  MoneyFlowResponse,
+  MoneyFlowRow,
+} from "@/lib/types/gyosei";
 
 export type ShowcaseSectionMeta = {
   id: string;
@@ -87,9 +92,9 @@ export const SHOWCASE_SECTIONS: ShowcaseSectionMeta[] = [
     id: "sankey",
     index: "07",
     title: "Money Flow",
-    titleJa: "サンキーダイアグラム",
+    titleJa: "公開五鏡（お金の流れ）",
     description:
-      "行政事業レビューの予算データをサンキー図で可視化。2列目=府省庁、3列目=主要事業、最右=支出先。無料プレビューで明細まで確認できます。",
+      "行政事業レビューを「誰→いくら→誰へ→選び方→疑い」の公開五鏡で読む通帳。サンキーは水量と着地の図。無料プレビューで五鏡と明細まで確認できます。",
     accent: "#67e8f9",
     href: "/works/admin/money-flow",
     publicHref: "/works-preview",
@@ -206,12 +211,20 @@ function buildShowcaseSankeyRows(): MoneyFlowRow[] {
     }
   }
 
+  const demoContracts = [
+    "一般競争入札",
+    "企画競争",
+    "随意契約",
+    "一般競争入札",
+    "公募",
+  ];
+
   return SHOWCASE_SANKEY_LINKS.filter((link) => {
     const source = nodeById.get(link.source);
     const target = nodeById.get(link.target);
     return source?.kind === "project" && target?.kind === "payee";
   })
-    .map((link) => {
+    .map((link, index) => {
       const project = nodeById.get(link.source)!;
       const payee = nodeById.get(link.target)!;
       return {
@@ -221,7 +234,7 @@ function buildShowcaseSankeyRows(): MoneyFlowRow[] {
         payee: payee.rawLabel ?? payee.label,
         amount: link.amount,
         block: "デモ",
-        contract: null,
+        contract: demoContracts[index % demoContracts.length] ?? "一般競争入札",
         work: "",
         aggregated: false,
         flowCount: 1,
@@ -230,8 +243,49 @@ function buildShowcaseSankeyRows(): MoneyFlowRow[] {
     .sort((a, b) => b.amount - a.amount);
 }
 
-/** ショーケース用の架空明細（サンキー選択と連動） */
+/** ショーケース用の架空明細（サンキー選択と連動） · 完全架空・実在組織／人名禁止 */
 export const SHOWCASE_SANKEY_ROWS: MoneyFlowRow[] = buildShowcaseSankeyRows();
+
+/** 公開五鏡デモ用の架空 MoneyFlowResponse（実在組織／人名禁止） */
+export const SHOWCASE_MONEY_FLOW_RESPONSE: MoneyFlowResponse = {
+  year: 2025,
+  unit: "億円",
+  filters: {
+    ministry: null,
+    payee: null,
+    sector: null,
+    focusKind: null,
+    focusValue: null,
+  },
+  totals: {
+    amount: SHOWCASE_SANKEY_NODES.find((n) => n.kind === "government")?.amount ?? 12800,
+    projectCount: SHOWCASE_SANKEY_NODES.filter((n) => n.kind === "project").length,
+    payeeCount: SHOWCASE_SANKEY_NODES.filter((n) => n.kind === "payee").length,
+    flowCount: SHOWCASE_SANKEY_ROWS.length,
+    truncated: false,
+  },
+  nodes: SHOWCASE_SANKEY_NODES,
+  links: SHOWCASE_SANKEY_LINKS,
+  rows: SHOWCASE_SANKEY_ROWS,
+  source: {
+    label: "SHOWCASE 架空デモ",
+    publisher: "AQUA WORKS（フィクション）",
+    license: "デモ専用",
+    url: "/sample",
+  },
+  availableYears: [2025],
+  pendingYears: [],
+  ministries: [
+    ...new Set(
+      SHOWCASE_SANKEY_NODES.filter((n) => n.kind === "ministry").map((n) => n.label),
+    ),
+  ],
+  sectors: [],
+  externalCompanies: [],
+  nearbyMunicipal: [],
+  houjinEnabled: false,
+  yearAvailable: true,
+};
 
 export type ShowcasePayeeContract = {
   ministry: string;

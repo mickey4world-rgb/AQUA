@@ -2,9 +2,17 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import GyoseiFiveMirrorsPanel from "@/components/works/admin/GyoseiFiveMirrorsPanel";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
 import {
+  buildFiveMirrorsBrief,
+  fiveMirrorsFocusDescription,
+  fiveMirrorsSankeyLegend,
+  type FiveMirrorId,
+} from "@/lib/gyosei-five-mirrors";
+import {
+  SHOWCASE_MONEY_FLOW_RESPONSE,
   SHOWCASE_SANKEY_LINKS,
   SHOWCASE_SANKEY_NODES,
   SHOWCASE_SANKEY_ROWS,
@@ -15,13 +23,13 @@ import {
   filterRowsBySelectedNode,
   formatMoneyFlowAmount,
   resolveSankeyGraphData,
-  sankeyFocusDescription,
 } from "@/lib/works-money-flow-ui";
 
 const ROW_LIMIT = 6;
 
 export default function SankeyShowcaseDemo() {
   const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
+  const [activeMirror, setActiveMirror] = useState<FiveMirrorId | null>(null);
   const projectCount = SHOWCASE_SANKEY_NODES.filter((node) => node.kind === "project").length;
 
   const sankeyGraph = useMemo(
@@ -44,12 +52,26 @@ export default function SankeyShowcaseDemo() {
     );
   }, [selectedNode]);
 
+  const fiveMirrors = useMemo(
+    () => buildFiveMirrorsBrief(SHOWCASE_MONEY_FLOW_RESPONSE, selectedNode),
+    [selectedNode],
+  );
+  const mirrorFocus = activeMirror ?? fiveMirrors.activeMirror;
+
   function handleNodeClick(node: MoneyFlowNode) {
     if (node.kind === "government") {
       setSelectedNode(null);
+      setActiveMirror("source");
       return;
     }
-    setSelectedNode((current) => (current?.id === node.id ? null : node));
+    setSelectedNode((current) => {
+      const next = current?.id === node.id ? null : node;
+      if (!next) setActiveMirror("source");
+      else if (next.kind === "payee") setActiveMirror("landing");
+      else if (next.kind === "ministry" || next.kind === "project") setActiveMirror("source");
+      else setActiveMirror("volume");
+      return next;
+    });
   }
 
   return (
@@ -59,13 +81,13 @@ export default function SankeyShowcaseDemo() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300/80">
-              Sankey
+              公開五鏡
             </p>
             <p className="mt-0.5 text-sm text-slate-300">
-              府省庁 → 主要事業 {projectCount} 件 → 支出先
+              誰→いくら→誰へ · 事業 {projectCount} 件（架空デモ）
             </p>
             <p className="mt-1 text-[10px] text-slate-500">
-              {sankeyFocusDescription(selectedNode)}
+              {fiveMirrorsFocusDescription(selectedNode, fiveMirrors)}
             </p>
           </div>
           <Link
@@ -75,6 +97,16 @@ export default function SankeyShowcaseDemo() {
             無料レビューを見る →
           </Link>
         </div>
+
+        <div className="border-b border-white/10 px-3 py-3">
+          <GyoseiFiveMirrorsPanel
+            brief={fiveMirrors}
+            activeMirror={mirrorFocus}
+            onSelectMirror={setActiveMirror}
+            compact
+          />
+        </div>
+
         <div className="showcase-sankey-flow overflow-hidden p-1 sm:p-2">
           <SankeyDiagram
             nodes={sankeyGraph.nodes}
@@ -93,7 +125,10 @@ export default function SankeyShowcaseDemo() {
             <MoneyFlowSelectionPanel
               summary={selectionSummary}
               unit="億円"
-              onClear={() => setSelectedNode(null)}
+              onClear={() => {
+                setSelectedNode(null);
+                setActiveMirror("source");
+              }}
             />
           </div>
         ) : null}
@@ -136,12 +171,7 @@ export default function SankeyShowcaseDemo() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-2.5">
-          {[
-            { label: "国庫", color: "#67e8f9" },
-            { label: "府省庁（2列目）", color: "#5eead4" },
-            { label: "事業（3列目）", color: "#a5b4fc" },
-            { label: "支出先（最右）", color: "#fcd34d" },
-          ].map((item) => (
+          {fiveMirrorsSankeyLegend().map((item) => (
             <span
               key={item.label}
               className="inline-flex items-center gap-1.5 text-[10px] text-slate-400"

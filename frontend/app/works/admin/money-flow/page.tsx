@@ -15,9 +15,9 @@ export default function MoneyFlowPage() {
           >
             ← 行政パネル
           </Link>
-          <h1 className="display-section mt-4 text-white">お金の流れ</h1>
+          <h1 className="display-section mt-4 text-white">お金の流れ · 公開五鏡</h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400">
-            行政事業レビューの主要事項データベースをもとに、政府予算がどの府省庁・事業を経て、どの支出先へ流れたかを可視化します。
+            行政事業レビューの公開データを、誰の事業か→いくら→誰へ→どう選んだ→どこを疑うか、の公開五鏡で読みます。サンキーは水量と着地の図です。
           </p>
         </Reveal>
 

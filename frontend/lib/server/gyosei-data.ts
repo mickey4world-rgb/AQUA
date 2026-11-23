@@ -446,16 +446,20 @@ function buildPayeeAggregateRows(
     flowCount: number;
     ministries: Map<string, number>;
     projects: Map<string, number>;
+    contracts: Map<string, number>;
     corpNumber: string;
     address: string;
   };
   const bucket = new Map<string, Agg>();
 
   for (const index of matchingFlowIndexes) {
-    const [projectIndex, payeeIndex, amount, , , corpNumber, rawWork] = dataset.flows[index];
+    const [projectIndex, payeeIndex, amount, , contractIndex, corpNumber, rawWork] =
+      dataset.flows[index];
     const project = dataset.projects[projectIndex];
     const payee = dataset.dictionaries.payees[payeeIndex];
     const ministry = dataset.dictionaries.ministries[project[0]];
+    const contractLabel =
+      contractIndex >= 0 ? dataset.dictionaries.contracts[contractIndex] : null;
     const { address } = splitWorkAndAddress(rawWork || "");
     const current = bucket.get(payee) ?? {
       payee,
@@ -463,6 +467,7 @@ function buildPayeeAggregateRows(
       flowCount: 0,
       ministries: new Map<string, number>(),
       projects: new Map<string, number>(),
+      contracts: new Map<string, number>(),
       corpNumber: "",
       address: "",
     };
@@ -470,6 +475,12 @@ function buildPayeeAggregateRows(
     current.flowCount += 1;
     current.ministries.set(ministry, (current.ministries.get(ministry) ?? 0) + amount);
     current.projects.set(project[1], (current.projects.get(project[1]) ?? 0) + amount);
+    if (contractLabel) {
+      current.contracts.set(
+        contractLabel,
+        (current.contracts.get(contractLabel) ?? 0) + amount,
+      );
+    }
     if (!current.corpNumber && corpNumber) current.corpNumber = corpNumber;
     if (!current.address && address) current.address = address;
     bucket.set(payee, current);
@@ -483,6 +494,8 @@ function buildPayeeAggregateRows(
         [...entry.ministries.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
       const topProject =
         [...entry.projects.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      const topContract =
+        [...entry.contracts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
       return {
         ministry: topMinistry,
         project: topProject,
@@ -490,7 +503,7 @@ function buildPayeeAggregateRows(
         payee: entry.payee,
         amount: round1(entry.amount),
         block: "—",
-        contract: null,
+        contract: topContract,
         work: `${entry.flowCount} 件の支出を合算`,
         address: entry.address || undefined,
         corpNumber: entry.corpNumber || undefined,

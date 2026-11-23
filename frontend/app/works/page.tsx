@@ -86,7 +86,7 @@ const panels: Panel[] = [
     apps: [
       {
         title: "Money Flow",
-        titleJa: "お金の流れ",
+        titleJa: "お金の流れ · 公開五鏡",
         desc: "行政事業レビューの支出先データをサンキー図で可視化。企業名や府省庁で絞り込めます。",
         href: "/works/admin/money-flow",
         status: "ready",

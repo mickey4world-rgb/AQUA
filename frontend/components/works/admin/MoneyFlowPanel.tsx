@@ -8,8 +8,15 @@ import {
   readMoneyFlowCache,
   writeMoneyFlowCache,
 } from "@/lib/money-flow-client-cache";
+import GyoseiFiveMirrorsPanel from "@/components/works/admin/GyoseiFiveMirrorsPanel";
 import MoneyFlowSelectionPanel from "@/components/works/admin/MoneyFlowSelectionPanel";
 import SankeyDiagram from "@/components/works/admin/SankeyDiagram";
+import {
+  buildFiveMirrorsBrief,
+  fiveMirrorsFocusDescription,
+  fiveMirrorsSankeyLegend,
+  type FiveMirrorId,
+} from "@/lib/gyosei-five-mirrors";
 import type {
   MoneyFlowFocusKind,
   MoneyFlowNode,
@@ -20,7 +27,6 @@ import {
   buildNodeSelectionSummary,
   filterRowsBySelectedNode,
   resolveSankeyGraphData,
-  sankeyFocusDescription,
 } from "@/lib/works-money-flow-ui";
 
 type MetaResponse = {
@@ -69,6 +75,7 @@ export default function MoneyFlowPanel() {
   const [dossierError, setDossierError] = useState<string | null>(null);
   const [rowPage, setRowPage] = useState(0);
   const [selectedNode, setSelectedNode] = useState<MoneyFlowNode | null>(null);
+  const [activeMirror, setActiveMirror] = useState<FiveMirrorId | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,17 +188,22 @@ export default function MoneyFlowPanel() {
   function handleNodeClick(node: MoneyFlowNode) {
     if (node.kind === "government") {
       setSelectedNode(null);
+      setActiveMirror("source");
       setRowPage(0);
       return;
     }
     if (node.drillable === false) {
       setSelectedNode(node);
+      setActiveMirror(node.kind === "payee" ? "landing" : "volume");
       setRowPage(0);
       return;
     }
 
     setSelectedNode(node);
     setRowPage(0);
+    if (node.kind === "payee") setActiveMirror("landing");
+    else if (node.kind === "ministry" || node.kind === "project") setActiveMirror("source");
+    else setActiveMirror("volume");
 
     if (node.kind === "ministry") {
       setMinistry(node.label);
@@ -263,6 +275,11 @@ export default function MoneyFlowPanel() {
         : { nodes: [], links: [] },
     [data, selectedNode],
   );
+  const fiveMirrors = useMemo(
+    () => (data?.yearAvailable ? buildFiveMirrorsBrief(data, selectedNode) : null),
+    [data, selectedNode],
+  );
+  const mirrorFocus = activeMirror ?? fiveMirrors?.activeMirror ?? "source";
   const ROW_PAGE_SIZE = 20;
   const pagedRows = useMemo(() => {
     const start = rowPage * ROW_PAGE_SIZE;
@@ -275,10 +292,10 @@ export default function MoneyFlowPanel() {
       <section className="glass-panel rounded-3xl p-5 sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="eyebrow">行政事業レビュー</p>
+            <p className="eyebrow">行政事業レビュー · 公開五鏡</p>
             <h2 className="display-sub mt-2 text-white">お金の流れ</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              ノードをクリックすると一段深いサンキーに入れます。支出先は企業名だけでなく、コンサルなどの分野でも探せます。
+              誰の事業か→いくら→誰へ→どう選んだ→どこを疑うか、の順で読む通帳です。サンキーは水量と着地の図。支出先は企業名・分野キーワードでも探せます。
             </p>
           </div>
           {data?.yearAvailable && (
@@ -448,24 +465,38 @@ export default function MoneyFlowPanel() {
         </nav>
       )}
 
+      {fiveMirrors && (
+        <GyoseiFiveMirrorsPanel
+          brief={fiveMirrors}
+          activeMirror={mirrorFocus}
+          onSelectMirror={(id) => {
+            setActiveMirror(id);
+            if (id === "source" || id === "volume") {
+              /* keep current sankey selection */
+            }
+            if (id === "landing" && selectedNode?.kind !== "payee") {
+              /* highlight landing mirror; user clicks a payee node next */
+            }
+          }}
+        />
+      )}
+
       <section className="glass-panel rounded-3xl p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="eyebrow">Sankey</p>
+            <p className="eyebrow">水量 · 着地（サンキー）</p>
             <p className="mt-1 text-sm text-slate-400">
               {loading
                 ? "集計中…"
-                : data?.yearAvailable
-                  ? sankeyFocusDescription(selectedNode)
+                : data?.yearAvailable && fiveMirrors
+                  ? fiveMirrorsFocusDescription(selectedNode, fiveMirrors)
                   : data?.message ?? "—"}
             </p>
           </div>
           <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
-            <LegendDot color="#67e8f9" label="政府" />
-            <LegendDot color="#5eead4" label="府省庁" />
-            <LegendDot color="#a5b4fc" label="事業" />
-            <LegendDot color="#c4b5fd" label="ブロック" />
-            <LegendDot color="#fcd34d" label="支出先" />
+            {fiveMirrorsSankeyLegend().map((item) => (
+              <LegendDot key={item.label} color={item.color} label={item.label} />
+            ))}
           </div>
         </div>
 
@@ -504,6 +535,7 @@ export default function MoneyFlowPanel() {
                   unit={data.unit}
                   onClear={() => {
                     setSelectedNode(null);
+                    setActiveMirror("source");
                     setRowPage(0);
                   }}
                 />
